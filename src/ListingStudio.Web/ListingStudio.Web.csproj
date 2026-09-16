@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><UserSecretsId>listingstudio-web-development</UserSecretsId></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ListingStudio.Application/ListingStudio.Application.csproj" />
+    <ProjectReference Include="../ListingStudio.Infrastructure/ListingStudio.Infrastructure.csproj" />
+    <ProjectReference Include="../ListingStudio.AI/ListingStudio.AI.csproj" />
+    <ProjectReference Include="../ListingStudio.Video/ListingStudio.Video.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <ProjectReference Include="../ListingStudio.Application/ListingStudio.Application.csproj" />
+    <ProjectReference Include="../ListingStudio.Infrastructure/ListingStudio.Infrastructure.csproj" />
+    <ProjectReference Include="../ListingStudio.AI/ListingStudio.AI.csproj" />
+    <ProjectReference Include="../ListingStudio.Video/ListingStudio.Video.csproj" />
+  </ItemGroup>
+  <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+</Project>
