@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ListingStudio.Domain/ListingStudio.Domain.csproj" />
+    <Project Path="src/ListingStudio.Application/ListingStudio.Application.csproj" />
+    <Project Path="src/ListingStudio.Infrastructure/ListingStudio.Infrastructure.csproj" />
+    <Project Path="src/ListingStudio.AI/ListingStudio.AI.csproj" />
+    <Project Path="src/ListingStudio.Video/ListingStudio.Video.csproj" />
+    <Project Path="src/ListingStudio.Web/ListingStudio.Web.csproj" />
+    <Project Path="src/ListingStudio.Worker/ListingStudio.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ListingStudio.UnitTests/ListingStudio.UnitTests.csproj" />
+    <Project Path="tests/ListingStudio.IntegrationTests/ListingStudio.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
