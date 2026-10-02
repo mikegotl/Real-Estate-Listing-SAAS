@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc.Testing;
+using Xunit;
 
 namespace ListingStudio.IntegrationTests;
 
@@ -9,7 +10,7 @@ public sealed class WebApplicationTests : IClassFixture<WebApplicationFactory<Pr
     public WebApplicationTests(WebApplicationFactory<Program> factory) => client = factory.CreateClient();
 
     [Fact]
-    public async Task Home_page_is_available()
+    public async Task HomePageIsAvailable()
     {
         using var response = await client.GetAsync("/");
 
