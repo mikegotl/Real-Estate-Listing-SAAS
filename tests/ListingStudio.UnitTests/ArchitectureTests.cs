@@ -1,11 +1,12 @@
 using ListingStudio.Domain;
+using Xunit;
 
 namespace ListingStudio.UnitTests;
 
 public sealed class ArchitectureTests
 {
     [Fact]
-    public void Domain_has_no_project_dependencies()
+    public void DomainHasNoProjectDependencies()
     {
         var referencedProjects = typeof(AssemblyMarker).Assembly
             .GetReferencedAssemblies()
