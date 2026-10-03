@@ -1,7 +1,9 @@
 using ListingStudio.Application.Authentication;
+using ListingStudio.Application.Properties;
 using ListingStudio.Infrastructure.Configuration;
 using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Infrastructure.Persistence;
+using ListingStudio.Infrastructure.Properties;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -52,6 +54,7 @@ public static class ServiceCollectionExtensions
             .AddIdentityCookies();
         services.AddAuthorization();
         services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
+        services.AddScoped<IPropertyService, PropertyService>();
 
         return services;
     }

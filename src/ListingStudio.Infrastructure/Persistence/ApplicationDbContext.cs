@@ -1,4 +1,5 @@
 using ListingStudio.Domain.Organizations;
+using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Organization> Organizations => Set<Organization>();
 
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
+
+    public DbSet<ListingProperty> Properties => Set<ListingProperty>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

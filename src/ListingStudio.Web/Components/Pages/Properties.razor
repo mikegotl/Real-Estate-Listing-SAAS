@@ -1,0 +1,91 @@
+@page "/properties"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyService PropertyService
+
+<PageTitle>Properties</PageTitle>
+
+<PropertyPageProviders />
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6">
+    <div>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Properties</MudText>
+        <MudText Typo="Typo.body1">Manage the listings in your organization.</MudText>
+    </div>
+    <MudButton Href="/properties/new" Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add">New property</MudButton>
+</MudStack>
+
+<MudPaper Class="pa-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudCheckBox T="bool" @bind-Value="includeArchived" Label="Show archived" Color="Color.Primary" />
+        <MudButton Variant="Variant.Outlined" OnClick="LoadAsync">Refresh</MudButton>
+    </MudStack>
+
+    @if (!loaded)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (properties.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">No properties match this view. Add your first property to get started.</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="properties" Hover="true" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Address</MudTh>
+                <MudTh>Type</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Price</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate Context="property">
+                <MudTd DataLabel="Address">
+                    @property.Address1<br />
+                    <MudText Typo="Typo.caption">@property.City, @property.State @property.ZipCode</MudText>
+                </MudTd>
+                <MudTd DataLabel="Type">@Display(property.PropertyType)</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Size="Size.Small" Color="@(property.IsArchived ? Color.Default : Color.Primary)">
+                        @(property.IsArchived ? "Archived" : Display(property.ListingStatus))
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Price">@property.ListingPrice.ToString("C0")</MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudButton Href="@($"/properties/{property.Id}")" Size="Size.Small" Variant="Variant.Text">Details</MudButton>
+                    @if (!property.IsArchived)
+                    {
+                        <MudButton Href="@($"/properties/{property.Id}/edit")" Size="Size.Small" Variant="Variant.Text">Edit</MudButton>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private IReadOnlyList<PropertySummary> properties = [];
+    private bool includeArchived;
+    private bool loaded;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loaded = false;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        properties = await PropertyService.ListAsync(userId, includeArchived);
+        loaded = true;
+    }
+
+    private static string Display(Enum value) => value switch
+    {
+        PropertyType.SingleFamily => "Single family",
+        PropertyType.MultiFamily => "Multi-family",
+        ListingStatus.ComingSoon => "Coming soon",
+        ListingStatus.OffMarket => "Off market",
+        _ => value.ToString(),
+    };
+}

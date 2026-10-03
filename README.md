@@ -1,6 +1,6 @@
 # Listing Studio
 
-.NET 10 foundation for a real-estate Listing Studio, implemented as a clean modular monolith with a Blazor Web App, an ASP.NET Core background worker, PostgreSQL persistence, organization tenancy, and ASP.NET Core Identity.
+.NET 10 foundation for a real-estate Listing Studio, implemented as a clean modular monolith with a Blazor Web App, an ASP.NET Core background worker, PostgreSQL persistence, organization tenancy, ASP.NET Core Identity, and a MudBlazor property-management workspace.
 
 ## Prerequisites
 
@@ -82,6 +82,8 @@ dotnet run --project src/ListingStudio.Worker
 ```
 
 Open the Web URL printed by `dotnet run`. Registering creates an Identity user, a new organization, and an owner membership. `/auth` is protected and redirects anonymous users to `/Account/Login`. In Development only, the forgot-password confirmation page displays the locally generated reset link. Configure a production identity email adapter before deploying; reset tokens are never written to logs or source control.
+
+After signing in, open `/properties` to create, list, inspect, edit, and archive properties. Archived properties are read-only and hidden from the default dashboard; select **Show archived** and refresh to include them. Property queries derive organization scope from the authenticated user's membership, and never accept an organization identifier from the browser.
 
 Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.
 

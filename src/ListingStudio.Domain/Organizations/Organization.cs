@@ -1,5 +1,7 @@
 namespace ListingStudio.Domain.Organizations;
 
+using ListingStudio.Domain.Properties;
+
 public sealed class Organization
 {
     private Organization()
@@ -20,6 +22,8 @@ public sealed class Organization
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public ICollection<OrganizationMember> Members { get; } = [];
+
+    public ICollection<ListingProperty> Properties { get; } = [];
 
     public static Organization Create(string name)
     {

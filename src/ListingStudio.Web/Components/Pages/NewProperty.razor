@@ -1,0 +1,41 @@
+@page "/properties/new"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyService PropertyService
+@inject NavigationManager Navigation
+
+<PageTitle>New property</PageTitle>
+
+<PropertyPageProviders />
+
+<MudText Typo="Typo.h3" HtmlTag="h1" Class="mb-2">New property</MudText>
+<MudText Typo="Typo.body1" Class="mb-6">Add a property to your organization.</MudText>
+
+<MudPaper Class="pa-6">
+    @if (error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+    }
+    <PropertyForm Model="model" OnValidSubmit="CreateAsync" />
+</MudPaper>
+
+@code {
+    private readonly PropertyFormModel model = new();
+    private string? error;
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            error = null;
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var propertyId = await PropertyService.CreateAsync(userId, model.ToInput());
+            Navigation.NavigateTo($"/properties/{propertyId}");
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.Message;
+        }
+    }
+}

@@ -31,6 +31,12 @@ ASP.NET Core Identity and the EF Core `ApplicationDbContext` are Infrastructure 
 
 Password reset uses Identity data-protection tokens. Development builds keep the generated reset link only in process memory and display it on the confirmation page for local testing; a production email adapter must be configured before production use.
 
+## Property management slice
+
+The Domain owns the `ListingProperty` aggregate, its value-bearing details, property types, listing statuses, validation rules, and archive state. Application exposes provider-neutral property commands and read models through `IPropertyService`. Infrastructure implements that port with EF Core and PostgreSQL; Web renders the authenticated MudBlazor workflows.
+
+Every property has a required `OrganizationId` foreign key and tenant-aware indexes. Property services receive the server-validated Identity user ID, resolve its organization membership, and include that organization in every read and mutation predicate. A property ID is never sufficient authorization. Cross-organization requests therefore return no property and cannot update or archive it. Archiving is a timestamped, read-only state rather than physical deletion, preserving the listing for audit and future workflow history.
+
 ## Tests
 
-Unit tests target inward layers. Integration tests use disposable PostgreSQL 17 containers, apply real EF Core migrations, and exercise the ASP.NET Core composition root plus Identity and organization persistence. Additional module-specific test projects can be introduced beside these as features are added.
+Unit tests target inward layers. Integration tests use disposable PostgreSQL 17 containers, apply real EF Core migrations, and exercise the ASP.NET Core composition root, Identity, organization persistence, property lifecycle, and tenant isolation. Additional module-specific test projects can be introduced beside these as features are added.
