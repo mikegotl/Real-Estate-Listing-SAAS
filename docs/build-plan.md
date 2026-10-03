@@ -131,7 +131,7 @@ Report:
 
 ### Week 2: Database and Authentication
 
-**Status:** pending
+**Status:** proposed (PR #6)
 
 **Expected result:** Users can register, sign in, sign out and access protected pages. Organization membership establishes tenant isolation.
 
