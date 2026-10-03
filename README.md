@@ -1,6 +1,6 @@
 # Listing Studio
 
-Initial .NET 10 foundation for a real-estate Listing Studio, implemented as a clean modular monolith with a Blazor Web App, an ASP.NET Core background worker, and separate technology adapters. No business features are included yet.
+.NET 10 foundation for a real-estate Listing Studio, implemented as a clean modular monolith with a Blazor Web App, an ASP.NET Core background worker, PostgreSQL persistence, organization tenancy, and ASP.NET Core Identity.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Initial .NET 10 foundation for a real-estate Listing Studio, implemented as a cl
 | --- | --- |
 | `ListingStudio.Domain` | Framework-independent domain core |
 | `ListingStudio.Application` | Use cases and abstraction contracts |
-| `ListingStudio.Infrastructure` | PostgreSQL, Blob Storage, and Stripe adapters |
+| `ListingStudio.Infrastructure` | PostgreSQL, Identity, Blob Storage, and Stripe adapters |
 | `ListingStudio.AI` | OpenAI and voice/TTS adapters |
 | `ListingStudio.Video` | AI video provider adapters |
 | `ListingStudio.Web` | Blazor/ASP.NET Core web composition root |
@@ -31,6 +31,14 @@ Tracked JSON files contain empty placeholders only. Copy the environment templat
 cp .env.example .env
 ```
 
+Set `POSTGRES_PASSWORD` and the password segment of `PostgreSQL__ConnectionString` to the same local-only value. The connection string is quoted because semicolons have special meaning in a shell. Load the local variables before running .NET commands:
+
+```bash
+set -a
+source .env
+set +a
+```
+
 Never commit `.env`, user secrets, access keys, or connection strings. ASP.NET Core reads environment variables with `__` as the section separator. Alternatively, keep development credentials in .NET user secrets:
 
 ```bash
@@ -42,10 +50,20 @@ The same runtime configuration sections are available to both hosts: `PostgreSQL
 
 ## Run
 
-Start PostgreSQL (requires `POSTGRES_PASSWORD` in `.env`):
+Start PostgreSQL and restore the repository-local EF Core tool:
 
 ```bash
 docker compose up -d postgres
+docker compose ps
+dotnet tool restore
+```
+
+Apply the database migration:
+
+```bash
+dotnet ef database update \
+  --project src/ListingStudio.Infrastructure \
+  --startup-project src/ListingStudio.Web
 ```
 
 Restore, build, and test the full solution:
@@ -62,5 +80,9 @@ Run either host:
 dotnet run --project src/ListingStudio.Web
 dotnet run --project src/ListingStudio.Worker
 ```
+
+Open the Web URL printed by `dotnet run`. Registering creates an Identity user, a new organization, and an owner membership. `/auth` is protected and redirects anonymous users to `/Account/Login`. In Development only, the forgot-password confirmation page displays the locally generated reset link. Configure a production identity email adapter before deploying; reset tokens are never written to logs or source control.
+
+Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.
 
 Stop PostgreSQL with `docker compose down`; add `--volumes` only when you also intend to delete local database data.

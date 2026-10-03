@@ -1,0 +1,17 @@
+<nav aria-label="Primary navigation">
+    <a href="/">Listing Studio</a>
+    <AuthorizeView>
+        <Authorized Context="auth">
+            <a href="/auth">Workspace</a>
+            <span>@auth.User.Identity?.Name</span>
+            <form action="/Account/Logout" method="post">
+                <AntiforgeryToken />
+                <button type="submit">Log out</button>
+            </form>
+        </Authorized>
+        <NotAuthorized>
+            <a href="/Account/Register">Register</a>
+            <a href="/Account/Login">Log in</a>
+        </NotAuthorized>
+    </AuthorizeView>
+</nav>

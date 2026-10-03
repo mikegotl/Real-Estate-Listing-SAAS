@@ -1,0 +1,77 @@
+@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using ListingStudio.Infrastructure.Identity
+@using Microsoft.AspNetCore.Identity
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Log in</PageTitle>
+
+<h1>Log in</h1>
+<StatusMessage Message="@message" />
+
+<EditForm Model="Input" method="post" OnValidSubmit="LoginUserAsync" FormName="login" class="account-form">
+    <DataAnnotationsValidator />
+    <ValidationSummary class="error" />
+    <label>
+        Email
+        <InputText @bind-Value="Input.Email" autocomplete="username" />
+        <ValidationMessage For="() => Input.Email" />
+    </label>
+    <label>
+        Password
+        <InputText type="password" @bind-Value="Input.Password" autocomplete="current-password" />
+        <ValidationMessage For="() => Input.Password" />
+    </label>
+    <label>
+        <InputCheckbox @bind-Value="Input.RememberMe" /> Remember me
+    </label>
+    <button type="submit">Log in</button>
+</EditForm>
+
+<p><a href="/Account/ForgotPassword">Forgot your password?</a></p>
+<p><a href="/Account/Register">Create a new account</a></p>
+
+@code {
+    private string? message;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task LoginUserAsync()
+    {
+        var result = await SignInManager.PasswordSignInAsync(
+            Input.Email,
+            Input.Password,
+            Input.RememberMe,
+            lockoutOnFailure: true);
+
+        if (result.Succeeded)
+        {
+            RedirectManager.RedirectTo(ReturnUrl);
+            return;
+        }
+
+        message = result.IsLockedOut
+            ? "Error: This account is temporarily locked."
+            : "Error: Invalid login attempt.";
+    }
+
+    private sealed class InputModel
+    {
+        [Required, EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required, DataType(DataType.Password)]
+        public string Password { get; set; } = string.Empty;
+
+        public bool RememberMe { get; set; }
+    }
+}
