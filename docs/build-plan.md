@@ -11,7 +11,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 ## State and progression
 
 - `pending`: not started or not independently verified. `proposed`: work exists in an open PR. `accepted`: the owner reviewed and merged a passing PR. A successful automation run does not change milestone status by itself.
-- The foundation for Week 1 exists on `main` as of this plan, but the PDF completion criterion has not been verified here. Validate it before accepting Week 1.
+- Week 1 was accepted on 2026-10-03 after PR #4 merged with passing restore/build/tests, successful Blazor and Worker startup checks, and owner-confirmed Docker Compose/PostgreSQL validation.
 - Work on only the first `pending` milestone whose prerequisites are accepted. If an open PR already covers it, review or repair that PR instead of opening a duplicate. Do not begin the next milestone until the prior PR is merged and accepted.
 - Record acceptance evidence in the PR: commands, results, manual checks, remaining blockers. Never claim an unperformed test passed. Keep the `main` branch protected from unattended merges or deployments.
 
@@ -19,7 +19,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 
 ### Week 1: Architecture and Repository
 
-**Status:** pending (foundation present; acceptance unverified)
+**Status:** accepted (2026-10-03; PR #4 merged and Docker/PostgreSQL acceptance confirmed)
 
 **Expected result:** A compiling modular-monolith solution that runs locally with Docker and includes documented architecture and test projects.
 
