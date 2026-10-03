@@ -1,0 +1,9 @@
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <p class="status" role="status">@Message</p>
+}
+
+@code {
+    [Parameter]
+    public string? Message { get; set; }
+}

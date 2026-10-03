@@ -1,0 +1,94 @@
+@page "/Account/Register"
+
+@using System.ComponentModel.DataAnnotations
+@using ListingStudio.Application.Authentication
+@using ListingStudio.Infrastructure.Identity
+@using Microsoft.AspNetCore.Identity
+
+@inject IAccountRegistrationService RegistrationService
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Register</PageTitle>
+
+<h1>Create your Listing Studio account</h1>
+<p>Your first account becomes the owner of a new organization.</p>
+<StatusMessage Message="@message" />
+
+<EditForm Model="Input" method="post" OnValidSubmit="RegisterUserAsync" FormName="register" class="account-form">
+    <DataAnnotationsValidator />
+    <ValidationSummary class="error" />
+    <label>
+        Organization name
+        <InputText @bind-Value="Input.OrganizationName" autocomplete="organization" />
+        <ValidationMessage For="() => Input.OrganizationName" />
+    </label>
+    <label>
+        Email
+        <InputText @bind-Value="Input.Email" autocomplete="username" />
+        <ValidationMessage For="() => Input.Email" />
+    </label>
+    <label>
+        Password
+        <InputText type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+        <ValidationMessage For="() => Input.Password" />
+    </label>
+    <label>
+        Confirm password
+        <InputText type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" />
+        <ValidationMessage For="() => Input.ConfirmPassword" />
+    </label>
+    <button type="submit">Register</button>
+</EditForm>
+
+@code {
+    private string? message;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task RegisterUserAsync()
+    {
+        var result = await RegistrationService.RegisterAsync(
+            new RegisterAccountCommand(Input.Email, Input.Password, Input.OrganizationName));
+
+        if (!result.Succeeded)
+        {
+            message = $"Error: {string.Join(", ", result.Errors)}";
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(result.UserId!);
+        if (user is null)
+        {
+            message = "Error: The new account could not be loaded.";
+            return;
+        }
+
+        await SignInManager.SignInAsync(user, isPersistent: false);
+        RedirectManager.RedirectTo(ReturnUrl);
+    }
+
+    private sealed class InputModel
+    {
+        [Required, StringLength(200)]
+        public string OrganizationName { get; set; } = string.Empty;
+
+        [Required, EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required, StringLength(100, MinimumLength = 8)]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = string.Empty;
+
+        [DataType(DataType.Password)]
+        [Compare(nameof(Password), ErrorMessage = "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

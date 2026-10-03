@@ -6,4 +6,10 @@
     <ProjectReference Include="../ListingStudio.AI/ListingStudio.AI.csproj" />
     <ProjectReference Include="../ListingStudio.Video/ListingStudio.Video.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 </Project>
