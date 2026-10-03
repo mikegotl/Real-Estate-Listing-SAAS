@@ -177,7 +177,7 @@ Do not implement properties yet.
 
 ### Week 3: Property Management
 
-**Status:** pending
+**Status:** proposed (PR #7; owner review and acceptance pending)
 
 **Expected result:** A usable property dashboard with create, edit, archive, list and detail workflows.
 
