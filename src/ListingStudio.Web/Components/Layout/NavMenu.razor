@@ -3,6 +3,7 @@
     <AuthorizeView>
         <Authorized Context="auth">
             <a href="/auth">Workspace</a>
+            <a href="/properties">Properties</a>
             <span>@auth.User.Identity?.Name</span>
             <form action="/Account/Logout" method="post">
                 <AntiforgeryToken />

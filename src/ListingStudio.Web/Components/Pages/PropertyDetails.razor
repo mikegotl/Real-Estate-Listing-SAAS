@@ -1,0 +1,94 @@
+@page "/properties/{PropertyId:guid}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyService PropertyService
+@inject NavigationManager Navigation
+
+<PageTitle>Property details</PageTitle>
+
+<PropertyPageProviders />
+
+@if (!loaded)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (property is null)
+{
+    <MudAlert Severity="Severity.Warning">Property not found or unavailable to your organization.</MudAlert>
+    <MudButton Href="/properties" Variant="Variant.Text" Class="mt-4">Back to properties</MudButton>
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6">
+        <div>
+            <MudText Typo="Typo.h3" HtmlTag="h1">@property.Address1</MudText>
+            <MudText Typo="Typo.body1">@property.City, @property.State @property.ZipCode</MudText>
+        </div>
+        <MudStack Row="true" Spacing="2">
+            @if (!property.IsArchived)
+            {
+                <MudButton Href="@($"/properties/{PropertyId}/edit")" Variant="Variant.Outlined" Color="Color.Primary">Edit</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ArchiveAsync">Archive</MudButton>
+            }
+            <MudButton Href="/properties" Variant="Variant.Text">Back</MudButton>
+        </MudStack>
+    </MudStack>
+
+    @if (property.IsArchived)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">This property is archived and read-only.</MudAlert>
+    }
+
+    <MudPaper Class="pa-6">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="4"><Detail Label="Listing price" Value="@property.ListingPrice.ToString("C0")" /></MudItem>
+            <MudItem xs="12" md="4"><Detail Label="Status" Value="@Display(property.ListingStatus)" /></MudItem>
+            <MudItem xs="12" md="4"><Detail Label="Property type" Value="@Display(property.PropertyType)" /></MudItem>
+            <MudItem xs="6" md="3"><Detail Label="Bedrooms" Value="@property.Bedrooms.ToString()" /></MudItem>
+            <MudItem xs="6" md="3"><Detail Label="Bathrooms" Value="@property.Bathrooms.ToString("0.#")" /></MudItem>
+            <MudItem xs="6" md="3"><Detail Label="Square feet" Value="@(property.SquareFeet?.ToString("N0") ?? "—")" /></MudItem>
+            <MudItem xs="6" md="3"><Detail Label="Lot size" Value="@(property.LotSize is null ? "—" : $"{property.LotSize:0.##} acres")" /></MudItem>
+            <MudItem xs="12" md="6"><Detail Label="Year built" Value="@(property.YearBuilt?.ToString() ?? "—")" /></MudItem>
+            <MudItem xs="12" md="6"><Detail Label="Address line 2" Value="@(property.Address2 ?? "—")" /></MudItem>
+            <MudItem xs="12"><Detail Label="Description" Value="@(property.Description ?? "—")" /></MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+
+@code {
+    [Parameter]
+    public Guid PropertyId { get; set; }
+
+    private PropertyDetailsResult? property;
+    private bool loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        property = await PropertyService.GetAsync(userId, PropertyId);
+        loaded = true;
+    }
+
+    private async Task ArchiveAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await PropertyService.ArchiveAsync(userId, PropertyId))
+        {
+            Navigation.NavigateTo("/properties");
+        }
+        else
+        {
+            property = null;
+        }
+    }
+
+    private static string Display(Enum value) => value switch
+    {
+        PropertyType.SingleFamily => "Single family",
+        PropertyType.MultiFamily => "Multi-family",
+        ListingStatus.ComingSoon => "Coming soon",
+        ListingStatus.OffMarket => "Off market",
+        _ => value.ToString(),
+    };
+}

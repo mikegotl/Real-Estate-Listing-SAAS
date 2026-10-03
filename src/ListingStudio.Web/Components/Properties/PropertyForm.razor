@@ -1,0 +1,107 @@
+<EditForm Model="Model" OnValidSubmit="SubmitAsync" FormName="property-form">
+    <DataAnnotationsValidator />
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="8">
+            <MudTextField T="string" Label="Address line 1" @bind-Value="Model.Address1"
+                          For="@(() => Model.Address1)" Variant="Variant.Outlined" Required="true" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string" Label="Address line 2" @bind-Value="Model.Address2"
+                          For="@(() => Model.Address2)" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudTextField T="string" Label="City" @bind-Value="Model.City"
+                          For="@(() => Model.City)" Variant="Variant.Outlined" Required="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudTextField T="string" Label="State" @bind-Value="Model.State"
+                          For="@(() => Model.State)" Variant="Variant.Outlined" Required="true" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string" Label="ZIP code" @bind-Value="Model.ZipCode"
+                          For="@(() => Model.ZipCode)" Variant="Variant.Outlined" Required="true" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="decimal" Label="Listing price" @bind-Value="Model.ListingPrice"
+                             For="@(() => Model.ListingPrice)" Variant="Variant.Outlined" Min="0" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudNumericField T="int" Label="Bedrooms" @bind-Value="Model.Bedrooms"
+                             For="@(() => Model.Bedrooms)" Variant="Variant.Outlined" Min="0" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudNumericField T="decimal" Label="Bathrooms" @bind-Value="Model.Bathrooms"
+                             For="@(() => Model.Bathrooms)" Variant="Variant.Outlined" Min="0" Step="0.5M" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="int?" Label="Square feet" @bind-Value="Model.SquareFeet"
+                             For="@(() => Model.SquareFeet)" Variant="Variant.Outlined" Min="1" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="decimal?" Label="Lot size (acres)" @bind-Value="Model.LotSize"
+                             For="@(() => Model.LotSize)" Variant="Variant.Outlined" Min="0.01M" Step="0.01M" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="int?" Label="Year built" @bind-Value="Model.YearBuilt"
+                             For="@(() => Model.YearBuilt)" Variant="Variant.Outlined" Min="1600" Max="2200" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudSelect T="PropertyType" Label="Property type" @bind-Value="Model.PropertyType"
+                       For="@(() => Model.PropertyType)" Variant="Variant.Outlined">
+                @foreach (var type in Enum.GetValues<PropertyType>())
+                {
+                    <MudSelectItem T="PropertyType" Value="type">@Display(type)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudSelect T="ListingStatus" Label="Listing status" @bind-Value="Model.ListingStatus"
+                       For="@(() => Model.ListingStatus)" Variant="Variant.Outlined">
+                @foreach (var status in Enum.GetValues<ListingStatus>())
+                {
+                    <MudSelectItem T="ListingStatus" Value="status">@Display(status)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField T="string" Label="Description" @bind-Value="Model.Description"
+                          For="@(() => Model.Description)" Variant="Variant.Outlined"
+                          Lines="5" Counter="4000" />
+        </MudItem>
+        <MudItem xs="12">
+            <ValidationSummary />
+            <MudStack Row="true" Spacing="2">
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">
+                    @SubmitLabel
+                </MudButton>
+                <MudButton Href="@CancelHref" Variant="Variant.Text">Cancel</MudButton>
+            </MudStack>
+        </MudItem>
+    </MudGrid>
+</EditForm>
+
+@code {
+    [Parameter, EditorRequired]
+    public PropertyFormModel Model { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnValidSubmit { get; set; }
+
+    [Parameter]
+    public string SubmitLabel { get; set; } = "Save property";
+
+    [Parameter]
+    public string CancelHref { get; set; } = "/properties";
+
+    private Task SubmitAsync() => OnValidSubmit.InvokeAsync();
+
+    private static string Display(Enum value) => value switch
+    {
+        PropertyType.SingleFamily => "Single family",
+        PropertyType.MultiFamily => "Multi-family",
+        PropertyType.Condominium => "Condominium",
+        ListingStatus.ComingSoon => "Coming soon",
+        ListingStatus.OffMarket => "Off market",
+        _ => value.ToString(),
+    };
+}

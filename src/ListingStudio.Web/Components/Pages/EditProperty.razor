@@ -1,0 +1,92 @@
+@page "/properties/{PropertyId:guid}/edit"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyService PropertyService
+@inject NavigationManager Navigation
+
+<PageTitle>Edit property</PageTitle>
+
+<PropertyPageProviders />
+
+@if (!loaded)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (model is null)
+{
+    <MudAlert Severity="Severity.Warning">Property not found or unavailable to your organization.</MudAlert>
+    <MudButton Href="/properties" Variant="Variant.Text" Class="mt-4">Back to properties</MudButton>
+}
+else if (isArchived)
+{
+    <MudAlert Severity="Severity.Warning">Archived properties cannot be edited.</MudAlert>
+    <MudButton Href="@($"/properties/{PropertyId}")" Variant="Variant.Text" Class="mt-4">View property</MudButton>
+}
+else
+{
+    <MudText Typo="Typo.h3" HtmlTag="h1" Class="mb-2">Edit property</MudText>
+    <MudText Typo="Typo.body1" Class="mb-6">Update listing details for your organization.</MudText>
+    <MudPaper Class="pa-6">
+        @if (error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+        }
+        <PropertyForm Model="model" OnValidSubmit="UpdateAsync" SubmitLabel="Save changes"
+                      CancelHref="@($"/properties/{PropertyId}")" />
+    </MudPaper>
+}
+
+@code {
+    [Parameter]
+    public Guid PropertyId { get; set; }
+
+    private PropertyFormModel? model;
+    private bool loaded;
+    private bool isArchived;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        var property = await PropertyService.GetAsync(userId, PropertyId);
+        if (property is not null)
+        {
+            model = PropertyFormModel.From(property);
+            isArchived = property.IsArchived;
+        }
+
+        loaded = true;
+    }
+
+    private async Task UpdateAsync()
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        try
+        {
+            error = null;
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var updated = await PropertyService.UpdateAsync(userId, PropertyId, model.ToInput());
+            if (updated)
+            {
+                Navigation.NavigateTo($"/properties/{PropertyId}");
+            }
+            else
+            {
+                model = null;
+            }
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+    }
+}
