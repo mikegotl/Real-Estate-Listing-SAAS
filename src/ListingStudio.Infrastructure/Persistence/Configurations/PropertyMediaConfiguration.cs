@@ -14,8 +14,23 @@ public sealed class PropertyMediaConfiguration : IEntityTypeConfiguration<Proper
         builder.Property(media => media.OriginalFilename).HasMaxLength(255).IsRequired();
         builder.Property(media => media.MimeType).HasMaxLength(100).IsRequired();
         builder.Property(media => media.AnalysisStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(media => media.Category).HasConversion<string>().HasMaxLength(64);
+        builder.Property(media => media.RoomType).HasMaxLength(100);
+        builder.Property(media => media.AnalysisDescription).HasMaxLength(2_000);
+        builder.Property(media => media.AnalysisLastError).HasMaxLength(1_000);
+        builder.Ignore(media => media.PotentialProblems);
+        builder.Property<string[]>("potentialProblems")
+            .HasColumnName("PotentialProblems")
+            .HasColumnType("text[]")
+            .IsRequired();
         builder.HasIndex(media => media.BlobPath).IsUnique();
         builder.HasIndex(media => new { media.OrganizationId, media.PropertyId, media.DisplayOrder });
+        builder.HasIndex(media => new
+        {
+            media.AnalysisStatus,
+            media.AnalysisNextAttemptAtUtc,
+            media.AnalysisAttemptCount,
+        }).HasDatabaseName("IX_PropertyMedia_AnalysisQueue");
 
         builder
             .HasOne(media => media.Property)

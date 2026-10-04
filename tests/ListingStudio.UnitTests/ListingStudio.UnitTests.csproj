@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/ListingStudio.Domain/ListingStudio.Domain.csproj" />
     <ProjectReference Include="../../src/ListingStudio.Application/ListingStudio.Application.csproj" />
+    <ProjectReference Include="../../src/ListingStudio.AI/ListingStudio.AI.csproj" />
   </ItemGroup>
 </Project>

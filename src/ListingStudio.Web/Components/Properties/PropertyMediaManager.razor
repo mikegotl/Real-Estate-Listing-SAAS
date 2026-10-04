@@ -65,6 +65,35 @@
                         <MudText Typo="Typo.subtitle2">@item.OriginalFilename</MudText>
                         <MudText Typo="Typo.caption">@item.Width × @item.Height · @FormatSize(item.FileSize)</MudText>
                         <MudText Typo="Typo.caption">Analysis: @item.AnalysisStatus</MudText>
+                        @if (item.Analysis is not null)
+                        {
+                            <MudText Typo="Typo.body2" Class="mt-2">@item.Analysis.Category · @item.Analysis.RoomType</MudText>
+                            <MudText Typo="Typo.caption">
+                                Quality @item.Analysis.QualityScore/100 · Hero @item.Analysis.HeroScore/100 · Suggested position @(item.Analysis.SuggestedDisplayOrder + 1)
+                            </MudText>
+                            <MudText Typo="Typo.caption">
+                                @(item.Analysis.IsExterior ? "Exterior" : item.Analysis.IsInterior ? "Interior" : "Interior/exterior not determined")
+                                · People visible: @(item.Analysis.ContainsPeople ? "Yes" : "No")
+                            </MudText>
+                            <MudText Typo="Typo.body2" Class="mt-2">@item.Analysis.Description</MudText>
+                            @if (item.Analysis.PotentialProblems.Count > 0)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Warning">
+                                    Potential problems: @string.Join(", ", item.Analysis.PotentialProblems)
+                                </MudText>
+                            }
+                        }
+                        else if (item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Error">
+                                Attempt @item.AnalysisAttemptCount failed: @item.AnalysisLastError
+                            </MudText>
+                            @if (!IsReadOnly)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                                           OnClick="@(() => RetryAnalysisAsync(item.Id))">Retry analysis</MudButton>
+                            }
+                        }
                     </MudCardContent>
                     @if (!IsReadOnly)
                     {
@@ -224,6 +253,16 @@
         await MediaService.ReorderAsync(userId, PropertyId, media.Select(item => item.Id).ToArray());
         await LoadAsync();
         ShowMessage("Photo order saved.", Severity.Success);
+    }
+
+    private async Task RetryAnalysisAsync(Guid mediaId)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await MediaService.RetryAnalysisAsync(userId, PropertyId, mediaId))
+        {
+            await LoadAsync();
+            ShowMessage("Photo analysis queued for retry.", Severity.Success);
+        }
     }
 
     private void ShowMessage(string text, Severity severity)
