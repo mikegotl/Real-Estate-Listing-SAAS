@@ -583,7 +583,7 @@ Do not add advanced branding yet.
 
 ### Week 10: Professional Branding and Audio Mix
 
-**Status:** pending
+**Status:** implementation proposed (owner acceptance required)
 
 **Expected result:** Campaign videos include consistent titles, listing data, agent branding, music, ducking and a closing call to action.
 

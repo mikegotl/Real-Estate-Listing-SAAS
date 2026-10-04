@@ -188,7 +188,7 @@ public sealed class VideoProductionPlanService(
                 item.Height,
                 ToObservation(item, item.GetAnalysis()!)))
             .ToArray();
-        var brand = new VideoBrandPlan(
+        var brand = new BrandKit(
             null,
             null,
             null,

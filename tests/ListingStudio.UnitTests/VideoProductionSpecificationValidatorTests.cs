@@ -297,7 +297,7 @@ public sealed class VideoProductionSpecificationValidatorTests
             output,
             safeZone,
             bindings,
-            new VideoBrandPlan(null, null, null, null, null, null, "#17324D", "#F4F0E8"),
+            new BrandKit(null, null, null, null, null, null, "#17324D", "#F4F0E8"),
             new GroundedText("Contact the listing team.", "story.closingCta"),
             new HashSet<Guid>(),
             new HashSet<string>(StringComparer.Ordinal),

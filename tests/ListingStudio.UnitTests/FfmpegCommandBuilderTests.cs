@@ -70,6 +70,68 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildCreatesTemplateDrivenBrandingLogosMusicDuckingAndFades()
+    {
+        var request = CreateBrandedRequest();
+        var template = new VideoBrandingTemplateOptions
+        {
+            VideoFadeInMs = 600,
+            VideoFadeOutMs = 900,
+            OpeningTitle = new TextOverlayTemplateOptions
+            {
+                FontSize = 72,
+                TextColor = BrandColorToken.Secondary,
+                BoxColor = BrandColorToken.Primary,
+                BoxOpacity = 0.7m,
+                Padding = 26,
+            },
+        };
+
+        var command = FfmpegCommandBuilder.Build(request, template);
+
+        Assert.Contains(request.Music!.FilePath, command.Arguments);
+        Assert.Contains(request.BrandAssets[0].FilePath, command.Arguments);
+        Assert.Contains(request.BrandAssets[1].FilePath, command.Arguments);
+        Assert.Equal(2, command.Arguments.Count(argument => argument == request.BrandAssets[0].FilePath));
+        Assert.Contains("-stream_loop", command.Arguments);
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("xfade=transition=fadeblack", graph, StringComparison.Ordinal);
+        Assert.Contains("drawtext=font='Sans'", graph, StringComparison.Ordinal);
+        Assert.Contains("text='123 Main Street\\, Raleigh'", graph, StringComparison.Ordinal);
+        Assert.Contains("fontcolor=0xF4F0E8:fontsize=72", graph, StringComparison.Ordinal);
+        Assert.Contains("boxcolor=0x17324D@0.7", graph, StringComparison.Ordinal);
+        Assert.Contains("overlay=x=", graph, StringComparison.Ordinal);
+        Assert.Contains("colorchannelmixer=aa=0.9", graph, StringComparison.Ordinal);
+        Assert.Contains("volume=-18dB", graph, StringComparison.Ordinal);
+        Assert.Contains("afade=t=in:st=0:d=1", graph, StringComparison.Ordinal);
+        Assert.Contains("afade=t=out:st=14:d=1", graph, StringComparison.Ordinal);
+        Assert.Contains("volume='if(gt(between(t,0.5,1.5)+between(t,9,10),0)", graph, StringComparison.Ordinal);
+        Assert.Contains("fade=t=in:st=0:d=0.6", graph, StringComparison.Ordinal);
+        Assert.Contains("fade=t=out:st=14.1:d=0.9", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildRejectsMissingBrandAndMusicAssets()
+    {
+        var request = CreateBrandedRequest() with { BrandAssets = [], Music = null };
+
+        var exception = Assert.Throws<ArgumentException>(() => FfmpegCommandBuilder.Build(request));
+
+        Assert.Contains("logo asset", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildRejectsMissingPlannedMusicAsset()
+    {
+        var request = CreateBrandedRequest() with { Music = null };
+
+        var exception = Assert.Throws<ArgumentException>(() => FfmpegCommandBuilder.Build(request));
+
+        Assert.Contains("music asset", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task RendererCapturesExitCodeAndUsefulDiagnostics()
     {
         if (OperatingSystem.IsWindows())
@@ -88,7 +150,7 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         {
             ExecutablePath = executable,
             RenderTimeoutSeconds = 10,
-        }));
+        }), Options.Create(new VideoBrandingTemplateOptions()));
 
         var exception = await Assert.ThrowsAsync<VideoRenderException>(
             () => renderer.RenderAsync(CreateRequest()));
@@ -122,7 +184,84 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
                         new VoiceSegmentTiming("narration-1", 0, 500),
                         new VoiceSegmentTiming("narration-2", 500, 1_000),
                     ])),
+            [],
+            null,
             output);
+    }
+
+    private VideoRenderRequest CreateBrandedRequest()
+    {
+        var request = CreateRequest();
+        var agentLogo = CreateFile("agent logo.ppm");
+        var brokerageLogo = CreateFile("brokerage logo.ppm");
+        var music = CreateFile("licensed music.wav");
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            TextOverlays =
+            [
+                new TextOverlay(
+                    "address", "123 Main Street, Raleigh", "property.address.full", 250, 2_000,
+                    OverlayAnchor.TopCenter, new NormalizedRect(0.15m, 0.08m, 0.7m, 0.12m),
+                    TextOverlayStyle.OpeningTitle),
+                new TextOverlay(
+                    "price", "$750,000", "property.listingPrice", 2_500, 1_500,
+                    OverlayAnchor.BottomLeft, new NormalizedRect(0.08m, 0.75m, 0.3m, 0.1m),
+                    TextOverlayStyle.PropertyFact),
+            ],
+            LogoOverlays =
+            [
+                new LogoOverlay(
+                    "agent-logo", 250, 6_000, new NormalizedRect(0.78m, 0.08m, 0.12m, 0.12m), 0.9m),
+            ],
+        };
+        scenes[1] = scenes[1] with
+        {
+            TransitionIn = new TransitionPlan(TransitionKind.DipToBlack, 500),
+            TextOverlays =
+            [
+                new TextOverlay(
+                    "facts", "4 beds • 3 baths • 2,600 sq ft", "property.bedBathSquareFeet", 500, 2_000,
+                    OverlayAnchor.BottomLeft, new NormalizedRect(0.08m, 0.75m, 0.55m, 0.1m),
+                    TextOverlayStyle.LowerThird),
+                new TextOverlay(
+                    "agent", "Avery Agent • 555-0100", "brand.agent", 3_000, 1_500,
+                    OverlayAnchor.BottomLeft, new NormalizedRect(0.08m, 0.75m, 0.5m, 0.1m),
+                    TextOverlayStyle.LowerThird),
+                new TextOverlay(
+                    "cta", "Call today", "cta", 5_000, 2_000,
+                    OverlayAnchor.BottomCenter, new NormalizedRect(0.2m, 0.72m, 0.6m, 0.12m),
+                    TextOverlayStyle.ClosingCta),
+            ],
+            LogoOverlays =
+            [
+                new LogoOverlay(
+                    "agent-logo", 500, 2_000, new NormalizedRect(0.78m, 0.08m, 0.12m, 0.12m), 0.8m),
+                new LogoOverlay(
+                    "brokerage-logo", 3_000, 4_000, new NormalizedRect(0.75m, 0.08m, 0.15m, 0.12m), 1m),
+            ],
+        };
+        return request with
+        {
+            Specification = request.Specification with
+            {
+                Brand = new BrandKit(
+                    "agent-logo", "brokerage-logo", "Avery Agent", "555-0100",
+                    "avery@example.test", "example.test", "#17324D", "#F4F0E8"),
+                Audio = request.Specification.Audio with
+                {
+                    Music = new MusicPlan(
+                        "music-1", MusicMood.WarmCinematic, 0, 15_000, -18, 1_000, 1_000, -24),
+                },
+                Scenes = scenes,
+            },
+            BrandAssets =
+            [
+                new VideoRenderBrandAsset("agent-logo", agentLogo, 120, 120),
+                new VideoRenderBrandAsset("brokerage-logo", brokerageLogo, 180, 90),
+            ],
+            Music = new VideoRenderMusicAsset("music-1", music),
+        };
     }
 
     private string CreateFile(string name)
@@ -145,7 +284,7 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
             new VideoOutputProfile(1_920, 1_080, 30, "h264", "aac", "yuv420p", 48_000, 2),
             new NormalizedRect(0.05m, 0.05m, 0.9m, 0.9m),
             [],
-            new VideoBrandPlan(null, null, null, null, null, null, "#000000", "#ffffff"),
+            new BrandKit(null, null, null, null, null, null, "#000000", "#ffffff"),
             new GroundedText("Call today", "cta"),
             new AudioPlan(
                 [

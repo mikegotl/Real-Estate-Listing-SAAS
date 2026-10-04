@@ -20,10 +20,22 @@ public sealed record VideoRenderNarrationAsset(
     string FilePath,
     VoiceTimingMetadata? Timing);
 
+public sealed record VideoRenderBrandAsset(
+    string AssetId,
+    string FilePath,
+    int Width,
+    int Height);
+
+public sealed record VideoRenderMusicAsset(
+    string AssetId,
+    string FilePath);
+
 public sealed record VideoRenderRequest(
     VideoProductionSpecification Specification,
     IReadOnlyList<VideoRenderMediaAsset> PropertyMedia,
     VideoRenderNarrationAsset? Narration,
+    IReadOnlyList<VideoRenderBrandAsset> BrandAssets,
+    VideoRenderMusicAsset? Music,
     string OutputFilePath);
 
 public sealed record VideoRenderResult(
