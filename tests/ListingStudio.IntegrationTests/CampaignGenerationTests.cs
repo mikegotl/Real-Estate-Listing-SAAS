@@ -11,6 +11,7 @@ using ListingStudio.Domain.Videos;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 using Xunit;
 
 namespace ListingStudio.IntegrationTests;
@@ -26,16 +27,19 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-owner");
         var outsider = await CreateOwnerAndPropertyAsync("campaign-outsider");
-        await UploadAsync(owner);
+        var mediaId = await UploadAsync(owner);
         var storyCallsBefore = fixture.Factory.StoryGenerator.CallCount;
         var directorCallsBefore = fixture.Factory.VideoDirector.CallCount;
         var voiceCallsBefore = fixture.Factory.VoiceProvider.CallCount;
         var renderCallsBefore = fixture.Factory.VideoRenderer.CallCount;
+        var generatedClipInputsBefore = fixture.Factory.VideoRenderer.GeneratedClipInputCount;
+        var aiVideoCallsBefore = fixture.Factory.AiVideoProvider.CallCount;
         QueueSuccessfulProviders();
 
         var enqueues = await Task.WhenAll(EnqueueAsync(owner), EnqueueAsync(owner));
         var queued = enqueues[0];
         Assert.Equal(queued.Id, enqueues[1].Id);
+        string[] generatedAssetPaths;
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
             var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
@@ -56,6 +60,8 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Equal(directorCallsBefore + 1, fixture.Factory.VideoDirector.CallCount);
         Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);
         Assert.Equal(renderCallsBefore + 3, fixture.Factory.VideoRenderer.CallCount);
+        Assert.Equal(generatedClipInputsBefore + 3, fixture.Factory.VideoRenderer.GeneratedClipInputCount);
+        Assert.Equal(aiVideoCallsBefore + 3, fixture.Factory.AiVideoProvider.CallCount);
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -75,6 +81,26 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             var reused = (await campaigns.EnqueueAsync(owner.UserId, owner.PropertyId))!;
             Assert.Equal(queued.Id, reused.Id);
             Assert.Equal(CampaignGenerationStatus.Completed, reused.Status);
+
+            var cachedClip = await scope.ServiceProvider.GetRequiredService<IGeneratedVideoClipService>()
+                .GetOrCreateAsync(
+                    owner.OrganizationId,
+                    owner.PropertyId,
+                    mediaId,
+                    "slow cinematic push forward",
+                    30_000,
+                    VideoAspectRatio.Landscape16By9);
+            Assert.NotNull(cachedClip);
+            Assert.True(cachedClip.Reused);
+            Assert.Null(await scope.ServiceProvider.GetRequiredService<IGeneratedVideoClipService>()
+                .GetOrCreateAsync(
+                    outsider.OrganizationId,
+                    owner.PropertyId,
+                    mediaId,
+                    "slow cinematic push forward",
+                    30_000,
+                    VideoAspectRatio.Landscape16By9));
+            Assert.Equal(aiVideoCallsBefore + 3, fixture.Factory.AiVideoProvider.CallCount);
         }
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
@@ -87,6 +113,34 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.Equal(owner.OrganizationId, persisted.OrganizationId);
             Assert.All(persisted.Deliverables, item => Assert.Equal(owner.OrganizationId, item.OrganizationId));
             Assert.Equal(3, persisted.Deliverables.Count);
+            var clips = await dbContext.GeneratedVideoClips.AsNoTracking()
+                .Where(clip => clip.OrganizationId == owner.OrganizationId
+                    && clip.PropertyId == owner.PropertyId)
+                .ToArrayAsync();
+            Assert.Equal(3, clips.Length);
+            Assert.All(clips, clip =>
+            {
+                Assert.Equal(0.125m, clip.EstimatedCostUsd);
+                Assert.Equal("fake-provider", clip.Provider);
+                Assert.Equal("fake-model", clip.Model);
+                using var metadata = JsonDocument.Parse(clip.ProviderMetadataJson);
+                Assert.Equal("test", metadata.RootElement.GetProperty("mode").GetString());
+            });
+            Assert.Equal(0.375m, clips.Sum(clip => clip.EstimatedCostUsd));
+            generatedAssetPaths = clips.Select(clip => clip.AssetPath).ToArray();
+        }
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            Assert.True(await mediaService.DeleteAsync(owner.UserId, owner.PropertyId, mediaId));
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.False(await dbContext.GeneratedVideoClips.AnyAsync(clip => clip.PropertyMediaId == mediaId));
+            var assets = scope.ServiceProvider.GetRequiredService<ICampaignAssetStorage>();
+            foreach (var path in generatedAssetPaths)
+            {
+                Assert.Null(await assets.OpenReadAsync(path));
+            }
         }
     }
 
@@ -99,6 +153,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         var directorCallsBefore = fixture.Factory.VideoDirector.CallCount;
         var voiceCallsBefore = fixture.Factory.VoiceProvider.CallCount;
         var renderCallsBefore = fixture.Factory.VideoRenderer.CallCount;
+        var aiVideoCallsBefore = fixture.Factory.AiVideoProvider.CallCount;
         QueueSuccessfulProviders();
         fixture.Factory.VideoRenderer.EnqueueFailure(new VideoRenderException("first fake failure"));
         fixture.Factory.VideoRenderer.EnqueueFailure(new VideoRenderException("second fake failure"));
@@ -112,6 +167,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Equal(storyCallsBefore + 1, fixture.Factory.StoryGenerator.CallCount);
         Assert.Equal(directorCallsBefore + 1, fixture.Factory.VideoDirector.CallCount);
         Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);
+        Assert.Equal(aiVideoCallsBefore + 3, fixture.Factory.AiVideoProvider.CallCount);
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -124,6 +180,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Equal(storyCallsBefore + 1, fixture.Factory.StoryGenerator.CallCount);
         Assert.Equal(directorCallsBefore + 1, fixture.Factory.VideoDirector.CallCount);
         Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);
+        Assert.Equal(aiVideoCallsBefore + 3, fixture.Factory.AiVideoProvider.CallCount);
         Assert.Equal(renderCallsBefore + 6, fixture.Factory.VideoRenderer.CallCount);
     }
 
@@ -221,7 +278,12 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                     1,
                     0,
                     30_000,
-                    new VisualSource(VisualSourceKind.PropertyMedia, media.MediaId, null, null, null),
+                    new VisualSource(
+                        VisualSourceKind.GenerativeMotionRequest,
+                        media.MediaId,
+                        null,
+                        media.MediaId,
+                        "slow cinematic push forward"),
                     new TransitionPlan(TransitionKind.Cut, 0),
                     new MotionPlan(MotionKind.None, viewport, viewport, MotionEasing.Linear),
                     [],
@@ -261,12 +323,12 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                 [new VoiceSegmentTiming(segment.Id, 0, 1_000)]));
     }
 
-    private async Task UploadAsync(OwnerProperty owner)
+    private async Task<Guid> UploadAsync(OwnerProperty owner)
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
         await using var content = new MemoryStream(OnePixelPng);
-        await media.UploadAsync(
+        return await media.UploadAsync(
             owner.UserId,
             owner.PropertyId,
             new PropertyMediaUpload("front.png", "image/png", content.Length, content));

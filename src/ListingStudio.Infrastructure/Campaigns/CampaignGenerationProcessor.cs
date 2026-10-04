@@ -23,6 +23,7 @@ public sealed partial class CampaignGenerationProcessor(
     IVideoProductionPlanService productionPlanService,
     IVideoNarrationService narrationService,
     ICampaignDerivativeGenerator derivativeGenerator,
+    IGeneratedVideoClipService generatedVideoClipService,
     IVideoRenderer videoRenderer,
     IPropertyMediaStorage propertyMediaStorage,
     ICampaignAssetStorage campaignAssetStorage,
@@ -158,7 +159,7 @@ public sealed partial class CampaignGenerationProcessor(
             CampaignGenerationStage.GenerateMasterVideoPlan => GenerateMasterPlanAsync(jobId, cancellationToken),
             CampaignGenerationStage.GenerateNarration => GenerateNarrationAsync(jobId, cancellationToken),
             CampaignGenerationStage.GenerateDerivativePlans => GenerateDerivativePlansAsync(jobId, cancellationToken),
-            CampaignGenerationStage.GenerateRequiredAiVideo => Task.FromResult(true),
+            CampaignGenerationStage.GenerateRequiredAiVideo => GenerateRequiredAiVideoAsync(jobId, cancellationToken),
             CampaignGenerationStage.RenderHero => RenderAsync(jobId, CampaignOutputKind.Hero, cancellationToken),
             CampaignGenerationStage.RenderFeature => RenderAsync(jobId, CampaignOutputKind.Feature, cancellationToken),
             CampaignGenerationStage.RenderTeaser => RenderAsync(jobId, CampaignOutputKind.Teaser, cancellationToken),
@@ -333,8 +334,20 @@ public sealed partial class CampaignGenerationProcessor(
         {
             var mediaAssets = await MaterializeMediaAsync(job, specification, directory, cancellationToken);
             var narrationAsset = await MaterializeNarrationAsync(job, directory, cancellationToken);
+            var generatedClips = await MaterializeGeneratedClipsAsync(
+                job,
+                specification,
+                directory,
+                cancellationToken);
             await videoRenderer.RenderAsync(
-                new VideoRenderRequest(specification, mediaAssets, narrationAsset, [], null, outputPath),
+                new VideoRenderRequest(
+                    specification,
+                    mediaAssets,
+                    narrationAsset,
+                    [],
+                    null,
+                    outputPath,
+                    generatedClips),
                 cancellationToken);
             var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{kind.ToString().ToLowerInvariant()}.mp4";
             var stored = false;
@@ -375,6 +388,82 @@ public sealed partial class CampaignGenerationProcessor(
             }
         }
 
+        return true;
+    }
+
+    private async Task<bool> GenerateRequiredAiVideoAsync(
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        if (!generatedVideoClipService.IsEnabled)
+        {
+            return true;
+        }
+
+        var job = await GetJobAsync(jobId, cancellationToken);
+        var deliverables = await dbContext.CampaignDeliverables.AsNoTracking()
+            .Where(candidate => candidate.CampaignGenerationJobId == jobId)
+            .OrderBy(candidate => candidate.Kind)
+            .ToArrayAsync(cancellationToken);
+        var specifications = new Dictionary<Guid, VideoProductionSpecification>();
+        foreach (var deliverable in deliverables)
+        {
+            var specification = JsonSerializer.Deserialize<VideoProductionSpecification>(
+                deliverable.SpecificationJson,
+                SerializerOptions)
+                ?? throw new InvalidDataException("A stored derivative specification is invalid.");
+            var scenes = new List<VideoScene>(specification.Scenes.Count);
+            foreach (var scene in specification.Scenes)
+            {
+                if (scene.VisualSource.Kind != VisualSourceKind.GenerativeMotionRequest)
+                {
+                    scenes.Add(scene);
+                    continue;
+                }
+
+                var mediaId = scene.VisualSource.PropertyMediaId
+                    ?? throw new InvalidDataException("A generative scene is missing its source image.");
+                var instruction = scene.VisualSource.GenerationInstruction
+                    ?? throw new InvalidDataException("A generative scene is missing its motion instruction.");
+                var clip = await generatedVideoClipService.GetOrCreateAsync(
+                    job.OrganizationId,
+                    job.PropertyId,
+                    mediaId,
+                    instruction,
+                    scene.DurationMs,
+                    specification.AspectRatio,
+                    cancellationToken)
+                    ?? throw new InvalidOperationException("AI video generation was enabled but returned no clip.");
+                scenes.Add(scene with
+                {
+                    VisualSource = new VisualSource(
+                        VisualSourceKind.GeneratedClip,
+                        null,
+                        clip.Id,
+                        mediaId,
+                        null),
+                    Motion = scene.Motion with
+                    {
+                        Type = MotionKind.None,
+                        EndViewport = scene.Motion.StartViewport,
+                    },
+                });
+            }
+
+            specifications[deliverable.Id] = specification with { Scenes = scenes };
+        }
+
+        dbContext.ChangeTracker.Clear();
+        foreach (var deliverable in await dbContext.CampaignDeliverables
+            .Where(candidate => candidate.CampaignGenerationJobId == jobId)
+            .ToArrayAsync(cancellationToken))
+        {
+            deliverable.UpdateSpecification(JsonSerializer.Serialize(
+                specifications[deliverable.Id],
+                SerializerOptions));
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
 
@@ -438,6 +527,51 @@ public sealed partial class CampaignGenerationProcessor(
             : JsonSerializer.Deserialize<VoiceTimingMetadata>(narration.TimingJson, AudioSerializerOptions)
                 ?? throw new InvalidDataException("Stored narration timing is invalid.");
         return new VideoRenderNarrationAsset(path, timing);
+    }
+
+    private async Task<VideoRenderGeneratedClipAsset[]> MaterializeGeneratedClipsAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        var ids = specification.Scenes
+            .Select(scene => scene.VisualSource.GeneratedClipId)
+            .OfType<Guid>()
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        var clips = await dbContext.GeneratedVideoClips.AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId
+                && ids.Contains(candidate.Id))
+            .ToArrayAsync(cancellationToken);
+        if (clips.Length != ids.Length)
+        {
+            throw new InvalidOperationException("A derivative references an unavailable generated clip.");
+        }
+
+        var result = new List<VideoRenderGeneratedClipAsset>(clips.Length);
+        foreach (var clip in clips)
+        {
+            await using var source = await campaignAssetStorage.OpenReadAsync(clip.AssetPath, cancellationToken)
+                ?? throw new FileNotFoundException("A generated video clip could not be opened.");
+            var path = Path.Combine(directory, $"clip-{clip.Id:N}.mp4");
+            await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await source.CopyToAsync(target, cancellationToken);
+            result.Add(new VideoRenderGeneratedClipAsset(
+                clip.Id,
+                path,
+                clip.Width,
+                clip.Height,
+                clip.DurationMs));
+        }
+
+        return [.. result];
     }
 
     private async Task<bool> GenerateSocialCopyAsync(Guid jobId, CancellationToken cancellationToken)
@@ -516,6 +650,7 @@ public sealed partial class CampaignGenerationProcessor(
         : exception switch
         {
             HttpRequestException => "An external provider request failed.",
+            TimeoutException => "An external provider request timed out.",
             VideoRenderException => "A campaign video could not be rendered.",
             InvalidDataException => "A campaign provider returned invalid data.",
             FileNotFoundException or IOException => "A required campaign asset could not be read or written.",

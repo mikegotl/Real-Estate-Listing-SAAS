@@ -28,6 +28,13 @@ public static class FfmpegCommandBuilder
         }
 
         var media = mediaGroups.ToDictionary(group => group.Key, group => group.Single());
+        var clipGroups = (request.GeneratedClips ?? []).GroupBy(asset => asset.GeneratedClipId).ToArray();
+        if (clipGroups.Any(group => group.Count() != 1))
+        {
+            throw new ArgumentException("Generated video assets must have unique IDs.", nameof(request));
+        }
+
+        var clips = clipGroups.ToDictionary(group => group.Key, group => group.Single());
         var scenes = request.Specification.Scenes;
         if (scenes.Count == 0)
         {
@@ -36,7 +43,7 @@ public static class FfmpegCommandBuilder
 
         ValidateOutput(request.Specification);
         ValidateTimeline(request.Specification);
-        var sceneAssets = scenes.Select(scene => ResolveAsset(scene, media)).ToArray();
+        var sceneAssets = scenes.Select(scene => ResolveAsset(scene, media, clips)).ToArray();
         ValidateMediaViewports(scenes, sceneAssets, request.Specification.Output);
         ValidateNarration(request.Specification, request.Narration);
         var brandAssets = ValidateBranding(request, brandingTemplate);
@@ -54,13 +61,25 @@ public static class FfmpegCommandBuilder
             var extensionMs = index + 1 < scenes.Count
                 ? scenes[index + 1].TransitionIn.DurationMs
                 : 0;
-            arguments.AddRange(
-            [
-                "-loop", "1",
-                "-framerate", request.Specification.Output.FrameRate.ToString(CultureInfo.InvariantCulture),
-                "-t", Seconds(scenes[index].DurationMs + extensionMs),
-                "-i", sceneAssets[index].FilePath,
-            ]);
+            if (sceneAssets[index].IsGeneratedClip)
+            {
+                arguments.AddRange(
+                [
+                    "-stream_loop", "-1",
+                    "-t", Seconds(scenes[index].DurationMs + extensionMs),
+                    "-i", sceneAssets[index].FilePath,
+                ]);
+            }
+            else
+            {
+                arguments.AddRange(
+                [
+                    "-loop", "1",
+                    "-framerate", request.Specification.Output.FrameRate.ToString(CultureInfo.InvariantCulture),
+                    "-t", Seconds(scenes[index].DurationMs + extensionMs),
+                    "-i", sceneAssets[index].FilePath,
+                ]);
+            }
         }
 
         int? narrationInput = null;
@@ -117,7 +136,7 @@ public static class FfmpegCommandBuilder
 
     private static string BuildFilterGraph(
         VideoRenderRequest request,
-        VideoRenderMediaAsset[] assets,
+        SceneVisualAsset[] assets,
         RenderInputIndexes inputs,
         VideoBrandingTemplateOptions brandingTemplate)
     {
@@ -182,13 +201,18 @@ public static class FfmpegCommandBuilder
     private static string BuildSceneFilter(
         int index,
         VideoScene scene,
-        VideoRenderMediaAsset asset,
+        SceneVisualAsset asset,
         VideoOutputProfile output,
         int extensionMs)
     {
         var durationMs = scene.DurationMs + extensionMs;
         string transform;
-        if (scene.Motion.Type == MotionKind.None)
+        if (asset.IsGeneratedClip)
+        {
+            transform = $"scale={output.Width}:{output.Height}:force_original_aspect_ratio=increase:flags=lanczos,"
+                + $"crop={output.Width}:{output.Height}";
+        }
+        else if (scene.Motion.Type == MotionKind.None)
         {
             var crop = CalculateCrop(scene.Motion.StartViewport, asset);
             transform = $"crop={crop.Width}:{crop.Height}:{crop.X}:{crop.Y},"
@@ -605,10 +629,24 @@ public static class FfmpegCommandBuilder
         .Replace("[", "\\[", StringComparison.Ordinal)
         .Replace("]", "\\]", StringComparison.Ordinal);
 
-    private static VideoRenderMediaAsset ResolveAsset(
+    private static SceneVisualAsset ResolveAsset(
         VideoScene scene,
-        Dictionary<Guid, VideoRenderMediaAsset> media)
+        Dictionary<Guid, VideoRenderMediaAsset> media,
+        Dictionary<Guid, VideoRenderGeneratedClipAsset> clips)
     {
+        if (scene.VisualSource.Kind == VisualSourceKind.GeneratedClip
+            && scene.VisualSource.GeneratedClipId is { } clipId
+            && clips.TryGetValue(clipId, out var clip))
+        {
+            if (clip.Width <= 0 || clip.Height <= 0 || clip.DurationMs < scene.DurationMs
+                || !File.Exists(clip.FilePath))
+            {
+                throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid generated video asset.");
+            }
+
+            return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true);
+        }
+
         var mediaId = scene.VisualSource.Kind == VisualSourceKind.PropertyMedia
             ? scene.VisualSource.PropertyMediaId
             : scene.VisualSource.FallbackPropertyMediaId;
@@ -622,7 +660,7 @@ public static class FfmpegCommandBuilder
             throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid still-image asset.");
         }
 
-        return asset;
+        return new SceneVisualAsset(asset.FilePath, asset.Width, asset.Height, false);
     }
 
     private static void ValidateNarration(
@@ -730,12 +768,17 @@ public static class FfmpegCommandBuilder
 
     private static void ValidateMediaViewports(
         IReadOnlyList<VideoScene> scenes,
-        VideoRenderMediaAsset[] assets,
+        SceneVisualAsset[] assets,
         VideoOutputProfile output)
     {
         var outputAspect = (decimal)output.Width / output.Height;
         for (var index = 0; index < scenes.Count; index++)
         {
+            if (assets[index].IsGeneratedClip)
+            {
+                continue;
+            }
+
             ValidateViewportAspect(scenes[index], assets[index], scenes[index].Motion.StartViewport, outputAspect);
             ValidateViewportAspect(scenes[index], assets[index], scenes[index].Motion.EndViewport, outputAspect);
         }
@@ -743,7 +786,7 @@ public static class FfmpegCommandBuilder
 
     private static void ValidateViewportAspect(
         VideoScene scene,
-        VideoRenderMediaAsset asset,
+        SceneVisualAsset asset,
         NormalizedRect viewport,
         decimal outputAspect)
     {
@@ -794,7 +837,7 @@ public static class FfmpegCommandBuilder
 
     private static (int X, int Y, int Width, int Height) CalculateCrop(
         NormalizedRect viewport,
-        VideoRenderMediaAsset asset)
+        SceneVisualAsset asset)
     {
         var width = Math.Max(1, Math.Min(asset.Width, (int)Math.Round(asset.Width * viewport.Width)));
         var height = Math.Max(1, Math.Min(asset.Height, (int)Math.Round(asset.Height * viewport.Height)));
@@ -813,4 +856,6 @@ public static class FfmpegCommandBuilder
         IReadOnlyList<int> LogoInputs);
 
     private readonly record struct PixelBox(int X, int Y, int Width, int Height);
+
+    private sealed record SceneVisualAsset(string FilePath, int Width, int Height, bool IsGeneratedClip);
 }

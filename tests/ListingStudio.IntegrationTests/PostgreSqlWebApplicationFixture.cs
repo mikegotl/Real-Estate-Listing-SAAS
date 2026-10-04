@@ -5,6 +5,7 @@ using ListingStudio.Application.Videos;
 using ListingStudio.Application.Audio;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
+using ListingStudio.Domain.Videos;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -66,6 +67,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
 
     public FakeVideoRenderer VideoRenderer { get; } = new();
 
+    public FakeAiVideoProvider AiVideoProvider { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -93,6 +96,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
             services.AddSingleton<IVoiceProvider>(VoiceProvider);
             services.RemoveAll<IVideoRenderer>();
             services.AddSingleton<IVideoRenderer>(VideoRenderer);
+            services.RemoveAll<IAiVideoProvider>();
+            services.AddSingleton<IAiVideoProvider>(AiVideoProvider);
         });
     }
 }
@@ -101,8 +106,11 @@ public sealed class FakeVideoRenderer : IVideoRenderer
 {
     private readonly ConcurrentQueue<Exception> failures = new();
     private int callCount;
+    private int generatedClipInputCount;
 
     public int CallCount => callCount;
+
+    public int GeneratedClipInputCount => generatedClipInputCount;
 
     public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
 
@@ -112,6 +120,7 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     {
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref callCount);
+        Interlocked.Add(ref generatedClipInputCount, request.GeneratedClips?.Count ?? 0);
         if (failures.TryDequeue(out var failure))
         {
             throw failure;
@@ -124,6 +133,38 @@ public sealed class FakeVideoRenderer : IVideoRenderer
             TimeSpan.FromMilliseconds(10),
             string.Empty,
             string.Empty);
+    }
+}
+
+public sealed class FakeAiVideoProvider : IAiVideoProvider
+{
+    private int callCount;
+
+    public bool IsEnabled => true;
+
+    public string GenerationVersion => "fake-ai-video-v1";
+
+    public int CallCount => callCount;
+
+    public Task<AiVideoProviderResult> GenerateAsync(
+        AiVideoProviderRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref callCount);
+        Assert.True(request.Content.CanRead);
+        var landscape = request.AspectRatio == VideoAspectRatio.Landscape16By9;
+        return Task.FromResult(new AiVideoProviderResult(
+            new MemoryStream([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109]),
+            "video/mp4",
+            "fake-provider",
+            "fake-model",
+            $"fake-request-{callCount}",
+            request.DurationMs,
+            landscape ? 1_920 : 1_080,
+            landscape ? 1_080 : 1_920,
+            0.125m,
+            new Dictionary<string, string> { ["mode"] = "test" }));
     }
 }
 

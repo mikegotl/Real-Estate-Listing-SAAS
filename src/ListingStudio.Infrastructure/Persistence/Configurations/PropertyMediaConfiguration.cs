@@ -10,6 +10,7 @@ public sealed class PropertyMediaConfiguration : IEntityTypeConfiguration<Proper
     {
         builder.ToTable("PropertyMedia");
         builder.HasKey(media => media.Id);
+        builder.HasAlternateKey(media => new { media.Id, media.PropertyId, media.OrganizationId });
         builder.Property(media => media.BlobPath).HasMaxLength(1_024).IsRequired();
         builder.Property(media => media.OriginalFilename).HasMaxLength(255).IsRequired();
         builder.Property(media => media.MimeType).HasMaxLength(100).IsRequired();

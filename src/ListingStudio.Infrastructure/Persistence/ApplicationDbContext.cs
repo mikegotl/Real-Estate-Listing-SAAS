@@ -26,6 +26,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<VideoNarration> VideoNarrations => Set<VideoNarration>();
 
+    public DbSet<GeneratedVideoClip> GeneratedVideoClips => Set<GeneratedVideoClip>();
+
     public DbSet<CampaignGenerationJob> CampaignGenerationJobs => Set<CampaignGenerationJob>();
 
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();

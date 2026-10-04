@@ -114,6 +114,16 @@ public sealed class CampaignDeliverable
         RenderedAtUtc = now;
     }
 
+    public void UpdateSpecification(string specificationJson)
+    {
+        if (Status != CampaignDeliverableStatus.Planned)
+        {
+            throw new InvalidOperationException("A rendered campaign specification cannot be changed.");
+        }
+
+        SpecificationJson = Required(specificationJson, 500_000, nameof(specificationJson));
+    }
+
     private static string Required(string value, int maximumLength, string parameterName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);

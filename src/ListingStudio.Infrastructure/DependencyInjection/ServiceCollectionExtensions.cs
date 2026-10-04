@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyStoryService, PropertyStoryService>();
         services.AddScoped<IVideoProductionPlanService, VideoProductionPlanService>();
         services.AddScoped<IVideoNarrationService, VideoNarrationService>();
+        services.AddScoped<IGeneratedVideoClipService, GeneratedVideoClipService>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
         services.AddSingleton(TimeProvider.System);

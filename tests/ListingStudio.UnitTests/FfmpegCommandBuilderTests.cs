@@ -158,6 +158,59 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildUsesResolvedGeneratedClipForExplicitScene()
+    {
+        var request = CreateRequest();
+        var clipId = Guid.NewGuid();
+        var clipPath = CreateFile("generated clip.mp4");
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            VisualSource = new VisualSource(
+                VisualSourceKind.GeneratedClip,
+                null,
+                clipId,
+                request.PropertyMedia[0].PropertyMediaId,
+                null),
+        };
+        request = request with
+        {
+            Specification = request.Specification with { Scenes = scenes },
+            GeneratedClips = [new VideoRenderGeneratedClipAsset(clipId, clipPath, 1_920, 1_080, 7_000)],
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        Assert.Contains(clipPath, command.Arguments);
+        Assert.Contains("-stream_loop", command.Arguments);
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("scale=1920:1080:force_original_aspect_ratio=increase", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildFallsBackToPropertyImageWhenGeneratedClipIsUnavailable()
+    {
+        var request = CreateRequest();
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            VisualSource = new VisualSource(
+                VisualSourceKind.GenerativeMotionRequest,
+                request.PropertyMedia[0].PropertyMediaId,
+                null,
+                request.PropertyMedia[0].PropertyMediaId,
+                "slow cinematic push forward"),
+        };
+        request = request with { Specification = request.Specification with { Scenes = scenes } };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        Assert.Equal(2, command.Arguments.Count(argument => argument == request.PropertyMedia[0].FilePath));
+        Assert.DoesNotContain("-stream_loop", command.Arguments);
+    }
+
+    [Fact]
     public async Task RendererCapturesExitCodeAndUsefulDiagnostics()
     {
         if (OperatingSystem.IsWindows())

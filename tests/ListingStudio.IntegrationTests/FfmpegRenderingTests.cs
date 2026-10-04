@@ -26,6 +26,7 @@ public sealed class FfmpegRenderingTests
         try
         {
             var imagePath = Path.Combine(directory, "campaign-property.ppm");
+            var generatedClipPath = Path.Combine(directory, "generated-motion.mp4");
             await WriteSampleImageAsync(imagePath);
             var mediaId = Guid.NewGuid();
             var derivatives = new CampaignDerivativeGenerator().Generate(new CampaignDerivativeRequest(
@@ -43,6 +44,7 @@ public sealed class FfmpegRenderingTests
                     ? "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
                     : string.Empty,
             }));
+            await WriteGeneratedClipAsync(options.Value.ExecutablePath, imagePath, generatedClipPath);
             var selected = derivatives.Derivatives.Where(item =>
                 item.AspectRatio == VideoAspectRatio.Landscape16By9
                 || item.Kind == CampaignDeliverableKind.Teaser).ToArray();
@@ -50,16 +52,45 @@ public sealed class FfmpegRenderingTests
             Assert.Equal(4, selected.Length);
             foreach (var derivative in selected)
             {
+                var specification = derivative.Specification;
+                IReadOnlyList<VideoRenderGeneratedClipAsset> generatedClips = [];
+                if (derivative.Kind == CampaignDeliverableKind.Teaser
+                    && derivative.AspectRatio == VideoAspectRatio.Landscape16By9)
+                {
+                    var clipId = Guid.NewGuid();
+                    var scenes = specification.Scenes.ToArray();
+                    scenes[0] = scenes[0] with
+                    {
+                        VisualSource = new VisualSource(
+                            VisualSourceKind.GeneratedClip,
+                            null,
+                            clipId,
+                            mediaId,
+                            null),
+                        Motion = scenes[0].Motion with
+                        {
+                            Type = MotionKind.None,
+                            EndViewport = scenes[0].Motion.StartViewport,
+                        },
+                    };
+                    specification = specification with { Scenes = scenes };
+                    generatedClips =
+                    [
+                        new VideoRenderGeneratedClipAsset(clipId, generatedClipPath, 320, 180, 8_000),
+                    ];
+                }
+
                 var outputPath = Path.Combine(
                     directory,
                     $"{derivative.Kind}-{derivative.AspectRatio}.mp4");
                 var result = await renderer.RenderAsync(new VideoRenderRequest(
-                    derivative.Specification,
+                    specification,
                     [new VideoRenderMediaAsset(mediaId, imagePath, 320, 180)],
                     null,
                     [],
                     null,
-                    outputPath));
+                    outputPath,
+                    generatedClips));
 
                 Assert.Equal(0, result.ExitCode);
                 Assert.True(new FileInfo(outputPath).Length > 1_000);
@@ -363,6 +394,36 @@ public sealed class FfmpegRenderingTests
         var error = await errorTask;
         Assert.True(process.ExitCode == 0, error);
         return JsonDocument.Parse(output);
+    }
+
+    private static async Task WriteGeneratedClipAsync(
+        string executable,
+        string imagePath,
+        string outputPath)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var argument in new[]
+        {
+            "-hide_banner", "-loglevel", "error", "-nostdin", "-n",
+            "-loop", "1", "-framerate", "30", "-t", "8", "-i", imagePath,
+            "-vf", "scale=320:180", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-an", outputPath,
+        })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("FFmpeg did not start for generated-clip setup.");
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        Assert.True(process.ExitCode == 0, await errorTask);
     }
 
     private static async Task WriteSampleImageAsync(string path)
