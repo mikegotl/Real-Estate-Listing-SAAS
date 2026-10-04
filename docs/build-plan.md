@@ -627,7 +627,7 @@ Create a sample campaign and render it end-to-end.
 
 ### Week 11: Campaign Derivatives
 
-**Status:** pending
+**Status:** implementation proposed (owner acceptance required)
 
 **Expected result:** One master campaign produces HERO 60, FEATURE 30 and TEASER 15 versions in landscape and vertical formats.
 

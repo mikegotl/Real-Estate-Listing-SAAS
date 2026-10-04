@@ -14,6 +14,79 @@ namespace ListingStudio.IntegrationTests;
 public sealed class FfmpegRenderingTests
 {
     [Fact]
+    public async Task GeneratesAndRendersCompleteCampaignDerivativeSet()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("RUN_FFMPEG_E2E"), "1", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-derivatives-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var imagePath = Path.Combine(directory, "campaign-property.ppm");
+            await WriteSampleImageAsync(imagePath);
+            var mediaId = Guid.NewGuid();
+            var derivatives = new CampaignDerivativeGenerator().Generate(new CampaignDerivativeRequest(
+                CreateMasterSpecification(mediaId),
+                [new CampaignDerivativeMedia(mediaId, 320, 180)]));
+            var options = Options.Create(new FfmpegOptions
+            {
+                ExecutablePath = Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg",
+                ProbeExecutablePath = Environment.GetEnvironmentVariable("FFPROBE_PATH") ?? "ffprobe",
+                RenderTimeoutSeconds = 180,
+            });
+            var renderer = new FfmpegVideoRenderer(options, Options.Create(new VideoBrandingTemplateOptions
+            {
+                FontFilePath = File.Exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+                    ? "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+                    : string.Empty,
+            }));
+            var selected = derivatives.Derivatives.Where(item =>
+                item.AspectRatio == VideoAspectRatio.Landscape16By9
+                || item.Kind == CampaignDeliverableKind.Teaser).ToArray();
+
+            Assert.Equal(4, selected.Length);
+            foreach (var derivative in selected)
+            {
+                var outputPath = Path.Combine(
+                    directory,
+                    $"{derivative.Kind}-{derivative.AspectRatio}.mp4");
+                var result = await renderer.RenderAsync(new VideoRenderRequest(
+                    derivative.Specification,
+                    [new VideoRenderMediaAsset(mediaId, imagePath, 320, 180)],
+                    null,
+                    [],
+                    null,
+                    outputPath));
+
+                Assert.Equal(0, result.ExitCode);
+                Assert.True(new FileInfo(outputPath).Length > 1_000);
+                using var probe = await ProbeAsync(options.Value.ProbeExecutablePath, outputPath);
+                var streams = probe.RootElement.GetProperty("streams").EnumerateArray().ToArray();
+                var video = streams.Single(stream => stream.GetProperty("codec_type").GetString() == "video");
+                var audio = streams.Single(stream => stream.GetProperty("codec_type").GetString() == "audio");
+                Assert.Equal("h264", video.GetProperty("codec_name").GetString());
+                Assert.Equal("aac", audio.GetProperty("codec_name").GetString());
+                Assert.Equal(derivative.Specification.Output.Width, video.GetProperty("width").GetInt32());
+                Assert.Equal(derivative.Specification.Output.Height, video.GetProperty("height").GetInt32());
+                var duration = decimal.Parse(
+                    probe.RootElement.GetProperty("format").GetProperty("duration").GetString()!,
+                    System.Globalization.CultureInfo.InvariantCulture);
+                Assert.InRange(
+                    duration,
+                    (decimal)(int)derivative.Specification.RequestedDuration - 0.1m,
+                    (decimal)(int)derivative.Specification.RequestedDuration + 0.1m);
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RendersPlayable1080pH264AacSampleCampaign()
     {
         if (!string.Equals(Environment.GetEnvironmentVariable("RUN_FFMPEG_E2E"), "1", StringComparison.Ordinal))
@@ -205,6 +278,60 @@ public sealed class FfmpegRenderingTests
                     ],
                     []),
             ]);
+    }
+
+    private static VideoProductionSpecification CreateMasterSpecification(Guid mediaId)
+    {
+        var viewport = new NormalizedRect(0, 0, 1, 1);
+        var scenes = new[]
+        {
+            new VideoScene(
+                1,
+                0,
+                30_000,
+                new VisualSource(VisualSourceKind.PropertyMedia, mediaId, null, null, null),
+                new TransitionPlan(TransitionKind.Cut, 0),
+                new MotionPlan(MotionKind.None, viewport, viewport, MotionEasing.Linear),
+                [],
+                [],
+                []),
+            new VideoScene(
+                2,
+                30_000,
+                30_000,
+                new VisualSource(VisualSourceKind.PropertyMedia, mediaId, null, null, null),
+                new TransitionPlan(TransitionKind.Crossfade, 500),
+                new MotionPlan(MotionKind.None, viewport, viewport, MotionEasing.Linear),
+                [new TextOverlay(
+                    "closing-cta",
+                    "Contact the listing team.",
+                    "story.closingCta",
+                    24_000,
+                    5_000,
+                    OverlayAnchor.BottomCenter,
+                    new NormalizedRect(0.2m, 0.78m, 0.6m, 0.1m),
+                    TextOverlayStyle.ClosingCta)],
+                [],
+                []),
+        };
+        return new VideoProductionSpecification(
+            "1.0",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            RequestedDuration.Hero60,
+            VideoAspectRatio.Landscape16By9,
+            new VideoOutputProfile(1_920, 1_080, 30, "h264", "aac", "yuv420p", 48_000, 2),
+            new NormalizedRect(0.05m, 0.05m, 0.9m, 0.9m),
+            [new FactBinding(
+                "story.closingCta",
+                "Contact the listing team.",
+                FactSource.PropertyStory,
+                "ClosingCta")],
+            new BrandKit(null, null, null, null, null, null, "#17324D", "#F4F0E8"),
+            new GroundedText("Contact the listing team.", "story.closingCta"),
+            new AudioPlan([], new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)),
+            scenes);
     }
 
     private static async Task<JsonDocument> ProbeAsync(string executable, string outputPath)

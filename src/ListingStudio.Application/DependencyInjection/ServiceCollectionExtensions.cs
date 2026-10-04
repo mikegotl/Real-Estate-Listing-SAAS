@@ -10,6 +10,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IPropertyStoryGroundingValidator, PropertyStoryGroundingValidator>();
         services.AddSingleton<IVideoProductionSpecificationValidator, VideoProductionSpecificationValidator>();
+        services.AddSingleton<ICampaignDerivativeGenerator, CampaignDerivativeGenerator>();
         return services;
     }
 }
