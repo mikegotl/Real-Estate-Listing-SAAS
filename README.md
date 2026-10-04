@@ -56,6 +56,8 @@ Property marketing stories are generated on demand after every uploaded image ha
 
 Video production plans can be generated after a grounded property story exists. The OpenAI video director returns editorial choices only; server code supplies and validates property/story identity, media IDs, exact fact bindings, brand values, output profile, safe zone, and CTA before storing an immutable specification. Stored story claims must still pass grounding against current verified facts; regenerate the story if edits invalidate its claims. Invalid structured responses, schema drift, and requests to change property features are rejected. Concurrent identical requests reuse a single provider call. Plans support 60, 30, and 15 seconds in landscape or vertical format. Identical verified inputs reuse the stored plan, and changed inputs produce the next version. Rendering, narration generation, music assets, and full BrandKit editing belong to later milestones. Automated tests replace the director with a fake and never call paid services.
 
+Narration generation uses the configured ElevenLabs timestamp endpoint and stores MP3 audio plus character/segment timing through the campaign-asset storage adapter. Set `Voice__Provider=ElevenLabs`, `Voice__ApiKey`, and `Voice__VoiceId` at runtime; the default model is `eleven_multilingual_v2` and the default format is `mp3_44100_128`. Local development stores ignored assets beneath `App_Data/campaign-assets`; the Azure provider uses the configured private Blob container. Identical narration input reuses the existing asset, while a changed voice/model/output configuration creates a new immutable version. Automated tests always use a fake provider.
+
 ## Run
 
 Start PostgreSQL and restore the repository-local EF Core tool:
@@ -98,6 +100,8 @@ When media analysis is enabled, the Worker claims pending photos with a PostgreS
 After all property photos show completed analysis, use **Generate story** on the property details page to create campaign title, hook, narrative, highlights, voiceover, closing call to action, and long and short social captions. Generated output is immutable and versioned. Changing verified inputs produces a new version; unchanged inputs return the stored story without a new AI request. A configured provider credential is required for this manual workflow.
 
 The Week 7 video-plan service is currently an application API rather than a Blazor workflow. It creates a fully validated, renderer-ready production specification from the latest grounded story and analyzed media. A configured OpenAI credential is required outside automated tests. The future campaign workflow will expose and orchestrate this service.
+
+The Week 8 narration service is also an application API pending the later campaign workflow. It converts a stored plan's grounded narration segments into a tenant-scoped audio asset and measured timing metadata, rejecting generated segments that no longer fit their planned intervals. No live voice request runs unless the service is explicitly invoked with valid runtime credentials.
 
 Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.
 

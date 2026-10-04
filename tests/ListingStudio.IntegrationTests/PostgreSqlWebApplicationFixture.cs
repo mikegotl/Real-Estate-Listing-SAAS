@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
+using ListingStudio.Application.Audio;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Infrastructure.Persistence;
@@ -61,6 +62,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
 
     public FakeVideoDirector VideoDirector { get; } = new();
 
+    public FakeVoiceProvider VoiceProvider { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -71,6 +74,7 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
                 ["PostgreSQL:ConnectionString"] = connectionString,
                 ["AzureBlobStorage:Provider"] = "Local",
                 ["AzureBlobStorage:LocalRootPath"] = mediaRootPath,
+                ["AzureBlobStorage:CampaignLocalRootPath"] = Path.Combine(mediaRootPath, "campaign-assets"),
             });
         });
         builder.ConfigureServices(services =>
@@ -83,7 +87,40 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
             services.AddSingleton<IPropertyStoryGenerator>(StoryGenerator);
             services.RemoveAll<IVideoDirector>();
             services.AddSingleton<IVideoDirector>(VideoDirector);
+            services.RemoveAll<IVoiceProvider>();
+            services.AddSingleton<IVoiceProvider>(VoiceProvider);
         });
+    }
+}
+
+public sealed class FakeVoiceProvider : IVoiceProvider
+{
+    private readonly ConcurrentQueue<Func<VoiceGenerationRequest, VoiceGenerationResult>> outcomes = new();
+    private int callCount;
+
+    public string GenerationVersion { get; private set; } = "fake-voice-v1";
+
+    public int CallCount => callCount;
+
+    public VoiceGenerationRequest? LastRequest { get; private set; }
+
+    public void SetGenerationVersion(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        GenerationVersion = value;
+    }
+
+    public void Enqueue(Func<VoiceGenerationRequest, VoiceGenerationResult> factory) => outcomes.Enqueue(factory);
+
+    public Task<VoiceGenerationResult> GenerateAsync(
+        VoiceGenerationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref callCount);
+        LastRequest = request;
+        Assert.True(outcomes.TryDequeue(out var outcome), "A fake voice-generation outcome must be queued.");
+        return Task.FromResult(outcome(request));
     }
 }
 

@@ -9,6 +9,8 @@ using ListingStudio.Application.Stories;
 using ListingStudio.Infrastructure.Stories;
 using ListingStudio.Application.Videos;
 using ListingStudio.Infrastructure.Videos;
+using ListingStudio.Application.Audio;
+using ListingStudio.Infrastructure.Audio;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -70,6 +72,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyMediaAnalysisProcessor, PropertyMediaAnalysisProcessor>();
         services.AddScoped<IPropertyStoryService, PropertyStoryService>();
         services.AddScoped<IVideoProductionPlanService, VideoProductionPlanService>();
+        services.AddScoped<IVideoNarrationService, VideoNarrationService>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPropertyMediaStorage>(provider =>
         {
@@ -79,6 +82,16 @@ public static class ServiceCollectionExtensions
                 "LOCAL" => ActivatorUtilities.CreateInstance<LocalPropertyMediaStorage>(provider),
                 "AZURE" => ActivatorUtilities.CreateInstance<AzureBlobPropertyMediaStorage>(provider),
                 _ => throw new InvalidOperationException("Unsupported property media storage provider."),
+            };
+        });
+        services.AddSingleton<ICampaignAssetStorage>(provider =>
+        {
+            var options = provider.GetRequiredService<IOptions<AzureBlobStorageOptions>>();
+            return options.Value.Provider.ToUpperInvariant() switch
+            {
+                "LOCAL" => ActivatorUtilities.CreateInstance<LocalCampaignAssetStorage>(provider),
+                "AZURE" => ActivatorUtilities.CreateInstance<AzureBlobCampaignAssetStorage>(provider),
+                _ => throw new InvalidOperationException("Unsupported campaign asset storage provider."),
             };
         });
 
