@@ -235,7 +235,7 @@ public sealed record VideoProductionSpecification(
     VideoOutputProfile Output,
     NormalizedRect SafeZone,
     IReadOnlyList<FactBinding> FactBindings,
-    VideoBrandPlan Brand,
+    BrandKit Brand,
     GroundedText CallToAction,
     AudioPlan Audio,
     IReadOnlyList<VideoScene> Scenes);

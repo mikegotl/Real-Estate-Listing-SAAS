@@ -32,7 +32,7 @@ public sealed record VideoDirectionRequest(
     VideoOutputProfile Output,
     NormalizedRect SafeZone,
     IReadOnlyList<FactBinding> FactBindings,
-    VideoBrandPlan Brand,
+    BrandKit Brand,
     GroundedText CallToAction,
     IReadOnlySet<Guid> ApprovedGeneratedClipIds,
     IReadOnlySet<string> ApprovedBrandAssetIds,

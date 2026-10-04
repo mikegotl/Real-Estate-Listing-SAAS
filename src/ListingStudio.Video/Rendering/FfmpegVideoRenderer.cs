@@ -6,7 +6,8 @@ using Microsoft.Extensions.Options;
 namespace ListingStudio.Video.Rendering;
 
 public sealed class FfmpegVideoRenderer(
-    IOptions<FfmpegOptions> options) : IVideoRenderer
+    IOptions<FfmpegOptions> options,
+    IOptions<VideoBrandingTemplateOptions> brandingOptions) : IVideoRenderer
 {
     public async Task<VideoRenderResult> RenderAsync(
         VideoRenderRequest request,
@@ -32,7 +33,7 @@ public sealed class FfmpegVideoRenderer(
             outputDirectory,
             $".{Path.GetFileNameWithoutExtension(outputPath)}.{Guid.NewGuid():N}.rendering.mp4");
         var normalizedRequest = request with { OutputFilePath = temporaryOutputPath };
-        var command = FfmpegCommandBuilder.Build(normalizedRequest);
+        var command = FfmpegCommandBuilder.Build(normalizedRequest, brandingOptions.Value);
 
         using var process = new Process
         {

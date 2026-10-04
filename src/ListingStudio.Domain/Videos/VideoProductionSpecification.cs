@@ -89,9 +89,9 @@ public sealed record VideoOutputProfile(
 
 public sealed record FactBinding(string Key, string Value, FactSource Source, string SourceReference);
 
-public sealed record VideoBrandPlan(
-    string? PrimaryLogoAssetId,
-    string? SecondaryLogoAssetId,
+public sealed record BrandKit(
+    [property: JsonPropertyName("primaryLogoAssetId")] string? Logo,
+    [property: JsonPropertyName("secondaryLogoAssetId")] string? SecondaryLogo,
     string? AgentName,
     string? Phone,
     string? Email,
@@ -173,7 +173,7 @@ public sealed record VideoProductionSpecification(
     VideoOutputProfile Output,
     NormalizedRect SafeZone,
     IReadOnlyList<FactBinding> FactBindings,
-    VideoBrandPlan Brand,
+    BrandKit Brand,
     GroundedText CallToAction,
     AudioPlan Audio,
     IReadOnlyList<VideoScene> Scenes);

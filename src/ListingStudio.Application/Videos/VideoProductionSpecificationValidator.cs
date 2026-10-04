@@ -102,7 +102,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
             foreach (var logo in scene.LogoOverlays)
             {
                 AddIf(!input.ApprovedBrandAssetIds.Contains(logo.AssetId)
-                    || (logo.AssetId != input.Brand.PrimaryLogoAssetId && logo.AssetId != input.Brand.SecondaryLogoAssetId),
+                    || (logo.AssetId != input.Brand.Logo && logo.AssetId != input.Brand.SecondaryLogo),
                     $"{path}.logoOverlays references an unapproved asset.", errors);
                 AddIf(logo.StartOffsetMs < 0 || logo.DurationMs <= 0
                     || End(logo.StartOffsetMs, logo.DurationMs) > scene.DurationMs,

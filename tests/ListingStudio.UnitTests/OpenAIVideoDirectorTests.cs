@@ -147,7 +147,7 @@ public sealed class OpenAIVideoDirectorTests
                 new FactBinding("story.voiceover", "Welcome home.", FactSource.PropertyStory, "VoiceoverScript"),
                 new FactBinding("story.closingCta", "Contact us.", FactSource.PropertyStory, "ClosingCta"),
             ],
-            new VideoBrandPlan(null, null, null, null, null, null, "#17324D", "#F4F0E8"),
+            new BrandKit(null, null, null, null, null, null, "#17324D", "#F4F0E8"),
             new GroundedText("Contact us.", "story.closingCta"),
             new HashSet<Guid>(),
             new HashSet<string>(StringComparer.Ordinal),

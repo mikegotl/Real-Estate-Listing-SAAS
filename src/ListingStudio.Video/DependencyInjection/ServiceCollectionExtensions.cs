@@ -12,6 +12,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddOptions<AIVideoOptions>().Bind(configuration.GetSection(AIVideoOptions.SectionName));
         services.AddOptions<FfmpegOptions>().Bind(configuration.GetSection(FfmpegOptions.SectionName));
+        services.AddOptions<VideoBrandingTemplateOptions>()
+            .Bind(configuration.GetSection(VideoBrandingTemplateOptions.SectionName));
         services.AddSingleton<IVideoRenderer, FfmpegVideoRenderer>();
         return services;
     }

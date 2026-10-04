@@ -31,7 +31,7 @@ jobs:
           global-json-file: global.json
 
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg fonts-dejavu-core
 
       - name: Restore
         run: dotnet restore ListingStudio.slnx

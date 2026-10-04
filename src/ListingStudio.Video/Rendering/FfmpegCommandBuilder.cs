@@ -2,6 +2,7 @@ using System.Globalization;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Videos;
+using ListingStudio.Video.Configuration;
 
 namespace ListingStudio.Video.Rendering;
 
@@ -9,11 +10,15 @@ public static class FfmpegCommandBuilder
 {
     private const string VideoEncoder = "libx264";
 
-    public static FfmpegRenderCommand Build(VideoRenderRequest request)
+    public static FfmpegRenderCommand Build(
+        VideoRenderRequest request,
+        VideoBrandingTemplateOptions? brandingTemplate = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Specification);
         ArgumentNullException.ThrowIfNull(request.PropertyMedia);
+        ArgumentNullException.ThrowIfNull(request.BrandAssets);
+        brandingTemplate ??= new VideoBrandingTemplateOptions();
         ValidateOutputPath(request.OutputFilePath);
 
         var mediaGroups = request.PropertyMedia.GroupBy(asset => asset.PropertyMediaId).ToArray();
@@ -34,6 +39,8 @@ public static class FfmpegCommandBuilder
         var sceneAssets = scenes.Select(scene => ResolveAsset(scene, media)).ToArray();
         ValidateMediaViewports(scenes, sceneAssets, request.Specification.Output);
         ValidateNarration(request.Specification, request.Narration);
+        var brandAssets = ValidateBranding(request, brandingTemplate);
+        ValidateMusic(request);
 
         var arguments = new List<string>
         {
@@ -56,14 +63,39 @@ public static class FfmpegCommandBuilder
             ]);
         }
 
+        int? narrationInput = null;
         if (request.Narration is not null)
         {
+            narrationInput = scenes.Count;
             arguments.AddRange(["-i", request.Narration.FilePath]);
         }
 
+        int? musicInput = null;
+        if (request.Music is not null)
+        {
+            musicInput = scenes.Count + (narrationInput is null ? 0 : 1);
+            arguments.AddRange(["-stream_loop", "-1", "-i", request.Music.FilePath]);
+        }
+
+        var nextInput = scenes.Count + (narrationInput is null ? 0 : 1) + (musicInput is null ? 0 : 1);
+        var logoInputs = new List<int>(brandAssets.Length);
+        var programMs = (int)request.Specification.RequestedDuration * 1_000;
+        foreach (var asset in brandAssets)
+        {
+            logoInputs.Add(nextInput++);
+            arguments.AddRange(
+            [
+                "-loop", "1",
+                "-framerate", request.Specification.Output.FrameRate.ToString(CultureInfo.InvariantCulture),
+                "-t", Seconds(programMs),
+                "-i", asset.FilePath,
+            ]);
+        }
+
+        var inputs = new RenderInputIndexes(narrationInput, musicInput, logoInputs);
         arguments.AddRange(
         [
-            "-filter_complex", BuildFilterGraph(request, sceneAssets),
+            "-filter_complex", BuildFilterGraph(request, sceneAssets, inputs, brandingTemplate),
             "-map", "[vout]",
             "-map", "[aout]",
             "-c:v", VideoEncoder,
@@ -85,7 +117,9 @@ public static class FfmpegCommandBuilder
 
     private static string BuildFilterGraph(
         VideoRenderRequest request,
-        VideoRenderMediaAsset[] assets)
+        VideoRenderMediaAsset[] assets,
+        RenderInputIndexes inputs,
+        VideoBrandingTemplateOptions brandingTemplate)
     {
         var specification = request.Specification;
         var filters = new List<string>();
@@ -124,8 +158,24 @@ public static class FfmpegCommandBuilder
         }
 
         var programMs = (int)specification.RequestedDuration * 1_000;
-        filters.Add($"[{current}]trim=duration={Seconds(programMs)},setpts=PTS-STARTPTS[vout]");
-        BuildAudioFilters(request, filters, programMs);
+        filters.Add($"[{current}]trim=duration={Seconds(programMs)},setpts=PTS-STARTPTS[videoTimeline]");
+        current = BuildBrandingFilters(request, filters, inputs.LogoInputs, brandingTemplate, "videoTimeline");
+        var videoFilters = new List<string>();
+        if (brandingTemplate.VideoFadeInMs > 0)
+        {
+            videoFilters.Add($"fade=t=in:st=0:d={Seconds(brandingTemplate.VideoFadeInMs)}");
+        }
+
+        if (brandingTemplate.VideoFadeOutMs > 0)
+        {
+            videoFilters.Add(
+                $"fade=t=out:st={Seconds(programMs - brandingTemplate.VideoFadeOutMs)}"
+                + $":d={Seconds(brandingTemplate.VideoFadeOutMs)}");
+        }
+
+        videoFilters.Add("format=yuv420p");
+        filters.Add($"[{current}]{string.Join(',', videoFilters)}[vout]");
+        BuildAudioFilters(request, filters, programMs, inputs.NarrationInput, inputs.MusicInput);
         return string.Join(';', filters);
     }
 
@@ -172,10 +222,83 @@ public static class FfmpegCommandBuilder
         return $"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output.Width}x{output.Height}:fps={output.FrameRate}";
     }
 
-    private static void BuildAudioFilters(VideoRenderRequest request, List<string> filters, int programMs)
+    private static string BuildBrandingFilters(
+        VideoRenderRequest request,
+        List<string> filters,
+        IReadOnlyList<int> logoInputs,
+        VideoBrandingTemplateOptions brandingTemplate,
+        string sourceLabel)
+    {
+        var output = request.Specification.Output;
+        var brand = request.Specification.Brand;
+        var current = sourceLabel;
+        var filterNumber = 0;
+        foreach (var (scene, overlay) in request.Specification.Scenes
+            .SelectMany(scene => scene.TextOverlays.Select(overlay => (scene, overlay)))
+            .OrderBy(item => item.scene.StartMs + item.overlay.StartOffsetMs)
+            .ThenBy(item => item.overlay.Id, StringComparer.Ordinal))
+        {
+            var template = brandingTemplate.For(overlay.StyleToken);
+            var box = ToPixelBox(overlay.Box, output);
+            var position = TextPosition(overlay.Anchor, box, template.Padding);
+            var startMs = scene.StartMs + overlay.StartOffsetMs;
+            var endMs = startMs + overlay.DurationMs;
+            var next = $"brand{filterNumber++}";
+            var font = string.IsNullOrWhiteSpace(brandingTemplate.FontFilePath)
+                ? "font='Sans'"
+                : $"fontfile='{EscapeFilterLiteral(Path.GetFullPath(brandingTemplate.FontFilePath))}'";
+            filters.Add(
+                $"[{current}]drawtext={font}:text='{EscapeFilterLiteral(overlay.Text)}'"
+                + $":fontcolor={ResolveColor(template.TextColor, brand)}:fontsize={template.FontSize}"
+                + $":box=1:boxcolor={ResolveColor(template.BoxColor, brand)}@{Number(template.BoxOpacity)}"
+                + $":boxborderw={template.Padding}:x='{position.X}':y='{position.Y}':fix_bounds=1"
+                + $":enable='between(t,{Seconds(startMs)},{Seconds(endMs)})'[{next}]");
+            current = next;
+        }
+
+        var logoOverlays = OrderedLogoOverlays(request.Specification);
+        for (var overlayIndex = 0; overlayIndex < logoOverlays.Length; overlayIndex++)
+        {
+            var (scene, overlay) = logoOverlays[overlayIndex];
+            var input = logoInputs[overlayIndex];
+            var box = ToPixelBox(overlay.Box, output);
+            var logo = $"logo{filterNumber}";
+            var next = $"brand{filterNumber++}";
+            filters.Add(
+                $"[{input}:v]scale=w={box.Width}:h={box.Height}:force_original_aspect_ratio=decrease,"
+                + $"format=rgba,colorchannelmixer=aa={Number(overlay.Opacity)}[{logo}]");
+            var startMs = scene.StartMs + overlay.StartOffsetMs;
+            var endMs = startMs + overlay.DurationMs;
+            filters.Add(
+                $"[{current}][{logo}]overlay=x={box.X}+({box.Width}-w)/2:y={box.Y}+({box.Height}-h)/2"
+                + $":enable='between(t,{Seconds(startMs)},{Seconds(endMs)})':eof_action=repeat[{next}]");
+            current = next;
+        }
+
+        return current;
+    }
+
+    private static void BuildAudioFilters(
+        VideoRenderRequest request,
+        List<string> filters,
+        int programMs,
+        int? narrationInput,
+        int? musicInput)
     {
         var segments = request.Specification.Audio.NarrationSegments;
-        if (segments.Count == 0)
+        string? narrationLabel = null;
+        if (segments.Count > 0)
+        {
+            narrationLabel = BuildNarrationFilters(request, filters, narrationInput!.Value);
+        }
+
+        string? musicLabel = null;
+        if (request.Specification.Audio.Music.AssetId is not null)
+        {
+            musicLabel = BuildMusicFilters(request, filters, musicInput!.Value);
+        }
+
+        if (narrationLabel is null && musicLabel is null)
         {
             filters.Add(
                 $"anullsrc=r={request.Specification.Output.SampleRateHz}:cl=stereo,"
@@ -183,8 +306,25 @@ public static class FfmpegCommandBuilder
             return;
         }
 
+        var mixed = narrationLabel ?? musicLabel!;
+        if (narrationLabel is not null && musicLabel is not null)
+        {
+            filters.Add($"[{narrationLabel}][{musicLabel}]amix=inputs=2:duration=longest:normalize=0[audioMixed]");
+            mixed = "audioMixed";
+        }
+
+        filters.Add(
+            $"[{mixed}]apad,atrim=duration={Seconds(programMs)},"
+            + $"aresample={request.Specification.Output.SampleRateHz},aformat=channel_layouts=stereo[aout]");
+    }
+
+    private static string BuildNarrationFilters(
+        VideoRenderRequest request,
+        List<string> filters,
+        int inputIndex)
+    {
+        var segments = request.Specification.Audio.NarrationSegments;
         var narration = request.Narration!;
-        var inputIndex = request.Specification.Scenes.Count;
         var segmentLabels = new List<string>(segments.Count);
         if (narration.Timing is null)
         {
@@ -223,7 +363,7 @@ public static class FfmpegCommandBuilder
             }
         }
 
-        var mixed = "narrationMixed";
+        const string mixed = "narrationMixed";
         if (segmentLabels.Count == 1)
         {
             filters.Add($"[{segmentLabels[0]}]anull[{mixed}]");
@@ -235,10 +375,235 @@ public static class FfmpegCommandBuilder
                 + $"amix=inputs={segmentLabels.Count}:duration=longest:normalize=0[{mixed}]");
         }
 
-        filters.Add(
-            $"[{mixed}]apad,atrim=duration={Seconds(programMs)},"
-            + $"aresample={request.Specification.Output.SampleRateHz},aformat=channel_layouts=stereo[aout]");
+        return mixed;
     }
+
+    private static string BuildMusicFilters(
+        VideoRenderRequest request,
+        List<string> filters,
+        int inputIndex)
+    {
+        var music = request.Specification.Audio.Music;
+        var chain = new List<string>
+        {
+            $"atrim=duration={Seconds(music.DurationMs)}",
+            "asetpts=PTS-STARTPTS",
+            $"volume={Number(music.GainDb)}dB",
+        };
+        if (music.FadeInMs > 0)
+        {
+            chain.Add($"afade=t=in:st=0:d={Seconds(music.FadeInMs)}");
+        }
+
+        if (music.FadeOutMs > 0)
+        {
+            chain.Add(
+                $"afade=t=out:st={Seconds(music.DurationMs - music.FadeOutMs)}:d={Seconds(music.FadeOutMs)}");
+        }
+
+        if (music.StartMs > 0)
+        {
+            chain.Add($"adelay={music.StartMs}:all=1");
+        }
+
+        var narration = request.Specification.Audio.NarrationSegments;
+        if (narration.Count > 0 && music.DuckingGainDb < 0)
+        {
+            var duckingIntervals = string.Join(
+                '+',
+                narration.Select(segment =>
+                    $"between(t,{Seconds(segment.StartMs)},{Seconds(segment.StartMs + segment.DurationMs)})"));
+            var duckingFactor = (decimal)Math.Pow(10, (double)music.DuckingGainDb / 20d);
+            chain.Add($"volume='if(gt({duckingIntervals},0),{Number(duckingFactor)},1)':eval=frame");
+        }
+
+        filters.Add($"[{inputIndex}:a]{string.Join(',', chain)}[musicMixed]");
+        return "musicMixed";
+    }
+
+    private static VideoRenderBrandAsset[] ValidateBranding(
+        VideoRenderRequest request,
+        VideoBrandingTemplateOptions template)
+    {
+        var programMs = (int)request.Specification.RequestedDuration * 1_000;
+        if (template.VideoFadeInMs < 0
+            || template.VideoFadeOutMs < 0
+            || template.VideoFadeInMs + template.VideoFadeOutMs > programMs)
+        {
+            throw new ArgumentException("Video branding fade timing must fit the program.", nameof(template));
+        }
+
+        if (!string.IsNullOrWhiteSpace(template.FontFilePath) && !File.Exists(template.FontFilePath))
+        {
+            throw new ArgumentException("The configured branding font file does not exist.", nameof(template));
+        }
+
+        foreach (var style in Enum.GetValues<TextOverlayStyle>())
+        {
+            var styleTemplate = template.For(style);
+            if (styleTemplate.FontSize is < 8 or > 240
+                || styleTemplate.Padding is < 0 or > 100
+                || styleTemplate.BoxOpacity is < 0 or > 1)
+            {
+                throw new ArgumentException($"The {style} branding template is outside supported bounds.", nameof(template));
+            }
+        }
+
+        ValidateBrandColor(request.Specification.Brand.PrimaryColor, nameof(request.Specification.Brand.PrimaryColor));
+        ValidateBrandColor(request.Specification.Brand.SecondaryColor, nameof(request.Specification.Brand.SecondaryColor));
+
+        var groups = request.BrandAssets.GroupBy(asset => asset.AssetId, StringComparer.Ordinal).ToArray();
+        if (groups.Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() != 1))
+        {
+            throw new ArgumentException("Brand assets must have unique, non-empty IDs.", nameof(request));
+        }
+
+        var supplied = groups.ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+        var overlayIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var scene in request.Specification.Scenes)
+        {
+            foreach (var overlay in scene.TextOverlays)
+            {
+                if (string.IsNullOrWhiteSpace(overlay.Id)
+                    || !overlayIds.Add(overlay.Id)
+                    || string.IsNullOrWhiteSpace(overlay.Text)
+                    || overlay.Text.Any(char.IsControl)
+                    || overlay.StartOffsetMs < 0
+                    || overlay.DurationMs <= 0
+                    || (long)overlay.StartOffsetMs + overlay.DurationMs > scene.DurationMs
+                    || !IsViewport(overlay.Box))
+                {
+                    throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid text overlay.", nameof(request));
+                }
+            }
+        }
+
+        var resolved = new List<VideoRenderBrandAsset>();
+        foreach (var (scene, overlay) in OrderedLogoOverlays(request.Specification))
+        {
+            if (overlay.AssetId != request.Specification.Brand.Logo
+                && overlay.AssetId != request.Specification.Brand.SecondaryLogo)
+            {
+                throw new ArgumentException($"Scene {scene.SceneNumber} references a logo outside its BrandKit.", nameof(request));
+            }
+
+            if (overlay.StartOffsetMs < 0
+                || overlay.DurationMs <= 0
+                || (long)overlay.StartOffsetMs + overlay.DurationMs > scene.DurationMs
+                || overlay.Opacity is < 0 or > 1
+                || !IsViewport(overlay.Box)
+                || !supplied.TryGetValue(overlay.AssetId, out var asset)
+                || asset.Width <= 0
+                || asset.Height <= 0
+                || !File.Exists(asset.FilePath))
+            {
+                throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid or missing logo asset.", nameof(request));
+            }
+
+            resolved.Add(asset);
+        }
+
+        return resolved.ToArray();
+    }
+
+    private static (VideoScene Scene, LogoOverlay Overlay)[] OrderedLogoOverlays(
+        VideoProductionSpecification specification) => specification.Scenes
+        .SelectMany(scene => scene.LogoOverlays.Select(overlay => (Scene: scene, Overlay: overlay)))
+        .OrderBy(item => item.Scene.StartMs + item.Overlay.StartOffsetMs)
+        .ThenBy(item => item.Overlay.AssetId, StringComparer.Ordinal)
+        .ToArray();
+
+    private static void ValidateMusic(VideoRenderRequest request)
+    {
+        var plan = request.Specification.Audio.Music;
+        if (plan.AssetId is null)
+        {
+            if (request.Music is not null
+                || plan.Mood != MusicMood.None
+                || plan.StartMs != 0
+                || plan.DurationMs != 0
+                || plan.GainDb != 0
+                || plan.FadeInMs != 0
+                || plan.FadeOutMs != 0
+                || plan.DuckingGainDb != 0)
+            {
+                throw new ArgumentException("A render without planned music cannot receive a music asset or mix settings.", nameof(request));
+            }
+
+            return;
+        }
+
+        var programMs = (int)request.Specification.RequestedDuration * 1_000;
+        if (request.Music is null
+            || !string.Equals(request.Music.AssetId, plan.AssetId, StringComparison.Ordinal)
+            || !File.Exists(request.Music.FilePath)
+            || plan.Mood == MusicMood.None
+            || plan.StartMs < 0
+            || plan.DurationMs <= 0
+            || (long)plan.StartMs + plan.DurationMs > programMs
+            || plan.GainDb is < -60 or > 0
+            || plan.DuckingGainDb is < -60 or > 0
+            || plan.FadeInMs < 0
+            || plan.FadeOutMs < 0
+            || (long)plan.FadeInMs + plan.FadeOutMs > plan.DurationMs)
+        {
+            throw new ArgumentException("The supplied music asset or mix plan is invalid.", nameof(request));
+        }
+    }
+
+    private static PixelBox ToPixelBox(NormalizedRect box, VideoOutputProfile output)
+    {
+        var x = (int)Math.Round(box.X * output.Width);
+        var y = (int)Math.Round(box.Y * output.Height);
+        var width = Math.Max(1, (int)Math.Round(box.Width * output.Width));
+        var height = Math.Max(1, (int)Math.Round(box.Height * output.Height));
+        return new PixelBox(x, y, width, height);
+    }
+
+    private static (string X, string Y) TextPosition(OverlayAnchor anchor, PixelBox box, int padding)
+    {
+        var left = (box.X + padding).ToString(CultureInfo.InvariantCulture);
+        var center = $"{box.X}+({box.Width}-text_w)/2";
+        var right = $"{box.X + box.Width}-text_w-{padding}";
+        var top = (box.Y + padding).ToString(CultureInfo.InvariantCulture);
+        var middle = $"{box.Y}+({box.Height}-text_h)/2";
+        var bottom = $"{box.Y + box.Height}-text_h-{padding}";
+        return anchor switch
+        {
+            OverlayAnchor.TopLeft => (left, top),
+            OverlayAnchor.TopCenter => (center, top),
+            OverlayAnchor.TopRight => (right, top),
+            OverlayAnchor.Center => (center, middle),
+            OverlayAnchor.BottomLeft => (left, bottom),
+            OverlayAnchor.BottomCenter => (center, bottom),
+            OverlayAnchor.BottomRight => (right, bottom),
+            _ => throw new ArgumentOutOfRangeException(nameof(anchor)),
+        };
+    }
+
+    private static string ResolveColor(BrandColorToken token, BrandKit brand)
+    {
+        var color = token == BrandColorToken.Primary ? brand.PrimaryColor : brand.SecondaryColor;
+        return $"0x{color[1..]}";
+    }
+
+    private static void ValidateBrandColor(string color, string parameterName)
+    {
+        if (color.Length != 7 || color[0] != '#' || color[1..].Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw new ArgumentException("Brand colors must use six-digit hexadecimal notation.", parameterName);
+        }
+    }
+
+    private static string EscapeFilterLiteral(string value) => value
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("'", "\\'", StringComparison.Ordinal)
+        .Replace(":", "\\:", StringComparison.Ordinal)
+        .Replace("%", "\\%", StringComparison.Ordinal)
+        .Replace(",", "\\,", StringComparison.Ordinal)
+        .Replace(";", "\\;", StringComparison.Ordinal)
+        .Replace("[", "\\[", StringComparison.Ordinal)
+        .Replace("]", "\\]", StringComparison.Ordinal);
 
     private static VideoRenderMediaAsset ResolveAsset(
         VideoScene scene,
@@ -436,4 +801,11 @@ public static class FfmpegCommandBuilder
     private static string Seconds(int milliseconds) => Number(milliseconds / 1_000m);
 
     private static string Number(decimal value) => value.ToString("0.######", CultureInfo.InvariantCulture);
+
+    private sealed record RenderInputIndexes(
+        int? NarrationInput,
+        int? MusicInput,
+        IReadOnlyList<int> LogoInputs);
+
+    private readonly record struct PixelBox(int X, int Y, int Width, int Height);
 }
