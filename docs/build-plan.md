@@ -233,7 +233,7 @@ Build and test everything.
 
 ### Week 4: Listing Photo Management
 
-**Status:** pending
+**Status:** proposed (PR #8; owner review and acceptance pending)
 
 **Expected result:** Agents can upload, preview, reorder, retry and delete as many as 50 listing images.
 
