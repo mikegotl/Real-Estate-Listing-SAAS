@@ -1,4 +1,5 @@
 using System.Data;
+using ListingStudio.Application.Audio;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
@@ -8,7 +9,8 @@ namespace ListingStudio.Infrastructure.Properties;
 
 public sealed class PropertyMediaService(
     ApplicationDbContext dbContext,
-    IPropertyMediaStorage storage) : IPropertyMediaService
+    IPropertyMediaStorage storage,
+    ICampaignAssetStorage campaignAssetStorage) : IPropertyMediaService
 {
     private static readonly Dictionary<string, string> AllowedContentTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -138,7 +140,18 @@ public sealed class PropertyMediaService(
             return false;
         }
 
+        var generatedClips = await dbContext.GeneratedVideoClips
+            .Where(clip => clip.PropertyMediaId == mediaId
+                && clip.PropertyId == propertyId
+                && clip.OrganizationId == organizationId)
+            .ToArrayAsync(cancellationToken);
+        foreach (var clip in generatedClips)
+        {
+            await campaignAssetStorage.DeleteAsync(clip.AssetPath, cancellationToken);
+        }
+
         await storage.DeleteAsync(media.BlobPath, cancellationToken);
+        dbContext.GeneratedVideoClips.RemoveRange(generatedClips);
         dbContext.PropertyMedia.Remove(media);
         await dbContext.SaveChangesAsync(cancellationToken);
         await NormalizeDisplayOrderAsync(organizationId, propertyId, cancellationToken);

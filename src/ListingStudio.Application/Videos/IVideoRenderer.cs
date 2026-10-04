@@ -30,13 +30,21 @@ public sealed record VideoRenderMusicAsset(
     string AssetId,
     string FilePath);
 
+public sealed record VideoRenderGeneratedClipAsset(
+    Guid GeneratedClipId,
+    string FilePath,
+    int Width,
+    int Height,
+    int DurationMs);
+
 public sealed record VideoRenderRequest(
     VideoProductionSpecification Specification,
     IReadOnlyList<VideoRenderMediaAsset> PropertyMedia,
     VideoRenderNarrationAsset? Narration,
     IReadOnlyList<VideoRenderBrandAsset> BrandAssets,
     VideoRenderMusicAsset? Music,
-    string OutputFilePath);
+    string OutputFilePath,
+    IReadOnlyList<VideoRenderGeneratedClipAsset>? GeneratedClips = null);
 
 public sealed record VideoRenderResult(
     string OutputFilePath,

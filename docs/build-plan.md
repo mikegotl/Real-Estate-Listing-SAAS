@@ -707,7 +707,7 @@ Add integration tests.
 
 ### Week 13: Selective Generative Video
 
-**Status:** pending
+**Status:** implementation proposed (owner acceptance required)
 
 **Expected result:** Selected scenes can use subtle AI motion while the normal deterministic photo pipeline remains fully functional.
 
