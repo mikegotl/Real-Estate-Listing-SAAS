@@ -15,6 +15,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<ListingProperty> Properties => Set<ListingProperty>();
 
+    public DbSet<PropertyMedia> PropertyMedia => Set<PropertyMedia>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

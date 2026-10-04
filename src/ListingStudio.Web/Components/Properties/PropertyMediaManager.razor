@@ -1,0 +1,246 @@
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyMediaService MediaService
+
+<MudPaper Class="pa-6 mt-6">
+    <MudText Typo="Typo.h5" HtmlTag="h2">Listing photos</MudText>
+    <MudText Typo="Typo.body2" Class="mb-4">
+        Upload up to @IPropertyMediaService.MaximumMediaPerProperty JPG, PNG, or WEBP images. Each image may be up to
+        @(IPropertyMediaService.MaximumFileSize / 1024 / 1024) MB.
+    </MudText>
+
+    @if (!IsReadOnly)
+    {
+        <label class="media-upload-control">
+            <span>Add listing photos</span>
+            <InputFile OnChange="FilesSelectedAsync" multiple
+                       accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+        </label>
+    }
+
+    @if (message is not null)
+    {
+        <MudAlert Severity="@messageSeverity" Class="my-4">@message</MudAlert>
+    }
+
+    @foreach (var upload in uploads)
+    {
+        <MudPaper Outlined="true" Class="pa-3 my-2">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                <MudText>@upload.File.Name</MudText>
+                @if (upload.Failed)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
+                               OnClick="@(() => UploadOneAsync(upload))">Retry upload</MudButton>
+                }
+            </MudStack>
+            <MudProgressLinear Value="upload.Progress" Color="@(upload.Failed ? Color.Error : Color.Primary)" />
+            @if (upload.Error is not null)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error">@upload.Error</MudText>
+            }
+        </MudPaper>
+    }
+
+    @if (!loaded)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mt-4" />
+    }
+    else if (media.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">No listing photos have been uploaded.</MudAlert>
+    }
+    else
+    {
+        <div class="media-grid mt-4">
+            @for (var index = 0; index < media.Count; index++)
+            {
+                var item = media[index];
+                var itemIndex = index;
+                <MudCard Class="media-card" draggable="@(!IsReadOnly)"
+                         @ondragstart="@(() => draggedMediaId = item.Id)"
+                         @ondragover:preventDefault="@(!IsReadOnly)"
+                         @ondrop="@(() => DropAsync(item.Id))">
+                    <MudCardMedia Image="@($"/property-media/{item.Id}")" Height="180" />
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle2">@item.OriginalFilename</MudText>
+                        <MudText Typo="Typo.caption">@item.Width × @item.Height · @FormatSize(item.FileSize)</MudText>
+                        <MudText Typo="Typo.caption">Analysis: @item.AnalysisStatus</MudText>
+                    </MudCardContent>
+                    @if (!IsReadOnly)
+                    {
+                        <MudCardActions>
+                            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                                           Disabled="@(itemIndex == 0)" aria-label="Move photo earlier"
+                                           OnClick="@(() => MoveAsync(itemIndex, -1))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small"
+                                           Disabled="@(itemIndex == media.Count - 1)" aria-label="Move photo later"
+                                           OnClick="@(() => MoveAsync(itemIndex, 1))" />
+                            <MudSpacer />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                           aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
+                        </MudCardActions>
+                    }
+                </MudCard>
+            }
+        </div>
+        @if (!IsReadOnly)
+        {
+            <MudText Typo="Typo.caption" Class="mt-2">Drag photos to reorder them, or use the arrow buttons.</MudText>
+        }
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private readonly List<UploadState> uploads = [];
+    private List<PropertyMediaItem> media = [];
+    private Guid? draggedMediaId;
+    private bool loaded;
+    private string? message;
+    private Severity messageSeverity = Severity.Info;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loaded = false;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        media = [.. await MediaService.ListAsync(userId, PropertyId)];
+        loaded = true;
+    }
+
+    private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs)
+    {
+        message = null;
+        IReadOnlyList<IBrowserFile> files;
+        try
+        {
+            files = eventArgs.GetMultipleFiles(IPropertyMediaService.MaximumMediaPerProperty);
+        }
+        catch (InvalidOperationException)
+        {
+            ShowMessage($"Select no more than {IPropertyMediaService.MaximumMediaPerProperty} images at once.", Severity.Error);
+            return;
+        }
+
+        if (media.Count + files.Count > IPropertyMediaService.MaximumMediaPerProperty)
+        {
+            ShowMessage(
+                $"These files would exceed the {IPropertyMediaService.MaximumMediaPerProperty}-image property limit.",
+                Severity.Error);
+            return;
+        }
+
+        var selected = files.Select(file => new UploadState(file)).ToArray();
+        uploads.AddRange(selected);
+        foreach (var upload in selected)
+        {
+            await UploadOneAsync(upload);
+        }
+    }
+
+    private async Task UploadOneAsync(UploadState upload)
+    {
+        upload.Failed = false;
+        upload.Error = null;
+        upload.Progress = 0;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var source = upload.File.OpenReadStream(IPropertyMediaService.MaximumFileSize);
+            await using var progressStream = new ProgressReadStream(source, upload.File.Size, bytes =>
+            {
+                upload.Progress = upload.File.Size == 0 ? 0 : (double)bytes / upload.File.Size * 100;
+                _ = InvokeAsync(StateHasChanged);
+            });
+            await MediaService.UploadAsync(
+                userId,
+                PropertyId,
+                new PropertyMediaUpload(upload.File.Name, upload.File.ContentType, upload.File.Size, progressStream));
+            upload.Progress = 100;
+            uploads.Remove(upload);
+            await LoadAsync();
+            ShowMessage("Photo uploaded.", Severity.Success);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
+        {
+            upload.Failed = true;
+            upload.Error = exception.Message;
+            ShowMessage("One or more photos could not be uploaded. Correct the issue and retry.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync(Guid mediaId)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await MediaService.DeleteAsync(userId, PropertyId, mediaId))
+        {
+            await LoadAsync();
+            ShowMessage("Photo deleted.", Severity.Success);
+        }
+    }
+
+    private async Task MoveAsync(int from, int offset)
+    {
+        var to = from + offset;
+        if (to < 0 || to >= media.Count)
+        {
+            return;
+        }
+
+        (media[from], media[to]) = (media[to], media[from]);
+        await SaveOrderAsync();
+    }
+
+    private async Task DropAsync(Guid targetId)
+    {
+        if (IsReadOnly || draggedMediaId is null || draggedMediaId == targetId)
+        {
+            return;
+        }
+
+        var from = media.FindIndex(item => item.Id == draggedMediaId);
+        var to = media.FindIndex(item => item.Id == targetId);
+        if (from < 0 || to < 0)
+        {
+            return;
+        }
+
+        var moving = media[from];
+        media.RemoveAt(from);
+        media.Insert(to, moving);
+        draggedMediaId = null;
+        await SaveOrderAsync();
+    }
+
+    private async Task SaveOrderAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await MediaService.ReorderAsync(userId, PropertyId, media.Select(item => item.Id).ToArray());
+        await LoadAsync();
+        ShowMessage("Photo order saved.", Severity.Success);
+    }
+
+    private void ShowMessage(string text, Severity severity)
+    {
+        message = text;
+        messageSeverity = severity;
+    }
+
+    private static string FormatSize(long bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / 1024d / 1024d:0.##} MB"
+        : $"{bytes / 1024d:0.##} KB";
+
+    private sealed class UploadState(IBrowserFile file)
+    {
+        public IBrowserFile File { get; } = file;
+        public double Progress { get; set; }
+        public bool Failed { get; set; }
+        public string? Error { get; set; }
+    }
+}

@@ -37,6 +37,12 @@ The Domain owns the `ListingProperty` aggregate, its value-bearing details, prop
 
 Every property has a required `OrganizationId` foreign key and tenant-aware indexes. Property services receive the server-validated Identity user ID, resolve its organization membership, and include that organization in every read and mutation predicate. A property ID is never sufficient authorization. Cross-organization requests therefore return no property and cannot update or archive it. Archiving is a timestamped, read-only state rather than physical deletion, preserving the listing for audit and future workflow history.
 
+## Property media slice
+
+The Domain owns `PropertyMedia` metadata and display-order rules. Application exposes media workflows through `IPropertyMediaService` and the replaceable `IPropertyMediaStorage` port. Infrastructure persists metadata in PostgreSQL and supplies both an Azure Blob Storage adapter and an ignored filesystem adapter for local development. Web streams originals through an authenticated, organization-scoped endpoint instead of exposing provider paths or public containers.
+
+Media rows repeat the required `OrganizationId` and use a composite foreign key to `(PropertyId, OrganizationId)`, so PostgreSQL prevents media from being associated with a property in another tenant. Every list, upload, reorder, delete, and content-read operation also derives the organization from the authenticated membership. Upload validation enforces the supported extension/MIME pairs, a 20 MB per-file limit, image header and dimensions, and a transactional 50-image property limit. The initial analysis status is `Pending`; AI analysis remains outside this slice.
+
 ## Tests
 
-Unit tests target inward layers. Integration tests use disposable PostgreSQL 17 containers, apply real EF Core migrations, and exercise the ASP.NET Core composition root, Identity, organization persistence, property lifecycle, and tenant isolation. Additional module-specific test projects can be introduced beside these as features are added.
+Unit tests target inward layers. Integration tests use disposable PostgreSQL 17 containers, apply real EF Core migrations, and exercise the ASP.NET Core composition root, Identity, organization persistence, property lifecycle, property-media storage and ordering, upload limits, and tenant isolation. Additional module-specific test projects can be introduced beside these as features are added.

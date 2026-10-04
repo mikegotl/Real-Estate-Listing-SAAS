@@ -432,3 +432,6 @@ FodyWeavers.xsd
 .env
 .env.*
 !.env.example
+
+# Local property-media storage
+**/App_Data/

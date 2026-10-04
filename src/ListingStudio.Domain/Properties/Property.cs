@@ -58,6 +58,8 @@ public sealed class ListingProperty
 
     public Organization Organization { get; private set; } = null!;
 
+    public ICollection<PropertyMedia> Media { get; } = [];
+
     public static ListingProperty Create(Guid organizationId, PropertyDetails details)
     {
         if (organizationId == Guid.Empty)

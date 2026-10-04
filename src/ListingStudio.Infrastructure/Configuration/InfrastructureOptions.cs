@@ -9,8 +9,10 @@ public sealed class PostgreSqlOptions
 public sealed class AzureBlobStorageOptions
 {
     public const string SectionName = "AzureBlobStorage";
+    public string Provider { get; init; } = "Local";
     public string ConnectionString { get; init; } = string.Empty;
-    public string ContainerName { get; init; } = string.Empty;
+    public string ContainerName { get; init; } = "property-media";
+    public string LocalRootPath { get; init; } = "App_Data/property-media";
 }
 
 public sealed class StripeOptions

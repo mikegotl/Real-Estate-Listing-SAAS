@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using ListingStudio.AI.DependencyInjection;
+using ListingStudio.Application.Properties;
 using ListingStudio.Application.DependencyInjection;
 using ListingStudio.Infrastructure.DependencyInjection;
 using ListingStudio.Infrastructure.Identity;
@@ -45,6 +47,24 @@ app.MapPost("/Account/Logout", async (
 {
     await signInManager.SignOutAsync();
     return Results.LocalRedirect("~/");
+}).RequireAuthorization();
+
+app.MapGet("/property-media/{mediaId:guid}", async (
+    Guid mediaId,
+    HttpContext context,
+    IPropertyMediaService mediaService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var media = await mediaService.OpenReadAsync(userId, mediaId, cancellationToken);
+    return media is null
+        ? Results.NotFound()
+        : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);
 }).RequireAuthorization();
 
 app.Run();

@@ -4,6 +4,7 @@ using ListingStudio.Infrastructure.Configuration;
 using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Infrastructure.Persistence;
 using ListingStudio.Infrastructure.Properties;
+using ListingStudio.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -21,7 +22,13 @@ public static class ServiceCollectionExtensions
             .AddOptions<PostgreSqlOptions>()
             .Bind(configuration.GetSection(PostgreSqlOptions.SectionName))
             .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString), "A PostgreSQL connection string is required.");
-        services.AddOptions<AzureBlobStorageOptions>().Bind(configuration.GetSection(AzureBlobStorageOptions.SectionName));
+        services
+            .AddOptions<AzureBlobStorageOptions>()
+            .Bind(configuration.GetSection(AzureBlobStorageOptions.SectionName))
+            .Validate(
+                options => string.Equals(options.Provider, "Local", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(options.Provider, "Azure", StringComparison.OrdinalIgnoreCase),
+                "AzureBlobStorage:Provider must be Local or Azure.");
         services.AddOptions<StripeOptions>().Bind(configuration.GetSection(StripeOptions.SectionName));
 
         services.AddDbContext<ApplicationDbContext>((provider, options) =>
@@ -55,6 +62,17 @@ public static class ServiceCollectionExtensions
         services.AddAuthorization();
         services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
         services.AddScoped<IPropertyService, PropertyService>();
+        services.AddScoped<IPropertyMediaService, PropertyMediaService>();
+        services.AddSingleton<IPropertyMediaStorage>(provider =>
+        {
+            var options = provider.GetRequiredService<IOptions<AzureBlobStorageOptions>>();
+            return options.Value.Provider.ToUpperInvariant() switch
+            {
+                "LOCAL" => ActivatorUtilities.CreateInstance<LocalPropertyMediaStorage>(provider),
+                "AZURE" => ActivatorUtilities.CreateInstance<AzureBlobPropertyMediaStorage>(provider),
+                _ => throw new InvalidOperationException("Unsupported property media storage provider."),
+            };
+        });
 
         return services;
     }

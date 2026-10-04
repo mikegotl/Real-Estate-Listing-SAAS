@@ -10,6 +10,7 @@ public sealed class PropertyConfiguration : IEntityTypeConfiguration<ListingProp
     {
         builder.ToTable("Properties");
         builder.HasKey(property => property.Id);
+        builder.HasAlternateKey(property => new { property.Id, property.OrganizationId });
         builder.Ignore(property => property.IsArchived);
 
         builder.Property(property => property.Address1).HasMaxLength(200).IsRequired();
@@ -32,5 +33,7 @@ public sealed class PropertyConfiguration : IEntityTypeConfiguration<ListingProp
             .WithMany(organization => organization.Properties)
             .HasForeignKey(property => property.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Navigation(property => property.Media).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
