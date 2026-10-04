@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
+using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Infrastructure.Persistence;
@@ -58,6 +59,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
 
     public FakePropertyStoryGenerator StoryGenerator { get; } = new();
 
+    public FakeVideoDirector VideoDirector { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -78,7 +81,34 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
             services.AddSingleton<TimeProvider>(TimeProvider);
             services.RemoveAll<IPropertyStoryGenerator>();
             services.AddSingleton<IPropertyStoryGenerator>(StoryGenerator);
+            services.RemoveAll<IVideoDirector>();
+            services.AddSingleton<IVideoDirector>(VideoDirector);
         });
+    }
+}
+
+public sealed class FakeVideoDirector : IVideoDirector
+{
+    private readonly ConcurrentQueue<Func<VideoDirectionRequest, DirectedEditorialPlan>> outcomes = new();
+    private int callCount;
+
+    public string DirectorVersion => "fake-video-director-v1";
+
+    public int CallCount => callCount;
+
+    public VideoDirectionRequest? LastRequest { get; private set; }
+
+    public void Enqueue(Func<VideoDirectionRequest, DirectedEditorialPlan> factory) => outcomes.Enqueue(factory);
+
+    public Task<DirectedEditorialPlan> DirectAsync(
+        VideoDirectionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref callCount);
+        LastRequest = request;
+        Assert.True(outcomes.TryDequeue(out var outcome), "A fake video-direction outcome must be queued.");
+        return Task.FromResult(outcome(request));
     }
 }
 

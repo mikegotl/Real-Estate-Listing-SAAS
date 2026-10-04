@@ -54,6 +54,8 @@ Property-photo analysis runs only in the Worker and is disabled by default so lo
 
 Property marketing stories are generated on demand after every uploaded image has completed analysis. Story generation uses the same runtime-only OpenAI key and model, requests strict structured output, and validates the result against verified property facts before saving it. Identical verified inputs reuse the existing version to avoid another provider request. The initial branding input is the organization name; explicit agent profile branding is deferred to BrandKit. Automated tests use a fake story generator and never spend API credits.
 
+Video production plans can be generated after a grounded property story exists. The OpenAI video director returns editorial choices only; server code supplies and validates property/story identity, media IDs, exact fact bindings, brand values, output profile, safe zone, and CTA before storing an immutable specification. Plans support 60, 30, and 15 seconds in landscape or vertical format. Identical verified inputs reuse the stored plan, and changed inputs produce the next version. Rendering, narration generation, music assets, and full BrandKit editing belong to later milestones. Automated tests replace the director with a fake and never call paid services.
+
 ## Run
 
 Start PostgreSQL and restore the repository-local EF Core tool:
@@ -94,6 +96,8 @@ After signing in, open `/properties` to create, list, inspect, edit, and archive
 When media analysis is enabled, the Worker claims pending photos with a PostgreSQL work lease, stores structured category, room type, quality, hero suitability, visibility flags, potential problems, factual description, and suggested ordering, and schedules bounded retries. Completed results and failed-attempt state appear on the property details page; an owner can explicitly requeue a failed analysis.
 
 After all property photos show completed analysis, use **Generate story** on the property details page to create campaign title, hook, narrative, highlights, voiceover, closing call to action, and long and short social captions. Generated output is immutable and versioned. Changing verified inputs produces a new version; unchanged inputs return the stored story without a new AI request. A configured provider credential is required for this manual workflow.
+
+The Week 7 video-plan service is currently an application API rather than a Blazor workflow. It creates a fully validated, renderer-ready production specification from the latest grounded story and analyzed media. A configured OpenAI credential is required outside automated tests. The future campaign workflow will expose and orchestrate this service.
 
 Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.
 
