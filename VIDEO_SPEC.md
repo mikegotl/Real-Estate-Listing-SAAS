@@ -1,6 +1,6 @@
 # Video Production Specification 1.0
 
-**Status:** Proposed for owner approval. This document is a design contract, not an implemented feature.
+**Status:** Approved on 2026-10-04 through merged PR #11. The Week 7 implementation follows this contract.
 
 This specification defines the versioned editorial plan that connects Listing Studio's verified property data, grounded property story, analyzed media, brand assets, narration, and deterministic FFmpeg renderer. The renderer must be able to execute an accepted specification without calling AI or making editorial decisions.
 

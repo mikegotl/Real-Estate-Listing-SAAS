@@ -7,6 +7,8 @@ using ListingStudio.Infrastructure.Properties;
 using ListingStudio.Infrastructure.Storage;
 using ListingStudio.Application.Stories;
 using ListingStudio.Infrastructure.Stories;
+using ListingStudio.Application.Videos;
+using ListingStudio.Infrastructure.Videos;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -67,6 +69,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyMediaService, PropertyMediaService>();
         services.AddScoped<IPropertyMediaAnalysisProcessor, PropertyMediaAnalysisProcessor>();
         services.AddScoped<IPropertyStoryService, PropertyStoryService>();
+        services.AddScoped<IVideoProductionPlanService, VideoProductionPlanService>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPropertyMediaStorage>(provider =>
         {

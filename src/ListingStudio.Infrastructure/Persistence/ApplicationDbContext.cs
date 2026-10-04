@@ -1,6 +1,7 @@
 using ListingStudio.Domain.Organizations;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
+using ListingStudio.Domain.Videos;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<PropertyMedia> PropertyMedia => Set<PropertyMedia>();
 
     public DbSet<PropertyStory> PropertyStories => Set<PropertyStory>();
+
+    public DbSet<VideoProductionPlan> VideoProductionPlans => Set<VideoProductionPlan>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
