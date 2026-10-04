@@ -1,4 +1,5 @@
 using ListingStudio.Domain.Organizations;
+using ListingStudio.Domain.Stories;
 
 namespace ListingStudio.Domain.Properties;
 
@@ -59,6 +60,8 @@ public sealed class ListingProperty
     public Organization Organization { get; private set; } = null!;
 
     public ICollection<PropertyMedia> Media { get; } = [];
+
+    public ICollection<PropertyStory> Stories { get; } = [];
 
     public static ListingProperty Create(Guid organizationId, PropertyDetails details)
     {

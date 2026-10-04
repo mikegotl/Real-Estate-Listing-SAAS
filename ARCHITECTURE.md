@@ -49,6 +49,14 @@ Application defines the provider-neutral `IPropertyMediaAnalyzer` and `IProperty
 
 `ListingStudio.AI` implements the analyzer with the OpenAI Responses API. It sends the original image as a data URL, requests strict JSON-schema output, disables response storage, and maps only the allowed structured fields into Domain values. Provider HTTP and JSON types never cross the AI adapter boundary. `ListingStudio.Worker` processes one photo per configured interval and is disabled by default to prevent unapproved API spend. OpenAI credentials and model selection are runtime-only configuration.
 
+## Property marketing story slice
+
+The Domain owns the versioned, tenant-scoped `PropertyStory` and its structured campaign copy. Application defines the provider-neutral generator contract, source records, and a deterministic grounding validator. Infrastructure assembles verified property data, completed media observations, and organization branding; it never treats media observations as authoritative property facts. Stories are stored only after required-field, length, unsupported-number, and protected-claim checks pass.
+
+The source fingerprint includes the verified inputs and generator version. Repeating a request with identical inputs returns the stored result without another provider call; changed property data, media analysis, branding, or prompt version creates the next immutable story version. Composite tenant foreign keys and organization-scoped queries prevent cross-organization reads or generation.
+
+`ListingStudio.AI` implements story generation through the OpenAI Responses API with strict JSON-schema output and response storage disabled. The adapter sends organization branding but does not substitute an account email for an agent display name. A later BrandKit milestone can populate explicit agent branding. Story generation is user-initiated in this slice; the durable campaign workflow planned for Week 12 will orchestrate it asynchronously.
+
 ## Tests
 
-Unit tests target inward layers and the OpenAI adapter through an in-memory HTTP handler. Integration tests use disposable PostgreSQL 17 containers, apply real EF Core migrations, and exercise the ASP.NET Core composition root, Identity, organization persistence, property lifecycle, property-media storage and ordering, upload limits, durable fake-backed analysis, retry, and tenant isolation. Automated tests never call paid external services. Additional module-specific test projects can be introduced beside these as features are added.
+Unit tests target inward layers, grounding rules, and OpenAI adapters through in-memory HTTP handlers. Integration tests use disposable PostgreSQL 17 containers, apply real EF Core migrations, and exercise the ASP.NET Core composition root, Identity, organization persistence, property lifecycle, property-media storage and ordering, upload limits, durable fake-backed analysis, story persistence and versioning, provider-result rejection, caching, retry, and tenant isolation. Automated tests never call paid external services. Additional module-specific test projects can be introduced beside these as features are added.

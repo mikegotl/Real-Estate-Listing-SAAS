@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using ListingStudio.Application.Properties;
+using ListingStudio.Application.Stories;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Domain.Stories;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -54,6 +56,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
 
     public AdjustableTimeProvider TimeProvider { get; } = new();
 
+    public FakePropertyStoryGenerator StoryGenerator { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -72,7 +76,34 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
             services.AddSingleton<IPropertyMediaAnalyzer>(MediaAnalyzer);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(TimeProvider);
+            services.RemoveAll<IPropertyStoryGenerator>();
+            services.AddSingleton<IPropertyStoryGenerator>(StoryGenerator);
         });
+    }
+}
+
+public sealed class FakePropertyStoryGenerator : IPropertyStoryGenerator
+{
+    private readonly ConcurrentQueue<PropertyStoryContent> outcomes = new();
+    private int callCount;
+
+    public string GenerationVersion => "fake-story-v1";
+
+    public int CallCount => callCount;
+
+    public PropertyStoryGenerationRequest? LastRequest { get; private set; }
+
+    public void Enqueue(PropertyStoryContent content) => outcomes.Enqueue(content);
+
+    public Task<PropertyStoryContent> GenerateAsync(
+        PropertyStoryGenerationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref callCount);
+        LastRequest = request;
+        Assert.True(outcomes.TryDequeue(out var outcome), "A fake story-generation outcome must be queued.");
+        return Task.FromResult(outcome);
     }
 }
 

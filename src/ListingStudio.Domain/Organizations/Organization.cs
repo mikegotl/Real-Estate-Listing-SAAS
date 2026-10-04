@@ -1,6 +1,7 @@
 namespace ListingStudio.Domain.Organizations;
 
 using ListingStudio.Domain.Properties;
+using ListingStudio.Domain.Stories;
 
 public sealed class Organization
 {
@@ -24,6 +25,8 @@ public sealed class Organization
     public ICollection<OrganizationMember> Members { get; } = [];
 
     public ICollection<ListingProperty> Properties { get; } = [];
+
+    public ICollection<PropertyStory> PropertyStories { get; } = [];
 
     public static Organization Create(string name)
     {
