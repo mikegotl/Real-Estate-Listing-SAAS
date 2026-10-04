@@ -204,6 +204,59 @@ public sealed class VideoProductionSpecificationValidatorTests
             .GetString());
     }
 
+    [Theory]
+    [InlineData(0)] [InlineData(1)] [InlineData(2)] [InlineData(3)]
+    public void RejectsSchemaNullsUnsupportedEnumsAndOutOfRangeGain(int mutation)
+    {
+        var input = CreateInput();
+        var plan = CreateSpecification(input);
+        plan = mutation switch
+        {
+            0 => plan with { Audio = plan.Audio with { Music = plan.Audio.Music with { GainDb = 10 } } },
+            1 => plan with { Scenes = [plan.Scenes[0] with { Motion = plan.Scenes[0].Motion with { Easing = (MotionEasing)999 } }] },
+            2 => plan with { Scenes = null! },
+            3 => plan with { Audio = null! },
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        Assert.False(validator.Validate(input, plan).IsValid);
+    }
+
+    [Fact]
+    public void RejectsFeatureChangingGenerativeInstructions()
+    {
+        var input = CreateInput();
+        var plan = CreateSpecification(input);
+        var scene = plan.Scenes[0];
+        plan = plan with { Scenes = [scene with { VisualSource = new(VisualSourceKind.GenerativeMotionRequest,
+            input.Media[0].MediaId, null, input.Media[0].MediaId, "Add an ocean view and a pool") }] };
+        Assert.False(validator.Validate(input, plan).IsValid);
+    }
+
+    [Fact]
+    public void CanonicalApprovedSampleRoundTripsWithoutSchemaDrift()
+    {
+        using var stream = typeof(VideoProductionSpecificationValidatorTests).Assembly.GetManifestResourceStream("CanonicalVideoSample")!;
+        using var source = JsonDocument.Parse(stream);
+        var plan = source.RootElement.Deserialize<VideoProductionSpecification>(VideoSpecificationJson.Options)!;
+        var roundTrip = JsonSerializer.SerializeToElement(plan, VideoSpecificationJson.Options);
+        Assert.True(JsonElement.DeepEquals(source.RootElement, roundTrip));
+        Assert.Empty(VideoSchemaContract.Validate(roundTrip));
+    }
+
+    [Fact]
+    public void FiniteVocabulariesExactlyMatchApprovedSchema()
+    {
+        using var stream = typeof(VideoSchemaContract).Assembly.GetManifestResourceStream("VideoProductionSchema")!;
+        using var schema = JsonDocument.Parse(stream);
+        var definitions = schema.RootElement.GetProperty("$defs");
+        var moods = definitions.GetProperty("musicPlan").GetProperty("properties").GetProperty("mood").GetProperty("enum")
+            .EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal);
+        var anchors = definitions.GetProperty("textOverlay").GetProperty("properties").GetProperty("anchor").GetProperty("enum")
+            .EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal);
+        Assert.Equal(moods, Enum.GetValues<MusicMood>().Select(value => JsonSerializer.SerializeToElement(value, VideoSpecificationJson.Options).GetString()).Order(StringComparer.Ordinal));
+        Assert.Equal(anchors, Enum.GetValues<OverlayAnchor>().Select(value => JsonSerializer.SerializeToElement(value, VideoSpecificationJson.Options).GetString()).Order(StringComparer.Ordinal));
+    }
+
     private static VideoDirectionRequest CreateInput(
         RequestedDuration duration = RequestedDuration.Hero60,
         VideoAspectRatio aspectRatio = VideoAspectRatio.Landscape16By9)

@@ -16,8 +16,8 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 - Week 3 was accepted on 2026-10-03 after owner-directed merge of PR #7, passing local and GitHub Actions verification, successful PostgreSQL migration, tenant-isolation tests, and manual property-management acceptance.
 - Week 4 was accepted on 2026-10-03 after the owner merged PR #8 with passing local and GitHub Actions verification, a successful PostgreSQL migration, 40-image automated acceptance, and manual upload, thumbnail, and reorder checks.
 - Week 5 was accepted on 2026-10-03 after PR #9 merged with passing build/tests/migration/provider-contract verification; the owner explicitly deferred the paid live OpenAI vision check to a later integration stage.
+- Week 7 was accepted on 2026-10-04 after PR #12 merged and follow-up PR #13 merged with passing CI, 47 unit tests, 20 PostgreSQL integration tests, schema/grounding repairs, and no paid provider calls.
 - Week 6 was accepted on 2026-10-04 after the owner merged PR #10 with passing local and GitHub Actions verification, grounded fake-provider generation, immutable versioning, cache reuse, and tenant-isolation checks.
-- Week 7 was accepted on 2026-10-04 after the owner approved and squash-merged PR #12 with passing local and GitHub Actions verification, a validated renderer-ready 60-second plan, immutable versioning, cache reuse, and tenant-isolation checks.
 - Work on only the first `pending` milestone whose prerequisites are accepted. If an open PR already covers it, review or repair that PR instead of opening a duplicate. Do not begin the next milestone until the prior PR is merged and accepted.
 - Record acceptance evidence in the PR: commands, results, manual checks, remaining blockers. Never claim an unperformed test passed. Keep the `main` branch protected from unattended merges or deployments.
 
@@ -407,7 +407,7 @@ Return the specified structured JSON only.
 
 ### Week 7: AI Video Director
 
-**Status:** accepted (2026-10-04; design approved in PR #11 and implementation owner-approved and merged in PR #12)
+**Status:** accepted (2026-10-04; PR #12 merged, follow-up PR #13 merged with regression fixes and passing verification)
 
 **Expected result:** A versioned, machine-readable production specification contains every editorial decision the renderer needs.
 

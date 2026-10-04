@@ -53,9 +53,7 @@ public enum OverlayAnchor
     TopLeft,
     TopCenter,
     TopRight,
-    CenterLeft,
     Center,
-    CenterRight,
     BottomLeft,
     BottomCenter,
     BottomRight,
@@ -73,9 +71,8 @@ public enum MusicMood
 {
     None,
     WarmCinematic,
-    ModernLuxury,
-    BrightUpbeat,
-    CalmAmbient,
+    ModernAmbient,
+    UpbeatLifestyle,
 }
 
 public sealed record NormalizedRect(decimal X, decimal Y, decimal Width, decimal Height);
