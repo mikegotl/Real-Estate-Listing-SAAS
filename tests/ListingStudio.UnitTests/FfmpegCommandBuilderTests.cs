@@ -70,6 +70,32 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildSupportsCanonicalVerticalOutputProfile()
+    {
+        var request = CreateRequest();
+        var verticalViewport = new NormalizedRect(0.341796875m, 0, 0.31640625m, 1);
+        request = request with
+        {
+            Specification = request.Specification with
+            {
+                AspectRatio = VideoAspectRatio.Vertical9By16,
+                Output = request.Specification.Output with { Width = 1_080, Height = 1_920 },
+                SafeZone = new NormalizedRect(0.075m, 0.05m, 0.85m, 0.9m),
+                Scenes = request.Specification.Scenes.Select(scene => scene with
+                {
+                    Motion = new MotionPlan(MotionKind.None, verticalViewport, verticalViewport, MotionEasing.Linear),
+                }).ToArray(),
+            },
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("scale=1080:1920", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildCreatesTemplateDrivenBrandingLogosMusicDuckingAndFades()
     {
         var request = CreateBrandedRequest();

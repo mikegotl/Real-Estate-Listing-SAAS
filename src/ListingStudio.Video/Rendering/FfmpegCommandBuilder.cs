@@ -758,9 +758,13 @@ public static class FfmpegCommandBuilder
     private static void ValidateOutput(VideoProductionSpecification specification)
     {
         var output = specification.Output;
-        if (specification.AspectRatio != VideoAspectRatio.Landscape16By9
-            || output.Width != 1_920
-            || output.Height != 1_080
+        var dimensionsMatch = specification.AspectRatio switch
+        {
+            VideoAspectRatio.Landscape16By9 => output.Width == 1_920 && output.Height == 1_080,
+            VideoAspectRatio.Vertical9By16 => output.Width == 1_080 && output.Height == 1_920,
+            _ => false,
+        };
+        if (!dimensionsMatch
             || output.FrameRate != 30
             || !string.Equals(output.VideoCodec, "h264", StringComparison.Ordinal)
             || !string.Equals(output.AudioCodec, "aac", StringComparison.Ordinal)
@@ -768,7 +772,8 @@ public static class FfmpegCommandBuilder
             || output.SampleRateHz != 48_000
             || output.AudioChannels != 2)
         {
-            throw new NotSupportedException("The initial renderer supports only the 1920x1080 H.264/AAC output profile.");
+            throw new NotSupportedException(
+                "The renderer supports only 1920x1080 landscape or 1080x1920 vertical H.264/AAC output profiles.");
         }
 
     }
