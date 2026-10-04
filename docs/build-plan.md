@@ -352,7 +352,7 @@ Return only the requested structured schema.
 
 ### Week 6: Property Marketing Story
 
-**Status:** proposed (implementation branch; PR pending)
+**Status:** proposed (PR #10; owner review, paid live check decision, and acceptance pending)
 
 **Expected result:** Verified listing facts and visible media observations become a grounded narrative, voiceover and social copy.
 
