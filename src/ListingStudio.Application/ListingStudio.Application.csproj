@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup><ProjectReference Include="../ListingStudio.Domain/ListingStudio.Domain.csproj" /></ItemGroup>
   <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../docs/video-production-spec.schema.json" LogicalName="VideoProductionSchema" /></ItemGroup>
 </Project>

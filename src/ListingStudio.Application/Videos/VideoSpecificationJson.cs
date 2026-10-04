@@ -13,10 +13,13 @@ public static class VideoSpecificationJson
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             WriteIndented = false,
+            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+            RespectRequiredConstructorParameters = true,
+            RespectNullableAnnotations = true,
         };
         options.Converters.Add(new RequestedDurationConverter());
         options.Converters.Add(new AspectRatioConverter());
-        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
         return options;
     }
 

@@ -167,6 +167,44 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
         Assert.Equal(callsBefore, fixture.Factory.VideoDirector.CallCount);
     }
 
+    [Fact]
+    public async Task RejectsStoryClaimsInvalidatedByPropertyChangesBeforeDirectorCall()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("stale-video-owner");
+        await UploadAndAnalyzeAsync(owner);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await GenerateStoryAsync(owner);
+        var callsBefore = fixture.Factory.VideoDirector.CallCount;
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        await properties.UpdateAsync(owner.UserId, owner.PropertyId, ValidProperty with { Address1 = "456 New Street" });
+        var plans = scope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>();
+        await Assert.ThrowsAsync<InvalidDataException>(() => plans.GenerateAsync(owner.UserId, owner.PropertyId,
+            RequestedDuration.Hero60, VideoAspectRatio.Landscape16By9));
+        Assert.Equal(callsBefore, fixture.Factory.VideoDirector.CallCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentIdenticalRequestsReuseOneDirectorCall()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("concurrent-video-owner");
+        await UploadAndAnalyzeAsync(owner);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await GenerateStoryAsync(owner);
+        var callsBefore = fixture.Factory.VideoDirector.CallCount;
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        async Task<VideoProductionPlanResult?> Generate()
+        {
+            await using var scope = fixture.Factory.Services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>().GenerateAsync(
+                owner.UserId, owner.PropertyId, RequestedDuration.Hero60, VideoAspectRatio.Landscape16By9);
+        }
+        var plans = await Task.WhenAll(Generate(), Generate());
+        Assert.Equal(plans[0]!.Id, plans[1]!.Id);
+        Assert.Equal(callsBefore + 1, fixture.Factory.VideoDirector.CallCount);
+        Assert.Single(plans, plan => plan!.Reused);
+    }
+
     private static DirectedEditorialPlan CreateEditorialPlan(VideoDirectionRequest request)
     {
         var narrationBinding = request.FactBindings.Single(binding => binding.Key == "story.voiceover");

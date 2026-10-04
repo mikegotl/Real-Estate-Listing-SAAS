@@ -10,4 +10,5 @@
     <ProjectReference Include="../../src/ListingStudio.Application/ListingStudio.Application.csproj" />
     <ProjectReference Include="../../src/ListingStudio.AI/ListingStudio.AI.csproj" />
   </ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../docs/samples/video-production-spec-60s.json" LogicalName="CanonicalVideoSample" /></ItemGroup>
 </Project>
