@@ -30,5 +30,6 @@ builder.Services
         "Enabled media analysis requires OpenAI:ApiKey, OpenAI:Model, and an HTTPS OpenAI:ResponsesEndpoint.")
     .ValidateOnStart();
 builder.Services.AddHostedService<Worker>();
+builder.Services.AddHostedService<CampaignGenerationWorker>();
 
 await builder.Build().RunAsync();

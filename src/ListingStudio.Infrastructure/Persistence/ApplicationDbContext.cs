@@ -2,6 +2,7 @@ using ListingStudio.Domain.Organizations;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Domain.Videos;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<VideoProductionPlan> VideoProductionPlans => Set<VideoProductionPlan>();
 
     public DbSet<VideoNarration> VideoNarrations => Set<VideoNarration>();
+
+    public DbSet<CampaignGenerationJob> CampaignGenerationJobs => Set<CampaignGenerationJob>();
+
+    public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

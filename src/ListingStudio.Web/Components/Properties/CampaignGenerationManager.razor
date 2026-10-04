@@ -1,0 +1,264 @@
+@implements IAsyncDisposable
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ICampaignGenerationService CampaignService
+
+<MudPaper Class="pa-6 mt-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Campaign</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Generate, monitor, and download the complete video campaign.
+            </MudText>
+        </div>
+        @if (job is null || job.Status is CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="@(busy || IsReadOnly)"
+                       OnClick="GenerateAsync">
+                @(job is null ? "Generate campaign" : "Generate updated campaign")
+            </MudButton>
+        }
+    </MudStack>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+    }
+
+    @if (job is null)
+    {
+        <MudText Typo="Typo.body1">No campaign has been generated yet.</MudText>
+    }
+    else
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+            <MudChip T="string" Color="@StatusColor(job.Status)" Variant="Variant.Filled">
+                @Display(job.Status)
+            </MudChip>
+            <MudText Typo="Typo.body2">@Display(job.CurrentStage)</MudText>
+        </MudStack>
+        <MudProgressLinear Value="job.ProgressPercent" Color="Color.Primary" Class="mb-4" />
+
+        @if (!string.IsNullOrWhiteSpace(job.LastError))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">@job.LastError</MudAlert>
+        }
+
+        <MudList T="CampaignStageResult" Dense="true" Class="mb-4">
+            @foreach (var stage in job.Stages)
+            {
+                <MudListItem T="CampaignStageResult"
+                             Icon="@StageIcon(stage.Status)"
+                             IconColor="@StageColor(stage.Status)">
+                    @Display(stage.Stage)
+                    @if (stage.AttemptCount > 1)
+                    {
+                        <span> · attempt @stage.AttemptCount</span>
+                    }
+                </MudListItem>
+            }
+        </MudList>
+
+        @if (job.Deliverables.Count > 0)
+        {
+            <MudGrid Spacing="2" Class="mb-4">
+                @foreach (var deliverable in job.Deliverables)
+                {
+                    <MudItem xs="12" md="4">
+                        <MudPaper Outlined="true" Class="pa-4">
+                            <MudText Typo="Typo.h6">@deliverable.Kind</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                @deliverable.DurationSeconds seconds · @deliverable.AspectRatio
+                            </MudText>
+                            @if (deliverable.Status == CampaignDeliverableStatus.Rendered)
+                            {
+                                <MudButton Href="@DownloadUrl(job.Id, deliverable.Kind)"
+                                           Variant="Variant.Outlined"
+                                           Color="Color.Primary"
+                                           Class="mt-3">
+                                    Download MP4
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudProgressLinear Indeterminate="true" Class="mt-3" />
+                            }
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+
+        @if (job.Status == CampaignGenerationStatus.Completed)
+        {
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Short social caption</MudText>
+            <MudText Typo="Typo.body1" Class="mb-3">@job.SocialCaptionShort</MudText>
+            <MudText Typo="Typo.overline" Color="Color.Secondary">Long social caption</MudText>
+            <MudText Typo="Typo.body1">@job.SocialCaptionLong</MudText>
+        }
+
+        <MudStack Row="true" Spacing="2" Class="mt-4">
+            @if (job.Status == CampaignGenerationStatus.Failed)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="RetryAsync">
+                    Retry failed stage
+                </MudButton>
+            }
+            @if (job.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="busy" OnClick="CancelAsync">
+                    Cancel campaign
+                </MudButton>
+            }
+            <MudButton Variant="Variant.Text" Disabled="busy" OnClick="LoadAsync">Refresh</MudButton>
+        </MudStack>
+    }
+</MudPaper>
+
+@code {
+    [Parameter]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private readonly CancellationTokenSource pollingCancellation = new();
+    private CampaignGenerationResult? job;
+    private bool busy;
+    private bool pollingStarted;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+        StartPolling();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            job = await CampaignService.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
+            error = null;
+        }
+        catch (OperationCanceledException) when (pollingCancellation.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task GenerateAsync() => await MutateAsync(async userId =>
+        job = await CampaignService.EnqueueAsync(userId, PropertyId));
+
+    private async Task RetryAsync() => await MutateAsync(async userId =>
+    {
+        if (job is not null && await CampaignService.RetryAsync(userId, job.Id))
+        {
+            job = await CampaignService.GetAsync(userId, job.Id);
+        }
+    });
+
+    private async Task CancelAsync() => await MutateAsync(async userId =>
+    {
+        if (job is not null && await CampaignService.CancelAsync(userId, job.Id))
+        {
+            job = await CampaignService.GetAsync(userId, job.Id);
+        }
+    });
+
+    private async Task MutateAsync(Func<string, Task> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await action(userId);
+            if (job is null)
+            {
+                error = "Property not found or unavailable to your organization.";
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void StartPolling()
+    {
+        if (pollingStarted)
+        {
+            return;
+        }
+
+        pollingStarted = true;
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(pollingCancellation.Token))
+            {
+                if (job?.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        await LoadAsync();
+                        StateHasChanged();
+                    });
+                }
+            }
+        }
+        catch (OperationCanceledException) when (pollingCancellation.IsCancellationRequested)
+        {
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        pollingCancellation.Cancel();
+        pollingCancellation.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private static string DownloadUrl(Guid jobId, CampaignOutputKind kind) =>
+        $"/campaigns/{jobId}/deliverables/{kind}";
+
+    private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
+        index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
+
+    private static Color StatusColor(CampaignGenerationStatus status) => status switch
+    {
+        CampaignGenerationStatus.Completed => Color.Success,
+        CampaignGenerationStatus.Failed => Color.Error,
+        CampaignGenerationStatus.Cancelled => Color.Warning,
+        _ => Color.Primary,
+    };
+
+    private static Color StageColor(CampaignStageStatus status) => status switch
+    {
+        CampaignStageStatus.Completed => Color.Success,
+        CampaignStageStatus.Failed => Color.Error,
+        CampaignStageStatus.Cancelled => Color.Warning,
+        CampaignStageStatus.Running => Color.Primary,
+        _ => Color.Default,
+    };
+
+    private static string StageIcon(CampaignStageStatus status) => status switch
+    {
+        CampaignStageStatus.Completed => Icons.Material.Filled.CheckCircle,
+        CampaignStageStatus.Failed => Icons.Material.Filled.Error,
+        CampaignStageStatus.Cancelled => Icons.Material.Filled.Cancel,
+        CampaignStageStatus.Running => Icons.Material.Filled.PlayCircle,
+        _ => Icons.Material.Filled.RadioButtonUnchecked,
+    };
+}

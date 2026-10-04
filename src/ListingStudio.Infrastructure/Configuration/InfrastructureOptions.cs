@@ -22,3 +22,12 @@ public sealed class StripeOptions
     public string SecretKey { get; init; } = string.Empty;
     public string WebhookSecret { get; init; } = string.Empty;
 }
+
+public sealed class CampaignGenerationOptions
+{
+    public const string SectionName = "CampaignGeneration";
+    public bool Enabled { get; init; } = true;
+    public int PollIntervalSeconds { get; init; } = 2;
+    public int StageTimeoutSeconds { get; init; } = 600;
+    public int LeaseSeconds { get; init; } = 900;
+}

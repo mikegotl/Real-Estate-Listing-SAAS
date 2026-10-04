@@ -11,6 +11,8 @@ using ListingStudio.Application.Videos;
 using ListingStudio.Infrastructure.Videos;
 using ListingStudio.Application.Audio;
 using ListingStudio.Infrastructure.Audio;
+using ListingStudio.Application.Campaigns;
+using ListingStudio.Infrastructure.Campaigns;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -36,6 +38,14 @@ public static class ServiceCollectionExtensions
                     || string.Equals(options.Provider, "Azure", StringComparison.OrdinalIgnoreCase),
                 "AzureBlobStorage:Provider must be Local or Azure.");
         services.AddOptions<StripeOptions>().Bind(configuration.GetSection(StripeOptions.SectionName));
+        services.AddOptions<CampaignGenerationOptions>()
+            .Bind(configuration.GetSection(CampaignGenerationOptions.SectionName))
+            .Validate(options => options.PollIntervalSeconds is >= 1 and <= 60,
+                "CampaignGeneration:PollIntervalSeconds must be between 1 and 60.")
+            .Validate(options => options.StageTimeoutSeconds is >= 30 and <= 3_600,
+                "CampaignGeneration:StageTimeoutSeconds must be between 30 and 3600.")
+            .Validate(options => options.LeaseSeconds > options.StageTimeoutSeconds,
+                "CampaignGeneration:LeaseSeconds must exceed StageTimeoutSeconds.");
 
         services.AddDbContext<ApplicationDbContext>((provider, options) =>
         {
@@ -73,6 +83,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyStoryService, PropertyStoryService>();
         services.AddScoped<IVideoProductionPlanService, VideoProductionPlanService>();
         services.AddScoped<IVideoNarrationService, VideoNarrationService>();
+        services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
+        services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPropertyMediaStorage>(provider =>
         {

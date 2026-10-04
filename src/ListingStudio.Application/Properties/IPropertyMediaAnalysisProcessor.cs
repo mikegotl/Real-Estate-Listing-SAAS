@@ -5,6 +5,11 @@ public interface IPropertyMediaAnalysisProcessor
     public const int MaximumAttempts = 3;
 
     Task<PropertyMediaAnalysisRunResult?> AnalyzeNextAsync(CancellationToken cancellationToken = default);
+
+    Task<PropertyMediaAnalysisRunResult?> AnalyzeNextForPropertyAsync(
+        Guid organizationId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record PropertyMediaAnalysisRunResult(
