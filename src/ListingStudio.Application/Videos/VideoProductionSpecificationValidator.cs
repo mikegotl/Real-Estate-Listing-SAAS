@@ -1,4 +1,5 @@
 using ListingStudio.Domain.Videos;
+using System.Text.Json;
 
 namespace ListingStudio.Application.Videos;
 
@@ -10,7 +11,16 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
     {
         ArgumentNullException.ThrowIfNull(authoritativeInput);
         ArgumentNullException.ThrowIfNull(specification);
-        var errors = new List<string>();
+        List<string> errors;
+        try
+        {
+            errors = VideoSchemaContract.Validate(JsonSerializer.SerializeToElement(specification, VideoSpecificationJson.Options)).ToList();
+        }
+        catch (JsonException)
+        {
+            return new(false, ["Specification contains unsupported serialized values."]);
+        }
+        if (errors.Count > 0) return new(false, errors);
 
         ValidateAuthority(authoritativeInput, specification, errors);
         ValidateTimeline(authoritativeInput, specification, errors);
@@ -62,7 +72,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
             .GroupBy(item => item.MediaId)
             .ToDictionary(group => group.Key, group => group.First());
         var overlayIds = new HashSet<string>(StringComparer.Ordinal);
-        var expectedStart = 0;
+        long expectedStart = 0;
         for (var index = 0; index < specification.Scenes.Count; index++)
         {
             var scene = specification.Scenes[index];
@@ -70,7 +80,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
             AddIf(scene.SceneNumber != index + 1, $"{path}.sceneNumber must be consecutive.", errors);
             AddIf(scene.StartMs != expectedStart, $"{path}.startMs must be contiguous.", errors);
             AddIf(scene.DurationMs <= 0, $"{path}.durationMs must be positive.", errors);
-            expectedStart = scene.StartMs + scene.DurationMs;
+            expectedStart = End(scene.StartMs, scene.DurationMs);
 
             ValidateTransition(specification.Scenes, index, errors);
             var effectiveMediaId = ValidateVisualSource(input, scene.VisualSource, path, errors);
@@ -81,7 +91,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
                 AddIf(string.IsNullOrWhiteSpace(overlay.Id) || !overlayIds.Add(overlay.Id),
                     $"{path}.textOverlays contains an empty or duplicate ID.", errors);
                 AddIf(overlay.StartOffsetMs < 0 || overlay.DurationMs <= 0
-                    || overlay.StartOffsetMs + overlay.DurationMs > scene.DurationMs,
+                    || End(overlay.StartOffsetMs, overlay.DurationMs) > scene.DurationMs,
                     $"{path}.textOverlays timing must fit the scene.", errors);
                 AddIf(!IsInside(overlay.Box, specification.SafeZone),
                     $"{path}.textOverlays box must fit the safe zone.", errors);
@@ -91,10 +101,11 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
 
             foreach (var logo in scene.LogoOverlays)
             {
-                AddIf(!input.ApprovedBrandAssetIds.Contains(logo.AssetId),
+                AddIf(!input.ApprovedBrandAssetIds.Contains(logo.AssetId)
+                    || (logo.AssetId != input.Brand.PrimaryLogoAssetId && logo.AssetId != input.Brand.SecondaryLogoAssetId),
                     $"{path}.logoOverlays references an unapproved asset.", errors);
                 AddIf(logo.StartOffsetMs < 0 || logo.DurationMs <= 0
-                    || logo.StartOffsetMs + logo.DurationMs > scene.DurationMs,
+                    || End(logo.StartOffsetMs, logo.DurationMs) > scene.DurationMs,
                     $"{path}.logoOverlays timing must fit the scene.", errors);
                 AddIf(logo.Opacity is < 0 or > 1, $"{path}.logoOverlays opacity is invalid.", errors);
                 AddIf(!IsInside(logo.Box, specification.SafeZone),
@@ -159,7 +170,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
                 break;
             case VisualSourceKind.GenerativeMotionRequest:
                 AddIf(source.PropertyMediaId is null || source.GeneratedClipId is not null
-                    || source.FallbackPropertyMediaId is null || string.IsNullOrWhiteSpace(source.GenerationInstruction),
+                    || source.FallbackPropertyMediaId != source.PropertyMediaId || !IsCameraInstruction(source.GenerationInstruction),
                     $"{path}.visualSource has invalid generativeMotionRequest fields.", errors);
                 mediaId = source.FallbackPropertyMediaId;
                 break;
@@ -216,6 +227,12 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         string path,
         List<string> errors)
     {
+        if (media.Width <= 0 || media.Height <= 0)
+        {
+            errors.Add($"{path} requires positive source dimensions.");
+            return;
+        }
+
         if (viewport.Width <= 0 || viewport.Height <= 0)
         {
             return;
@@ -235,16 +252,16 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         var programDuration = (int)specification.RequestedDuration * 1_000;
         var narrationIds = new HashSet<string>(StringComparer.Ordinal);
         var ordered = specification.Audio.NarrationSegments.OrderBy(segment => segment.StartMs).ToArray();
-        var previousEnd = 0;
+        long previousEnd = 0;
         foreach (var segment in ordered)
         {
             AddIf(string.IsNullOrWhiteSpace(segment.Id) || !narrationIds.Add(segment.Id),
                 "Narration IDs must be non-empty and unique.", errors);
             AddIf(segment.StartMs < 0 || segment.DurationMs <= 0
-                || segment.StartMs + segment.DurationMs > programDuration,
+                || End(segment.StartMs, segment.DurationMs) > programDuration,
                 $"Narration segment {segment.Id} is outside the program.", errors);
             AddIf(segment.StartMs < previousEnd, $"Narration segment {segment.Id} overlaps another segment.", errors);
-            previousEnd = Math.Max(previousEnd, segment.StartMs + segment.DurationMs);
+            previousEnd = Math.Max(previousEnd, End(segment.StartMs, segment.DurationMs));
             ValidateGroundedText(segment.Text, segment.GroundingKey, input.FactBindings,
                 $"Narration segment {segment.Id}", errors);
         }
@@ -252,8 +269,8 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         foreach (var scene in specification.Scenes)
         {
             var expected = ordered
-                .Where(segment => segment.StartMs < scene.StartMs + scene.DurationMs
-                    && segment.StartMs + segment.DurationMs > scene.StartMs)
+                .Where(segment => segment.StartMs < End(scene.StartMs, scene.DurationMs)
+                    && End(segment.StartMs, segment.DurationMs) > scene.StartMs)
                 .Select(segment => segment.Id)
                 .Order(StringComparer.Ordinal);
             AddIf(!scene.NarrationSegmentIds.Order(StringComparer.Ordinal).SequenceEqual(expected),
@@ -270,10 +287,10 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         else
         {
             AddIf(!input.ApprovedMusicAssetIds.Contains(music.AssetId), "Music asset is not approved.", errors);
-            AddIf(music.StartMs < 0 || music.DurationMs <= 0 || music.StartMs + music.DurationMs > programDuration,
+            AddIf(music.StartMs < 0 || music.DurationMs <= 0 || End(music.StartMs, music.DurationMs) > programDuration,
                 "Music timing is outside the program.", errors);
             AddIf(music.FadeInMs < 0 || music.FadeOutMs < 0
-                || music.FadeInMs + music.FadeOutMs > music.DurationMs,
+                || (long)music.FadeInMs + music.FadeOutMs > music.DurationMs,
                 "Music fades do not fit the music interval.", errors);
         }
 
@@ -315,6 +332,11 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
     private static decimal Ratio(decimal left, decimal right) => left <= 0 || right <= 0
         ? decimal.MaxValue
         : Math.Max(left / right, right / left);
+
+    private static long End(int start, int duration) => (long)start + duration;
+    private static bool IsCameraInstruction(string? instruction) => instruction is
+        "slow cinematic push forward" or "slow cinematic pull back" or "slow horizontal pan"
+        or "Slow camera push while preserving the property image.";
 
     private static void AddIf(bool condition, string message, List<string> errors)
     {

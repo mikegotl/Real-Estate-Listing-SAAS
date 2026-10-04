@@ -406,7 +406,7 @@ Return the specified structured JSON only.
 
 ### Week 7: AI Video Director
 
-**Status:** implementation proposed (PR #12; design approved and merged in PR #11; owner acceptance required)
+**Status:** verification fixes proposed (`codex/week-7-video-plan-fixes`; implementation PR #12 owner-merged on 2026-10-04; schema/grounding/concurrency repairs still require review before acceptance)
 
 **Expected result:** A versioned, machine-readable production specification contains every editorial decision the renderer needs.
 

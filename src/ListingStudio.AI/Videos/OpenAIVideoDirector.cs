@@ -24,138 +24,15 @@ public sealed class OpenAIVideoDirector(
         Scene starts must be contiguous from zero and the scene durations must total the requested duration exactly.
         The first transition must be a zero-duration cut. Every displayed or spoken string must exactly equal one of
         the supplied fact bindings and use its key. Reference only supplied property media IDs. Return only the
-        requested structured editorial plan.
+        requested structured editorial plan. Keep overlays within the supplied safe_zone. Generative instructions may
+        only be: slow cinematic push forward, slow cinematic pull back, slow horizontal pan, or
+        Slow camera push while preserving the property image. A generative request must use the same supplied
+        property image for its fallback. Never change architecture, materials, furnishings, landscaping or features.
         """;
 
-    private static readonly JsonElement OutputSchema = JsonDocument.Parse("""
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "audio": { "$ref": "#/$defs/audioPlan" },
-            "scenes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } }
-          },
-          "required": ["audio", "scenes"],
-          "$defs": {
-            "nullableString": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
-            "nullableUuid": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
-            "rect": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "x": { "type": "number", "minimum": 0, "maximum": 1 },
-                "y": { "type": "number", "minimum": 0, "maximum": 1 },
-                "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
-                "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
-              },
-              "required": ["x", "y", "width", "height"]
-            },
-            "music": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "assetId": { "$ref": "#/$defs/nullableString" },
-                "mood": { "type": "string", "enum": ["none", "warmCinematic", "modernLuxury", "brightUpbeat", "calmAmbient"] },
-                "startMs": { "type": "integer", "minimum": 0 },
-                "durationMs": { "type": "integer", "minimum": 0 },
-                "gainDb": { "type": "number" },
-                "fadeInMs": { "type": "integer", "minimum": 0 },
-                "fadeOutMs": { "type": "integer", "minimum": 0 },
-                "duckingGainDb": { "type": "number" }
-              },
-              "required": ["assetId", "mood", "startMs", "durationMs", "gainDb", "fadeInMs", "fadeOutMs", "duckingGainDb"]
-            },
-            "narration": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "id": { "type": "string" },
-                "startMs": { "type": "integer", "minimum": 0 },
-                "durationMs": { "type": "integer", "minimum": 1 },
-                "text": { "type": "string" },
-                "groundingKey": { "type": "string" }
-              },
-              "required": ["id", "startMs", "durationMs", "text", "groundingKey"]
-            },
-            "audioPlan": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "narrationSegments": { "type": "array", "items": { "$ref": "#/$defs/narration" } },
-                "music": { "$ref": "#/$defs/music" }
-              },
-              "required": ["narrationSegments", "music"]
-            },
-            "visualSource": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "kind": { "type": "string", "enum": ["propertyMedia", "generatedClip", "generativeMotionRequest"] },
-                "propertyMediaId": { "$ref": "#/$defs/nullableUuid" },
-                "generatedClipId": { "$ref": "#/$defs/nullableUuid" },
-                "fallbackPropertyMediaId": { "$ref": "#/$defs/nullableUuid" },
-                "generationInstruction": { "$ref": "#/$defs/nullableString" }
-              },
-              "required": ["kind", "propertyMediaId", "generatedClipId", "fallbackPropertyMediaId", "generationInstruction"]
-            },
-            "transition": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "type": { "type": "string", "enum": ["cut", "crossfade", "dipToBlack"] },
-                "durationMs": { "type": "integer", "minimum": 0, "maximum": 1500 }
-              },
-              "required": ["type", "durationMs"]
-            },
-            "motion": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "type": { "type": "string", "enum": ["none", "kenBurns"] },
-                "startViewport": { "$ref": "#/$defs/rect" },
-                "endViewport": { "$ref": "#/$defs/rect" },
-                "easing": { "type": "string", "enum": ["linear", "easeInOut"] }
-              },
-              "required": ["type", "startViewport", "endViewport", "easing"]
-            },
-            "textOverlay": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "id": { "type": "string" },
-                "text": { "type": "string" },
-                "groundingKey": { "type": "string" },
-                "startOffsetMs": { "type": "integer", "minimum": 0 },
-                "durationMs": { "type": "integer", "minimum": 1 },
-                "anchor": { "type": "string", "enum": ["topLeft", "topCenter", "topRight", "centerLeft", "center", "centerRight", "bottomLeft", "bottomCenter", "bottomRight"] },
-                "box": { "$ref": "#/$defs/rect" },
-                "styleToken": { "type": "string", "enum": ["openingTitle", "propertyFact", "lowerThird", "closingCta"] }
-              },
-              "required": ["id", "text", "groundingKey", "startOffsetMs", "durationMs", "anchor", "box", "styleToken"]
-            },
-            "logoOverlay": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "assetId": { "type": "string" },
-                "startOffsetMs": { "type": "integer", "minimum": 0 },
-                "durationMs": { "type": "integer", "minimum": 1 },
-                "box": { "$ref": "#/$defs/rect" },
-                "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
-              },
-              "required": ["assetId", "startOffsetMs", "durationMs", "box", "opacity"]
-            },
-            "scene": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "sceneNumber": { "type": "integer", "minimum": 1 },
-                "startMs": { "type": "integer", "minimum": 0 },
-                "durationMs": { "type": "integer", "minimum": 1 },
-                "visualSource": { "$ref": "#/$defs/visualSource" },
-                "transitionIn": { "$ref": "#/$defs/transition" },
-                "motion": { "$ref": "#/$defs/motion" },
-                "textOverlays": { "type": "array", "items": { "$ref": "#/$defs/textOverlay" } },
-                "logoOverlays": { "type": "array", "items": { "$ref": "#/$defs/logoOverlay" } },
-                "narrationSegmentIds": { "type": "array", "items": { "type": "string" } }
-              },
-              "required": ["sceneNumber", "startMs", "durationMs", "visualSource", "transitionIn", "motion", "textOverlays", "logoOverlays", "narrationSegmentIds"]
-            }
-          }
-        }
-        """).RootElement.Clone();
+    private static readonly JsonElement OutputSchema = VideoSchemaContract.EditorialSchema;
 
-    public string DirectorVersion => "openai-video-director-v1";
+    public string DirectorVersion => "openai-video-director-v1.1";
 
     public async Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,
@@ -186,6 +63,7 @@ public sealed class OpenAIVideoDirector(
             media = request.Media,
             requested_duration_seconds = (int)request.RequestedDuration,
             aspect_ratio = request.AspectRatio == VideoAspectRatio.Landscape16By9 ? "16:9" : "9:16",
+            safe_zone = request.SafeZone,
             fact_bindings = request.FactBindings,
             brand = request.Brand,
             call_to_action = request.CallToAction,
@@ -249,43 +127,43 @@ public sealed class OpenAIVideoDirector(
         }
 
         await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var responseJson = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
-        var outputText = GetOutputText(responseJson.RootElement);
-        return JsonSerializer.Deserialize<DirectedEditorialPlan>(outputText, VideoSpecificationJson.Options)
-            ?? throw new InvalidDataException("OpenAI returned an empty video editorial plan.");
+        try
+        {
+            using var responseJson = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
+            var outputText = GetOutputText(responseJson.RootElement);
+            using var editorialJson = JsonDocument.Parse(outputText);
+            if (VideoSchemaContract.Validate(editorialJson.RootElement, editorial: true).Count > 0)
+                throw new InvalidDataException("OpenAI returned an invalid video editorial schema.");
+            return editorialJson.RootElement.Deserialize<DirectedEditorialPlan>(VideoSpecificationJson.Options)
+                ?? throw new InvalidDataException("OpenAI returned an empty video editorial plan.");
+        }
+        catch (JsonException)
+        {
+            throw new InvalidDataException("OpenAI returned malformed video editorial JSON.");
+        }
     }
 
     private static string GetOutputText(JsonElement response)
     {
+        if (response.ValueKind != JsonValueKind.Object || !response.TryGetProperty("status", out var status)
+            || status.ValueKind != JsonValueKind.String || status.GetString() != "completed")
+            throw new InvalidDataException("OpenAI video direction did not complete.");
         if (!response.TryGetProperty("output", out var output) || output.ValueKind != JsonValueKind.Array)
-        {
             throw new InvalidDataException("OpenAI returned no video direction output.");
-        }
-
+        var texts = new List<string>();
         foreach (var item in output.EnumerateArray())
         {
-            if (!item.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
-            {
-                continue;
-            }
-
+            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) continue;
             foreach (var part in content.EnumerateArray())
             {
-                var type = part.TryGetProperty("type", out var typeElement) ? typeElement.GetString() : null;
-                if (type == "refusal")
-                {
-                    throw new InvalidOperationException("OpenAI refused the video direction request.");
-                }
-
-                if (type == "output_text"
-                    && part.TryGetProperty("text", out var text)
-                    && !string.IsNullOrWhiteSpace(text.GetString()))
-                {
-                    return text.GetString()!;
-                }
+                if (part.ValueKind != JsonValueKind.Object) continue;
+                var type = part.TryGetProperty("type", out var element) && element.ValueKind == JsonValueKind.String ? element.GetString() : null;
+                if (type == "refusal") throw new InvalidOperationException("OpenAI refused the video direction request.");
+                if (type == "output_text" && part.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                    texts.Add(text.GetString()!);
             }
         }
-
-        throw new InvalidDataException("OpenAI returned no structured video editorial plan.");
+        if (texts.Count != 1) throw new InvalidDataException("OpenAI must return exactly one structured video editorial plan.");
+        return texts[0];
     }
 }

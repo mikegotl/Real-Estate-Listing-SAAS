@@ -1,4 +1,3 @@
-using System.Data;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -16,7 +15,8 @@ namespace ListingStudio.Infrastructure.Videos;
 public sealed class VideoProductionPlanService(
     ApplicationDbContext dbContext,
     IVideoDirector director,
-    IVideoProductionSpecificationValidator validator) : IVideoProductionPlanService
+    IVideoProductionSpecificationValidator validator,
+    IPropertyStoryGroundingValidator storyValidator) : IVideoProductionPlanService
 {
     public async Task<VideoProductionPlanResult?> GetLatestAsync(
         string userId,
@@ -46,9 +46,11 @@ public sealed class VideoProductionPlanService(
     {
         EnsureSupportedOutput(duration, aspectRatio);
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        // Lock before source assembly/provider calls to prevent duplicate spend and racing property edits.
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var property = await dbContext.Properties
+            .FromSqlInterpolated($"SELECT * FROM \"Properties\" WHERE \"Id\" = {propertyId} AND \"OrganizationId\" = {organizationId} FOR UPDATE")
             .AsNoTracking()
-            .Include(candidate => candidate.Media)
             .SingleOrDefaultAsync(
                 candidate => candidate.Id == propertyId && candidate.OrganizationId == organizationId,
                 cancellationToken);
@@ -62,8 +64,11 @@ public sealed class VideoProductionPlanService(
             throw new InvalidOperationException("Archived properties cannot generate video production plans.");
         }
 
-        if (property.Media.Count == 0
-            || property.Media.Any(media => media.AnalysisStatus != PropertyMediaAnalysisStatus.Completed))
+        var media = await dbContext.PropertyMedia
+            .FromSqlInterpolated($"SELECT * FROM \"PropertyMedia\" WHERE \"PropertyId\" = {propertyId} AND \"OrganizationId\" = {organizationId} ORDER BY \"DisplayOrder\", \"Id\" FOR UPDATE")
+            .AsNoTracking().ToArrayAsync(cancellationToken);
+        if (media.Length == 0
+            || media.Any(media => media.AnalysisStatus != PropertyMediaAnalysisStatus.Completed))
         {
             throw new InvalidOperationException(
                 "Every property image must have completed analysis before video direction.");
@@ -81,11 +86,16 @@ public sealed class VideoProductionPlanService(
             .Where(organization => organization.Id == organizationId)
             .Select(organization => organization.Name)
             .SingleAsync(cancellationToken);
-        var request = CreateRequest(property, story, organizationName, duration, aspectRatio);
+        var request = CreateRequest(property, media, story, organizationName, duration, aspectRatio);
+        var storySource = new PropertyStoryGenerationRequest(request.VerifiedProperty,
+            request.Media.Select(m => m.Analysis).ToArray(), new(organizationName, request.Brand.AgentName));
+        if (!storyValidator.Validate(storySource, story.GetContent()).IsValid)
+            throw new InvalidDataException("Stored property story no longer passes grounding against current verified facts. Generate a new story.");
         var fingerprint = CreateFingerprint(director.DirectorVersion, request);
         var existing = await FindByFingerprintAsync(organizationId, propertyId, fingerprint, cancellationToken);
         if (existing is not null)
         {
+            await transaction.CommitAsync(cancellationToken);
             return ToResult(existing, reused: true);
         }
 
@@ -112,16 +122,6 @@ public sealed class VideoProductionPlanService(
         }
 
         var specificationJson = JsonSerializer.Serialize(specification, VideoSpecificationJson.Options);
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-        existing = await FindByFingerprintAsync(organizationId, propertyId, fingerprint, cancellationToken);
-        if (existing is not null)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            return ToResult(existing, reused: true);
-        }
-
         var latestVersion = await dbContext.VideoProductionPlans
             .Where(candidate => candidate.OrganizationId == organizationId
                 && candidate.PropertyId == propertyId
@@ -148,6 +148,7 @@ public sealed class VideoProductionPlanService(
 
     private static VideoDirectionRequest CreateRequest(
         ListingProperty property,
+        IReadOnlyList<PropertyMedia> propertyMedia,
         PropertyStory story,
         string organizationName,
         RequestedDuration duration,
@@ -179,7 +180,7 @@ public sealed class VideoProductionPlanService(
                 content.Highlights,
                 content.VoiceoverScript,
                 content.ClosingCta));
-        var media = property.Media
+        var media = propertyMedia
             .OrderBy(item => item.DisplayOrder)
             .Select(item => new VideoMediaInput(
                 item.Id,
@@ -229,7 +230,7 @@ public sealed class VideoProductionPlanService(
         var facts = new List<FactBinding>
         {
             new("property.address.full", address, FactSource.VerifiedProperty, "Address1+Address2+City+State+ZipCode"),
-            new("property.listingPrice", property.ListingPrice.ToString("C0", CultureInfo.GetCultureInfo("en-US")),
+            new("property.listingPrice", property.ListingPrice.ToString(property.ListingPrice == decimal.Truncate(property.ListingPrice) ? "C0" : "C2", CultureInfo.GetCultureInfo("en-US")),
                 FactSource.VerifiedProperty, "ListingPrice"),
             new("property.bedBath", $"{property.Bedrooms} beds • {property.Bathrooms:0.##} baths",
                 FactSource.VerifiedProperty, "Bedrooms+Bathrooms"),
@@ -303,6 +304,7 @@ public sealed class VideoProductionPlanService(
         ArgumentException.ThrowIfNullOrWhiteSpace(directorVersion);
         var source = JsonSerializer.Serialize(new
         {
+            schemaVersion = "1.0",
             directorVersion,
             request.PropertyId,
             request.PropertyStory,

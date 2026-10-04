@@ -44,6 +44,7 @@ public sealed class OpenAIVideoDirectorTests
         var outputText = JsonSerializer.Serialize(expected, VideoSpecificationJson.Options);
         var responseJson = JsonSerializer.Serialize(new
         {
+            status = "completed",
             output = new[]
             {
                 new
@@ -66,7 +67,7 @@ public sealed class OpenAIVideoDirectorTests
 
         var result = await director.DirectAsync(request);
 
-        Assert.Equal("openai-video-director-v1", director.DirectorVersion);
+        Assert.Equal("openai-video-director-v1.1", director.DirectorVersion);
         Assert.Single(result.Scenes);
         Assert.Equal(request.Media[0].MediaId, result.Scenes[0].VisualSource.PropertyMediaId);
         Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-api-key"), handler.Authorization);
@@ -90,6 +91,32 @@ public sealed class OpenAIVideoDirectorTests
         Assert.Contains("brand", input, StringComparison.Ordinal);
         Assert.DoesNotContain("safeZone", input, StringComparison.Ordinal);
         Assert.DoesNotContain("videoCodec", input, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("incomplete")] [InlineData("unknown")] [InlineData("missing")]
+    [InlineData("null")] [InlineData("malformed")]
+    public async Task RejectsIncompleteAndInvalidStructuredResponses(string failure)
+    {
+        const string valid = "{\"audio\":{\"narrationSegments\":[],\"music\":{\"assetId\":null,\"mood\":\"none\",\"startMs\":0,\"durationMs\":0,\"gainDb\":0,\"fadeInMs\":0,\"fadeOutMs\":0,\"duckingGainDb\":0}},\"scenes\":[]}";
+        var text = failure switch
+        {
+            "unknown" => valid[..^1] + ",\"providerInstructions\":\"private payload\"}",
+            "missing" => "{\"scenes\":[]}",
+            "null" => "{\"audio\":null,\"scenes\":null}",
+            "malformed" => "private payload",
+            _ => valid,
+        };
+        var response = JsonSerializer.Serialize(new
+        {
+            status = failure == "incomplete" ? "incomplete" : "completed",
+            output = new[] { new { content = new[] { new { type = "output_text", text } } } },
+        });
+        using var client = new HttpClient(new RecordingHandler(response));
+        var director = new OpenAIVideoDirector(client, Options.Create(new OpenAIOptions
+        { ApiKey = "test-key", Model = "test-model", ResponsesEndpoint = "https://api.openai.test/v1/responses" }));
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() => director.DirectAsync(CreateRequest()));
+        Assert.DoesNotContain("private payload", exception.Message, StringComparison.Ordinal);
     }
 
     private static VideoDirectionRequest CreateRequest()
