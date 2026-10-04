@@ -30,6 +30,9 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+
       - name: Restore
         run: dotnet restore ListingStudio.slnx
 
@@ -38,3 +41,5 @@ jobs:
 
       - name: Test
         run: dotnet test ListingStudio.slnx --no-build --logger "console;verbosity=normal"
+        env:
+          RUN_FFMPEG_E2E: "1"

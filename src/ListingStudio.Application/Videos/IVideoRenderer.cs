@@ -1,0 +1,45 @@
+using ListingStudio.Application.Audio;
+using ListingStudio.Domain.Videos;
+
+namespace ListingStudio.Application.Videos;
+
+public interface IVideoRenderer
+{
+    Task<VideoRenderResult> RenderAsync(
+        VideoRenderRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record VideoRenderMediaAsset(
+    Guid PropertyMediaId,
+    string FilePath,
+    int Width,
+    int Height);
+
+public sealed record VideoRenderNarrationAsset(
+    string FilePath,
+    VoiceTimingMetadata? Timing);
+
+public sealed record VideoRenderRequest(
+    VideoProductionSpecification Specification,
+    IReadOnlyList<VideoRenderMediaAsset> PropertyMedia,
+    VideoRenderNarrationAsset? Narration,
+    string OutputFilePath);
+
+public sealed record VideoRenderResult(
+    string OutputFilePath,
+    int ExitCode,
+    TimeSpan RenderDuration,
+    string StandardOutput,
+    string StandardError);
+
+public sealed class VideoRenderException(
+    string message,
+    int? exitCode = null,
+    string standardError = "",
+    Exception? innerException = null) : Exception(message, innerException)
+{
+    public int? ExitCode { get; } = exitCode;
+
+    public string StandardError { get; } = standardError;
+}
