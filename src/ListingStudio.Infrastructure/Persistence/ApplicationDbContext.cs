@@ -23,6 +23,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<VideoProductionPlan> VideoProductionPlans => Set<VideoProductionPlan>();
 
+    public DbSet<VideoNarration> VideoNarrations => Set<VideoNarration>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

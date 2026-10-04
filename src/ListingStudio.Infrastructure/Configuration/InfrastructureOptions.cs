@@ -13,6 +13,7 @@ public sealed class AzureBlobStorageOptions
     public string ConnectionString { get; init; } = string.Empty;
     public string ContainerName { get; init; } = "property-media";
     public string LocalRootPath { get; init; } = "App_Data/property-media";
+    public string CampaignLocalRootPath { get; init; } = "App_Data/campaign-assets";
 }
 
 public sealed class StripeOptions

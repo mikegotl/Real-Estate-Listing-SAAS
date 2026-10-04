@@ -17,6 +17,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 - Week 4 was accepted on 2026-10-03 after the owner merged PR #8 with passing local and GitHub Actions verification, a successful PostgreSQL migration, 40-image automated acceptance, and manual upload, thumbnail, and reorder checks.
 - Week 5 was accepted on 2026-10-03 after PR #9 merged with passing build/tests/migration/provider-contract verification; the owner explicitly deferred the paid live OpenAI vision check to a later integration stage.
 - Week 6 was accepted on 2026-10-04 after the owner merged PR #10 with passing local and GitHub Actions verification, grounded fake-provider generation, immutable versioning, cache reuse, and tenant-isolation checks.
+- Week 7 was accepted on 2026-10-04 after the owner approved and squash-merged PR #12 with passing local and GitHub Actions verification, a validated renderer-ready 60-second plan, immutable versioning, cache reuse, and tenant-isolation checks.
 - Work on only the first `pending` milestone whose prerequisites are accepted. If an open PR already covers it, review or repair that PR instead of opening a duplicate. Do not begin the next milestone until the prior PR is merged and accepted.
 - Record acceptance evidence in the PR: commands, results, manual checks, remaining blockers. Never claim an unperformed test passed. Keep the `main` branch protected from unattended merges or deployments.
 
@@ -406,7 +407,7 @@ Return the specified structured JSON only.
 
 ### Week 7: AI Video Director
 
-**Status:** implementation proposed (PR #12; design approved and merged in PR #11; owner acceptance required)
+**Status:** accepted (2026-10-04; design approved in PR #11 and implementation owner-approved and merged in PR #12)
 
 **Expected result:** A versioned, machine-readable production specification contains every editorial decision the renderer needs.
 
@@ -500,7 +501,7 @@ Return only the VideoProductionSpecification schema.
 
 ### Week 8: Narration and Audio
 
-**Status:** pending
+**Status:** implementation proposed (owner acceptance required)
 
 **Expected result:** The system turns production-spec narration into stored audio with duration and timing metadata.
 

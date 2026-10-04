@@ -5,6 +5,8 @@ using ListingStudio.Application.Stories;
 using ListingStudio.AI.Stories;
 using ListingStudio.Application.Videos;
 using ListingStudio.AI.Videos;
+using ListingStudio.Application.Audio;
+using ListingStudio.AI.Audio;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IPropertyMediaAnalyzer, OpenAIPropertyMediaAnalyzer>();
         services.AddHttpClient<IPropertyStoryGenerator, OpenAIPropertyStoryGenerator>();
         services.AddHttpClient<IVideoDirector, OpenAIVideoDirector>();
+        services.AddHttpClient<IVoiceProvider, ElevenLabsVoiceProvider>();
         return services;
     }
 }
