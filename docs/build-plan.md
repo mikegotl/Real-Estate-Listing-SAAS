@@ -406,7 +406,7 @@ Return the specified structured JSON only.
 
 ### Week 7: AI Video Director
 
-**Status:** design proposed (`VIDEO_SPEC.md`; owner approval required before implementation)
+**Status:** design proposed (PR #11; owner approval required before implementation)
 
 **Expected result:** A versioned, machine-readable production specification contains every editorial decision the renderer needs.
 
