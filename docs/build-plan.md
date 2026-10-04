@@ -661,7 +661,7 @@ Do not regenerate expensive AI assets unnecessarily.
 
 ### Week 12: One Click Campaign Automation
 
-**Status:** pending
+**Status:** implementation proposed (owner acceptance required)
 
 **Expected result:** Generate Campaign starts a durable background workflow that can resume, retry and report progress.
 

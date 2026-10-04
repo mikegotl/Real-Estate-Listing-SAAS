@@ -2,6 +2,8 @@ using System.Security.Claims;
 using ListingStudio.AI.DependencyInjection;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.DependencyInjection;
+using ListingStudio.Application.Campaigns;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.DependencyInjection;
 using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Video.DependencyInjection;
@@ -65,6 +67,29 @@ app.MapGet("/property-media/{mediaId:guid}", async (
     return media is null
         ? Results.NotFound()
         : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
+app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
+    Guid jobId,
+    CampaignOutputKind kind,
+    HttpContext context,
+    ICampaignGenerationService campaignService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var download = await campaignService.OpenDeliverableAsync(userId, jobId, kind, cancellationToken);
+    return download is null
+        ? Results.NotFound()
+        : Results.Stream(
+            download.Content,
+            download.ContentType,
+            download.FileName,
+            enableRangeProcessing: true);
 }).RequireAuthorization();
 
 app.Run();

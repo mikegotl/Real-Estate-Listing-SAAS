@@ -64,6 +64,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
 
     public FakeVoiceProvider VoiceProvider { get; } = new();
 
+    public FakeVideoRenderer VideoRenderer { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -89,7 +91,39 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
             services.AddSingleton<IVideoDirector>(VideoDirector);
             services.RemoveAll<IVoiceProvider>();
             services.AddSingleton<IVoiceProvider>(VoiceProvider);
+            services.RemoveAll<IVideoRenderer>();
+            services.AddSingleton<IVideoRenderer>(VideoRenderer);
         });
+    }
+}
+
+public sealed class FakeVideoRenderer : IVideoRenderer
+{
+    private readonly ConcurrentQueue<Exception> failures = new();
+    private int callCount;
+
+    public int CallCount => callCount;
+
+    public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
+    public async Task<VideoRenderResult> RenderAsync(
+        VideoRenderRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref callCount);
+        if (failures.TryDequeue(out var failure))
+        {
+            throw failure;
+        }
+
+        await File.WriteAllBytesAsync(request.OutputFilePath, [0, 1, 2, 3, 4, 5], cancellationToken);
+        return new VideoRenderResult(
+            request.OutputFilePath,
+            0,
+            TimeSpan.FromMilliseconds(10),
+            string.Empty,
+            string.Empty);
     }
 }
 

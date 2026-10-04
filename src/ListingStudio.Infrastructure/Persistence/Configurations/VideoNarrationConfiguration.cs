@@ -10,6 +10,12 @@ public sealed class VideoNarrationConfiguration : IEntityTypeConfiguration<Video
     {
         builder.ToTable("VideoNarrations");
         builder.HasKey(narration => narration.Id);
+        builder.HasAlternateKey(narration => new
+        {
+            narration.Id,
+            narration.PropertyId,
+            narration.OrganizationId,
+        });
         builder.Property(narration => narration.GenerationVersion).HasMaxLength(300).IsRequired();
         builder.Property(narration => narration.SourceFingerprint).HasMaxLength(64).IsRequired();
         builder.Property(narration => narration.AssetPath).HasMaxLength(1_024).IsRequired();

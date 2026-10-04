@@ -17,7 +17,26 @@ public sealed partial class PropertyMediaAnalysisProcessor(
     private static readonly TimeSpan AnalysisLease = TimeSpan.FromMinutes(10);
 
     public async Task<PropertyMediaAnalysisRunResult?> AnalyzeNextAsync(
+        CancellationToken cancellationToken = default) =>
+        await AnalyzeNextCoreAsync(null, null, cancellationToken);
+
+    public async Task<PropertyMediaAnalysisRunResult?> AnalyzeNextForPropertyAsync(
+        Guid organizationId,
+        Guid propertyId,
         CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || propertyId == Guid.Empty)
+        {
+            throw new ArgumentException("Organization and property identities are required.");
+        }
+
+        return await AnalyzeNextCoreAsync(organizationId, propertyId, cancellationToken);
+    }
+
+    private async Task<PropertyMediaAnalysisRunResult?> AnalyzeNextCoreAsync(
+        Guid? targetOrganizationId,
+        Guid? targetPropertyId,
+        CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
         var staleBefore = now.Subtract(AnalysisLease);
@@ -25,8 +44,8 @@ public sealed partial class PropertyMediaAnalysisProcessor(
             IsolationLevel.ReadCommitted,
             cancellationToken);
 
-        var candidates = await dbContext.PropertyMedia
-            .FromSqlInterpolated($"""
+        var candidates = targetOrganizationId is null
+            ? await dbContext.PropertyMedia.FromSqlInterpolated($"""
                 SELECT *
                 FROM "PropertyMedia"
                 WHERE "AnalysisAttemptCount" < {IPropertyMediaAnalysisProcessor.MaximumAttempts}
@@ -44,8 +63,28 @@ public sealed partial class PropertyMediaAnalysisProcessor(
                 ORDER BY "UploadedAt", "Id"
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
-                """)
-            .ToListAsync(cancellationToken);
+                """).ToListAsync(cancellationToken)
+            : await dbContext.PropertyMedia.FromSqlInterpolated($"""
+                SELECT *
+                FROM "PropertyMedia"
+                WHERE "OrganizationId" = {targetOrganizationId.Value}
+                  AND "PropertyId" = {targetPropertyId!.Value}
+                  AND "AnalysisAttemptCount" < {IPropertyMediaAnalysisProcessor.MaximumAttempts}
+                  AND (
+                    "AnalysisStatus" = 'Pending'
+                    OR (
+                      "AnalysisStatus" = 'Failed'
+                      AND ("AnalysisNextAttemptAtUtc" IS NULL OR "AnalysisNextAttemptAtUtc" <= {now})
+                    )
+                    OR (
+                      "AnalysisStatus" = 'Analyzing'
+                      AND "AnalysisLastAttemptedAtUtc" <= {staleBefore}
+                    )
+                  )
+                ORDER BY "UploadedAt", "Id"
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+                """).ToListAsync(cancellationToken);
         var media = candidates.SingleOrDefault();
         if (media is null)
         {
