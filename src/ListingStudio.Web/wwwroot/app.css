@@ -12,3 +12,6 @@ input { font: inherit; padding: .65rem; }
 button { cursor: pointer; font: inherit; padding: .55rem .9rem; }
 .validation-message, .error { color: #d33; }
 .status { border: 1px solid currentColor; padding: .75rem; }
+.media-upload-control { border: 1px dashed currentColor; border-radius: .5rem; display: inline-grid; gap: .5rem; padding: 1rem; }
+.media-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+.media-card[draggable="true"] { cursor: grab; }

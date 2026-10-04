@@ -11,6 +11,9 @@ namespace ListingStudio.IntegrationTests;
 
 public sealed class PostgreSqlWebApplicationFixture : IAsyncLifetime
 {
+    private readonly string mediaRootPath = Path.Combine(
+        Path.GetTempPath(),
+        $"listingstudio-integration-media-{Guid.NewGuid():N}");
     private readonly PostgreSqlContainer postgreSql = new PostgreSqlBuilder("postgres:17-alpine")
         .WithDatabase("listingstudio_tests")
         .WithUsername("listingstudio")
@@ -22,7 +25,7 @@ public sealed class PostgreSqlWebApplicationFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await postgreSql.StartAsync();
-        Factory = new ListingStudioWebApplicationFactory(postgreSql.GetConnectionString());
+        Factory = new ListingStudioWebApplicationFactory(postgreSql.GetConnectionString(), mediaRootPath);
 
         await using var scope = Factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -33,10 +36,15 @@ public sealed class PostgreSqlWebApplicationFixture : IAsyncLifetime
     {
         await Factory.DisposeAsync();
         await postgreSql.DisposeAsync();
+        if (Directory.Exists(mediaRootPath))
+        {
+            Directory.Delete(mediaRootPath, recursive: true);
+        }
     }
 }
 
-public sealed class ListingStudioWebApplicationFactory(string connectionString) : WebApplicationFactory<Program>
+public sealed class ListingStudioWebApplicationFactory(string connectionString, string mediaRootPath)
+    : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -46,6 +54,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString) 
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["PostgreSQL:ConnectionString"] = connectionString,
+                ["AzureBlobStorage:Provider"] = "Local",
+                ["AzureBlobStorage:LocalRootPath"] = mediaRootPath,
             });
         });
     }

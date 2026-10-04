@@ -54,6 +54,8 @@ else
             <MudItem xs="12"><Detail Label="Description" Value="@(property.Description ?? "—")" /></MudItem>
         </MudGrid>
     </MudPaper>
+
+    <PropertyMediaManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
 }
 
 @code {

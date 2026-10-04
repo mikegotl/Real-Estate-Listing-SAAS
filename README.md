@@ -48,6 +48,8 @@ dotnet user-secrets set --project src/ListingStudio.Web "OpenAI:ApiKey" "your-ke
 
 The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `OpenAI`, `AIVideo`, `Voice`, and `Stripe`.
 
+Listing photos use the provider selected by `AzureBlobStorage:Provider`. The default `Local` provider writes ignored development files beneath `App_Data/property-media`; set the provider to `Azure` and supply `AzureBlobStorage:ConnectionString` at runtime to use the configured Blob container. Do not put the Azure connection string in tracked settings.
+
 ## Run
 
 Start PostgreSQL and restore the repository-local EF Core tool:
@@ -83,7 +85,7 @@ dotnet run --project src/ListingStudio.Worker
 
 Open the Web URL printed by `dotnet run`. Registering creates an Identity user, a new organization, and an owner membership. `/auth` is protected and redirects anonymous users to `/Account/Login`. In Development only, the forgot-password confirmation page displays the locally generated reset link. Configure a production identity email adapter before deploying; reset tokens are never written to logs or source control.
 
-After signing in, open `/properties` to create, list, inspect, edit, and archive properties. Archived properties are read-only and hidden from the default dashboard; select **Show archived** and refresh to include them. Property queries derive organization scope from the authenticated user's membership, and never accept an organization identifier from the browser.
+After signing in, open `/properties` to create, list, inspect, edit, and archive properties. A property's details page accepts up to 50 JPG, JPEG, PNG, or WEBP originals of at most 20 MB each. It displays thumbnails and metadata, reports upload progress, retries failed selections, and supports drag-and-drop or accessible arrow-button reordering. Archived properties and their photos are read-only and hidden from the default dashboard; select **Show archived** and refresh to include them. Property and media queries derive organization scope from the authenticated user's membership, and never accept an organization identifier from the browser.
 
 Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.
 

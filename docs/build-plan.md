@@ -13,6 +13,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 - `pending`: not started or not independently verified. `proposed`: work exists in an open PR. `accepted`: the owner reviewed and merged a passing PR. A successful automation run does not change milestone status by itself.
 - Week 1 was accepted on 2026-10-03 after PR #4 merged with passing restore/build/tests, successful Blazor and Worker startup checks, and owner-confirmed Docker Compose/PostgreSQL validation.
 - Week 2 was accepted on 2026-10-03 after owner review of PR #6, passing local and GitHub Actions verification, a successful PostgreSQL migration, and manual authentication-flow acceptance.
+- Week 3 was accepted on 2026-10-03 after owner-directed merge of PR #7, passing local and GitHub Actions verification, successful PostgreSQL migration, tenant-isolation tests, and manual property-management acceptance.
 - Work on only the first `pending` milestone whose prerequisites are accepted. If an open PR already covers it, review or repair that PR instead of opening a duplicate. Do not begin the next milestone until the prior PR is merged and accepted.
 - Record acceptance evidence in the PR: commands, results, manual checks, remaining blockers. Never claim an unperformed test passed. Keep the `main` branch protected from unattended merges or deployments.
 
@@ -177,7 +178,7 @@ Do not implement properties yet.
 
 ### Week 3: Property Management
 
-**Status:** proposed (PR #7; owner review and acceptance pending)
+**Status:** accepted (2026-10-03; PR #7 owner-directed and merged after passing acceptance)
 
 **Expected result:** A usable property dashboard with create, edit, archive, list and detail workflows.
 

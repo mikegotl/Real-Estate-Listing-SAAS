@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" />
     <ProjectReference Include="../ListingStudio.Application/ListingStudio.Application.csproj" />
     <ProjectReference Include="../ListingStudio.Domain/ListingStudio.Domain.csproj" />
   </ItemGroup>
