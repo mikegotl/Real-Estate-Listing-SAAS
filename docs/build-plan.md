@@ -18,6 +18,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 - Week 5 was accepted on 2026-10-03 after PR #9 merged with passing build/tests/migration/provider-contract verification; the owner explicitly deferred the paid live OpenAI vision check to a later integration stage.
 - Week 7 was accepted on 2026-10-04 after PR #12 merged and follow-up PR #13 merged with passing CI, 47 unit tests, 20 PostgreSQL integration tests, schema/grounding repairs, and no paid provider calls.
 - Week 8 was accepted on 2026-10-04 after PR #14 was updated onto current main, GitHub CI passed, and the verified fake-backed narration workflow, persistence, timing, retry, storage, and tenant-isolation checks remained green; no paid ElevenLabs call was made.
+- Week 9 was accepted on 2026-10-04 after PR #16 squash-merged with passing CI, 54 unit tests, 23 integration tests, and a real FFmpeg/FFprobe end-to-end render verifying H.264/AAC 1080p output at 30 fps.
 - Week 6 was accepted on 2026-10-04 after the owner merged PR #10 with passing local and GitHub Actions verification, grounded fake-provider generation, immutable versioning, cache reuse, and tenant-isolation checks.
 - Work on only the first `pending` milestone whose prerequisites are accepted. If an open PR already covers it, review or repair that PR instead of opening a duplicate. Do not begin the next milestone until the prior PR is merged and accepted.
 - Record acceptance evidence in the PR: commands, results, manual checks, remaining blockers. Never claim an unperformed test passed. Keep the `main` branch protected from unattended merges or deployments.
@@ -537,7 +538,7 @@ Never call ElevenLabs during automated tests.
 
 ### Week 9: FFmpeg Rendering Engine
 
-**Status:** implementation proposed (PR #16; owner acceptance required)
+**Status:** accepted (2026-10-04; PR #16 squash-merged with passing CI and end-to-end render verification)
 
 **Expected result:** The first automatically rendered 1080p property tour combines still-image motion, transitions and narration.
 
