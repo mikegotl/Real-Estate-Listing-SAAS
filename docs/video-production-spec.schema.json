@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:listingstudio:video-production-specification:1.0",
+  "title": "Listing Studio Video Production Specification 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "propertyId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "propertyStoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "propertyStoryVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "requestedDurationSeconds": {
+      "type": "integer",
+      "enum": [15, 30, 60]
+    },
+    "aspectRatio": {
+      "type": "string",
+      "enum": ["16:9", "9:16"]
+    },
+    "output": {
+      "$ref": "#/$defs/outputProfile"
+    },
+    "safeZone": {
+      "$ref": "#/$defs/normalizedRect"
+    },
+    "factBindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/factBinding"
+      }
+    },
+    "brand": {
+      "$ref": "#/$defs/brandPlan"
+    },
+    "callToAction": {
+      "$ref": "#/$defs/callToAction"
+    },
+    "audio": {
+      "$ref": "#/$defs/audioPlan"
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scene"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "propertyId",
+    "propertyStoryId",
+    "propertyStoryVersion",
+    "requestedDurationSeconds",
+    "aspectRatio",
+    "output",
+    "safeZone",
+    "factBindings",
+    "brand",
+    "callToAction",
+    "audio",
+    "scenes"
+  ],
+  "$defs": {
+    "nullableString": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ]
+    },
+    "nullableUuid": {
+      "anyOf": [
+        { "type": "string", "format": "uuid" },
+        { "type": "null" }
+      ]
+    },
+    "normalizedRect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      },
+      "required": ["x", "y", "width", "height"]
+    },
+    "outputProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "frameRate": { "type": "integer", "enum": [30] },
+        "videoCodec": { "type": "string", "enum": ["h264"] },
+        "audioCodec": { "type": "string", "enum": ["aac"] },
+        "pixelFormat": { "type": "string", "enum": ["yuv420p"] },
+        "sampleRateHz": { "type": "integer", "enum": [48000] },
+        "audioChannels": { "type": "integer", "enum": [2] }
+      },
+      "required": [
+        "width",
+        "height",
+        "frameRate",
+        "videoCodec",
+        "audioCodec",
+        "pixelFormat",
+        "sampleRateHz",
+        "audioChannels"
+      ]
+    },
+    "factBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string" },
+        "source": {
+          "type": "string",
+          "enum": ["verifiedProperty", "propertyStory", "brandKit"]
+        },
+        "sourceReference": { "type": "string" }
+      },
+      "required": ["key", "value", "source", "sourceReference"]
+    },
+    "brandPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primaryLogoAssetId": { "$ref": "#/$defs/nullableString" },
+        "secondaryLogoAssetId": { "$ref": "#/$defs/nullableString" },
+        "agentName": { "$ref": "#/$defs/nullableString" },
+        "phone": { "$ref": "#/$defs/nullableString" },
+        "email": { "$ref": "#/$defs/nullableString" },
+        "website": { "$ref": "#/$defs/nullableString" },
+        "primaryColor": { "type": "string" },
+        "secondaryColor": { "type": "string" }
+      },
+      "required": [
+        "primaryLogoAssetId",
+        "secondaryLogoAssetId",
+        "agentName",
+        "phone",
+        "email",
+        "website",
+        "primaryColor",
+        "secondaryColor"
+      ]
+    },
+    "callToAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "groundingKey": { "type": "string" }
+      },
+      "required": ["text", "groundingKey"]
+    },
+    "musicPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assetId": { "$ref": "#/$defs/nullableString" },
+        "mood": {
+          "type": "string",
+          "enum": ["none", "warmCinematic", "modernAmbient", "upbeatLifestyle"]
+        },
+        "startMs": { "type": "integer", "minimum": 0 },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "gainDb": { "type": "number", "minimum": -60, "maximum": 0 },
+        "fadeInMs": { "type": "integer", "minimum": 0 },
+        "fadeOutMs": { "type": "integer", "minimum": 0 },
+        "duckingGainDb": { "type": "number", "minimum": -60, "maximum": 0 }
+      },
+      "required": [
+        "assetId",
+        "mood",
+        "startMs",
+        "durationMs",
+        "gainDb",
+        "fadeInMs",
+        "fadeOutMs",
+        "duckingGainDb"
+      ]
+    },
+    "narrationSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "startMs": { "type": "integer", "minimum": 0 },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string" },
+        "groundingKey": { "type": "string" }
+      },
+      "required": ["id", "startMs", "durationMs", "text", "groundingKey"]
+    },
+    "audioPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "narrationSegments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/narrationSegment" }
+        },
+        "music": { "$ref": "#/$defs/musicPlan" }
+      },
+      "required": ["narrationSegments", "music"]
+    },
+    "visualSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["propertyMedia", "generatedClip", "generativeMotionRequest"]
+        },
+        "propertyMediaId": { "$ref": "#/$defs/nullableUuid" },
+        "generatedClipId": { "$ref": "#/$defs/nullableUuid" },
+        "fallbackPropertyMediaId": { "$ref": "#/$defs/nullableUuid" },
+        "generationInstruction": { "$ref": "#/$defs/nullableString" }
+      },
+      "required": [
+        "kind",
+        "propertyMediaId",
+        "generatedClipId",
+        "fallbackPropertyMediaId",
+        "generationInstruction"
+      ]
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["cut", "crossfade", "dipToBlack"] },
+        "durationMs": { "type": "integer", "minimum": 0, "maximum": 1500 }
+      },
+      "required": ["type", "durationMs"]
+    },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      },
+      "required": ["x", "y", "width", "height"]
+    },
+    "motionPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["none", "kenBurns"] },
+        "startViewport": { "$ref": "#/$defs/viewport" },
+        "endViewport": { "$ref": "#/$defs/viewport" },
+        "easing": { "type": "string", "enum": ["linear", "easeInOut"] }
+      },
+      "required": ["type", "startViewport", "endViewport", "easing"]
+    },
+    "textOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "groundingKey": { "type": "string" },
+        "startOffsetMs": { "type": "integer", "minimum": 0 },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "anchor": {
+          "type": "string",
+          "enum": ["topLeft", "topCenter", "topRight", "center", "bottomLeft", "bottomCenter", "bottomRight"]
+        },
+        "box": { "$ref": "#/$defs/normalizedRect" },
+        "styleToken": {
+          "type": "string",
+          "enum": ["openingTitle", "propertyFact", "lowerThird", "closingCta"]
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "groundingKey",
+        "startOffsetMs",
+        "durationMs",
+        "anchor",
+        "box",
+        "styleToken"
+      ]
+    },
+    "logoOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assetId": { "type": "string" },
+        "startOffsetMs": { "type": "integer", "minimum": 0 },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "box": { "$ref": "#/$defs/normalizedRect" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "required": ["assetId", "startOffsetMs", "durationMs", "box", "opacity"]
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sceneNumber": { "type": "integer", "minimum": 1 },
+        "startMs": { "type": "integer", "minimum": 0 },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "visualSource": { "$ref": "#/$defs/visualSource" },
+        "transitionIn": { "$ref": "#/$defs/transition" },
+        "motion": { "$ref": "#/$defs/motionPlan" },
+        "textOverlays": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/textOverlay" }
+        },
+        "logoOverlays": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/logoOverlay" }
+        },
+        "narrationSegmentIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": [
+        "sceneNumber",
+        "startMs",
+        "durationMs",
+        "visualSource",
+        "transitionIn",
+        "motion",
+        "textOverlays",
+        "logoOverlays",
+        "narrationSegmentIds"
+      ]
+    }
+  }
+}
