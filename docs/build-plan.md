@@ -282,7 +282,7 @@ Build and run all tests.
 
 ### Week 5: AI Photo Understanding
 
-**Status:** pending
+**Status:** proposed (PR #9; owner review, paid live check decision, and acceptance pending)
 
 **Expected result:** The system classifies each property photo, scores its quality and hero suitability, and stores the result asynchronously.
 
