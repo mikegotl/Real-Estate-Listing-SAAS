@@ -627,7 +627,7 @@ Create a sample campaign and render it end-to-end.
 
 ### Week 11: Campaign Derivatives
 
-**Status:** implementation proposed (owner acceptance required)
+**Status:** accepted (2026-10-04; PR #18 squash-merged with passing CI and derivative render verification)
 
 **Expected result:** One master campaign produces HERO 60, FEATURE 30 and TEASER 15 versions in landscape and vertical formats.
 
