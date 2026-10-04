@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/ListingStudio.Infrastructure/ListingStudio.Infrastructure.csproj" />
     <ProjectReference Include="../../src/ListingStudio.Web/ListingStudio.Web.csproj" />
+    <ProjectReference Include="../../src/ListingStudio.Video/ListingStudio.Video.csproj" />
   </ItemGroup>
 </Project>

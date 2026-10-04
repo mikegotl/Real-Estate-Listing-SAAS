@@ -537,7 +537,7 @@ Never call ElevenLabs during automated tests.
 
 ### Week 9: FFmpeg Rendering Engine
 
-**Status:** pending
+**Status:** implementation proposed (PR #16; owner acceptance required)
 
 **Expected result:** The first automatically rendered 1080p property tour combines still-image motion, transitions and narration.
 

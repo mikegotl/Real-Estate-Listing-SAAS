@@ -6,6 +6,7 @@
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (the SDK is pinned in `global.json`)
 - Docker with Docker Compose v2 (for PostgreSQL)
+- FFmpeg and ffprobe 6 or newer (for deterministic video rendering)
 
 ## Projects
 
@@ -46,7 +47,7 @@ dotnet user-secrets init --project src/ListingStudio.Web
 dotnet user-secrets set --project src/ListingStudio.Web "OpenAI:ApiKey" "your-key"
 ```
 
-The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `OpenAI`, `AIVideo`, `Voice`, and `Stripe`.
+The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `OpenAI`, `AIVideo`, `Voice`, `FFmpeg`, and `Stripe`.
 
 Listing photos use the provider selected by `AzureBlobStorage:Provider`. The default `Local` provider writes ignored development files beneath `App_Data/property-media`; set the provider to `Azure` and supply `AzureBlobStorage:ConnectionString` at runtime to use the configured Blob container. Do not put the Azure connection string in tracked settings.
 
@@ -54,9 +55,11 @@ Property-photo analysis runs only in the Worker and is disabled by default so lo
 
 Property marketing stories are generated on demand after every uploaded image has completed analysis. Story generation uses the same runtime-only OpenAI key and model, requests strict structured output, and validates the result against verified property facts before saving it. Identical verified inputs reuse the existing version to avoid another provider request. The initial branding input is the organization name; explicit agent profile branding is deferred to BrandKit. Automated tests use a fake story generator and never spend API credits.
 
-Video production plans can be generated after a grounded property story exists. The OpenAI video director returns editorial choices only; server code supplies and validates property/story identity, media IDs, exact fact bindings, brand values, output profile, safe zone, and CTA before storing an immutable specification. Stored story claims must still pass grounding against current verified facts; regenerate the story if edits invalidate its claims. Invalid structured responses, schema drift, and requests to change property features are rejected. Concurrent identical requests reuse a single provider call. Plans support 60, 30, and 15 seconds in landscape or vertical format. Identical verified inputs reuse the stored plan, and changed inputs produce the next version. Rendering, narration generation, music assets, and full BrandKit editing belong to later milestones. Automated tests replace the director with a fake and never call paid services.
+Video production plans can be generated after a grounded property story exists. The OpenAI video director returns editorial choices only; server code supplies and validates property/story identity, media IDs, exact fact bindings, brand values, output profile, safe zone, and CTA before storing an immutable specification. Stored story claims must still pass grounding against current verified facts; regenerate the story if edits invalidate its claims. Invalid structured responses, schema drift, and requests to change property features are rejected. Concurrent identical requests reuse a single provider call. Plans support 60, 30, and 15 seconds in landscape or vertical format. Identical verified inputs reuse the stored plan, and changed inputs produce the next version. Music assets and full BrandKit editing belong to later milestones. Automated tests replace the director with a fake and never call paid services.
 
 Narration generation uses the configured ElevenLabs timestamp endpoint and stores MP3 audio plus character/segment timing through the campaign-asset storage adapter. Set `Voice__Provider=ElevenLabs`, `Voice__ApiKey`, and `Voice__VoiceId` at runtime; the default model is `eleven_multilingual_v2` and the default format is `mp3_44100_128`. Local development stores ignored assets beneath `App_Data/campaign-assets`; the Azure provider uses the configured private Blob container. Identical narration input reuses the existing asset, while a changed voice/model/output configuration creates a new immutable version. Automated tests always use a fake provider.
+
+The initial deterministic renderer is configured through `FFmpeg:ExecutablePath`, `FFmpeg:ProbeExecutablePath`, and `FFmpeg:RenderTimeoutSeconds`. It accepts individual still-image file paths plus narration audio/timing and produces a 1920x1080, 30fps H.264/AAC MP4. It supports exact scale/crop, Ken Burns motion, cuts, crossfades, dip-to-black transitions, and measured narration placement. Arguments are passed directly to FFmpeg without a shell. Rendering fails rather than overwriting an existing output, captures process diagnostics and duration, honors cancellation, and removes partial output after failure or timeout.
 
 ## Run
 
@@ -102,6 +105,8 @@ After all property photos show completed analysis, use **Generate story** on the
 The Week 7 video-plan service is currently an application API rather than a Blazor workflow. It creates a fully validated, renderer-ready production specification from the latest grounded story and analyzed media. A configured OpenAI credential is required outside automated tests. The future campaign workflow will expose and orchestrate this service.
 
 The Week 8 narration service is also an application API pending the later campaign workflow. It converts a stored plan's grounded narration segments into a tenant-scoped audio asset and measured timing metadata, rejecting generated segments that no longer fit their planned intervals. No live voice request runs unless the service is explicitly invoked with valid runtime credentials.
+
+The Week 9 renderer is an application API pending background campaign orchestration. Text/logo overlays, music mixing, vertical output, persistent render jobs, and delivery are intentionally deferred. CI installs FFmpeg and runs the real sample-media render. To opt into that test locally after installing FFmpeg and ffprobe, set `RUN_FFMPEG_E2E=1` before running the integration test suite.
 
 Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.
 
