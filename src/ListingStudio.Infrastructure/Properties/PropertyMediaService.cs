@@ -198,6 +198,33 @@ public sealed class PropertyMediaService(
         return content is null ? null : new PropertyMediaContent(content, media.MimeType, media.OriginalFilename);
     }
 
+    public async Task<bool> RetryAnalysisAsync(
+        string userId,
+        Guid propertyId,
+        Guid mediaId,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await PropertyExistsAsync(organizationId, propertyId, includeArchived: false, cancellationToken))
+        {
+            return false;
+        }
+
+        var media = await dbContext.PropertyMedia.SingleOrDefaultAsync(
+            candidate => candidate.Id == mediaId
+                && candidate.PropertyId == propertyId
+                && candidate.OrganizationId == organizationId,
+            cancellationToken);
+        if (media is null || media.AnalysisStatus != PropertyMediaAnalysisStatus.Failed)
+        {
+            return false;
+        }
+
+        media.QueueAnalysisRetry();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     private async Task NormalizeDisplayOrderAsync(
         Guid organizationId,
         Guid propertyId,
@@ -309,7 +336,10 @@ public sealed class PropertyMediaService(
         media.Height,
         media.DisplayOrder,
         media.UploadedAt,
-        media.AnalysisStatus);
+        media.AnalysisStatus,
+        media.GetAnalysis(),
+        media.AnalysisAttemptCount,
+        media.AnalysisLastError);
 
     private sealed record ValidatedUpload(
         string Filename,

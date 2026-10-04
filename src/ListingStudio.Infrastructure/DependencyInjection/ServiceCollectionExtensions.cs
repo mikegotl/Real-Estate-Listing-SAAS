@@ -63,6 +63,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
         services.AddScoped<IPropertyService, PropertyService>();
         services.AddScoped<IPropertyMediaService, PropertyMediaService>();
+        services.AddScoped<IPropertyMediaAnalysisProcessor, PropertyMediaAnalysisProcessor>();
+        services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPropertyMediaStorage>(provider =>
         {
             var options = provider.GetRequiredService<IOptions<AzureBlobStorageOptions>>();

@@ -14,6 +14,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 - Week 1 was accepted on 2026-10-03 after PR #4 merged with passing restore/build/tests, successful Blazor and Worker startup checks, and owner-confirmed Docker Compose/PostgreSQL validation.
 - Week 2 was accepted on 2026-10-03 after owner review of PR #6, passing local and GitHub Actions verification, a successful PostgreSQL migration, and manual authentication-flow acceptance.
 - Week 3 was accepted on 2026-10-03 after owner-directed merge of PR #7, passing local and GitHub Actions verification, successful PostgreSQL migration, tenant-isolation tests, and manual property-management acceptance.
+- Week 4 was accepted on 2026-10-03 after the owner merged PR #8 with passing local and GitHub Actions verification, a successful PostgreSQL migration, 40-image automated acceptance, and manual upload, thumbnail, and reorder checks.
 - Work on only the first `pending` milestone whose prerequisites are accepted. If an open PR already covers it, review or repair that PR instead of opening a duplicate. Do not begin the next milestone until the prior PR is merged and accepted.
 - Record acceptance evidence in the PR: commands, results, manual checks, remaining blockers. Never claim an unperformed test passed. Keep the `main` branch protected from unattended merges or deployments.
 
@@ -233,7 +234,7 @@ Build and test everything.
 
 ### Week 4: Listing Photo Management
 
-**Status:** proposed (PR #8; owner review and acceptance pending)
+**Status:** accepted (2026-10-03; PR #8 merged after passing acceptance)
 
 **Expected result:** Agents can upload, preview, reorder, retry and delete as many as 50 listing images.
 
@@ -281,7 +282,7 @@ Build and run all tests.
 
 ### Week 5: AI Photo Understanding
 
-**Status:** pending
+**Status:** proposed (PR #9; owner review, paid live check decision, and acceptance pending)
 
 **Expected result:** The system classifies each property photo, scores its quality and hero suitability, and stores the result asynchronously.
 

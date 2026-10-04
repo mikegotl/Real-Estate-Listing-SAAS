@@ -34,6 +34,12 @@ public interface IPropertyMediaService
         string userId,
         Guid mediaId,
         CancellationToken cancellationToken = default);
+
+    Task<bool> RetryAnalysisAsync(
+        string userId,
+        Guid propertyId,
+        Guid mediaId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record PropertyMediaUpload(
@@ -51,6 +57,9 @@ public sealed record PropertyMediaItem(
     int Height,
     int DisplayOrder,
     DateTimeOffset UploadedAt,
-    PropertyMediaAnalysisStatus AnalysisStatus);
+    PropertyMediaAnalysisStatus AnalysisStatus,
+    PropertyMediaAnalysis? Analysis,
+    int AnalysisAttemptCount,
+    string? AnalysisLastError);
 
 public sealed record PropertyMediaContent(Stream Content, string MimeType, string OriginalFilename);
