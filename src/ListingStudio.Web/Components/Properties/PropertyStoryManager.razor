@@ -1,0 +1,116 @@
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyStoryService StoryService
+
+<MudPaper Class="pa-6 mt-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Marketing story</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Grounded in verified listing data and completed photo observations.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="@(generating || IsReadOnly)"
+                   OnClick="GenerateAsync">
+            @(story is null ? "Generate story" : "Refresh from verified data")
+        </MudButton>
+    </MudStack>
+
+    @if (generating)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+    }
+
+    @if (reused)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            The verified inputs have not changed, so the stored story was reused without another AI request.
+        </MudAlert>
+    }
+
+    @if (story is null)
+    {
+        <MudText Typo="Typo.body1">No marketing story has been generated yet.</MudText>
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            Version @story.Version · @story.GenerationVersion · @story.CreatedAtUtc.ToLocalTime().ToString("g")
+        </MudText>
+        <MudText Typo="Typo.h5" HtmlTag="h3" Class="mt-3">@story.Content.CampaignTitle</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mt-2">@story.Content.OpeningHook</MudText>
+
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Property narrative</MudText>
+        <MudText Typo="Typo.body1">@story.Content.PropertyNarrative</MudText>
+
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Highlights</MudText>
+        <MudList T="string" Dense="true">
+            @foreach (var highlight in story.Content.Highlights)
+            {
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Check">@highlight</MudListItem>
+            }
+        </MudList>
+
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Voiceover script</MudText>
+        <MudText Typo="Typo.body1">@story.Content.VoiceoverScript</MudText>
+
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Closing call to action</MudText>
+        <MudText Typo="Typo.body1">@story.Content.ClosingCta</MudText>
+
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Long social caption</MudText>
+        <MudText Typo="Typo.body1">@story.Content.SocialCaptionLong</MudText>
+
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Short social caption</MudText>
+        <MudText Typo="Typo.body1">@story.Content.SocialCaptionShort</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private PropertyStoryResult? story;
+    private bool generating;
+    private bool reused;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        story = await StoryService.GetLatestAsync(userId, PropertyId);
+    }
+
+    private async Task GenerateAsync()
+    {
+        generating = true;
+        error = null;
+        reused = false;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            story = await StoryService.GenerateAsync(userId, PropertyId);
+            reused = story?.Reused == true;
+            if (story is null)
+            {
+                error = "Property not found or unavailable to your organization.";
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or HttpRequestException)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            generating = false;
+        }
+    }
+}

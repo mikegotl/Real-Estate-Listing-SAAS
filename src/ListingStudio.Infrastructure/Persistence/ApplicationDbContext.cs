@@ -1,5 +1,6 @@
 using ListingStudio.Domain.Organizations;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Domain.Stories;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ListingProperty> Properties => Set<ListingProperty>();
 
     public DbSet<PropertyMedia> PropertyMedia => Set<PropertyMedia>();
+
+    public DbSet<PropertyStory> PropertyStories => Set<PropertyStory>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
