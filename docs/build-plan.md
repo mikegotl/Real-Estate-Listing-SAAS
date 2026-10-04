@@ -501,7 +501,7 @@ Return only the VideoProductionSpecification schema.
 
 ### Week 8: Narration and Audio
 
-**Status:** pending
+**Status:** implementation proposed (PR #14; autonomous integration verification pending)
 
 **Expected result:** The system turns production-spec narration into stored audio with duration and timing metadata.
 
