@@ -661,7 +661,7 @@ Do not regenerate expensive AI assets unnecessarily.
 
 ### Week 12: One Click Campaign Automation
 
-**Status:** implementation proposed (owner acceptance required)
+**Status:** accepted (2026-10-04; PR #19 squash-merged with passing CI and owner-confirmed acceptance)
 
 **Expected result:** Generate Campaign starts a durable background workflow that can resume, retry and report progress.
 
