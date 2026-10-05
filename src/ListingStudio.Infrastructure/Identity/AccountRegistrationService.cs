@@ -3,12 +3,14 @@ using ListingStudio.Domain.Organizations;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using ListingStudio.Domain.Billing;
 
 namespace ListingStudio.Infrastructure.Identity;
 
 internal sealed class AccountRegistrationService(
     ApplicationDbContext dbContext,
-    UserManager<ApplicationUser> userManager) : IAccountRegistrationService
+    UserManager<ApplicationUser> userManager,
+    TimeProvider timeProvider) : IAccountRegistrationService
 {
     public async Task<AccountRegistrationResult> RegisterAsync(
         RegisterAccountCommand command,
@@ -37,6 +39,8 @@ internal sealed class AccountRegistrationService(
 
         dbContext.Organizations.Add(organization);
         dbContext.OrganizationMembers.Add(OrganizationMember.CreateOwner(organization.Id, user.Id));
+        dbContext.OrganizationBillingAccounts.Add(
+            OrganizationBillingAccount.Create(organization.Id, timeProvider.GetUtcNow()));
 
         try
         {

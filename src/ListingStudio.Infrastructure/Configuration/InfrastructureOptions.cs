@@ -19,8 +19,16 @@ public sealed class AzureBlobStorageOptions
 public sealed class StripeOptions
 {
     public const string SectionName = "Stripe";
+    public bool Enabled { get; init; }
+    public string ApiBaseUrl { get; init; } = "https://api.stripe.com";
+    public string PublicBaseUrl { get; init; } = string.Empty;
     public string SecretKey { get; init; } = string.Empty;
     public string WebhookSecret { get; init; } = string.Empty;
+    public string StarterPriceId { get; init; } = string.Empty;
+    public string ProfessionalPriceId { get; init; } = string.Empty;
+    public int StarterMonthlyCampaignAllowance { get; init; } = 4;
+    public int ProfessionalMonthlyCampaignAllowance { get; init; } = 12;
+    public int WebhookToleranceSeconds { get; init; } = 300;
 }
 
 public sealed class CampaignGenerationOptions

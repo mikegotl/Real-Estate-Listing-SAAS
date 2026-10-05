@@ -12,6 +12,7 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
         builder.ToTable("CampaignGenerationJobs");
         builder.HasKey(job => job.Id);
         builder.HasAlternateKey(job => new { job.Id, job.PropertyId, job.OrganizationId });
+        builder.HasAlternateKey(job => new { job.Id, job.OrganizationId });
         builder.Property(job => job.RequestedByUserId).HasMaxLength(450).IsRequired();
         builder.Property(job => job.SourceFingerprint).HasMaxLength(64).IsRequired();
         builder.Property(job => job.Status).HasConversion<string>().HasMaxLength(32).IsRequired();

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Campaigns;
+using ListingStudio.Application.Billing;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +14,8 @@ namespace ListingStudio.Infrastructure.Campaigns;
 public sealed class CampaignGenerationService(
     ApplicationDbContext dbContext,
     ICampaignAssetStorage assetStorage,
-    TimeProvider timeProvider) : ICampaignGenerationService
+    TimeProvider timeProvider,
+    IBillingUsageRecorder billingUsageRecorder) : ICampaignGenerationService
 {
     public async Task<CampaignGenerationResult?> EnqueueAsync(
         string userId,
@@ -83,6 +85,7 @@ public sealed class CampaignGenerationService(
             fingerprint,
             timeProvider.GetUtcNow());
         dbContext.CampaignGenerationJobs.Add(job);
+        await billingUsageRecorder.RecordCampaignAsync(organizationId, job.Id, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ToResult(job);
