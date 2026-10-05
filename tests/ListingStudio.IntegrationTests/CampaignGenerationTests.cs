@@ -195,6 +195,79 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     }
 
     [Fact]
+    public async Task StoryTimeoutIsRetriedAndReportedWithoutProviderDetails()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-story-timeout");
+        await UploadAsync(owner);
+        var storyCallsBefore = fixture.Factory.StoryGenerator.CallCount;
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        for (var attempt = 0; attempt < ICampaignGenerationProcessor.MaximumStageAttempts; attempt++)
+        {
+            fixture.Factory.StoryGenerator.Enqueue(new TimeoutException("sensitive provider timeout details"));
+        }
+
+        var queued = await EnqueueAsync(owner);
+        var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+        Assert.Equal(CampaignGenerationStage.GenerateStory, failed.CurrentStage);
+        Assert.Equal("An external provider request timed out.", failed.LastError);
+        Assert.DoesNotContain("sensitive", failed.LastError, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            storyCallsBefore + ICampaignGenerationProcessor.MaximumStageAttempts,
+            fixture.Factory.StoryGenerator.CallCount);
+    }
+
+    [Fact]
+    public async Task VoiceFailureIsRetriedAndStopsAtNarrationCheckpoint()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-voice-failure");
+        await UploadAsync(owner);
+        var voiceCallsBefore = fixture.Factory.VoiceProvider.CallCount;
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        for (var attempt = 0; attempt < ICampaignGenerationProcessor.MaximumStageAttempts; attempt++)
+        {
+            fixture.Factory.VoiceProvider.Enqueue(_ =>
+                throw new HttpRequestException("sensitive voice provider failure"));
+        }
+
+        var queued = await EnqueueAsync(owner);
+        var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+        Assert.Equal(CampaignGenerationStage.GenerateNarration, failed.CurrentStage);
+        Assert.Equal("An external provider request failed.", failed.LastError);
+        Assert.Equal(
+            voiceCallsBefore + ICampaignGenerationProcessor.MaximumStageAttempts,
+            fixture.Factory.VoiceProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task AiVideoTimeoutIsRetriedAndStopsBeforeRendering()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-video-timeout");
+        await UploadAsync(owner);
+        var aiVideoCallsBefore = fixture.Factory.AiVideoProvider.CallCount;
+        var renderCallsBefore = fixture.Factory.VideoRenderer.CallCount;
+        QueueSuccessfulProviders();
+        for (var attempt = 0; attempt < ICampaignGenerationProcessor.MaximumStageAttempts; attempt++)
+        {
+            fixture.Factory.AiVideoProvider.EnqueueFailure(
+                new TimeoutException("sensitive video provider timeout"));
+        }
+
+        var queued = await EnqueueAsync(owner);
+        var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+        Assert.Equal(CampaignGenerationStage.GenerateRequiredAiVideo, failed.CurrentStage);
+        Assert.Equal("An external provider request timed out.", failed.LastError);
+        Assert.Equal(
+            aiVideoCallsBefore + ICampaignGenerationProcessor.MaximumStageAttempts,
+            fixture.Factory.AiVideoProvider.CallCount);
+        Assert.Equal(renderCallsBefore, fixture.Factory.VideoRenderer.CallCount);
+    }
+
+    [Fact]
     public async Task QueuedCampaignCanBeCancelledAndAReplacementCanBeEnqueued()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-cancel");
@@ -249,17 +322,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
 
     private void QueueSuccessfulProviders()
     {
-        fixture.Factory.MediaAnalyzer.Enqueue(new PropertyMediaAnalysis(
-            PropertyMediaCategory.FrontExterior,
-            "Exterior",
-            91,
-            96,
-            true,
-            false,
-            false,
-            [],
-            "Front exterior of a detached home.",
-            0));
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
         fixture.Factory.StoryGenerator.Enqueue(SafeStory);
         fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
         fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
@@ -371,6 +434,18 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         "Contact the listing team to learn more.",
         "Explore 123 Main Street, listed at $450,000.",
         "Discover 123 Main Street.");
+
+    private static PropertyMediaAnalysis SuccessfulAnalysis => new(
+        PropertyMediaCategory.FrontExterior,
+        "Exterior",
+        91,
+        96,
+        true,
+        false,
+        false,
+        [],
+        "Front exterior of a detached home.",
+        0);
 
     private sealed record OwnerProperty(string UserId, Guid OrganizationId, Guid PropertyId);
 }

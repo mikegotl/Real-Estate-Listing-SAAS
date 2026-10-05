@@ -214,6 +214,7 @@ public sealed class FakeVideoRenderer : IVideoRenderer
 
 public sealed class FakeAiVideoProvider : IAiVideoProvider
 {
+    private readonly ConcurrentQueue<Exception> failures = new();
     private int callCount;
 
     public bool IsEnabled => true;
@@ -222,12 +223,19 @@ public sealed class FakeAiVideoProvider : IAiVideoProvider
 
     public int CallCount => callCount;
 
+    public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
     public Task<AiVideoProviderResult> GenerateAsync(
         AiVideoProviderRequest request,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref callCount);
+        if (failures.TryDequeue(out var failure))
+        {
+            return Task.FromException<AiVideoProviderResult>(failure);
+        }
+
         Assert.True(request.Content.CanRead);
         var landscape = request.AspectRatio == VideoAspectRatio.Landscape16By9;
         return Task.FromResult(new AiVideoProviderResult(
@@ -302,7 +310,7 @@ public sealed class FakeVideoDirector : IVideoDirector
 
 public sealed class FakePropertyStoryGenerator : IPropertyStoryGenerator
 {
-    private readonly ConcurrentQueue<PropertyStoryContent> outcomes = new();
+    private readonly ConcurrentQueue<object> outcomes = new();
     private int callCount;
 
     public string GenerationVersion => "fake-story-v1";
@@ -313,6 +321,8 @@ public sealed class FakePropertyStoryGenerator : IPropertyStoryGenerator
 
     public void Enqueue(PropertyStoryContent content) => outcomes.Enqueue(content);
 
+    public void Enqueue(Exception exception) => outcomes.Enqueue(exception);
+
     public Task<PropertyStoryContent> GenerateAsync(
         PropertyStoryGenerationRequest request,
         CancellationToken cancellationToken = default)
@@ -321,7 +331,12 @@ public sealed class FakePropertyStoryGenerator : IPropertyStoryGenerator
         Interlocked.Increment(ref callCount);
         LastRequest = request;
         Assert.True(outcomes.TryDequeue(out var outcome), "A fake story-generation outcome must be queued.");
-        return Task.FromResult(outcome);
+        return outcome switch
+        {
+            PropertyStoryContent story => Task.FromResult(story),
+            Exception exception => Task.FromException<PropertyStoryContent>(exception),
+            _ => throw new InvalidOperationException("Unsupported fake story-generation outcome."),
+        };
     }
 }
 

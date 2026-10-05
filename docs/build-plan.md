@@ -847,7 +847,7 @@ Do not commit secrets.
 
 ### Week 16: Quality Assurance and Pilot Hardening
 
-**Status:** pending
+**Status:** proposed (Week 16 QA and pilot-hardening PR; owner acceptance required)
 
 **Expected result:** The full customer journey and major failure paths are tested, reviewed and corrected before pilot use.
 

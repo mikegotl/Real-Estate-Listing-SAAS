@@ -6,6 +6,8 @@ public interface IPropertyMediaService
 {
     public const int MaximumMediaPerProperty = 50;
     public const long MaximumFileSize = 20 * 1024 * 1024;
+    public const int MaximumImageDimension = 15_000;
+    public const long MaximumPixelCount = 50_000_000;
 
     Task<IReadOnlyList<PropertyMediaItem>> ListAsync(
         string userId,

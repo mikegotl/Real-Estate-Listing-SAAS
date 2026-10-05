@@ -73,6 +73,13 @@
                             </MudText>
                             @if (deliverable.Status == CampaignDeliverableStatus.Rendered)
                             {
+                                <video controls
+                                       preload="metadata"
+                                       style="width: 100%; margin-top: 1rem; border-radius: 4px;"
+                                       aria-label="@($"Preview {deliverable.Kind} video")">
+                                    <source src="@PreviewUrl(job.Id, deliverable.Kind)" type="video/mp4" />
+                                    Your browser does not support MP4 video playback.
+                                </video>
                                 <MudButton Href="@DownloadUrl(job.Id, deliverable.Kind)"
                                            Variant="Variant.Outlined"
                                            Color="Color.Primary"
@@ -231,6 +238,9 @@
     }
 
     private static string DownloadUrl(Guid jobId, CampaignOutputKind kind) =>
+        $"/campaigns/{jobId}/deliverables/{kind}?download=true";
+
+    private static string PreviewUrl(Guid jobId, CampaignOutputKind kind) =>
         $"/campaigns/{jobId}/deliverables/{kind}";
 
     private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
