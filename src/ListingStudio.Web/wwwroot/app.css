@@ -150,6 +150,7 @@ a:hover { color: #3730a3; }
 .mud-paper { background-image: none !important; }
 .media-upload-control { align-items: center; background: #f8fafc; border: 1.5px dashed #94a3b8; border-radius: 12px; color: #4f46e5; cursor: pointer; display: inline-flex; font-size: .85rem; font-weight: 700; gap: .5rem; padding: .85rem 1rem; }.media-upload-control:hover { background: #eef2ff; border-color: #4f46e5; }.media-upload-control input { max-width: 240px; }
 .media-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }.media-card[draggable="true"] { cursor: grab; }
+.address-lookup-help { color: #64748b; display: block; margin: 6px 2px 0; }
 
 @media (max-width: 1050px) {
     .hero-section { gap: 38px; grid-template-columns: 1fr 430px; }

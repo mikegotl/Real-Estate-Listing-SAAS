@@ -72,6 +72,18 @@ public static class ServiceCollectionExtensions
                 "CampaignGeneration:StageTimeoutSeconds must be between 30 and 3600.")
             .Validate(options => options.LeaseSeconds > options.StageTimeoutSeconds,
                 "CampaignGeneration:LeaseSeconds must exceed StageTimeoutSeconds.");
+        services.AddOptions<AddressLookupOptions>()
+            .Bind(configuration.GetSection(AddressLookupOptions.SectionName))
+            .Validate(options => !options.Enabled
+                || (Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri)
+                    && uri.Scheme == Uri.UriSchemeHttps),
+                "Enabled address lookup requires an HTTPS base URL.")
+            .Validate(options => options.MinimumQueryLength is >= 3 and <= 20,
+                "AddressLookup:MinimumQueryLength must be between 3 and 20.")
+            .Validate(options => options.MaximumSuggestions is >= 1 and <= 10,
+                "AddressLookup:MaximumSuggestions must be between 1 and 10.")
+            .Validate(options => options.RequestTimeoutSeconds is >= 2 and <= 30,
+                "AddressLookup:RequestTimeoutSeconds must be between 2 and 30 seconds.");
 
         services.AddDbContext<ApplicationDbContext>((provider, options) =>
         {
@@ -122,6 +134,12 @@ public static class ServiceCollectionExtensions
             var stripe = provider.GetRequiredService<IOptions<StripeOptions>>().Value;
             client.BaseAddress = new Uri(stripe.ApiBaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddHttpClient<IAddressLookupService, ArcGisAddressLookupService>((provider, client) =>
+        {
+            var addressLookup = provider.GetRequiredService<IOptions<AddressLookupOptions>>().Value;
+            client.BaseAddress = new Uri(addressLookup.BaseUrl, UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(addressLookup.RequestTimeoutSeconds);
         });
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPropertyMediaStorage>(provider =>
