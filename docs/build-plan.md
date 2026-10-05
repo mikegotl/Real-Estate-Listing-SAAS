@@ -21,6 +21,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 - Week 13 was accepted on 2026-10-04 after PR #20 merged with passing GitHub CI, 70 unit tests, 27 PostgreSQL integration tests, verified generated-clip caching/tenant isolation, and a successful real FFmpeg/ffprobe generated-clip render; no paid provider call was made.
 - Week 14 was accepted on 2026-10-05 after PR #21 squash-merged with passing GitHub CI, 72 unit tests, 33 PostgreSQL integration tests, a successful Compose migration smoke check, verified checkout/portal contracts, signed idempotent webhooks, stale-event protection, tenant isolation, and transactional campaign usage; no Stripe API call or charge was made.
 - Week 15 was accepted on 2026-10-05 after PR #22 squash-merged with passing GitHub CI, 72 unit tests, 34 PostgreSQL integration tests, successful Bicep compilation, three production-container builds, an idempotent EF migration-bundle run, and healthy Web/Worker liveness, PostgreSQL readiness, and FFmpeg/ffprobe checks; no Azure resources were deployed and no paid provider was enabled.
+- Week 16 was accepted on 2026-10-05 after PR #23 squash-merged with passing GitHub CI, 74 unit tests, 38 PostgreSQL integration tests, a clean dependency-vulnerability audit, bounded upload/resource checks, resilient background-worker polling, provider failure-path verification, tenant-scoped inline previews and downloads, and owner-confirmed acceptance. Production pilot activation remains subject to the owner decisions and credential-backed checks in `QA_REPORT.md`.
 - Week 9 was accepted on 2026-10-04 after PR #16 squash-merged with passing CI, 54 unit tests, 23 integration tests, and a real FFmpeg/FFprobe end-to-end render verifying H.264/AAC 1080p output at 30 fps.
 - Week 10 was accepted on 2026-10-04 after PR #17 squash-merged with passing CI, 57 unit tests, 23 integration tests, a real branded FFmpeg/FFprobe render, and visual QA of template-driven text/logo placement.
 - Week 6 was accepted on 2026-10-04 after the owner merged PR #10 with passing local and GitHub Actions verification, grounded fake-provider generation, immutable versioning, cache reuse, and tenant-isolation checks.
@@ -847,7 +848,7 @@ Do not commit secrets.
 
 ### Week 16: Quality Assurance and Pilot Hardening
 
-**Status:** proposed (Week 16 QA and pilot-hardening PR; owner acceptance required)
+**Status:** accepted (2026-10-05; PR #23 squash-merged with passing CI and owner-confirmed acceptance)
 
 **Expected result:** The full customer journey and major failure paths are tested, reviewed and corrected before pilot use.
 
