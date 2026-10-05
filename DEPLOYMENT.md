@@ -97,10 +97,14 @@ Recommended Key Vault names are:
 - `voice-api-key`
 - `stripe-secret-key`
 - `stripe-webhook-secret`
+- `google-client-secret`
+- `apple-sign-in-private-key`
 
 Use the Azure portal or a protected administrative shell that does not persist secret values in history. Never pass a secret as a plain Container Apps environment value. Apply the same secret reference to Web and Worker only when that host needs it. Set non-secret model, endpoint, voice, Stripe price and allowance settings separately.
 
 For Stripe, set `Stripe__PublicBaseUrl` to the deployed Web origin and register `https://<web-host>/billing/stripe-webhook` in Stripe test mode first. Do not enable live mode as part of infrastructure deployment.
+
+Google and Apple sign-in are Web-only integrations. Store `Authentication__Google__ClientSecret` and `Authentication__Apple__PrivateKey` as Key Vault-backed Container Apps secrets. Set the non-secret Google client ID and Apple Services ID, Team ID and Key ID as ordinary environment values, then enable each provider with `Authentication__Google__Enabled=true` or `Authentication__Apple__Enabled=true`. Register the exact public callbacks `https://<web-host>/signin-google` and `https://<web-host>/signin-apple` before enabling them. The Web container processes Azure Container Apps' forwarded HTTPS scheme so those provider redirects use the public HTTPS origin.
 
 ## Health, logs and routine operations
 

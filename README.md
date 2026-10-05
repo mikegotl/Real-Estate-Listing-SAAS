@@ -47,7 +47,31 @@ dotnet user-secrets init --project src/ListingStudio.Web
 dotnet user-secrets set --project src/ListingStudio.Web "OpenAI:ApiKey" "your-key"
 ```
 
-The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `OpenAI`, `AIVideo`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`.
+The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `OpenAI`, `AIVideo`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`. The Web host also supports the `Authentication:Google` and `Authentication:Apple` sections described below.
+
+### Google and Apple sign-in
+
+External sign-in is optional and disabled until a provider is fully configured. Local email/password registration remains available. A new Google or Apple user authenticates with the provider, confirms an organization name, and becomes that organization's owner. For security, an external identity is never automatically linked to an existing Listing Studio account solely because the email addresses match.
+
+For Google, create a Web OAuth client, register the development callback URL `https://localhost:{PORT}/signin-google` and the corresponding production HTTPS callback URL, then store the credentials outside source control:
+
+```bash
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Google:ClientId" "your-client-id"
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Google:ClientSecret" "your-client-secret"
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Google:Enabled" "true"
+```
+
+For Apple web sign-in, an Apple Developer membership and a Sign in with Apple-enabled App ID are required. Create a Services ID, register the exact HTTPS return URL `https://your-host/signin-apple`, and create a Sign in with Apple private key. Configure the Services ID as `ClientId`, along with the Apple Developer `TeamId`, key `KeyId`, and the complete PKCS #8 `.p8` contents:
+
+```bash
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Apple:ClientId" "your-services-id"
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Apple:TeamId" "your-team-id"
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Apple:KeyId" "your-key-id"
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Apple:PrivateKey" "$(< /secure/path/AuthKey_KEYID.p8)"
+dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Apple:Enabled" "true"
+```
+
+Apple requires a registered HTTPS website return URL, so plain loopback HTTP isn't a valid live Apple test setup. The app generates Apple's rotating client-secret JWT at runtime from the private key; the key must come from user secrets locally and a managed secret store in production. Provider buttons appear only when their provider is enabled, and startup fails clearly when an enabled provider is missing required settings.
 
 Listing photos use the provider selected by `AzureBlobStorage:Provider`. The default `Local` provider writes ignored development files beneath `App_Data/property-media`; set the provider to `Azure` and supply `AzureBlobStorage:ConnectionString` at runtime to use the configured Blob container. Do not put the Azure connection string in tracked settings.
 

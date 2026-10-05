@@ -1,0 +1,38 @@
+@using ListingStudio.Infrastructure.Identity
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+
+@inject SignInManager<ApplicationUser> SignInManager
+
+@if (schemes.Count > 0)
+{
+    <section class="external-logins" aria-label="External account sign in">
+        <p class="account-divider"><span>@Label</span></p>
+        @foreach (var scheme in schemes)
+        {
+            <form action="/Account/ExternalLogin" method="post">
+                <AntiforgeryToken />
+                <input type="hidden" name="provider" value="@scheme.Name" />
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                <button class="external-login-button" type="submit">
+                    Continue with @(scheme.DisplayName ?? scheme.Name)
+                </button>
+            </form>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<AuthenticationScheme> schemes = [];
+
+    [Parameter]
+    public string Label { get; set; } = "Or continue with";
+
+    [Parameter]
+    public string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        schemes = (await SignInManager.GetExternalAuthenticationSchemesAsync()).ToArray();
+    }
+}

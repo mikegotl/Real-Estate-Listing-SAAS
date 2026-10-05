@@ -5,9 +5,20 @@ public interface IAccountRegistrationService
     Task<AccountRegistrationResult> RegisterAsync(
         RegisterAccountCommand command,
         CancellationToken cancellationToken = default);
+
+    Task<AccountRegistrationResult> RegisterExternalAsync(
+        RegisterExternalAccountCommand command,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record RegisterAccountCommand(string Email, string Password, string OrganizationName);
+
+public sealed record RegisterExternalAccountCommand(
+    string Email,
+    string OrganizationName,
+    string LoginProvider,
+    string ProviderKey,
+    string ProviderDisplayName);
 
 public sealed record AccountRegistrationResult(
     bool Succeeded,

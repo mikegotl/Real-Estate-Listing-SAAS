@@ -463,6 +463,10 @@ resource webApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplication
               name: 'OTEL_SERVICE_NAME'
               value: 'listingstudio-web'
             }
+            {
+              name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED'
+              value: 'true'
+            }
           ])
           probes: [
             {

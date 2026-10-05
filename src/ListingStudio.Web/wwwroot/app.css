@@ -7,6 +7,11 @@ nav span { margin-left: auto; }
 .content { margin-top: 3rem; }
 h1 { font-size: 2.5rem; }
 form.account-form { display: grid; gap: 1rem; max-width: 30rem; }
+.external-logins { display: grid; gap: .75rem; margin: 1.5rem 0; max-width: 30rem; }
+.external-logins form { margin: 0; }
+.account-divider { align-items: center; display: flex; gap: .75rem; margin: 0; }
+.account-divider::before, .account-divider::after { border-top: 1px solid currentColor; content: ""; flex: 1; opacity: .35; }
+.external-login-button { background: transparent; border: 1px solid currentColor; border-radius: .35rem; width: 100%; }
 label { display: grid; gap: .35rem; }
 input { font: inherit; padding: .65rem; }
 button { cursor: pointer; font: inherit; padding: .55rem .9rem; }
