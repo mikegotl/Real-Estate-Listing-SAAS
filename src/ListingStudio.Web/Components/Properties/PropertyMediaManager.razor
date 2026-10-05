@@ -1,5 +1,5 @@
+@inherits OwningComponentBase<IPropertyMediaService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject IPropertyMediaService MediaService
 
 <MudPaper Class="pa-6 mt-6">
     <MudText Typo="Typo.h5" HtmlTag="h2">Listing photos</MudText>
@@ -139,7 +139,7 @@
     {
         loaded = false;
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-        media = [.. await MediaService.ListAsync(userId, PropertyId)];
+        media = [.. await Service.ListAsync(userId, PropertyId)];
         loaded = true;
     }
 
@@ -187,7 +187,7 @@
                 upload.Progress = upload.File.Size == 0 ? 0 : (double)bytes / upload.File.Size * 100;
                 _ = InvokeAsync(StateHasChanged);
             });
-            await MediaService.UploadAsync(
+            await Service.UploadAsync(
                 userId,
                 PropertyId,
                 new PropertyMediaUpload(upload.File.Name, upload.File.ContentType, upload.File.Size, progressStream));
@@ -207,7 +207,7 @@
     private async Task DeleteAsync(Guid mediaId)
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-        if (await MediaService.DeleteAsync(userId, PropertyId, mediaId))
+        if (await Service.DeleteAsync(userId, PropertyId, mediaId))
         {
             await LoadAsync();
             ShowMessage("Photo deleted.", Severity.Success);
@@ -250,7 +250,7 @@
     private async Task SaveOrderAsync()
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-        await MediaService.ReorderAsync(userId, PropertyId, media.Select(item => item.Id).ToArray());
+        await Service.ReorderAsync(userId, PropertyId, media.Select(item => item.Id).ToArray());
         await LoadAsync();
         ShowMessage("Photo order saved.", Severity.Success);
     }
@@ -258,7 +258,7 @@
     private async Task RetryAnalysisAsync(Guid mediaId)
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-        if (await MediaService.RetryAnalysisAsync(userId, PropertyId, mediaId))
+        if (await Service.RetryAnalysisAsync(userId, PropertyId, mediaId))
         {
             await LoadAsync();
             ShowMessage("Photo analysis queued for retry.", Severity.Success);
