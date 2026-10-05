@@ -18,10 +18,62 @@ internal sealed class AccountRegistrationService(
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        return await RegisterCoreAsync(
+            command.Email,
+            command.OrganizationName,
+            user => userManager.CreateAsync(user, command.Password),
+            cancellationToken);
+    }
+
+    public async Task<AccountRegistrationResult> RegisterExternalAsync(
+        RegisterExternalAccountCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        if (string.IsNullOrWhiteSpace(command.LoginProvider)
+            || string.IsNullOrWhiteSpace(command.ProviderKey)
+            || string.IsNullOrWhiteSpace(command.ProviderDisplayName))
+        {
+            return AccountRegistrationResult.Failure(["External login information is incomplete."]);
+        }
+
+        return await RegisterCoreAsync(
+            command.Email,
+            command.OrganizationName,
+            async user =>
+            {
+                var created = await userManager.CreateAsync(user);
+                if (!created.Succeeded)
+                {
+                    return created;
+                }
+
+                return await userManager.AddLoginAsync(
+                    user,
+                    new UserLoginInfo(
+                        command.LoginProvider,
+                        command.ProviderKey,
+                        command.ProviderDisplayName));
+            },
+            cancellationToken);
+    }
+
+    private async Task<AccountRegistrationResult> RegisterCoreAsync(
+        string email,
+        string organizationName,
+        Func<ApplicationUser, Task<IdentityResult>> createUser,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return AccountRegistrationResult.Failure(["An email address is required."]);
+        }
+
         Organization organization;
         try
         {
-            organization = Organization.Create(command.OrganizationName);
+            organization = Organization.Create(organizationName);
         }
         catch (ArgumentException exception)
         {
@@ -29,11 +81,13 @@ internal sealed class AccountRegistrationService(
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var user = new ApplicationUser { UserName = command.Email.Trim(), Email = command.Email.Trim() };
-        var identityResult = await userManager.CreateAsync(user, command.Password);
+        var normalizedEmail = email.Trim();
+        var user = new ApplicationUser { UserName = normalizedEmail, Email = normalizedEmail };
+        var identityResult = await createUser(user);
 
         if (!identityResult.Succeeded)
         {
+            await transaction.RollbackAsync(cancellationToken);
             return AccountRegistrationResult.Failure(identityResult.Errors.Select(error => error.Description));
         }
 

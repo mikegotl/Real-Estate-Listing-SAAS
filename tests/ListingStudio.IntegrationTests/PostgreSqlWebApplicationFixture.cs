@@ -35,6 +35,10 @@ public sealed class PostgreSqlWebApplicationFixture : IAsyncLifetime
 
     public ListingStudioWebApplicationFactory Factory { get; private set; } = null!;
 
+    public ListingStudioWebApplicationFactory CreateFactory(
+        Action<IServiceCollection> configureServices) =>
+        new(postgreSql.GetConnectionString(), mediaRootPath, configureServices);
+
     public async Task InitializeAsync()
     {
         await postgreSql.StartAsync();
@@ -56,7 +60,10 @@ public sealed class PostgreSqlWebApplicationFixture : IAsyncLifetime
     }
 }
 
-public sealed class ListingStudioWebApplicationFactory(string connectionString, string mediaRootPath)
+public sealed class ListingStudioWebApplicationFactory(
+    string connectionString,
+    string mediaRootPath,
+    Action<IServiceCollection>? additionalServices = null)
     : WebApplicationFactory<Program>
 {
     public FakePropertyMediaAnalyzer MediaAnalyzer { get; } = new();
@@ -112,6 +119,7 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
             services.AddSingleton<IAiVideoProvider>(AiVideoProvider);
             services.RemoveAll<IBillingProviderGateway>();
             services.AddSingleton<IBillingProviderGateway>(BillingProvider);
+            additionalServices?.Invoke(services);
         });
     }
 }

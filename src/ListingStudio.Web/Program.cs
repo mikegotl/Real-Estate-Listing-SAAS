@@ -11,6 +11,7 @@ using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Video.DependencyInjection;
 using ListingStudio.Web.Components;
 using ListingStudio.Web.Components.Account;
+using ListingStudio.Web.Authentication;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using MudBlazor.Services;
@@ -59,6 +60,7 @@ builder.Services
     .AddInfrastructure(builder.Configuration)
     .AddAI(builder.Configuration)
     .AddVideo(builder.Configuration);
+builder.Services.AddExternalLoginProviders(builder.Configuration);
 
 var app = builder.Build();
 
@@ -82,6 +84,27 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     Predicate = registration => registration.Tags.Contains("ready"),
 });
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+
+app.MapPost("/Account/ExternalLogin", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    SignInManager<ApplicationUser> signInManager,
+    CancellationToken cancellationToken) =>
+{
+    await antiforgery.ValidateRequestAsync(context);
+    var form = await context.Request.ReadFormAsync(cancellationToken);
+    var provider = form["provider"].ToString();
+    var schemes = await signInManager.GetExternalAuthenticationSchemesAsync();
+    if (!schemes.Any(scheme => string.Equals(scheme.Name, provider, StringComparison.Ordinal)))
+    {
+        return Results.BadRequest("Unknown external login provider.");
+    }
+
+    var returnUrl = LocalReturnUrl(form["returnUrl"]);
+    var callbackUrl = $"/Account/ExternalLoginCallback?returnUrl={Uri.EscapeDataString(returnUrl)}";
+    var properties = signInManager.ConfigureExternalAuthenticationProperties(provider, callbackUrl);
+    return Results.Challenge(properties, [provider]);
+});
 
 app.MapPost("/Account/Logout", async (
     SignInManager<ApplicationUser> signInManager,
@@ -232,6 +255,19 @@ static Uri BillingBaseUri(HttpContext context, StripeOptions stripe)
     }
 
     throw new InvalidOperationException("Stripe:PublicBaseUrl is required when billing is enabled.");
+}
+
+static string LocalReturnUrl(string? returnUrl)
+{
+    if (string.IsNullOrWhiteSpace(returnUrl)
+        || !returnUrl.StartsWith('/')
+        || returnUrl.StartsWith("//", StringComparison.Ordinal)
+        || returnUrl.StartsWith("/\\", StringComparison.Ordinal))
+    {
+        return "/";
+    }
+
+    return returnUrl;
 }
 
 public partial class Program;

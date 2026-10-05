@@ -65,6 +65,62 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
     }
 
     [Fact]
+    public async Task ExternalRegistrationCreatesOwnerWithoutLocalPassword()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+        var result = await registration.RegisterExternalAsync(
+            new RegisterExternalAccountCommand(
+                "google-owner@example.com",
+                "Social Realty",
+                "Google",
+                "google-subject-123",
+                "Google"));
+
+        Assert.True(result.Succeeded, string.Join(", ", result.Errors));
+        var user = await userManager.FindByLoginAsync("Google", "google-subject-123");
+        Assert.NotNull(user);
+        Assert.Equal("google-owner@example.com", user.Email);
+        Assert.Null(user.PasswordHash);
+        var membership = await dbContext.OrganizationMembers.SingleAsync(
+            membership => membership.OrganizationId == result.OrganizationId);
+        Assert.Equal(user.Id, membership.UserId);
+        Assert.Equal(OrganizationMemberRole.Owner, membership.Role);
+        Assert.Contains(
+            await userManager.GetLoginsAsync(user),
+            login => login.LoginProvider == "Google" && login.ProviderKey == "google-subject-123");
+    }
+
+    [Fact]
+    public async Task ExternalRegistrationDoesNotLinkAnExistingEmail()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+        var passwordRegistration = await registration.RegisterAsync(
+            new RegisterAccountCommand("existing@example.com", "Password123", "Existing Realty"));
+        Assert.True(passwordRegistration.Succeeded, string.Join(", ", passwordRegistration.Errors));
+
+        var externalRegistration = await registration.RegisterExternalAsync(
+            new RegisterExternalAccountCommand(
+                "existing@example.com",
+                "Attacker Realty",
+                "Google",
+                "untrusted-google-subject",
+                "Google"));
+
+        Assert.False(externalRegistration.Succeeded);
+        var existingUser = await userManager.FindByEmailAsync("existing@example.com");
+        Assert.NotNull(existingUser);
+        Assert.Empty(await userManager.GetLoginsAsync(existingUser));
+        Assert.Null(await userManager.FindByLoginAsync("Google", "untrusted-google-subject"));
+    }
+
+    [Fact]
     public async Task UserCanResetPassword()
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
@@ -108,6 +164,55 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
 
         response.EnsureSuccessStatusCode();
         Assert.Contains("Listing Studio", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DisabledExternalProvidersAreNotOfferedOnLoginPage()
+    {
+        using var client = fixture.Factory.CreateClient();
+
+        using var response = await client.GetAsync("/Account/Login");
+
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("Continue with Google", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Continue with Apple", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EnabledExternalProvidersAreOfferedOnLoginAndRegistrationPages()
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication()
+                .AddGoogle("Google", "Google", options =>
+                {
+                    options.ClientId = "google-client-id";
+                    options.ClientSecret = "google-client-secret";
+                })
+                .AddApple("Apple", "Apple", options =>
+                {
+                    options.ClientId = "com.example.listingstudio";
+                    options.TeamId = "APPLETEAM1";
+                    options.KeyId = "APPLEKEY1";
+                    options.GenerateClientSecret = true;
+                    options.PrivateKey = (_, _) =>
+                        Task.FromResult<ReadOnlyMemory<char>>("test-private-key".AsMemory());
+                });
+        });
+        using var client = factory.CreateClient();
+
+        using var loginResponse = await client.GetAsync("/Account/Login");
+        using var registrationResponse = await client.GetAsync("/Account/Register");
+
+        loginResponse.EnsureSuccessStatusCode();
+        registrationResponse.EnsureSuccessStatusCode();
+        var loginContent = await loginResponse.Content.ReadAsStringAsync();
+        var registrationContent = await registrationResponse.Content.ReadAsStringAsync();
+        Assert.Contains("Continue with Google", loginContent, StringComparison.Ordinal);
+        Assert.Contains("Continue with Apple", loginContent, StringComparison.Ordinal);
+        Assert.Contains("Continue with Google", registrationContent, StringComparison.Ordinal);
+        Assert.Contains("Continue with Apple", registrationContent, StringComparison.Ordinal);
     }
 
     [Fact]

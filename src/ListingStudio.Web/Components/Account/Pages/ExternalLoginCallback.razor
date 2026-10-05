@@ -1,0 +1,140 @@
+@page "/Account/ExternalLoginCallback"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using ListingStudio.Application.Authentication
+@using ListingStudio.Infrastructure.Identity
+@using Microsoft.AspNetCore.Identity
+
+@inject IAccountRegistrationService RegistrationService
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Complete registration</PageTitle>
+
+<h1>Complete registration</h1>
+<StatusMessage Message="@message" />
+
+@if (canRegister)
+{
+    <p>
+        Authenticated with <strong>@providerDisplayName</strong> as
+        <strong>@externalEmail</strong>. Choose the organization that this owner account will create.
+    </p>
+    <EditForm Model="Input" method="post" OnValidSubmit="RegisterExternalUserAsync"
+              FormName="external-registration" class="account-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="error" />
+        <label>
+            Organization name
+            <InputText @bind-Value="Input.OrganizationName" autocomplete="organization" />
+            <ValidationMessage For="() => Input.OrganizationName" />
+        </label>
+        <button type="submit">Create account</button>
+    </EditForm>
+}
+
+<p><a href="/Account/Login">Return to login</a></p>
+
+@code {
+    private string? message;
+    private string? externalEmail;
+    private string? providerDisplayName;
+    private bool canRegister;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        var info = await SignInManager.GetExternalLoginInfoAsync();
+        if (info is null)
+        {
+            message = "Error: The external login session expired or could not be loaded. Please try again.";
+            return;
+        }
+
+        var signInResult = await SignInManager.ExternalLoginSignInAsync(
+            info.LoginProvider,
+            info.ProviderKey,
+            isPersistent: false,
+            bypassTwoFactor: false);
+        if (signInResult.Succeeded)
+        {
+            RedirectManager.RedirectTo(ReturnUrl);
+            return;
+        }
+
+        if (signInResult.IsLockedOut)
+        {
+            message = "Error: This account is temporarily locked.";
+            return;
+        }
+
+        externalEmail = info.Principal.FindFirstValue(ClaimTypes.Email);
+        providerDisplayName = info.ProviderDisplayName ?? info.LoginProvider;
+        if (string.IsNullOrWhiteSpace(externalEmail))
+        {
+            message = $"Error: {providerDisplayName} did not provide an email address. Allow email access and try again.";
+            return;
+        }
+
+        if (await UserManager.FindByEmailAsync(externalEmail) is not null)
+        {
+            message = "Error: An account already uses this email. Log in with its existing method; automatic account linking is disabled for security.";
+            return;
+        }
+
+        canRegister = true;
+    }
+
+    private async Task RegisterExternalUserAsync()
+    {
+        var info = await SignInManager.GetExternalLoginInfoAsync();
+        var email = info?.Principal.FindFirstValue(ClaimTypes.Email);
+        if (info is null || string.IsNullOrWhiteSpace(email))
+        {
+            message = "Error: The external login session expired or could not be loaded. Please try again.";
+            canRegister = false;
+            return;
+        }
+
+        var result = await RegistrationService.RegisterExternalAsync(
+            new RegisterExternalAccountCommand(
+                email,
+                Input.OrganizationName,
+                info.LoginProvider,
+                info.ProviderKey,
+                info.ProviderDisplayName ?? info.LoginProvider));
+
+        if (!result.Succeeded)
+        {
+            message = $"Error: {string.Join(", ", result.Errors)}";
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(result.UserId!);
+        if (user is null)
+        {
+            message = "Error: The new account could not be loaded.";
+            return;
+        }
+
+        await SignInManager.SignInAsync(
+            user,
+            isPersistent: false,
+            authenticationMethod: info.LoginProvider);
+        RedirectManager.RedirectTo(ReturnUrl);
+    }
+
+    private sealed class InputModel
+    {
+        [Required, StringLength(200)]
+        public string OrganizationName { get; set; } = string.Empty;
+    }
+}
