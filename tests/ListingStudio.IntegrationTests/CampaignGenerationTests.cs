@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using Xunit;
+using ListingStudio.Domain.Billing;
 
 namespace ListingStudio.IntegrationTests;
 
@@ -111,6 +112,15 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                 .Include(job => job.Deliverables)
                 .SingleAsync(job => job.Id == queued.Id);
             Assert.Equal(owner.OrganizationId, persisted.OrganizationId);
+            var billing = await dbContext.OrganizationBillingAccounts
+                .AsNoTracking()
+                .SingleAsync(account => account.OrganizationId == owner.OrganizationId);
+            Assert.Equal(1, billing.CampaignUsage);
+            Assert.Equal(1, billing.AdditionalCampaignUsage);
+            Assert.Single(await dbContext.CampaignUsageRecords
+                .AsNoTracking()
+                .Where(record => record.OrganizationId == owner.OrganizationId)
+                .ToArrayAsync());
             Assert.All(persisted.Deliverables, item => Assert.Equal(owner.OrganizationId, item.OrganizationId));
             Assert.Equal(3, persisted.Deliverables.Count);
             var clips = await dbContext.GeneratedVideoClips.AsNoTracking()

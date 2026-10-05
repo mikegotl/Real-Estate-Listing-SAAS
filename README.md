@@ -108,6 +108,28 @@ Campaign generation is enabled by default. `CampaignGeneration:PollIntervalSecon
 
 Selective image-to-video generation is disabled by default. When `AIVideo:Enabled=true`, configure `Provider`, `ApiKey`, `Endpoint`, `Model`, and `GenerationVersion` at runtime. The endpoint must be an HTTPS synchronous multipart gateway accepting `image`, `prompt`, `duration_seconds`, `aspect_ratio`, and `model`, and honoring the supplied `Idempotency-Key` header. It returns an MP4 body plus `X-Video-Width`, `X-Video-Height`, and `X-Video-Duration-Ms` headers, and may also return `X-Provider-Request-Id`, `X-Provider-Model`, and `X-Estimated-Cost-Usd`. Set `RequestTimeoutSeconds` and `MaxOutputMegabytes` to bound the call. Only production-plan scenes explicitly marked for generative motion invoke the gateway. Identical media/instruction/duration/aspect/version input reuses the private cached clip and its recorded provider, model, request, metadata, and estimated cost. If the feature is disabled, marked scenes render from their original property-photo fallback with no provider call.
 
+### Stripe test-mode billing
+
+Stripe billing is disabled by default and no automated test contacts Stripe. To exercise it manually, create two recurring **test-mode** prices in Stripe, then provide `Stripe__SecretKey`, `Stripe__StarterPriceId`, `Stripe__ProfessionalPriceId`, and the corresponding monthly campaign allowances through `.env` or user secrets. Set `Stripe__PublicBaseUrl` to the externally reachable Web origin used for Stripe return URLs, keep `Stripe__ApiBaseUrl=https://api.stripe.com`, set `Stripe__Enabled=true`, and never place live or test credentials in tracked files.
+
+Forward Stripe test events to the exact webhook endpoint and copy the CLI-provided signing secret into runtime configuration:
+
+```bash
+stripe login
+stripe listen --forward-to https://localhost:5001/billing/stripe-webhook
+dotnet user-secrets set --project src/ListingStudio.Web "Stripe:WebhookSecret" "your-cli-signing-secret"
+```
+
+Start the Web host, register and sign in, then open `/billing`. Choosing a plan creates a server-side Stripe Customer and Checkout Session; an existing customer can open Stripe's Customer Portal. Use Stripe test card `4242 4242 4242 4242`, any future expiry and any CVC only on Stripe-hosted test checkout. Listing Studio never receives or stores card data. The checkout return page is informational: subscription plan, status and period change only after a valid signed `checkout.session.completed` or `customer.subscription.*` webhook. Webhook event IDs are stored for replay protection, older events cannot replace newer subscription state, and campaign usage is counted once per newly created generation job.
+
+For a fully local webhook check after checkout, trigger a test update and inspect `/billing` after Stripe delivers it:
+
+```bash
+stripe trigger customer.subscription.updated
+```
+
+Stripe CLI fixtures may not reference the customer created by your browser checkout. The authoritative end-to-end check is therefore the Dashboard/CLI event for that test customer: confirm a 2xx delivery to `/billing/stripe-webhook`, then verify the plan, status, current period and usage shown in `/billing`. Do not enable live mode or create production resources as part of this test.
+
 CI installs FFmpeg plus a deterministic font, renders a fully branded sample with narration and music, then generates and renders HERO, FEATURE, and TEASER landscape deliverables plus a vertical teaser from one master. One derivative uses a locally generated motion clip through the same typed input used by cached AI-video assets. Every output is probed for its exact duration, dimensions, and codecs. To opt into those tests locally after installing FFmpeg and ffprobe, set `RUN_FFMPEG_E2E=1` before running the integration test suite.
 
 Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.

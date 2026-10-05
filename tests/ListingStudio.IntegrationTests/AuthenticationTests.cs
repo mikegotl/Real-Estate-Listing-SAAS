@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using ListingStudio.Domain.Billing;
 
 namespace ListingStudio.IntegrationTests;
 
@@ -38,6 +39,10 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
         Assert.Equal(organization.Id, membership.OrganizationId);
         Assert.Equal(user.Id, membership.UserId);
         Assert.Equal(OrganizationMemberRole.Owner, membership.Role);
+        var billing = await dbContext.OrganizationBillingAccounts.SingleAsync(
+            account => account.OrganizationId == organization.Id);
+        Assert.Equal(SubscriptionPlan.Free, billing.Plan);
+        Assert.Equal(BillingSubscriptionStatus.None, billing.SubscriptionStatus);
     }
 
     [Fact]

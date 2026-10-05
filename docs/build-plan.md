@@ -757,7 +757,7 @@ No architectural hallucinations.
 
 ### Week 14: Subscriptions and Usage Billing
 
-**Status:** pending
+**Status:** implementation proposed (owner acceptance required)
 
 **Expected result:** Listing Studio supports plans, monthly allowances, additional usage, customer self-service and reliable billing state.
 

@@ -19,6 +19,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using ListingStudio.Application.Billing;
+using ListingStudio.Infrastructure.Billing;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -37,7 +39,23 @@ public static class ServiceCollectionExtensions
                 options => string.Equals(options.Provider, "Local", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(options.Provider, "Azure", StringComparison.OrdinalIgnoreCase),
                 "AzureBlobStorage:Provider must be Local or Azure.");
-        services.AddOptions<StripeOptions>().Bind(configuration.GetSection(StripeOptions.SectionName));
+        services.AddOptions<StripeOptions>()
+            .Bind(configuration.GetSection(StripeOptions.SectionName))
+            .Validate(options => !options.Enabled
+                || (Uri.TryCreate(options.ApiBaseUrl, UriKind.Absolute, out var uri)
+                    && uri.Scheme == Uri.UriSchemeHttps
+                    && Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out var publicUri)
+                    && (publicUri.Scheme == Uri.UriSchemeHttps || publicUri.IsLoopback)
+                    && !string.IsNullOrWhiteSpace(options.SecretKey)
+                    && !string.IsNullOrWhiteSpace(options.WebhookSecret)
+                    && !string.IsNullOrWhiteSpace(options.StarterPriceId)
+                    && !string.IsNullOrWhiteSpace(options.ProfessionalPriceId)),
+                "Enabled Stripe billing requires an HTTPS API URL, an HTTPS public base URL (HTTP is allowed only for loopback), secret key, webhook secret, and both price identifiers.")
+            .Validate(options => options.StarterMonthlyCampaignAllowance >= 0
+                    && options.ProfessionalMonthlyCampaignAllowance >= 0,
+                "Stripe campaign allowances cannot be negative.")
+            .Validate(options => options.WebhookToleranceSeconds is >= 60 and <= 900,
+                "Stripe webhook tolerance must be between 60 and 900 seconds.");
         services.AddOptions<CampaignGenerationOptions>()
             .Bind(configuration.GetSection(CampaignGenerationOptions.SectionName))
             .Validate(options => options.PollIntervalSeconds is >= 1 and <= 60,
@@ -86,6 +104,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGeneratedVideoClipService, GeneratedVideoClipService>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
+        services.AddScoped<BillingService>();
+        services.AddScoped<IBillingService>(provider => provider.GetRequiredService<BillingService>());
+        services.AddScoped<IBillingUsageRecorder>(provider => provider.GetRequiredService<BillingService>());
+        services.AddHttpClient<IBillingProviderGateway, StripeBillingGateway>((provider, client) =>
+        {
+            var stripe = provider.GetRequiredService<IOptions<StripeOptions>>().Value;
+            client.BaseAddress = new Uri(stripe.ApiBaseUrl, UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPropertyMediaStorage>(provider =>
         {

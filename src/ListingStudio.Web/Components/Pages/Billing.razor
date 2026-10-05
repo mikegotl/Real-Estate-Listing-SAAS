@@ -1,0 +1,77 @@
+@page "/billing"
+@attribute [Authorize]
+@inject IBillingService BillingService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject Microsoft.Extensions.Options.IOptions<ListingStudio.Infrastructure.Configuration.StripeOptions> StripeOptions
+
+<PageTitle>Billing</PageTitle>
+
+<h1>Billing</h1>
+
+@if (overview is null)
+{
+    <p>Loading billing details…</p>
+}
+else
+{
+    @if (NavigationManager.Uri.Contains("checkout=success", StringComparison.Ordinal))
+    {
+        <p role="status">Checkout completed. Subscription status will update after Stripe verifies the webhook.</p>
+    }
+
+    <dl>
+        <dt>Plan</dt>
+        <dd>@overview.Plan</dd>
+        <dt>Subscription status</dt>
+        <dd>@overview.SubscriptionStatus</dd>
+        <dt>Current period</dt>
+        <dd>@overview.CurrentPeriodStartUtc.ToString("yyyy-MM-dd") – @overview.CurrentPeriodEndUtc.ToString("yyyy-MM-dd")</dd>
+        <dt>Campaign usage</dt>
+        <dd>@overview.CampaignUsage of @overview.MonthlyCampaignAllowance included; @overview.AdditionalCampaignUsage additional</dd>
+    </dl>
+
+    @if (!StripeOptions.Value.Enabled)
+    {
+        <p>Stripe test-mode billing is not enabled for this environment.</p>
+    }
+    else
+    {
+        <h2>Choose a plan</h2>
+        <form action="/billing/checkout" method="post">
+            <AntiforgeryToken />
+            <input type="hidden" name="plan" value="Starter" />
+            <button type="submit">Subscribe to Starter</button>
+        </form>
+        <form action="/billing/checkout" method="post">
+            <AntiforgeryToken />
+            <input type="hidden" name="plan" value="Professional" />
+            <button type="submit">Subscribe to Professional</button>
+        </form>
+
+        @if (overview.StripeCustomerId is not null)
+        {
+            <h2>Manage subscription</h2>
+            <form action="/billing/portal" method="post">
+                <AntiforgeryToken />
+                <button type="submit">Open Stripe customer portal</button>
+            </form>
+        }
+    }
+}
+
+@code {
+    [Inject]
+    private NavigationManager NavigationManager { get; set; } = null!;
+
+    private BillingOverview? overview;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (userId is not null)
+        {
+            overview = await BillingService.GetOverviewAsync(userId);
+        }
+    }
+}

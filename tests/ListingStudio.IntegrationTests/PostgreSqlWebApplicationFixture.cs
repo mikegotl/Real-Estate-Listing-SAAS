@@ -15,6 +15,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.PostgreSql;
 using Xunit;
+using ListingStudio.Application.Billing;
+using ListingStudio.Infrastructure.Billing;
+using ListingStudio.Infrastructure.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace ListingStudio.IntegrationTests;
 
@@ -69,6 +73,8 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
 
     public FakeAiVideoProvider AiVideoProvider { get; } = new();
 
+    public FakeBillingProviderGateway BillingProvider { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -80,6 +86,11 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
                 ["AzureBlobStorage:Provider"] = "Local",
                 ["AzureBlobStorage:LocalRootPath"] = mediaRootPath,
                 ["AzureBlobStorage:CampaignLocalRootPath"] = Path.Combine(mediaRootPath, "campaign-assets"),
+                ["Stripe:WebhookSecret"] = FakeBillingProviderGateway.WebhookSecret,
+                ["Stripe:StarterPriceId"] = FakeBillingProviderGateway.StarterPriceId,
+                ["Stripe:ProfessionalPriceId"] = FakeBillingProviderGateway.ProfessionalPriceId,
+                ["Stripe:StarterMonthlyCampaignAllowance"] = "2",
+                ["Stripe:ProfessionalMonthlyCampaignAllowance"] = "5",
             });
         });
         builder.ConfigureServices(services =>
@@ -98,7 +109,71 @@ public sealed class ListingStudioWebApplicationFactory(string connectionString, 
             services.AddSingleton<IVideoRenderer>(VideoRenderer);
             services.RemoveAll<IAiVideoProvider>();
             services.AddSingleton<IAiVideoProvider>(AiVideoProvider);
+            services.RemoveAll<IBillingProviderGateway>();
+            services.AddSingleton<IBillingProviderGateway>(BillingProvider);
         });
+    }
+}
+
+public sealed class FakeBillingProviderGateway : IBillingProviderGateway
+{
+    public const string WebhookSecret = "whsec_integration_test_only";
+    public const string StarterPriceId = "price_starter_test";
+    public const string ProfessionalPriceId = "price_professional_test";
+
+    private int customerCallCount;
+    private int checkoutCallCount;
+    private int portalCallCount;
+
+    public int CustomerCallCount => customerCallCount;
+
+    public int CheckoutCallCount => checkoutCallCount;
+
+    public int PortalCallCount => portalCallCount;
+
+    public BillingProviderCheckoutRequest? LastCheckoutRequest { get; private set; }
+
+    public Task<string> CreateCustomerAsync(
+        BillingProviderCustomerRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref customerCallCount);
+        return Task.FromResult($"cus_test_{request.OrganizationId:N}");
+    }
+
+    public Task<BillingRedirect> CreateCheckoutSessionAsync(
+        BillingProviderCheckoutRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref checkoutCallCount);
+        LastCheckoutRequest = request;
+        return Task.FromResult(new BillingRedirect("https://checkout.stripe.test/session"));
+    }
+
+    public Task<BillingRedirect> CreatePortalSessionAsync(
+        BillingProviderPortalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref portalCallCount);
+        return Task.FromResult(new BillingRedirect("https://billing.stripe.test/session"));
+    }
+
+    public object ParseAndVerifyWebhook(string payload, string signatureHeader)
+    {
+        var gateway = new StripeBillingGateway(
+            new HttpClient { BaseAddress = new Uri("https://api.stripe.test") },
+            Options.Create(new StripeOptions
+            {
+                WebhookSecret = WebhookSecret,
+                StarterPriceId = StarterPriceId,
+                ProfessionalPriceId = ProfessionalPriceId,
+                WebhookToleranceSeconds = 300,
+            }),
+            TimeProvider.System);
+        return gateway.ParseAndVerifyWebhook(payload, signatureHeader);
     }
 }
 

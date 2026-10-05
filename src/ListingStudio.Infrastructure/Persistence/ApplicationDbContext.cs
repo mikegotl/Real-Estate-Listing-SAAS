@@ -3,6 +3,7 @@ using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Billing;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<CampaignGenerationJob> CampaignGenerationJobs => Set<CampaignGenerationJob>();
 
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
+
+    public DbSet<OrganizationBillingAccount> OrganizationBillingAccounts => Set<OrganizationBillingAccount>();
+
+    public DbSet<CampaignUsageRecord> CampaignUsageRecords => Set<CampaignUsageRecord>();
+
+    public DbSet<BillingWebhookReceipt> BillingWebhookReceipts => Set<BillingWebhookReceipt>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
