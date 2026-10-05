@@ -6,21 +6,21 @@
 
 <PageTitle>Properties</PageTitle>
 
-<PropertyPageProviders />
-
-<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6">
+<section class="page-heading">
     <div>
+        <span class="eyebrow">INVENTORY</span>
         <MudText Typo="Typo.h3" HtmlTag="h1">Properties</MudText>
         <MudText Typo="Typo.body1">Manage the listings in your organization.</MudText>
     </div>
     <MudButton Href="/properties/new" Variant="Variant.Filled" Color="Color.Primary"
                StartIcon="@Icons.Material.Filled.Add">New property</MudButton>
-</MudStack>
+</section>
 
-<MudPaper Class="pa-4">
-    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+<MudPaper Elevation="0" Class="content-card property-list-card">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="property-toolbar">
         <MudCheckBox T="bool" @bind-Value="includeArchived" Label="Show archived" Color="Color.Primary" />
-        <MudButton Variant="Variant.Outlined" OnClick="LoadAsync">Refresh</MudButton>
+        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="LoadAsync"
+                   StartIcon="@Icons.Material.Filled.Refresh">Refresh</MudButton>
     </MudStack>
 
     @if (!loaded)
@@ -29,7 +29,13 @@
     }
     else if (properties.Count == 0)
     {
-        <MudAlert Severity="Severity.Info">No properties match this view. Add your first property to get started.</MudAlert>
+        <div class="empty-state">
+            <span class="empty-state-icon"><MudIcon Icon="@Icons.Material.Filled.AddHomeWork" Size="Size.Large" /></span>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Your property workspace is ready</MudText>
+            <MudText Typo="Typo.body2">Add your first listing to organize its details, media, story, and campaign assets.</MudText>
+            <MudButton Href="/properties/new" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add">Add first property</MudButton>
+        </div>
     }
     else
     {

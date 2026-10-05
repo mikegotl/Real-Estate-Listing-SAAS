@@ -13,29 +13,37 @@
 
 <PageTitle>Complete registration</PageTitle>
 
-<h1>Complete registration</h1>
-<StatusMessage Message="@message" />
+<AccountPanel Title="Complete your workspace" Eyebrow="ONE LAST STEP"
+              Description="Choose the organization this owner account will create."
+              Icon="@Icons.Material.Filled.Business">
+    <StatusMessage Message="@message" />
 
-@if (canRegister)
-{
-    <p>
-        Authenticated with <strong>@providerDisplayName</strong> as
-        <strong>@externalEmail</strong>. Choose the organization that this owner account will create.
-    </p>
-    <EditForm Model="Input" method="post" OnValidSubmit="RegisterExternalUserAsync"
-              FormName="external-registration" class="account-form">
-        <DataAnnotationsValidator />
-        <ValidationSummary class="error" />
-        <label>
-            Organization name
-            <InputText @bind-Value="Input.OrganizationName" autocomplete="organization" />
-            <ValidationMessage For="() => Input.OrganizationName" />
-        </label>
-        <button type="submit">Create account</button>
-    </EditForm>
-}
+    @if (canRegister)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">
+            Authenticated with <strong>@providerDisplayName</strong> as <strong>@externalEmail</strong>.
+        </MudAlert>
+        <EditForm Model="Input" method="post" OnValidSubmit="RegisterExternalUserAsync"
+                  FormName="external-registration" class="account-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="validation-summary" />
+            <div class="ls-field">
+                <label for="external-organization">Organization name</label>
+                <div class="ls-input-wrap">
+                    <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Small" />
+                    <InputText id="external-organization" class="ls-input" @bind-Value="Input.OrganizationName"
+                               autocomplete="organization" placeholder="Northstar Realty" />
+                </div>
+                <ValidationMessage For="() => Input.OrganizationName" />
+            </div>
+            <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large">
+                Create workspace
+            </MudButton>
+        </EditForm>
+    }
 
-<p><a href="/Account/Login">Return to login</a></p>
+    <p class="account-footer"><a href="/Account/Login">Return to login</a></p>
+</AccountPanel>
 
 @code {
     private string? message;

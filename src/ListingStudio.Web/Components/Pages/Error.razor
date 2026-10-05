@@ -1,5 +1,9 @@
 @page "/Error"
 <PageTitle>Error</PageTitle>
 
-<h1>Something went wrong.</h1>
-<p>Please try again later.</p>
+<div class="state-page">
+    <span class="state-icon error"><MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Large" /></span>
+    <MudText Typo="Typo.h3" HtmlTag="h1">Something went wrong</MudText>
+    <MudText Typo="Typo.body1">We couldn't complete that request. Please try again.</MudText>
+    <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary">Return home</MudButton>
+</div>

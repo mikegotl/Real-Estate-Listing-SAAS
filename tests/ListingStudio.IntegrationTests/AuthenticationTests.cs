@@ -163,7 +163,11 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
         using var response = await client.GetAsync("/");
 
         response.EnsureSuccessStatusCode();
-        Assert.Contains("Listing Studio", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Listing Studio", content, StringComparison.Ordinal);
+        Assert.Contains("Every listing deserves", content, StringComparison.Ordinal);
+        Assert.Contains("_content/MudBlazor/MudBlazor.min.css", content, StringComparison.Ordinal);
+        Assert.Contains("app-header", content, StringComparison.Ordinal);
     }
 
     [Fact]
