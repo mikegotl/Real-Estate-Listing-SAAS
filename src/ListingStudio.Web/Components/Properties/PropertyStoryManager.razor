@@ -1,5 +1,5 @@
+@inherits OwningComponentBase<IPropertyStoryService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject IPropertyStoryService StoryService
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
@@ -86,7 +86,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-        story = await StoryService.GetLatestAsync(userId, PropertyId);
+        story = await Service.GetLatestAsync(userId, PropertyId);
     }
 
     private async Task GenerateAsync()
@@ -97,7 +97,7 @@
         try
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-            story = await StoryService.GenerateAsync(userId, PropertyId);
+            story = await Service.GenerateAsync(userId, PropertyId);
             reused = story?.Reused == true;
             if (story is null)
             {

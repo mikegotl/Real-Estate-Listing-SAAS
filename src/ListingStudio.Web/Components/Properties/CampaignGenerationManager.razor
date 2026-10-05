@@ -1,6 +1,5 @@
-@implements IAsyncDisposable
+@inherits OwningComponentBase<ICampaignGenerationService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject ICampaignGenerationService CampaignService
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
@@ -147,7 +146,7 @@
         try
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-            job = await CampaignService.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
+            job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
             error = null;
         }
         catch (OperationCanceledException) when (pollingCancellation.IsCancellationRequested)
@@ -156,21 +155,21 @@
     }
 
     private async Task GenerateAsync() => await MutateAsync(async userId =>
-        job = await CampaignService.EnqueueAsync(userId, PropertyId));
+        job = await Service.EnqueueAsync(userId, PropertyId));
 
     private async Task RetryAsync() => await MutateAsync(async userId =>
     {
-        if (job is not null && await CampaignService.RetryAsync(userId, job.Id))
+        if (job is not null && await Service.RetryAsync(userId, job.Id))
         {
-            job = await CampaignService.GetAsync(userId, job.Id);
+            job = await Service.GetAsync(userId, job.Id);
         }
     });
 
     private async Task CancelAsync() => await MutateAsync(async userId =>
     {
-        if (job is not null && await CampaignService.CancelAsync(userId, job.Id))
+        if (job is not null && await Service.CancelAsync(userId, job.Id))
         {
-            job = await CampaignService.GetAsync(userId, job.Id);
+            job = await Service.GetAsync(userId, job.Id);
         }
     });
 
@@ -230,11 +229,11 @@
         }
     }
 
-    public ValueTask DisposeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
         pollingCancellation.Cancel();
         pollingCancellation.Dispose();
-        return ValueTask.CompletedTask;
+        await base.DisposeAsyncCore();
     }
 
     private static string DownloadUrl(Guid jobId, CampaignOutputKind kind) =>
