@@ -109,4 +109,16 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
         response.EnsureSuccessStatusCode();
         Assert.Contains("Listing Studio", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task LivenessAndReadinessEndpointsReportHealthyDependencies()
+    {
+        using var client = fixture.Factory.CreateClient();
+
+        using var live = await client.GetAsync("/health/live");
+        using var ready = await client.GetAsync("/health/ready");
+
+        Assert.Equal(HttpStatusCode.OK, live.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
+    }
 }

@@ -21,6 +21,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ListingStudio.Application.Billing;
 using ListingStudio.Infrastructure.Billing;
+using ListingStudio.Infrastructure.Health;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -31,14 +32,21 @@ public static class ServiceCollectionExtensions
         services
             .AddOptions<PostgreSqlOptions>()
             .Bind(configuration.GetSection(PostgreSqlOptions.SectionName))
-            .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString), "A PostgreSQL connection string is required.");
+            .Validate(options => !string.IsNullOrWhiteSpace(options.BuildConnectionString()),
+                "A PostgreSQL connection string or complete host/database/username/password configuration is required.");
         services
             .AddOptions<AzureBlobStorageOptions>()
             .Bind(configuration.GetSection(AzureBlobStorageOptions.SectionName))
             .Validate(
                 options => string.Equals(options.Provider, "Local", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(options.Provider, "Azure", StringComparison.OrdinalIgnoreCase),
-                "AzureBlobStorage:Provider must be Local or Azure.");
+                "AzureBlobStorage:Provider must be Local or Azure.")
+            .Validate(
+                options => !string.Equals(options.Provider, "Azure", StringComparison.OrdinalIgnoreCase)
+                    || !string.IsNullOrWhiteSpace(options.ConnectionString)
+                    || (Uri.TryCreate(options.ServiceUri, UriKind.Absolute, out var uri)
+                        && uri.Scheme == Uri.UriSchemeHttps),
+                "The Azure provider requires a connection string or an HTTPS service URI for managed identity.");
         services.AddOptions<StripeOptions>()
             .Bind(configuration.GetSection(StripeOptions.SectionName))
             .Validate(options => !options.Enabled
@@ -69,7 +77,7 @@ public static class ServiceCollectionExtensions
         {
             var postgreSql = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
             options.UseNpgsql(
-                postgreSql.ConnectionString,
+                postgreSql.BuildConnectionString(),
                 npgsql => npgsql.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName));
         });
 
@@ -107,6 +115,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BillingService>();
         services.AddScoped<IBillingService>(provider => provider.GetRequiredService<BillingService>());
         services.AddScoped<IBillingUsageRecorder>(provider => provider.GetRequiredService<BillingService>());
+        services.AddHealthChecks()
+            .AddCheck<PostgreSqlHealthCheck>("postgresql", tags: ["ready"]);
         services.AddHttpClient<IBillingProviderGateway, StripeBillingGateway>((provider, client) =>
         {
             var stripe = provider.GetRequiredService<IOptions<StripeOptions>>().Value;

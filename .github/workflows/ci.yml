@@ -19,7 +19,7 @@ jobs:
   build-and-test:
     name: Build and test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
       - name: Check out repository
@@ -43,3 +43,42 @@ jobs:
         run: dotnet test ListingStudio.slnx --no-build --logger "console;verbosity=normal"
         env:
           RUN_FFMPEG_E2E: "1"
+
+      - name: Publish production hosts
+        run: |
+          dotnet publish src/ListingStudio.Web/ListingStudio.Web.csproj --configuration Release --no-restore --output artifacts/web
+          dotnet publish src/ListingStudio.Worker/ListingStudio.Worker.csproj --configuration Release --no-restore --output artifacts/worker
+
+      - name: Validate Azure Bicep
+        run: >-
+          docker run --rm
+          -v "${{ github.workspace }}:/workspace"
+          -w /workspace
+          mcr.microsoft.com/azure-cli:2.77.0
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+
+      - name: Build production containers
+        run: |
+          docker build --file Dockerfile.web --tag listingstudio-web:${{ github.sha }} .
+          docker build --file Dockerfile.worker --tag listingstudio-worker:${{ github.sha }} .
+          docker build --file Dockerfile.migrations --tag listingstudio-migrations:${{ github.sha }} .
+
+      - name: Smoke-test container runtime and FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint ffmpeg listingstudio-web:${{ github.sha }} -version
+          docker run --rm --entrypoint ffprobe listingstudio-worker:${{ github.sha }} -version
+          docker run --detach --name listingstudio-web-smoke --publish 18080:8080 \
+            --env 'PostgreSQL__ConnectionString=Host=localhost;Database=listingstudio;Username=listingstudio;Password=smoke-only' \
+            listingstudio-web:${{ github.sha }}
+          trap 'docker rm --force listingstudio-web-smoke listingstudio-worker-smoke >/dev/null 2>&1 || true' EXIT
+          curl --fail --show-error --silent --retry 12 --retry-delay 2 --retry-all-errors \
+            http://localhost:18080/health/live
+          docker run --detach --name listingstudio-worker-smoke --publish 18081:8080 \
+            --env 'PostgreSQL__ConnectionString=Host=localhost;Database=listingstudio;Username=listingstudio;Password=smoke-only' \
+            --env 'CampaignGeneration__Enabled=false' \
+            --env 'MediaAnalysis__Enabled=false' \
+            listingstudio-worker:${{ github.sha }}
+          curl --fail --show-error --silent --retry 12 --retry-delay 2 --retry-all-errors \
+            http://localhost:18081/health/live

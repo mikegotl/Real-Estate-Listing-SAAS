@@ -4,8 +4,32 @@ using ListingStudio.Application.DependencyInjection;
 using ListingStudio.Infrastructure.DependencyInjection;
 using ListingStudio.Video.DependencyInjection;
 using ListingStudio.Worker;
+using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Builder;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsProduction())
+{
+    builder.Logging.ClearProviders();
+    builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+}
+
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    var managedIdentityClientId = builder.Configuration["AZURE_CLIENT_ID"];
+    var credential = string.IsNullOrWhiteSpace(managedIdentityClientId)
+        ? new DefaultAzureCredential()
+        : new DefaultAzureCredential(new DefaultAzureCredentialOptions
+        {
+            ManagedIdentityClientId = managedIdentityClientId,
+        });
+    builder.Services.AddOpenTelemetry().UseAzureMonitor(options => options.Credential = credential);
+}
+
 var mediaAnalysisEnabled = builder.Configuration.GetValue<bool>($"{MediaAnalysisWorkerOptions.SectionName}:Enabled");
 builder.Services
     .AddApplication()
@@ -31,5 +55,16 @@ builder.Services
     .ValidateOnStart();
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("live"),
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready"),
+});
+await app.RunAsync();

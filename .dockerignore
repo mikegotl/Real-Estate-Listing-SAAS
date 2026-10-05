@@ -1,0 +1,11 @@
+.git
+.github
+.env
+**/.env
+**/bin
+**/obj
+**/TestResults
+**/App_Data
+.DS_Store
+*.user
+*.suo

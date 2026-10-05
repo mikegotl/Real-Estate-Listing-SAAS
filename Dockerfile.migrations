@@ -1,0 +1,23 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+WORKDIR /src
+COPY . .
+RUN dotnet tool restore
+RUN dotnet restore src/ListingStudio.Web/ListingStudio.Web.csproj
+RUN PostgreSQL__ConnectionString="Host=localhost;Database=listingstudio;Username=listingstudio;Password=design-time-only" \
+    dotnet ef migrations bundle \
+    --project src/ListingStudio.Infrastructure \
+    --startup-project src/ListingStudio.Web \
+    --configuration Release \
+    --self-contained \
+    --target-runtime linux-x64 \
+    --output /app/migrate
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble AS final
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /app/migrate .
+ENV DOTNET_EnableDiagnostics=0
+USER app
+ENTRYPOINT ["/app/migrate"]

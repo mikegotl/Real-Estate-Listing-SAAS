@@ -51,6 +51,8 @@ The same runtime configuration sections are available to both hosts: `PostgreSQL
 
 Listing photos use the provider selected by `AzureBlobStorage:Provider`. The default `Local` provider writes ignored development files beneath `App_Data/property-media`; set the provider to `Azure` and supply `AzureBlobStorage:ConnectionString` at runtime to use the configured Blob container. Do not put the Azure connection string in tracked settings.
 
+Production uses `AzureBlobStorage:ServiceUri` plus the Container App managed identity instead of a storage connection string. The identity receives only `Storage Blob Data Contributor`, shared-key access is disabled, and the container remains private.
+
 Property-photo analysis runs only in the Worker and is disabled by default so local startup cannot accidentally spend API credits. To enable it, provide `OpenAI__ApiKey` and a vision-capable `OpenAI__Model`, then set `MediaAnalysis__Enabled=true`. The Worker processes one photo at a time, waits the configured polling interval between requests, and retries transient failures up to three times. Automated tests always replace the provider with a fake and never call OpenAI.
 
 Property marketing stories are generated on demand after every uploaded image has completed analysis. Story generation uses the same runtime-only OpenAI key and model, requests strict structured output, and validates the result against verified property facts before saving it. Identical verified inputs reuse the existing version to avoid another provider request. The initial branding input is the organization name; explicit agent profile branding is deferred to BrandKit. Automated tests use a fake story generator and never spend API credits.
@@ -135,3 +137,9 @@ CI installs FFmpeg plus a deterministic font, renders a fully branded sample wit
 Integration tests require a running Docker daemon. They start a disposable PostgreSQL 17 container and apply the committed migrations automatically.
 
 Stop PostgreSQL with `docker compose down`; add `--volumes` only when you also intend to delete local database data.
+
+## Production deployment
+
+The repository contains separate production containers for Web, Worker and the EF migration bundle, plus Bicep for Azure Container Apps, PostgreSQL Flexible Server, Blob Storage, ACR, Application Insights, Log Analytics, Key Vault, managed identity and private database networking. Production hosts expose `/health/live` and `/health/ready`; readiness checks PostgreSQL and the container-installed FFmpeg binary. Production logging is structured JSON and is exported through Azure Monitor OpenTelemetry when `APPLICATIONINSIGHTS_CONNECTION_STRING` is configured.
+
+Deployment is intentionally manual and approval-gated through the GitHub `production` environment. It uses OIDC rather than a stored Azure client secret, pushes only immutable commit-SHA images, runs migrations as a one-off Container Apps Job, and enables the Worker only after migration succeeds. No Azure resources are created by normal CI or by merging a pull request. See [DEPLOYMENT.md](DEPLOYMENT.md) for setup, deployment, secret configuration, verification and rollback.

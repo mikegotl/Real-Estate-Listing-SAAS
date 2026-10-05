@@ -1,0 +1,24 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+ARG BUILD_CONFIGURATION=Release
+WORKDIR /src
+COPY . .
+RUN dotnet restore src/ListingStudio.Worker/ListingStudio.Worker.csproj
+RUN dotnet publish src/ListingStudio.Worker/ListingStudio.Worker.csproj \
+    --configuration ${BUILD_CONFIGURATION} \
+    --no-restore \
+    --output /app/publish \
+    /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates curl ffmpeg fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /app/publish .
+ENV ASPNETCORE_HTTP_PORTS=8080 \
+    DOTNET_EnableDiagnostics=0
+EXPOSE 8080
+USER app
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl --fail --silent --show-error http://localhost:8080/health/live || exit 1
+ENTRYPOINT ["dotnet", "ListingStudio.Worker.dll"]
