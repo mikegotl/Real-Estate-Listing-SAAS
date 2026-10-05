@@ -307,8 +307,22 @@ public sealed class PropertyMediaService(
             throw new InvalidDataException("The image MIME type does not match its filename extension.");
         }
 
-        var buffer = new MemoryStream((int)upload.FileSize);
-        await upload.Content.CopyToAsync(buffer, cancellationToken);
+        var buffer = new MemoryStream((int)Math.Min(upload.FileSize, 64 * 1024));
+        var copyBuffer = new byte[64 * 1024];
+        while (buffer.Length <= upload.FileSize)
+        {
+            var remaining = upload.FileSize - buffer.Length + 1;
+            var bytesRead = await upload.Content.ReadAsync(
+                copyBuffer.AsMemory(0, (int)Math.Min(copyBuffer.Length, remaining)),
+                cancellationToken);
+            if (bytesRead == 0)
+            {
+                break;
+            }
+
+            await buffer.WriteAsync(copyBuffer.AsMemory(0, bytesRead), cancellationToken);
+        }
+
         if (buffer.Length != upload.FileSize || buffer.Length > IPropertyMediaService.MaximumFileSize)
         {
             await buffer.DisposeAsync();
@@ -321,6 +335,15 @@ public sealed class PropertyMediaService(
             if (!string.Equals(image.Format, expectedFormat, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException("The file content is not a supported image format.");
+            }
+
+            if (image.Width > IPropertyMediaService.MaximumImageDimension
+                || image.Height > IPropertyMediaService.MaximumImageDimension
+                || (long)image.Width * image.Height > IPropertyMediaService.MaximumPixelCount)
+            {
+                throw new InvalidDataException(
+                    $"Images cannot exceed {IPropertyMediaService.MaximumImageDimension} pixels on either side "
+                    + $"or {IPropertyMediaService.MaximumPixelCount:N0} total pixels.");
             }
 
             buffer.Position = 0;

@@ -112,6 +112,7 @@ app.MapGet("/property-media/{mediaId:guid}", async (
 app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
     Guid jobId,
     CampaignOutputKind kind,
+    bool? download,
     HttpContext context,
     ICampaignGenerationService campaignService,
     CancellationToken cancellationToken) =>
@@ -122,13 +123,21 @@ app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
         return Results.Unauthorized();
     }
 
-    var download = await campaignService.OpenDeliverableAsync(userId, jobId, kind, cancellationToken);
-    return download is null
-        ? Results.NotFound()
+    var deliverable = await campaignService.OpenDeliverableAsync(userId, jobId, kind, cancellationToken);
+    if (deliverable is null)
+    {
+        return Results.NotFound();
+    }
+
+    return download is true
+        ? Results.Stream(
+            deliverable.Content,
+            deliverable.ContentType,
+            deliverable.FileName,
+            enableRangeProcessing: true)
         : Results.Stream(
-            download.Content,
-            download.ContentType,
-            download.FileName,
+            deliverable.Content,
+            deliverable.ContentType,
             enableRangeProcessing: true);
 }).RequireAuthorization();
 

@@ -9,7 +9,9 @@
     <ProjectReference Include="../../src/ListingStudio.Domain/ListingStudio.Domain.csproj" />
     <ProjectReference Include="../../src/ListingStudio.Application/ListingStudio.Application.csproj" />
     <ProjectReference Include="../../src/ListingStudio.AI/ListingStudio.AI.csproj" />
+    <ProjectReference Include="../../src/ListingStudio.Infrastructure/ListingStudio.Infrastructure.csproj" />
     <ProjectReference Include="../../src/ListingStudio.Video/ListingStudio.Video.csproj" />
+    <ProjectReference Include="../../src/ListingStudio.Worker/ListingStudio.Worker.csproj" />
   </ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../docs/samples/video-production-spec-60s.json" LogicalName="CanonicalVideoSample" /></ItemGroup>
 </Project>

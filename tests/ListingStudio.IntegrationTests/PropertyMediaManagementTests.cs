@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
@@ -102,6 +103,47 @@ public sealed class PropertyMediaManagementTests(PostgreSqlWebApplicationFixture
     }
 
     [Fact]
+    public async Task UploadRejectsOversizedAndDeceptiveStreamsWithoutReadingPastDeclaredSize()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var (userId, propertyId) = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "bounded-upload");
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+
+        await using var oversized = new MemoryStream(OnePixelPng);
+        await Assert.ThrowsAsync<InvalidDataException>(() => mediaService.UploadAsync(
+            userId,
+            propertyId,
+            new PropertyMediaUpload(
+                "oversized.png",
+                "image/png",
+                IPropertyMediaService.MaximumFileSize + 1,
+                oversized)));
+
+        await using var deceptive = new CountingStream(new byte[1024]);
+        await Assert.ThrowsAsync<InvalidDataException>(() => mediaService.UploadAsync(
+            userId,
+            propertyId,
+            new PropertyMediaUpload("deceptive.png", "image/png", 8, deceptive)));
+
+        Assert.Equal(9, deceptive.BytesRead);
+
+        var excessiveDimensions = OnePixelPng.ToArray();
+        BinaryPrimitives.WriteInt32BigEndian(excessiveDimensions.AsSpan(16, 4), 10_000);
+        BinaryPrimitives.WriteInt32BigEndian(excessiveDimensions.AsSpan(20, 4), 10_000);
+        await using var dimensionStream = new MemoryStream(excessiveDimensions);
+        await Assert.ThrowsAsync<InvalidDataException>(() => mediaService.UploadAsync(
+            userId,
+            propertyId,
+            new PropertyMediaUpload(
+                "excessive-dimensions.png",
+                "image/png",
+                dimensionStream.Length,
+                dimensionStream)));
+
+        Assert.Empty(await mediaService.ListAsync(userId, propertyId));
+    }
+
+    [Fact]
     public async Task MediaAccessIsRestrictedToOwningOrganization()
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
@@ -183,4 +225,18 @@ public sealed class PropertyMediaManagementTests(PostgreSqlWebApplicationFixture
         PropertyType.SingleFamily,
         "A comfortable home.",
         ListingStatus.Draft);
+
+    private sealed class CountingStream(byte[] content) : MemoryStream(content)
+    {
+        public int BytesRead { get; private set; }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            var read = await base.ReadAsync(buffer, cancellationToken);
+            BytesRead += read;
+            return read;
+        }
+    }
 }

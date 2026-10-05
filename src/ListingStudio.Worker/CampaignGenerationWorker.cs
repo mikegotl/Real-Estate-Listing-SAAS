@@ -22,21 +22,39 @@ public sealed partial class CampaignGenerationWorker(
         var interval = TimeSpan.FromSeconds(options.Value.PollIntervalSeconds);
         while (!stoppingToken.IsCancellationRequested)
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var processor = scope.ServiceProvider.GetRequiredService<ICampaignGenerationProcessor>();
-            var result = await processor.ProcessNextStageAsync(stoppingToken);
-            if (result is not null)
+            try
             {
-                LogStageProcessed(
-                    result.JobId,
-                    result.Stage,
-                    result.Succeeded,
-                    result.StageCompleted,
-                    result.WillRetry,
-                    result.AttemptNumber);
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var processor = scope.ServiceProvider.GetRequiredService<ICampaignGenerationProcessor>();
+                var result = await processor.ProcessNextStageAsync(stoppingToken);
+                if (result is not null)
+                {
+                    LogStageProcessed(
+                        result.JobId,
+                        result.Stage,
+                        result.Succeeded,
+                        result.StageCompleted,
+                        result.WillRetry,
+                        result.AttemptNumber);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                LogIterationFailed(exception);
             }
 
-            await Task.Delay(interval, stoppingToken);
+            try
+            {
+                await Task.Delay(interval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
@@ -56,4 +74,9 @@ public sealed partial class CampaignGenerationWorker(
         bool stageCompleted,
         bool willRetry,
         int attemptNumber);
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Campaign-generation polling failed; the worker will retry after the configured interval")]
+    private partial void LogIterationFailed(Exception exception);
 }

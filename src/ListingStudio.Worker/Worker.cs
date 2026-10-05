@@ -21,23 +21,41 @@ public sealed partial class Worker(
         var interval = TimeSpan.FromSeconds(options.Value.PollIntervalSeconds);
         while (!stoppingToken.IsCancellationRequested)
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var processor = scope.ServiceProvider.GetRequiredService<IPropertyMediaAnalysisProcessor>();
-            var result = await processor.AnalyzeNextAsync(stoppingToken);
-            if (result is null)
+            try
             {
-                LogNoPendingMedia();
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var processor = scope.ServiceProvider.GetRequiredService<IPropertyMediaAnalysisProcessor>();
+                var result = await processor.AnalyzeNextAsync(stoppingToken);
+                if (result is null)
+                {
+                    LogNoPendingMedia();
+                }
+                else if (result.Succeeded)
+                {
+                    LogAnalysisCompleted(result.MediaId, result.AttemptNumber);
+                }
+                else
+                {
+                    LogAnalysisFailed(result.MediaId, result.AttemptNumber, result.WillRetry, result.Error);
+                }
             }
-            else if (result.Succeeded)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                LogAnalysisCompleted(result.MediaId, result.AttemptNumber);
+                break;
             }
-            else
+            catch (Exception exception)
             {
-                LogAnalysisFailed(result.MediaId, result.AttemptNumber, result.WillRetry, result.Error);
+                LogIterationFailed(exception);
             }
 
-            await Task.Delay(interval, stoppingToken);
+            try
+            {
+                await Task.Delay(interval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
@@ -59,4 +77,9 @@ public sealed partial class Worker(
         Level = LogLevel.Warning,
         Message = "Property media {MediaId} analysis failed on attempt {AttemptNumber}; retry scheduled: {WillRetry}. {Error}")]
     private partial void LogAnalysisFailed(Guid mediaId, int attemptNumber, bool willRetry, string? error);
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Property-media polling failed; the worker will retry after the configured interval")]
+    private partial void LogIterationFailed(Exception exception);
 }
