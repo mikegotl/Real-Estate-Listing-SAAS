@@ -18,6 +18,7 @@ Source: *Listing Studio 16 Week AI Assisted Build Playbook*, supplied by the pro
 - Week 5 was accepted on 2026-10-03 after PR #9 merged with passing build/tests/migration/provider-contract verification; the owner explicitly deferred the paid live OpenAI vision check to a later integration stage.
 - Week 7 was accepted on 2026-10-04 after PR #12 merged and follow-up PR #13 merged with passing CI, 47 unit tests, 20 PostgreSQL integration tests, schema/grounding repairs, and no paid provider calls.
 - Week 8 was accepted on 2026-10-04 after PR #14 was updated onto current main, GitHub CI passed, and the verified fake-backed narration workflow, persistence, timing, retry, storage, and tenant-isolation checks remained green; no paid ElevenLabs call was made.
+- Week 13 was accepted on 2026-10-04 after PR #20 merged with passing GitHub CI, 70 unit tests, 27 PostgreSQL integration tests, verified generated-clip caching/tenant isolation, and a successful real FFmpeg/ffprobe generated-clip render; no paid provider call was made.
 - Week 9 was accepted on 2026-10-04 after PR #16 squash-merged with passing CI, 54 unit tests, 23 integration tests, and a real FFmpeg/FFprobe end-to-end render verifying H.264/AAC 1080p output at 30 fps.
 - Week 10 was accepted on 2026-10-04 after PR #17 squash-merged with passing CI, 57 unit tests, 23 integration tests, a real branded FFmpeg/FFprobe render, and visual QA of template-driven text/logo placement.
 - Week 6 was accepted on 2026-10-04 after the owner merged PR #10 with passing local and GitHub Actions verification, grounded fake-provider generation, immutable versioning, cache reuse, and tenant-isolation checks.
@@ -707,7 +708,7 @@ Add integration tests.
 
 ### Week 13: Selective Generative Video
 
-**Status:** implementation proposed (owner acceptance required)
+**Status:** accepted (2026-10-04; PR #20 merged with passing CI and end-to-end generated-clip verification)
 
 **Expected result:** Selected scenes can use subtle AI motion while the normal deterministic photo pipeline remains fully functional.
 
