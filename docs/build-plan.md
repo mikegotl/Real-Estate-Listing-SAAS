@@ -799,7 +799,7 @@ Create test-mode integration documentation.
 
 ### Week 15: Azure Production Deployment
 
-**Status:** pending
+**Status:** implementation proposed (owner acceptance required)
 
 **Expected result:** The application and worker deploy through CI/CD with secure configuration, health checks, logging and rollback instructions.
 

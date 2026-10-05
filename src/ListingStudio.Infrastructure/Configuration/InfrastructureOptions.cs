@@ -1,9 +1,44 @@
 namespace ListingStudio.Infrastructure.Configuration;
 
+using Npgsql;
+
 public sealed class PostgreSqlOptions
 {
     public const string SectionName = "PostgreSQL";
     public string ConnectionString { get; init; } = string.Empty;
+    public string Host { get; init; } = string.Empty;
+    public int Port { get; init; } = 5432;
+    public string Database { get; init; } = "listingstudio";
+    public string Username { get; init; } = string.Empty;
+    public string Password { get; init; } = string.Empty;
+
+    public string BuildConnectionString()
+    {
+        if (!string.IsNullOrWhiteSpace(ConnectionString))
+        {
+            return ConnectionString;
+        }
+
+        if (string.IsNullOrWhiteSpace(Host)
+            || string.IsNullOrWhiteSpace(Database)
+            || string.IsNullOrWhiteSpace(Username)
+            || string.IsNullOrWhiteSpace(Password))
+        {
+            return string.Empty;
+        }
+
+        return new NpgsqlConnectionStringBuilder
+        {
+            Host = Host,
+            Port = Port,
+            Database = Database,
+            Username = Username,
+            Password = Password,
+            SslMode = SslMode.VerifyFull,
+            Timeout = 15,
+            CommandTimeout = 30,
+        }.ConnectionString;
+    }
 }
 
 public sealed class AzureBlobStorageOptions
@@ -11,6 +46,7 @@ public sealed class AzureBlobStorageOptions
     public const string SectionName = "AzureBlobStorage";
     public string Provider { get; init; } = "Local";
     public string ConnectionString { get; init; } = string.Empty;
+    public string ServiceUri { get; init; } = string.Empty;
     public string ContainerName { get; init; } = "property-media";
     public string LocalRootPath { get; init; } = "App_Data/property-media";
     public string CampaignLocalRootPath { get; init; } = "App_Data/campaign-assets";

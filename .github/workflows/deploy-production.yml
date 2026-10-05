@@ -1,0 +1,260 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_reason:
+        description: Auditable reason for this production deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: listing-studio-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Restore, build, test and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg fonts-dejavu-core
+
+      - name: Restore
+        run: dotnet restore ListingStudio.slnx
+
+      - name: Build
+        run: dotnet build ListingStudio.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test ListingStudio.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+        env:
+          RUN_FFMPEG_E2E: "1"
+
+      - name: Publish Web
+        run: dotnet publish src/ListingStudio.Web/ListingStudio.Web.csproj --configuration Release --no-build --output artifacts/web
+
+      - name: Publish Worker
+        run: dotnet publish src/ListingStudio.Worker/ListingStudio.Worker.csproj --configuration Release --no-build --output artifacts/worker
+
+      - name: Validate Bicep
+        run: >-
+          docker run --rm
+          -v "${{ github.workspace }}:/workspace"
+          -w /workspace
+          mcr.microsoft.com/azure-cli:2.77.0
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+
+  deploy:
+    name: Containerize, migrate and deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_NAME_PREFIX: ${{ vars.AZURE_NAME_PREFIX }}
+      POSTGRES_ADMIN_LOGIN: ${{ vars.POSTGRES_ADMIN_LOGIN }}
+      POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Verify protected deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_NAME_PREFIX POSTGRES_ADMIN_LOGIN POSTGRES_ADMIN_PASSWORD)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Required production environment value is missing: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Sign in to Azure using GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Provision production foundation
+        id: foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+          az group create \
+            --name "$AZURE_RESOURCE_GROUP" \
+            --location "$AZURE_LOCATION" \
+            --tags application=listing-studio environment=production managedBy=github-actions \
+            --output none
+          outputs=$(az deployment group create \
+            --name "listing-studio-foundation-${GITHUB_RUN_NUMBER}" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters \
+              namePrefix="$AZURE_NAME_PREFIX" \
+              location="$AZURE_LOCATION" \
+              postgresAdministratorLogin="$POSTGRES_ADMIN_LOGIN" \
+              postgresAdministratorPassword="$POSTGRES_ADMIN_PASSWORD" \
+              deployApplications=false \
+            --query properties.outputs \
+            --output json)
+          acr_name=$(jq -r '.acrName.value' <<<"$outputs")
+          acr_login_server=$(jq -r '.acrLoginServer.value' <<<"$outputs")
+          echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=$acr_login_server" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push immutable images
+        shell: bash
+        env:
+          ACR_NAME: ${{ steps.foundation.outputs.acr_name }}
+          ACR_LOGIN_SERVER: ${{ steps.foundation.outputs.acr_login_server }}
+        run: |
+          set -euo pipefail
+          az acr login --name "$ACR_NAME"
+          docker buildx build --platform linux/amd64 --file Dockerfile.web \
+            --tag "$ACR_LOGIN_SERVER/listingstudio-web:$GITHUB_SHA" --push .
+          docker buildx build --platform linux/amd64 --file Dockerfile.worker \
+            --tag "$ACR_LOGIN_SERVER/listingstudio-worker:$GITHUB_SHA" --push .
+          docker buildx build --platform linux/amd64 --file Dockerfile.migrations \
+            --tag "$ACR_LOGIN_SERVER/listingstudio-migrations:$GITHUB_SHA" --push .
+
+      - name: Deploy immutable revisions and migration job
+        id: applications
+        shell: bash
+        env:
+          ACR_LOGIN_SERVER: ${{ steps.foundation.outputs.acr_login_server }}
+        run: |
+          set -euo pipefail
+          outputs=$(az deployment group create \
+            --name "listing-studio-apps-${GITHUB_RUN_NUMBER}" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters \
+              namePrefix="$AZURE_NAME_PREFIX" \
+              location="$AZURE_LOCATION" \
+              postgresAdministratorLogin="$POSTGRES_ADMIN_LOGIN" \
+              postgresAdministratorPassword="$POSTGRES_ADMIN_PASSWORD" \
+              deployApplications=true \
+              webImage="$ACR_LOGIN_SERVER/listingstudio-web:$GITHUB_SHA" \
+              workerImage="$ACR_LOGIN_SERVER/listingstudio-worker:$GITHUB_SHA" \
+              migrationImage="$ACR_LOGIN_SERVER/listingstudio-migrations:$GITHUB_SHA" \
+            --query properties.outputs \
+            --output json)
+          {
+            echo "migration_job=$(jq -r '.migrationJobName.value' <<<"$outputs")"
+            echo "web_app=$(jq -r '.webAppName.value' <<<"$outputs")"
+            echo "web_url=$(jq -r '.webUrl.value' <<<"$outputs")"
+            echo "worker_app=$(jq -r '.workerAppName.value' <<<"$outputs")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Apply database migrations exactly once
+        shell: bash
+        env:
+          MIGRATION_JOB: ${{ steps.applications.outputs.migration_job }}
+        run: |
+          set -euo pipefail
+          execution=$(az containerapp job start \
+            --name "$MIGRATION_JOB" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query name \
+            --output tsv)
+          for _ in {1..60}; do
+            status=$(az containerapp job execution show \
+              --name "$MIGRATION_JOB" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --job-execution-name "$execution" \
+              --query properties.status \
+              --output tsv)
+            case "$status" in
+              Succeeded)
+                echo "Migration execution succeeded: $execution"
+                exit 0
+                ;;
+              Failed|Stopped|Degraded)
+                echo "Migration execution failed with status: $status" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "Migration execution timed out: $execution" >&2
+          exit 1
+
+      - name: Enable worker after migrations
+        shell: bash
+        env:
+          WORKER_APP: ${{ steps.applications.outputs.worker_app }}
+        run: >-
+          az containerapp update
+          --name "$WORKER_APP"
+          --resource-group "$AZURE_RESOURCE_GROUP"
+          --min-replicas 1
+          --max-replicas 1
+          --output none
+
+      - name: Verify public Web readiness
+        shell: bash
+        env:
+          WEB_URL: ${{ steps.applications.outputs.web_url }}
+        run: curl --fail --show-error --silent --retry 12 --retry-delay 10 --retry-all-errors "$WEB_URL/health/ready"
+
+      - name: Verify worker revision health
+        shell: bash
+        env:
+          WORKER_APP: ${{ steps.applications.outputs.worker_app }}
+        run: |
+          set -euo pipefail
+          for _ in {1..30}; do
+            health=$(az containerapp revision list \
+              --name "$WORKER_APP" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query "[?properties.active].properties.healthState | [0]" \
+              --output tsv)
+            if [[ "$health" == "Healthy" ]]; then
+              exit 0
+            fi
+            if [[ "$health" == "Unhealthy" ]]; then
+              echo "Worker revision is unhealthy." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "Worker revision did not become healthy in time." >&2
+          exit 1
+
+      - name: Write deployment summary
+        shell: bash
+        env:
+          RELEASE_REASON: ${{ inputs.release_reason }}
+          WEB_URL: ${{ steps.applications.outputs.web_url }}
+        run: |
+          {
+            echo "## Production deployment"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Web: $WEB_URL"
+            echo "- Reason: $RELEASE_REASON"
+            echo "- Database migration job: succeeded"
+            echo "- Web readiness: passed"
+            echo "- Worker health: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
