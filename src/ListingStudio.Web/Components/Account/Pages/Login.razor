@@ -9,32 +9,45 @@
 
 <PageTitle>Log in</PageTitle>
 
-<h1>Log in</h1>
-<StatusMessage Message="@message" />
+<AccountPanel Title="Welcome back" Eyebrow="SIGN IN"
+              Description="Sign in to continue building property campaigns."
+              Icon="@Icons.Material.Filled.LockOpen">
+    <StatusMessage Message="@message" />
 
-<EditForm Model="Input" method="post" OnValidSubmit="LoginUserAsync" FormName="login" class="account-form">
-    <DataAnnotationsValidator />
-    <ValidationSummary class="error" />
-    <label>
-        Email
-        <InputText @bind-Value="Input.Email" autocomplete="username" />
-        <ValidationMessage For="() => Input.Email" />
-    </label>
-    <label>
-        Password
-        <InputText type="password" @bind-Value="Input.Password" autocomplete="current-password" />
-        <ValidationMessage For="() => Input.Password" />
-    </label>
-    <label>
-        <InputCheckbox @bind-Value="Input.RememberMe" /> Remember me
-    </label>
-    <button type="submit">Log in</button>
-</EditForm>
+    <EditForm Model="Input" method="post" OnValidSubmit="LoginUserAsync" FormName="login" class="account-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="validation-summary" />
+        <div class="ls-field">
+            <label for="login-email">Email address</label>
+            <div class="ls-input-wrap">
+                <MudIcon Icon="@Icons.Material.Filled.Email" Size="Size.Small" />
+                <InputText id="login-email" class="ls-input" @bind-Value="Input.Email" autocomplete="username" placeholder="you@agency.com" />
+            </div>
+            <ValidationMessage For="() => Input.Email" />
+        </div>
+        <div class="ls-field">
+            <div class="field-label-row">
+                <label for="login-password">Password</label>
+                <a href="/Account/ForgotPassword">Forgot password?</a>
+            </div>
+            <div class="ls-input-wrap">
+                <MudIcon Icon="@Icons.Material.Filled.Key" Size="Size.Small" />
+                <InputText id="login-password" class="ls-input" type="password" @bind-Value="Input.Password" autocomplete="current-password" placeholder="Enter your password" />
+            </div>
+            <ValidationMessage For="() => Input.Password" />
+        </div>
+        <label class="checkbox-row">
+            <InputCheckbox @bind-Value="Input.RememberMe" /> <span>Keep me signed in</span>
+        </label>
+        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large">
+            Log in
+        </MudButton>
+    </EditForm>
 
-<ExternalLoginPicker ReturnUrl="@ReturnUrl" />
+    <ExternalLoginPicker ReturnUrl="@ReturnUrl" />
 
-<p><a href="/Account/ForgotPassword">Forgot your password?</a></p>
-<p><a href="/Account/Register">Create a new account</a></p>
+    <p class="account-footer">New to Listing Studio? <a href="/Account/Register">Create an account</a></p>
+</AccountPanel>
 
 @code {
     private string? message;

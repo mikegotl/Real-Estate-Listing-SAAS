@@ -12,37 +12,56 @@
 
 <PageTitle>Register</PageTitle>
 
-<h1>Create your Listing Studio account</h1>
-<p>Your first account becomes the owner of a new organization.</p>
-<StatusMessage Message="@message" />
+<AccountPanel Title="Create your workspace" Eyebrow="GET STARTED"
+              Description="Your first account becomes the owner of a new organization."
+              Icon="@Icons.Material.Filled.RocketLaunch">
+    <StatusMessage Message="@message" />
 
-<EditForm Model="Input" method="post" OnValidSubmit="RegisterUserAsync" FormName="register" class="account-form">
-    <DataAnnotationsValidator />
-    <ValidationSummary class="error" />
-    <label>
-        Organization name
-        <InputText @bind-Value="Input.OrganizationName" autocomplete="organization" />
-        <ValidationMessage For="() => Input.OrganizationName" />
-    </label>
-    <label>
-        Email
-        <InputText @bind-Value="Input.Email" autocomplete="username" />
-        <ValidationMessage For="() => Input.Email" />
-    </label>
-    <label>
-        Password
-        <InputText type="password" @bind-Value="Input.Password" autocomplete="new-password" />
-        <ValidationMessage For="() => Input.Password" />
-    </label>
-    <label>
-        Confirm password
-        <InputText type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" />
-        <ValidationMessage For="() => Input.ConfirmPassword" />
-    </label>
-    <button type="submit">Register</button>
-</EditForm>
+    <EditForm Model="Input" method="post" OnValidSubmit="RegisterUserAsync" FormName="register" class="account-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="validation-summary" />
+        <div class="ls-field">
+            <label for="register-organization">Organization name</label>
+            <div class="ls-input-wrap">
+                <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Small" />
+                <InputText id="register-organization" class="ls-input" @bind-Value="Input.OrganizationName" autocomplete="organization" placeholder="Northstar Realty" />
+            </div>
+            <ValidationMessage For="() => Input.OrganizationName" />
+        </div>
+        <div class="ls-field">
+            <label for="register-email">Email address</label>
+            <div class="ls-input-wrap">
+                <MudIcon Icon="@Icons.Material.Filled.Email" Size="Size.Small" />
+                <InputText id="register-email" class="ls-input" @bind-Value="Input.Email" autocomplete="username" placeholder="you@agency.com" />
+            </div>
+            <ValidationMessage For="() => Input.Email" />
+        </div>
+        <div class="form-columns">
+            <div class="ls-field">
+                <label for="register-password">Password</label>
+                <div class="ls-input-wrap">
+                    <MudIcon Icon="@Icons.Material.Filled.Key" Size="Size.Small" />
+                    <InputText id="register-password" class="ls-input" type="password" @bind-Value="Input.Password" autocomplete="new-password" placeholder="8+ characters" />
+                </div>
+                <ValidationMessage For="() => Input.Password" />
+            </div>
+            <div class="ls-field">
+                <label for="register-confirm-password">Confirm password</label>
+                <div class="ls-input-wrap">
+                    <MudIcon Icon="@Icons.Material.Filled.Key" Size="Size.Small" />
+                    <InputText id="register-confirm-password" class="ls-input" type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" placeholder="Repeat password" />
+                </div>
+                <ValidationMessage For="() => Input.ConfirmPassword" />
+            </div>
+        </div>
+        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large">
+            Create workspace
+        </MudButton>
+    </EditForm>
 
-<ExternalLoginPicker Label="Or register with" ReturnUrl="@ReturnUrl" />
+    <ExternalLoginPicker Label="Or register with" ReturnUrl="@ReturnUrl" />
+    <p class="account-footer">Already have an account? <a href="/Account/Login">Log in</a></p>
+</AccountPanel>
 
 @code {
     private string? message;

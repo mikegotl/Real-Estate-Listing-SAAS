@@ -1,8 +1,44 @@
 @inherits LayoutComponentBase
 
-<main>
-    <NavMenu />
-    <section class="content">
-        @Body
-    </section>
-</main>
+<MudThemeProvider Theme="Theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout Class="app-shell">
+    <MudAppBar Elevation="0" Class="app-header">
+        <NavMenu />
+    </MudAppBar>
+    <MudMainContent Class="app-content">
+        <MudContainer MaxWidth="MaxWidth.Large" Class="page-container">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private static readonly MudTheme Theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#4F46E5",
+            Secondary = "#0EA5E9",
+            Tertiary = "#F59E0B",
+            Success = "#16A34A",
+            Warning = "#D97706",
+            Error = "#DC2626",
+            Dark = "#111827",
+            Background = "#F5F7FB",
+            Surface = "#FFFFFF",
+            AppbarBackground = "#0B1220",
+            AppbarText = "#F8FAFC",
+            TextPrimary = "#172033",
+            TextSecondary = "#64748B",
+            Divider = "#E2E8F0",
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "12px",
+        },
+    };
+}

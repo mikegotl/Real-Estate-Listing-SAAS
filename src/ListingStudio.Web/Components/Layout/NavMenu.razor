@@ -1,19 +1,40 @@
-<nav aria-label="Primary navigation">
-    <a href="/">Listing Studio</a>
+<nav class="nav-shell" aria-label="Primary navigation">
+    <a class="brand-link" href="/" aria-label="Listing Studio home">
+        <span class="brand-mark"><MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" /></span>
+        <span class="brand-copy">
+            <strong>Listing Studio</strong>
+            <small>Real estate marketing</small>
+        </span>
+    </a>
+
     <AuthorizeView>
         <Authorized Context="auth">
-            <a href="/auth">Workspace</a>
-            <a href="/properties">Properties</a>
-            <a href="/billing">Billing</a>
-            <span>@auth.User.Identity?.Name</span>
-            <form action="/Account/Logout" method="post">
-                <AntiforgeryToken />
-                <button type="submit">Log out</button>
-            </form>
+            <div class="nav-links">
+                <MudButton Href="/auth" Variant="Variant.Text" Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.Dashboard">Workspace</MudButton>
+                <MudButton Href="/properties" Variant="Variant.Text" Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.HomeWork">Properties</MudButton>
+                <MudButton Href="/billing" Variant="Variant.Text" Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.CreditCard">Billing</MudButton>
+            </div>
+            <div class="account-actions">
+                <span class="user-pill">
+                    <MudIcon Icon="@Icons.Material.Filled.AccountCircle" Size="Size.Small" />
+                    <span>@auth.User.Identity?.Name</span>
+                </span>
+                <form action="/Account/Logout" method="post">
+                    <AntiforgeryToken />
+                    <MudIconButton ButtonType="ButtonType.Submit" Icon="@Icons.Material.Filled.Logout"
+                                   Color="Color.Inherit" aria-label="Log out" />
+                </form>
+            </div>
         </Authorized>
         <NotAuthorized>
-            <a href="/Account/Register">Register</a>
-            <a href="/Account/Login">Log in</a>
+            <div class="guest-actions">
+                <MudButton Href="/Account/Login" Variant="Variant.Text" Color="Color.Inherit">Log in</MudButton>
+                <MudButton Href="/Account/Register" Variant="Variant.Filled" Color="Color.Primary"
+                           Class="nav-cta">Get started</MudButton>
+            </div>
         </NotAuthorized>
     </AuthorizeView>
 </nav>

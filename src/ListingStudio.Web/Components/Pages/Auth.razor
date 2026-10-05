@@ -3,5 +3,35 @@
 
 <PageTitle>Workspace</PageTitle>
 
-<h1>Listing Studio workspace</h1>
-<p>This protected page confirms that your authenticated workspace is ready.</p>
+<section class="workspace-hero">
+    <div>
+        <span class="eyebrow">YOUR WORKSPACE</span>
+        <MudText Typo="Typo.h2" HtmlTag="h1">Welcome to Listing Studio</MudText>
+        <MudText Typo="Typo.h6" HtmlTag="p">Manage your inventory, build campaigns, and keep production moving.</MudText>
+    </div>
+    <MudButton Href="/properties/new" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+               StartIcon="@Icons.Material.Filled.Add">Add a property</MudButton>
+</section>
+
+<MudGrid Spacing="3" Class="workspace-grid">
+    <MudItem xs="12" md="8">
+        <MudPaper Elevation="0" Class="workspace-card primary-workspace-card">
+            <span class="feature-icon indigo"><MudIcon Icon="@Icons.Material.Filled.HomeWork" /></span>
+            <div>
+                <span class="eyebrow">PROPERTY PIPELINE</span>
+                <MudText Typo="Typo.h4" HtmlTag="h2">Build your next listing campaign</MudText>
+                <MudText Typo="Typo.body1">Start with verified property details, add media, then generate your story and campaign assets.</MudText>
+                <MudButton Href="/properties" Variant="Variant.Filled" Color="Color.Primary" Class="mt-5"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">View properties</MudButton>
+            </div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="0" Class="workspace-card compact-workspace-card">
+            <span class="feature-icon sky"><MudIcon Icon="@Icons.Material.Filled.CreditCard" /></span>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Plan and usage</MudText>
+            <MudText Typo="Typo.body2">Review your subscription, monthly allowance, and campaign usage.</MudText>
+            <MudButton Href="/billing" Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward">Open billing</MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>

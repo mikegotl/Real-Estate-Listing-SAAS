@@ -1,9 +1,19 @@
 @if (!string.IsNullOrWhiteSpace(Message))
 {
-    <p class="status" role="status">@Message</p>
+    <MudAlert Severity="@Severity" Variant="Variant.Outlined" Class="mb-4" role="status">
+        @DisplayMessage
+    </MudAlert>
 }
 
 @code {
     [Parameter]
     public string? Message { get; set; }
+
+    private Severity Severity => Message?.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) == true
+        ? Severity.Error
+        : Severity.Info;
+
+    private string? DisplayMessage => Message?.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) == true
+        ? Message[6..].TrimStart()
+        : Message;
 }

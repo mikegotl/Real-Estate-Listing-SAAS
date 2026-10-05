@@ -2,5 +2,9 @@
 
 <PageTitle>Access denied</PageTitle>
 
-<h1>Access denied</h1>
-<p>You are not authorized to view this page.</p>
+<div class="state-page">
+    <span class="state-icon warning"><MudIcon Icon="@Icons.Material.Filled.GppBad" Size="Size.Large" /></span>
+    <MudText Typo="Typo.h3" HtmlTag="h1">Access denied</MudText>
+    <MudText Typo="Typo.body1">You don't have permission to view this page.</MudText>
+    <MudButton Href="/auth" Variant="Variant.Filled" Color="Color.Primary">Return to workspace</MudButton>
+</div>

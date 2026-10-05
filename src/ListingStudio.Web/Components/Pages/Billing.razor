@@ -6,56 +6,127 @@
 
 <PageTitle>Billing</PageTitle>
 
-<h1>Billing</h1>
+<section class="page-heading">
+    <div>
+        <span class="eyebrow">ACCOUNT</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Billing and usage</MudText>
+        <MudText Typo="Typo.body1">Manage your plan and keep an eye on monthly campaign usage.</MudText>
+    </div>
+    @if (overview?.StripeCustomerId is not null && StripeOptions.Value.Enabled)
+    {
+        <form action="/billing/portal" method="post">
+            <AntiforgeryToken />
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Settings">Manage subscription</MudButton>
+        </form>
+    }
+</section>
 
 @if (overview is null)
 {
-    <p>Loading billing details…</p>
+    <MudPaper Elevation="0" Class="content-card pa-6">
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        <MudText Typo="Typo.body2" Class="mt-3">Loading billing details…</MudText>
+    </MudPaper>
 }
 else
 {
     @if (NavigationManager.Uri.Contains("checkout=success", StringComparison.Ordinal))
     {
-        <p role="status">Checkout completed. Subscription status will update after Stripe verifies the webhook.</p>
+        <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="mb-5">
+            Checkout completed. Subscription status will update after Stripe verifies the webhook.
+        </MudAlert>
     }
 
-    <dl>
-        <dt>Plan</dt>
-        <dd>@overview.Plan</dd>
-        <dt>Subscription status</dt>
-        <dd>@overview.SubscriptionStatus</dd>
-        <dt>Current period</dt>
-        <dd>@overview.CurrentPeriodStartUtc.ToString("yyyy-MM-dd") – @overview.CurrentPeriodEndUtc.ToString("yyyy-MM-dd")</dd>
-        <dt>Campaign usage</dt>
-        <dd>@overview.CampaignUsage of @overview.MonthlyCampaignAllowance included; @overview.AdditionalCampaignUsage additional</dd>
-    </dl>
+    <MudGrid Spacing="3" Class="billing-summary-grid">
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="0" Class="metric-card">
+                <span class="metric-icon indigo"><MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" /></span>
+                <div><small>CURRENT PLAN</small><MudText Typo="Typo.h4">@Display(overview.Plan)</MudText></div>
+                <MudChip T="string" Size="Size.Small" Color="@StatusColor(overview.SubscriptionStatus)">
+                    @Display(overview.SubscriptionStatus)
+                </MudChip>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="0" Class="metric-card">
+                <span class="metric-icon sky"><MudIcon Icon="@Icons.Material.Filled.CalendarMonth" /></span>
+                <div>
+                    <small>CURRENT PERIOD</small>
+                    <MudText Typo="Typo.h6">@overview.CurrentPeriodStartUtc.ToString("MMM d") – @overview.CurrentPeriodEndUtc.ToString("MMM d")</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="0" Class="metric-card">
+                <span class="metric-icon amber"><MudIcon Icon="@Icons.Material.Filled.Campaign" /></span>
+                <div><small>CAMPAIGNS USED</small><MudText Typo="Typo.h4">@overview.CampaignUsage <span class="metric-total">/ @overview.MonthlyCampaignAllowance</span></MudText></div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Elevation="0" Class="content-card usage-card">
+        <div class="usage-heading">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h2">Monthly campaign allowance</MudText>
+                <MudText Typo="Typo.body2">Your included campaign usage resets with the billing period.</MudText>
+            </div>
+            <strong>@overview.CampaignUsage of @overview.MonthlyCampaignAllowance</strong>
+        </div>
+        <MudProgressLinear Value="@UsagePercent" Color="Color.Primary" Rounded="true" Size="Size.Large" />
+        @if (overview.AdditionalCampaignUsage > 0)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-2">
+                @overview.AdditionalCampaignUsage additional campaign(s) recorded this period.
+            </MudText>
+        }
+    </MudPaper>
 
     @if (!StripeOptions.Value.Enabled)
     {
-        <p>Stripe test-mode billing is not enabled for this environment.</p>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-5">
+            Stripe test-mode billing is not enabled for this environment. Your current plan remains available for local testing.
+        </MudAlert>
     }
     else
     {
-        <h2>Choose a plan</h2>
-        <form action="/billing/checkout" method="post">
-            <AntiforgeryToken />
-            <input type="hidden" name="plan" value="Starter" />
-            <button type="submit">Subscribe to Starter</button>
-        </form>
-        <form action="/billing/checkout" method="post">
-            <AntiforgeryToken />
-            <input type="hidden" name="plan" value="Professional" />
-            <button type="submit">Subscribe to Professional</button>
-        </form>
-
-        @if (overview.StripeCustomerId is not null)
-        {
-            <h2>Manage subscription</h2>
-            <form action="/billing/portal" method="post">
-                <AntiforgeryToken />
-                <button type="submit">Open Stripe customer portal</button>
-            </form>
-        }
+        <div class="section-heading left billing-plan-heading">
+            <span class="eyebrow">PLANS</span>
+            <MudText Typo="Typo.h4" HtmlTag="h2">Choose the capacity that fits your team</MudText>
+        </div>
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6">
+                <MudPaper Elevation="0" Class="plan-card">
+                    <MudText Typo="Typo.h5">Starter</MudText>
+                    <MudText Typo="Typo.body2">A focused foundation for individual agents and small teams.</MudText>
+                    <MudList T="string" Dense="true" Class="plan-features">
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Structured property workspace</MudListItem>
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Media and story workflow</MudListItem>
+                    </MudList>
+                    <form action="/billing/checkout" method="post">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="plan" value="Starter" />
+                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Outlined" Color="Color.Primary">Choose Starter</MudButton>
+                    </form>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudPaper Elevation="0" Class="plan-card featured">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="plan-badge">FOR GROWING TEAMS</MudChip>
+                    <MudText Typo="Typo.h5">Professional</MudText>
+                    <MudText Typo="Typo.body2">More campaign capacity for active listing operations.</MudText>
+                    <MudList T="string" Dense="true" Class="plan-features">
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Everything in Starter</MudListItem>
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Expanded campaign allowance</MudListItem>
+                    </MudList>
+                    <form action="/billing/checkout" method="post">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="plan" value="Professional" />
+                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary">Choose Professional</MudButton>
+                    </form>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
     }
 }
 
@@ -64,6 +135,10 @@ else
     private NavigationManager NavigationManager { get; set; } = null!;
 
     private BillingOverview? overview;
+
+    private double UsagePercent => overview is null || overview.MonthlyCampaignAllowance <= 0
+        ? 0
+        : Math.Min(100, overview.CampaignUsage * 100d / overview.MonthlyCampaignAllowance);
 
     protected override async Task OnInitializedAsync()
     {
@@ -74,4 +149,14 @@ else
             overview = await BillingService.GetOverviewAsync(userId);
         }
     }
+
+    private static string Display(Enum value) => value.ToString();
+
+    private static Color StatusColor(BillingSubscriptionStatus status) => status switch
+    {
+        BillingSubscriptionStatus.Active => Color.Success,
+        BillingSubscriptionStatus.PastDue => Color.Warning,
+        BillingSubscriptionStatus.Canceled => Color.Error,
+        _ => Color.Default,
+    };
 }

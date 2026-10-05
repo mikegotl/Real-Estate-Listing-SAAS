@@ -1,0 +1,42 @@
+<section class="account-stage">
+    <div class="account-story">
+        <span class="eyebrow light">LISTING STUDIO</span>
+        <MudText Typo="Typo.h3" HtmlTag="h2">Move from listing details to market-ready creative.</MudText>
+        <MudText Typo="Typo.body1">
+            One focused workspace for property media, grounded narratives, and campaign deliverables.
+        </MudText>
+        <div class="account-benefits" aria-label="Product benefits">
+            <span><MudIcon Icon="@Icons.Material.Filled.CheckCircle" /> Keep every property organized</span>
+            <span><MudIcon Icon="@Icons.Material.Filled.CheckCircle" /> Build on verified listing data</span>
+            <span><MudIcon Icon="@Icons.Material.Filled.CheckCircle" /> Produce consistent campaigns</span>
+        </div>
+    </div>
+
+    <MudPaper Elevation="0" Class="account-card">
+        <div class="account-icon"><MudIcon Icon="@Icon" Size="Size.Large" /></div>
+        <span class="eyebrow">@Eyebrow</span>
+        <MudText Typo="Typo.h4" HtmlTag="h1" Class="account-title">@Title</MudText>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="account-description">@Description</MudText>
+        }
+        @ChildContent
+    </MudPaper>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Eyebrow { get; set; } = "WELCOME";
+
+    [Parameter]
+    public string? Description { get; set; }
+
+    [Parameter]
+    public string Icon { get; set; } = Icons.Material.Filled.LockOpen;
+
+    [Parameter, EditorRequired]
+    public RenderFragment ChildContent { get; set; } = null!;
+}
