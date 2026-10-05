@@ -1,9 +1,40 @@
+@inject IAddressLookupService AddressLookupService
+
 <EditForm Model="Model" OnValidSubmit="SubmitAsync" FormName="property-form">
     <DataAnnotationsValidator />
     <MudGrid Spacing="3">
         <MudItem xs="12" md="8">
-            <MudTextField T="string" Label="Address line 1" @bind-Value="Model.Address1"
-                          For="@(() => Model.Address1)" Variant="Variant.Outlined" Required="true" />
+            @if (EnableAddressLookup)
+            {
+                <MudAutocomplete @key="addressLookupFieldVersion" T="string" Label="Address line 1" Value="@Model.Address1"
+                                 ValueChanged="AddressValueChangedAsync" Text="@addressInputText"
+                                 TextChanged="AddressTextChangedAsync" SearchFunc="SearchAddressesAsync"
+                                 For="@(() => Model.Address1)" Variant="Variant.Outlined" Required="true"
+                                 MinCharacters="4" DebounceInterval="350" MaxItems="5" Clearable="true"
+                                 CoerceValue="true" Strict="false" ResetValueOnEmptyText="true"
+                                 ShowProgressIndicator="true" Adornment="Adornment.Start"
+                                 AdornmentIcon="@Icons.Material.Filled.Search"
+                                 Placeholder="Start typing a U.S. street address">
+                    <NoItemsTemplate>
+                        <MudText Typo="Typo.body2" Class="pa-3">No matching addresses yet. Keep typing or enter the address manually.</MudText>
+                    </NoItemsTemplate>
+                </MudAutocomplete>
+                <MudText Typo="Typo.caption" Class="address-lookup-help">
+                    Select a suggestion to fill city, state, and ZIP. Suggestions powered by
+                    <MudLink Href="https://www.esri.com/" Target="_blank">Esri</MudLink>.
+                </MudText>
+                @if (!string.IsNullOrWhiteSpace(addressLookupMessage))
+                {
+                    <MudText Typo="Typo.caption" Color="@addressLookupMessageColor" Class="mt-1">
+                        @addressLookupMessage
+                    </MudText>
+                }
+            }
+            else
+            {
+                <MudTextField T="string" Label="Address line 1" @bind-Value="Model.Address1"
+                              For="@(() => Model.Address1)" Variant="Variant.Outlined" Required="true" />
+            }
         </MudItem>
         <MudItem xs="12" md="4">
             <MudTextField T="string" Label="Address line 2" @bind-Value="Model.Address2"
@@ -93,7 +124,93 @@
     [Parameter]
     public string CancelHref { get; set; } = "/properties";
 
+    [Parameter]
+    public bool EnableAddressLookup { get; set; }
+
+    private IReadOnlyDictionary<string, AddressLookupSuggestion> addressSuggestions =
+        new Dictionary<string, AddressLookupSuggestion>(StringComparer.OrdinalIgnoreCase);
+    private string addressInputText = string.Empty;
+    private string? addressLookupMessage;
+    private Color addressLookupMessageColor = Color.Secondary;
+    private int addressLookupFieldVersion;
+
     private Task SubmitAsync() => OnValidSubmit.InvokeAsync();
+
+    protected override void OnInitialized() => addressInputText = Model.Address1;
+
+    private async Task<IEnumerable<string>> SearchAddressesAsync(
+        string query,
+        CancellationToken cancellationToken)
+    {
+        addressLookupMessage = null;
+        try
+        {
+            var suggestions = await AddressLookupService.SearchAsync(query, cancellationToken);
+            addressSuggestions = suggestions
+                .GroupBy(suggestion => suggestion.DisplayText, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            return addressSuggestions.Keys;
+        }
+        catch (Exception exception) when (exception is HttpRequestException
+            or System.Text.Json.JsonException
+            or NotSupportedException)
+        {
+            addressSuggestions = new Dictionary<string, AddressLookupSuggestion>(StringComparer.OrdinalIgnoreCase);
+            addressLookupMessage = "Address suggestions are temporarily unavailable. You can still enter the address manually.";
+            addressLookupMessageColor = Color.Warning;
+            return [];
+        }
+    }
+
+    private async Task AddressValueChangedAsync(string value)
+    {
+        Model.Address1 = value ?? string.Empty;
+        addressInputText = Model.Address1;
+        addressLookupMessage = null;
+        if (!addressSuggestions.TryGetValue(Model.Address1, out var suggestion))
+        {
+            return;
+        }
+
+        try
+        {
+            var address = await AddressLookupService.ResolveAsync(suggestion);
+            if (address is null)
+            {
+                addressLookupMessage = "That suggestion could not be resolved. Complete the address manually.";
+                addressLookupMessageColor = Color.Warning;
+                return;
+            }
+
+            Model.Address1 = address.Address1;
+            addressInputText = address.Address1;
+            Model.City = address.City;
+            Model.State = address.State;
+            Model.ZipCode = address.ZipCode;
+            addressLookupFieldVersion++;
+            addressLookupMessage = "Address details filled from the selected suggestion.";
+            addressLookupMessageColor = Color.Success;
+        }
+        catch (Exception exception) when (exception is HttpRequestException
+            or System.Text.Json.JsonException
+            or NotSupportedException)
+        {
+            addressLookupMessage = "That suggestion could not be loaded. Complete the address manually.";
+            addressLookupMessageColor = Color.Warning;
+        }
+    }
+
+    private Task AddressTextChangedAsync(string value)
+    {
+        if (value is not null && addressSuggestions.ContainsKey(value))
+        {
+            return Task.CompletedTask;
+        }
+
+        addressInputText = value ?? string.Empty;
+        Model.Address1 = addressInputText;
+        return Task.CompletedTask;
+    }
 
     private static string Display(Enum value) => value switch
     {

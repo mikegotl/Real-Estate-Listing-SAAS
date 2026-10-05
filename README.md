@@ -47,7 +47,7 @@ dotnet user-secrets init --project src/ListingStudio.Web
 dotnet user-secrets set --project src/ListingStudio.Web "OpenAI:ApiKey" "your-key"
 ```
 
-The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `OpenAI`, `AIVideo`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`. The Web host also supports the `Authentication:Google` and `Authentication:Apple` sections described below.
+The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `AddressLookup`, `OpenAI`, `AIVideo`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`. The Web host also supports the `Authentication:Google` and `Authentication:Apple` sections described below.
 
 ### Google and Apple sign-in
 
@@ -122,7 +122,9 @@ dotnet run --project src/ListingStudio.Worker
 
 Open the Web URL printed by `dotnet run`. Registering creates an Identity user, a new organization, and an owner membership. `/auth` is protected and redirects anonymous users to `/Account/Login`. In Development only, the forgot-password confirmation page displays the locally generated reset link. Configure a production identity email adapter before deploying; reset tokens are never written to logs or source control.
 
-After signing in, open `/properties` to create, list, inspect, edit, and archive properties. A property's details page accepts up to 50 JPG, JPEG, PNG, or WEBP originals of at most 20 MB each. It displays thumbnails and metadata, reports upload progress, retries failed selections, and supports drag-and-drop or accessible arrow-button reordering. Archived properties and their photos are read-only and hidden from the default dashboard; select **Show archived** and refresh to include them. Property and media queries derive organization scope from the authenticated user's membership, and never accept an organization identifier from the browser.
+After signing in, open `/properties` to create, list, inspect, edit, and archive properties. The new-property form queries the server-side ArcGIS World Geocoding adapter after four typed characters; selecting a U.S. address fills street, city, state, and ZIP while manual entry remains available. Configure this through `AddressLookup`, or set `AddressLookup__Enabled=false` to disable outbound suggestions. No geocoding credential is sent to the browser.
+
+A property's details page accepts up to 50 JPG, JPEG, PNG, or WEBP originals of at most 20 MB each. It displays thumbnails and metadata, reports upload progress, retries failed selections, and supports drag-and-drop or accessible arrow-button reordering. Archived properties and their photos are read-only and hidden from the default dashboard; select **Show archived** and refresh to include them. Property and media queries derive organization scope from the authenticated user's membership, and never accept an organization identifier from the browser.
 
 When media analysis is enabled, the Worker claims pending photos with a PostgreSQL work lease, stores structured category, room type, quality, hero suitability, visibility flags, potential problems, factual description, and suggested ordering, and schedules bounded retries. Completed results and failed-attempt state appear on the property details page; an owner can explicitly requeue a failed analysis.
 

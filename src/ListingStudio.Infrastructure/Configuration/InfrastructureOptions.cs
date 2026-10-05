@@ -75,3 +75,14 @@ public sealed class CampaignGenerationOptions
     public int StageTimeoutSeconds { get; init; } = 600;
     public int LeaseSeconds { get; init; } = 900;
 }
+
+public sealed class AddressLookupOptions
+{
+    public const string SectionName = "AddressLookup";
+    public bool Enabled { get; init; } = true;
+    public string BaseUrl { get; init; } = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/";
+    public string CountryCode { get; init; } = "USA";
+    public int MinimumQueryLength { get; init; } = 4;
+    public int MaximumSuggestions { get; init; } = 5;
+    public int RequestTimeoutSeconds { get; init; } = 8;
+}
