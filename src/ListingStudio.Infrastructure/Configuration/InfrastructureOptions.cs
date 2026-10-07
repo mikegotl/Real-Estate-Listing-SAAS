@@ -86,3 +86,19 @@ public sealed class AddressLookupOptions
     public int MaximumSuggestions { get; init; } = 5;
     public int RequestTimeoutSeconds { get; init; } = 8;
 }
+
+public sealed class NeighborhoodInsightsOptions
+{
+    public const string SectionName = "NeighborhoodInsights";
+    public bool Enabled { get; init; }
+    public string ApiKey { get; init; } = string.Empty;
+    public string BaseUrl { get; init; } = "https://places.googleapis.com/";
+    public int RadiusMeters { get; init; } = 8_000;
+    public int MaximumResults { get; init; } = 12;
+    public int RequestTimeoutSeconds { get; init; } = 15;
+    public string[] PlaceTypes { get; init; } =
+    [
+        "school", "primary_school", "secondary_school", "park", "library", "supermarket",
+        "hospital", "restaurant", "cafe", "shopping_mall", "transit_station",
+    ];
+}

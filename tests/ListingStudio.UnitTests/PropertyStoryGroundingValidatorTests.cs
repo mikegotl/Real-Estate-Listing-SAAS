@@ -29,8 +29,8 @@ public sealed class PropertyStoryGroundingValidatorTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.Contains('4'));
-        Assert.Contains(result.Errors, error => error.Contains("school", StringComparison.Ordinal));
-        Assert.Contains(result.Errors, error => error.Contains("ocean view", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.Contains("school", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("ocean view", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -48,7 +48,83 @@ public sealed class PropertyStoryGroundingValidatorTests
         var result = validator.Validate(request, unsupported);
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.Contains("ocean view", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.Contains("ocean view", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ExplainsHowToVerifyAClaimDetectedByPhotoAnalysis()
+    {
+        var request = Request with
+        {
+            MediaObservations =
+            [
+                Request.MediaObservations[0] with
+                {
+                    Description = "Roof-mounted solar panels are visible.",
+                },
+            ],
+        };
+        var unsupported = SafeStory with { OpeningHook = "A home with solar panels." };
+
+        var result = validator.Validate(request, unsupported);
+
+        Assert.False(result.IsValid);
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("\"Solar\" was detected in photo analysis", error, StringComparison.Ordinal);
+        Assert.Contains("add that fact to the Description", error, StringComparison.Ordinal);
+        Assert.Contains("generate the story again", error, StringComparison.Ordinal);
+        Assert.Contains("leave the Description unchanged", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AcceptsAProtectedClaimWhenVerifiedInThePropertyDescription()
+    {
+        var request = Request with
+        {
+            VerifiedProperty = Request.VerifiedProperty with
+            {
+                Description = "A comfortable home with roof-mounted solar panels.",
+            },
+        };
+        var verified = SafeStory with { OpeningHook = "A home with solar panels." };
+
+        var result = validator.Validate(request, verified);
+
+        Assert.True(result.IsValid, string.Join(", ", result.Errors));
+    }
+
+    [Fact]
+    public void AcceptsApprovedNearbySchoolFactButRejectsSteeringLanguage()
+    {
+        var request = Request with
+        {
+            ApprovedNeighborhoodFacts =
+            [
+                new ApprovedNeighborhoodFact(
+                    "School",
+                    "Example Elementary School",
+                    "10 Learning Lane, Raleigh, NC 27601",
+                    1.2m,
+                    "https://maps.google.test/example-school",
+                    DateTimeOffset.UtcNow),
+            ],
+        };
+        var factual = SafeStory with
+        {
+            PropertyNarrative = "Example Elementary School is 1.2 miles away by straight-line distance.",
+        };
+
+        var valid = validator.Validate(request, factual);
+        Assert.True(valid.IsValid, string.Join(", ", valid.Errors));
+
+        var steering = factual with
+        {
+            OpeningHook = "A family-friendly home near excellent schools.",
+        };
+        var invalid = validator.Validate(request, steering);
+        Assert.False(invalid.IsValid);
+        Assert.Contains(invalid.Errors, error => error.Contains("family-friendly", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(invalid.Errors, error => error.Contains("excellent schools", StringComparison.OrdinalIgnoreCase));
     }
 
     private static PropertyStoryGenerationRequest Request => new(

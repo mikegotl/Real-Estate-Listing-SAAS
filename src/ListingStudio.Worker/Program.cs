@@ -44,6 +44,13 @@ builder.Services
         "MediaAnalysis:PollIntervalSeconds must be between 1 and 300.")
     .ValidateOnStart();
 builder.Services
+    .AddOptions<VideoProcessingWorkerOptions>()
+    .Bind(builder.Configuration.GetSection(VideoProcessingWorkerOptions.SectionName))
+    .Validate(
+        options => options.PollIntervalSeconds is >= 1 and <= 300,
+        "VideoProcessing:PollIntervalSeconds must be between 1 and 300.")
+    .ValidateOnStart();
+builder.Services
     .AddOptions<OpenAIOptions>()
     .Validate(
         options => !mediaAnalysisEnabled
@@ -54,6 +61,7 @@ builder.Services
         "Enabled media analysis requires OpenAI:ApiKey, OpenAI:Model, and an HTTPS OpenAI:ResponsesEndpoint.")
     .ValidateOnStart();
 builder.Services.AddHostedService<Worker>();
+builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);

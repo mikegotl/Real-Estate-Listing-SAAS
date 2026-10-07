@@ -16,6 +16,14 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
         "water view", "waterfront", "pool", "garage", "fireplace",
     ];
 
+    private static readonly string[] ProhibitedNeighborhoodLanguage =
+    [
+        "family-friendly", "great for families", "ideal for families", "perfect for families",
+        "great for children", "ideal for children", "safe neighborhood", "safe community",
+        "best schools", "top-rated schools", "excellent schools", "good schools",
+        "assigned school", "school assignment", "attendance zone", "attendance boundary",
+    ];
+
     private static readonly IReadOnlyDictionary<string, decimal> NumberWords =
         new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
         {
@@ -57,7 +65,8 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
         var errors = new List<string>();
         ValidateRequiredContent(content, errors);
         ValidateNumbers(request, text, errors);
-        ValidateProtectedClaims(request.VerifiedProperty.Description, text, errors);
+        ValidateProtectedClaims(request, text, errors);
+        ValidateFairHousingLanguage(text, errors);
 
         return errors.Count == 0
             ? PropertyStoryGroundingResult.Success
@@ -121,6 +130,12 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
         AddNumbersFromText(allowed, property.ZipCode);
         AddNumbersFromText(allowed, request.Branding.OrganizationName);
         AddNumbersFromText(allowed, request.Branding.AgentName);
+        foreach (var fact in request.ApprovedNeighborhoodFacts ?? [])
+        {
+            allowed.Add(fact.DistanceMiles);
+            AddNumbersFromText(allowed, fact.Name);
+            AddNumbersFromText(allowed, fact.Address);
+        }
 
         foreach (Match match in NumericTokenRegex().Matches(generatedText))
         {
@@ -141,19 +156,54 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
     }
 
     private static void ValidateProtectedClaims(
-        string? verifiedDescription,
+        PropertyStoryGenerationRequest request,
         string generatedText,
         List<string> errors)
     {
         foreach (var claim in ProtectedClaims)
         {
             if (generatedText.Contains(claim, StringComparison.OrdinalIgnoreCase)
-                && !(verifiedDescription?.Contains(claim, StringComparison.OrdinalIgnoreCase) ?? false))
+                && !(request.VerifiedProperty.Description?.Contains(claim, StringComparison.OrdinalIgnoreCase) ?? false)
+                && !IsPresentInApprovedNeighborhoodFacts(request.ApprovedNeighborhoodFacts, claim))
             {
-                errors.Add($"Unsupported protected claim: {claim}.");
+                var displayClaim = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(claim);
+                var source = IsPresentInMediaAnalysis(request.MediaObservations, claim)
+                    ? " was detected in photo analysis, but it is not verified in the property description."
+                    : " is not verified in the property description.";
+                errors.Add(
+                    $"\"{displayClaim}\"{source} "
+                    + "If this is accurate, edit the property and add that fact to the Description, then generate the story again. "
+                    + "If it is not accurate, leave the Description unchanged.");
             }
         }
     }
+
+    private static bool IsPresentInApprovedNeighborhoodFacts(
+        IReadOnlyList<ApprovedNeighborhoodFact>? facts,
+        string claim) => (facts ?? []).Any(fact =>
+            fact.Category.Contains(claim, StringComparison.OrdinalIgnoreCase)
+            || fact.Name.Contains(claim, StringComparison.OrdinalIgnoreCase)
+            || fact.Address.Contains(claim, StringComparison.OrdinalIgnoreCase));
+
+    private static void ValidateFairHousingLanguage(string generatedText, List<string> errors)
+    {
+        foreach (var phrase in ProhibitedNeighborhoodLanguage)
+        {
+            if (generatedText.Contains(phrase, StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"Neighborhood wording \"{phrase}\" is not allowed. Use neutral, factual nearby-place language instead.");
+            }
+        }
+    }
+
+    private static bool IsPresentInMediaAnalysis(
+        IReadOnlyList<PropertyMediaObservation> observations,
+        string claim) => observations.Any(observation =>
+            observation.Category.ToString().Contains(claim, StringComparison.OrdinalIgnoreCase)
+            || observation.RoomType.Contains(claim, StringComparison.OrdinalIgnoreCase)
+            || observation.Description.Contains(claim, StringComparison.OrdinalIgnoreCase)
+            || observation.PotentialProblems.Any(problem =>
+                problem.Contains(claim, StringComparison.OrdinalIgnoreCase)));
 
     private static void AddNumbersFromText(HashSet<decimal> values, string? text)
     {

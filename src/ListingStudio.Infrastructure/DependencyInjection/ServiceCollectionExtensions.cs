@@ -22,6 +22,8 @@ using Microsoft.Extensions.Options;
 using ListingStudio.Application.Billing;
 using ListingStudio.Infrastructure.Billing;
 using ListingStudio.Infrastructure.Health;
+using ListingStudio.Application.Neighborhoods;
+using ListingStudio.Infrastructure.Neighborhoods;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -84,6 +86,21 @@ public static class ServiceCollectionExtensions
                 "AddressLookup:MaximumSuggestions must be between 1 and 10.")
             .Validate(options => options.RequestTimeoutSeconds is >= 2 and <= 30,
                 "AddressLookup:RequestTimeoutSeconds must be between 2 and 30 seconds.");
+        services.AddOptions<NeighborhoodInsightsOptions>()
+            .Bind(configuration.GetSection(NeighborhoodInsightsOptions.SectionName))
+            .Validate(options => !options.Enabled
+                || (Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri)
+                    && uri.Scheme == Uri.UriSchemeHttps
+                    && !string.IsNullOrWhiteSpace(options.ApiKey)),
+                "Enabled Neighborhood Insights requires an HTTPS Google Places URL and API key.")
+            .Validate(options => options.RadiusMeters is >= 100 and <= 50_000,
+                "NeighborhoodInsights:RadiusMeters must be between 100 and 50000.")
+            .Validate(options => options.MaximumResults is >= 1 and <= 20,
+                "NeighborhoodInsights:MaximumResults must be between 1 and 20.")
+            .Validate(options => options.RequestTimeoutSeconds is >= 2 and <= 60,
+                "NeighborhoodInsights:RequestTimeoutSeconds must be between 2 and 60 seconds.")
+            .Validate(options => options.PlaceTypes.Length is >= 1 and <= 50,
+                "NeighborhoodInsights:PlaceTypes must contain between 1 and 50 supported place types.");
 
         services.AddDbContext<ApplicationDbContext>((provider, options) =>
         {
@@ -118,7 +135,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyService, PropertyService>();
         services.AddScoped<IPropertyMediaService, PropertyMediaService>();
         services.AddScoped<IPropertyMediaAnalysisProcessor, PropertyMediaAnalysisProcessor>();
+        services.AddScoped<IPropertyVideoService, PropertyVideoService>();
+        services.AddScoped<IPropertyVideoProcessingProcessor, PropertyVideoProcessingProcessor>();
         services.AddScoped<IPropertyStoryService, PropertyStoryService>();
+        services.AddScoped<INeighborhoodInsightService, NeighborhoodInsightService>();
         services.AddScoped<IVideoProductionPlanService, VideoProductionPlanService>();
         services.AddScoped<IVideoNarrationService, VideoNarrationService>();
         services.AddScoped<IGeneratedVideoClipService, GeneratedVideoClipService>();
@@ -140,6 +160,12 @@ public static class ServiceCollectionExtensions
             var addressLookup = provider.GetRequiredService<IOptions<AddressLookupOptions>>().Value;
             client.BaseAddress = new Uri(addressLookup.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(addressLookup.RequestTimeoutSeconds);
+        });
+        services.AddHttpClient<INeighborhoodDataProvider, GooglePlacesNeighborhoodDataProvider>((provider, client) =>
+        {
+            var neighborhood = provider.GetRequiredService<IOptions<NeighborhoodInsightsOptions>>().Value;
+            client.BaseAddress = new Uri(neighborhood.BaseUrl, UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(neighborhood.RequestTimeoutSeconds);
         });
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPropertyMediaStorage>(provider =>

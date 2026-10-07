@@ -25,6 +25,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         ValidateAuthority(authoritativeInput, specification, errors);
         ValidateTimeline(authoritativeInput, specification, errors);
         ValidateAudioAndGrounding(authoritativeInput, specification, errors);
+        ValidateApprovedNeighborhoodCoverage(authoritativeInput, specification, errors);
 
         return errors.Count == 0
             ? VideoSpecificationValidationResult.Success
@@ -312,6 +313,27 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         var matches = bindings.Where(binding => binding.Key == key).ToArray();
         AddIf(matches.Length != 1 || matches[0].Value != text,
             $"{path} must exactly match one authoritative fact binding.", errors);
+    }
+
+    private static void ValidateApprovedNeighborhoodCoverage(
+        VideoDirectionRequest input,
+        VideoProductionSpecification specification,
+        List<string> errors)
+    {
+        var usedKeys = specification.Scenes
+            .SelectMany(scene => scene.TextOverlays)
+            .Select(overlay => overlay.GroundingKey)
+            .Concat(specification.Audio.NarrationSegments.Select(segment => segment.GroundingKey))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var binding in input.FactBindings.Where(binding =>
+                     binding.Source == FactSource.ApprovedNeighborhood))
+        {
+            AddIf(
+                !usedKeys.Contains(binding.Key),
+                $"Approved neighborhood fact {binding.Key} must be displayed or narrated.",
+                errors);
+        }
     }
 
     private static VideoOutputProfile GetOutput(VideoAspectRatio aspectRatio) => aspectRatio switch

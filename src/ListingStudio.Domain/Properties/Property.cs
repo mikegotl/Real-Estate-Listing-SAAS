@@ -1,5 +1,6 @@
 using ListingStudio.Domain.Organizations;
 using ListingStudio.Domain.Stories;
+using ListingStudio.Domain.Neighborhoods;
 
 namespace ListingStudio.Domain.Properties;
 
@@ -61,7 +62,11 @@ public sealed class ListingProperty
 
     public ICollection<PropertyMedia> Media { get; } = [];
 
+    public ICollection<PropertyVideo> Videos { get; } = [];
+
     public ICollection<PropertyStory> Stories { get; } = [];
+
+    public ICollection<NeighborhoodInsight> NeighborhoodInsights { get; } = [];
 
     public static ListingProperty Create(Guid organizationId, PropertyDetails details)
     {

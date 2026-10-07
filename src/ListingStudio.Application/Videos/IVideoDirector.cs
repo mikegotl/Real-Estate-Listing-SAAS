@@ -6,5 +6,6 @@ public interface IVideoDirector
 
     Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,
+        IReadOnlyList<string>? validationFeedback = null,
         CancellationToken cancellationToken = default);
 }

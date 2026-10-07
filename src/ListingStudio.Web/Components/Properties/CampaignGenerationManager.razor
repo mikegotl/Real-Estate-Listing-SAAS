@@ -1,5 +1,6 @@
 @inherits OwningComponentBase<ICampaignGenerationService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyMediaService MediaService
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
@@ -7,6 +8,9 @@
             <MudText Typo="Typo.h5" HtmlTag="h2">Campaign</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary">
                 Generate, monitor, and download the complete video campaign.
+            </MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Video narration is generated with an AI voice.
             </MudText>
         </div>
         @if (job is null || job.Status is CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
@@ -25,6 +29,14 @@
         <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
     }
 
+    @if (mediaCount is > 0 and < 3)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4">
+            Only @mediaCount @(mediaCount == 1 ? "photo is" : "photos are") available. Listing Studio can create a conservative
+            fallback plan, but at least three analyzed interior and exterior photos are recommended for a varied video.
+        </MudAlert>
+    }
+
     @if (job is null)
     {
         <MudText Typo="Typo.body1">No campaign has been generated yet.</MudText>
@@ -41,7 +53,7 @@
 
         @if (!string.IsNullOrWhiteSpace(job.LastError))
         {
-            <MudAlert Severity="Severity.Error" Class="mb-4">@job.LastError</MudAlert>
+            <MudAlert Severity="Severity.Error" Class="mb-4">@DisplayError(job)</MudAlert>
         }
 
         <MudList T="CampaignStageResult" Dense="true" Class="mb-4">
@@ -134,6 +146,7 @@
     private bool busy;
     private bool pollingStarted;
     private string? error;
+    private int mediaCount;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -147,6 +160,7 @@
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
+            mediaCount = (await MediaService.ListAsync(userId, PropertyId, pollingCancellation.Token)).Count;
             error = null;
         }
         catch (OperationCanceledException) when (pollingCancellation.IsCancellationRequested)
@@ -244,6 +258,18 @@
 
     private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
         index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
+
+    private static string DisplayError(CampaignGenerationResult campaign) =>
+        campaign.CurrentStage == CampaignGenerationStage.GenerateMasterVideoPlan
+        && campaign.LastError == "A campaign provider returned invalid data."
+            ? "Listing Studio could not validate the generated master video plan. Retry the failed stage to use guided repair and the single-photo fallback, or add more analyzed interior and exterior photos for a more varied result."
+            : campaign.CurrentStage == CampaignGenerationStage.GenerateNarration
+              && campaign.LastError == "Voice:Provider must be ElevenLabs for narration generation."
+                ? "Narration was not configured when this attempt ran. Retry the failed stage to generate narration with the configured OpenAI voice."
+            : campaign.CurrentStage == CampaignGenerationStage.GenerateNarration
+              && campaign.LastError == "A campaign provider returned invalid data."
+                ? "Listing Studio could not process the narration audio returned by OpenAI. The audio-format handling has been updated; retry the failed stage."
+            : campaign.LastError!;
 
     private static Color StatusColor(CampaignGenerationStatus status) => status switch
     {

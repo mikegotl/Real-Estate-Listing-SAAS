@@ -4,6 +4,7 @@ using ListingStudio.Domain.Stories;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Billing;
+using ListingStudio.Domain.Neighborhoods;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ListingProperty> Properties => Set<ListingProperty>();
 
     public DbSet<PropertyMedia> PropertyMedia => Set<PropertyMedia>();
+
+    public DbSet<PropertyVideo> PropertyVideos => Set<PropertyVideo>();
 
     public DbSet<PropertyStory> PropertyStories => Set<PropertyStory>();
 
@@ -38,6 +41,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<CampaignUsageRecord> CampaignUsageRecords => Set<CampaignUsageRecord>();
 
     public DbSet<BillingWebhookReceipt> BillingWebhookReceipts => Set<BillingWebhookReceipt>();
+
+    public DbSet<NeighborhoodInsight> NeighborhoodInsights => Set<NeighborhoodInsight>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

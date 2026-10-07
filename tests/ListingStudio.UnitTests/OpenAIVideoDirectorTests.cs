@@ -65,9 +65,11 @@ public sealed class OpenAIVideoDirectorTests
                 ResponsesEndpoint = "https://api.openai.test/v1/responses",
             }));
 
-        var result = await director.DirectAsync(request);
+        var result = await director.DirectAsync(
+            request,
+            ["scenes must end at the exact requested duration."]);
 
-        Assert.Equal("openai-video-director-v1.1", director.DirectorVersion);
+        Assert.Equal("openai-video-director-v1.3", director.DirectorVersion);
         Assert.Single(result.Scenes);
         Assert.Equal(request.Media[0].MediaId, result.Scenes[0].VisualSource.PropertyMediaId);
         Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-api-key"), handler.Authorization);
@@ -88,7 +90,10 @@ public sealed class OpenAIVideoDirectorTests
         Assert.Contains("verified_property_data", input, StringComparison.Ordinal);
         Assert.Contains(request.Media[0].MediaId.ToString(), input, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("fact_bindings", input, StringComparison.Ordinal);
+        Assert.Contains("approvedNeighborhood", input, StringComparison.Ordinal);
         Assert.Contains("brand", input, StringComparison.Ordinal);
+        Assert.Contains("validation_feedback", input, StringComparison.Ordinal);
+        Assert.Contains("scenes must end at the exact requested duration", input, StringComparison.Ordinal);
         Assert.DoesNotContain("safeZone", input, StringComparison.Ordinal);
         Assert.DoesNotContain("videoCodec", input, StringComparison.Ordinal);
     }
@@ -146,6 +151,11 @@ public sealed class OpenAIVideoDirectorTests
             [
                 new FactBinding("story.voiceover", "Welcome home.", FactSource.PropertyStory, "VoiceoverScript"),
                 new FactBinding("story.closingCta", "Contact us.", FactSource.PropertyStory, "ClosingCta"),
+                new FactBinding(
+                    "neighborhood.1",
+                    "Example Park • Park • 0.5 miles straight-line distance",
+                    FactSource.ApprovedNeighborhood,
+                    "https://maps.google.test/example-park"),
             ],
             new BrandKit(null, null, null, null, null, null, "#17324D", "#F4F0E8"),
             new GroundedText("Contact us.", "story.closingCta"),

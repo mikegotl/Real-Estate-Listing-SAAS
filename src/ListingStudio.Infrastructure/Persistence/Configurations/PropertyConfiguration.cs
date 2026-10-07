@@ -36,5 +36,6 @@ public sealed class PropertyConfiguration : IEntityTypeConfiguration<ListingProp
 
         builder.Navigation(property => property.Media).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Navigation(property => property.Stories).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(property => property.NeighborhoodInsights).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

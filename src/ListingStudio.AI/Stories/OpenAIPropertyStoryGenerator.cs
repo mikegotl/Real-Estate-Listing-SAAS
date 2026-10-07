@@ -16,7 +16,8 @@ public sealed class OpenAIPropertyStoryGenerator(
     private const string Instructions = """
         Act as a real-estate marketing copywriter.
 
-        Create compelling marketing language using ONLY the supplied verified property facts and media observations.
+        Create compelling marketing language using ONLY the supplied verified property facts, approved neighborhood
+        facts, and media observations.
 
         VERIFIED_PROPERTY_DATA is the sole authority for property facts. Media observations describe visible imagery,
         but they are not authoritative property facts. Use them only to organize a natural visual progression and to
@@ -25,7 +26,15 @@ public sealed class OpenAIPropertyStoryGenerator(
 
         Never introduce a factual property claim unless it is directly supported by VERIFIED_PROPERTY_DATA. Do not
         manufacture or alter square footage, room counts, upgrades, materials, views, amenities, school information,
-        neighborhood claims, location claims, HOA information, or financial claims. Preserve every number exactly.
+        neighborhood claims, location claims, HOA information, or financial claims. When APPROVED_NEIGHBORHOOD_FACTS
+        are supplied, include every one in the voiceover or highlights as a neutral nearby-place statement using the
+        supplied name and straight-line distance exactly. Category is structured context for choosing natural wording;
+        never append or speak it in parentheses after the place name, and do not repeat a category already conveyed by
+        the name. For example, say "Walker Elementary School, 0.54 miles away by straight-line distance," not
+        "Walker Elementary School (School)." Never claim school assignment, quality, ratings,
+        attendance boundaries, travel time, safety,
+        demographics, suitability for families or children, or any preference for a protected class. Do not use phrases
+        such as "family-friendly", "great for families", "safe", or "best schools". Preserve every number exactly.
 
         The voiceover should sound conversational and cinematic rather than like an MLS field list. Avoid excessive
         adjectives and cliches. Return only the requested structured JSON.
@@ -57,7 +66,7 @@ public sealed class OpenAIPropertyStoryGenerator(
         Converters = { new JsonStringEnumConverter() },
     };
 
-    public string GenerationVersion => "property-story-v1";
+    public string GenerationVersion => "property-story-v3";
 
     public async Task<PropertyStoryContent> GenerateAsync(
         PropertyStoryGenerationRequest request,
@@ -86,6 +95,7 @@ public sealed class OpenAIPropertyStoryGenerator(
             {
                 verified_property_data = request.VerifiedProperty,
                 media_observations = request.MediaObservations,
+                approved_neighborhood_facts = request.ApprovedNeighborhoodFacts ?? [],
                 branding = request.Branding,
             },
             SerializerOptions);
@@ -150,15 +160,34 @@ public sealed class OpenAIPropertyStoryGenerator(
         var result = JsonSerializer.Deserialize<StructuredStory>(outputText, SerializerOptions)
             ?? throw new InvalidDataException("OpenAI returned an empty property marketing story.");
 
+        var neighborhoodFacts = request.ApprovedNeighborhoodFacts ?? [];
         return new PropertyStoryContent(
-            result.CampaignTitle,
-            result.OpeningHook,
-            result.PropertyNarrative,
-            result.Highlights,
-            result.VoiceoverScript,
-            result.ClosingCta,
-            result.SocialCaptionLong,
-            result.SocialCaptionShort);
+            RemoveRedundantNeighborhoodCategories(result.CampaignTitle, neighborhoodFacts),
+            RemoveRedundantNeighborhoodCategories(result.OpeningHook, neighborhoodFacts),
+            RemoveRedundantNeighborhoodCategories(result.PropertyNarrative, neighborhoodFacts),
+            result.Highlights
+                .Select(highlight => RemoveRedundantNeighborhoodCategories(highlight, neighborhoodFacts))
+                .ToArray(),
+            RemoveRedundantNeighborhoodCategories(result.VoiceoverScript, neighborhoodFacts),
+            RemoveRedundantNeighborhoodCategories(result.ClosingCta, neighborhoodFacts),
+            RemoveRedundantNeighborhoodCategories(result.SocialCaptionLong, neighborhoodFacts),
+            RemoveRedundantNeighborhoodCategories(result.SocialCaptionShort, neighborhoodFacts));
+    }
+
+    private static string RemoveRedundantNeighborhoodCategories(
+        string value,
+        IReadOnlyList<ApprovedNeighborhoodFact> facts)
+    {
+        var normalized = value;
+        foreach (var fact in facts)
+        {
+            normalized = normalized.Replace(
+                $"{fact.Name} ({fact.Category})",
+                fact.Name,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        return normalized;
     }
 
     private static string GetOutputText(JsonElement response)

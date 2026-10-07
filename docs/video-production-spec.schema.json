@@ -128,9 +128,10 @@
         "value": { "type": "string" },
         "source": {
           "type": "string",
-          "enum": ["verifiedProperty", "propertyStory", "brandKit"]
+          "enum": ["verifiedProperty", "propertyStory", "approvedNeighborhood", "brandKit"]
         },
-        "sourceReference": { "type": "string" }
+        "sourceReference": { "type": "string" },
+        "visualAssetReferenceId": { "$ref": "#/$defs/nullableUuid" }
       },
       "required": ["key", "value", "source", "sourceReference"]
     },

@@ -17,6 +17,8 @@ public sealed class CampaignGenerationService(
     TimeProvider timeProvider,
     IBillingUsageRecorder billingUsageRecorder) : ICampaignGenerationService
 {
+    private const string WorkflowVersion = "campaign-natural-neighborhood-narration-v5";
+
     public async Task<CampaignGenerationResult?> EnqueueAsync(
         string userId,
         Guid propertyId,
@@ -62,7 +64,27 @@ public sealed class CampaignGenerationService(
             throw new InvalidOperationException("At least one property image is required to generate a campaign.");
         }
 
-        var fingerprint = CreateFingerprint(property.UpdatedAtUtc, media);
+        var neighborhoodFacts = await dbContext.NeighborhoodInsights
+            .AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == organizationId
+                && candidate.PropertyId == propertyId
+                && candidate.IsApproved)
+            .OrderBy(candidate => candidate.ProviderPlaceId)
+            .Select(candidate => new
+            {
+                candidate.ProviderPlaceId,
+                candidate.Category,
+                candidate.Name,
+                candidate.Address,
+                candidate.DistanceMiles,
+                candidate.CheckedAtUtc,
+                candidate.VideoPhotoBlobPath,
+                candidate.VideoPhotoFileSize,
+                candidate.VideoPhotoCredit,
+                candidate.VideoPhotoUploadedAtUtc,
+            })
+            .ToArrayAsync(cancellationToken);
+        var fingerprint = CreateFingerprint(property.UpdatedAtUtc, media, neighborhoodFacts);
         var existing = await dbContext.CampaignGenerationJobs
             .Include(candidate => candidate.Deliverables)
             .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId
@@ -120,6 +142,7 @@ public sealed class CampaignGenerationService(
         Guid jobId,
         CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         var job = await dbContext.CampaignGenerationJobs.SingleOrDefaultAsync(
             candidate => candidate.Id == jobId && candidate.OrganizationId == organizationId,
@@ -139,6 +162,7 @@ public sealed class CampaignGenerationService(
         Guid jobId,
         CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         var job = await dbContext.CampaignGenerationJobs.SingleOrDefaultAsync(
             candidate => candidate.Id == jobId && candidate.OrganizationId == organizationId,
@@ -194,9 +218,18 @@ public sealed class CampaignGenerationService(
         return organizationId ?? throw new UnauthorizedAccessException("The user does not belong to an organization.");
     }
 
-    private static string CreateFingerprint(DateTimeOffset propertyUpdatedAtUtc, object media)
+    private static string CreateFingerprint(
+        DateTimeOffset propertyUpdatedAtUtc,
+        object media,
+        object neighborhoodFacts)
     {
-        var source = JsonSerializer.Serialize(new { propertyUpdatedAtUtc, media });
+        var source = JsonSerializer.Serialize(new
+        {
+            workflowVersion = WorkflowVersion,
+            propertyUpdatedAtUtc,
+            media,
+            neighborhoodFacts,
+        });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
     }
 

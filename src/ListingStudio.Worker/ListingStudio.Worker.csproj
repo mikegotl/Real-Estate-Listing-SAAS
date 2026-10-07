@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup><UserSecretsId>listingstudio-worker-development</UserSecretsId></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../ListingStudio.Application/ListingStudio.Application.csproj" />
     <ProjectReference Include="../ListingStudio.Infrastructure/ListingStudio.Infrastructure.csproj" />

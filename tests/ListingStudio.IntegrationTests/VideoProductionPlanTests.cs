@@ -3,6 +3,7 @@ using System.Text.Json;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Neighborhoods;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Domain.Videos;
@@ -105,12 +106,13 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
     }
 
     [Fact]
-    public async Task RejectsInvalidDirectorOutputWithoutPersisting()
+    public async Task RepairsInvalidDirectorOutputUsingValidationFeedback()
     {
         var owner = await CreateOwnerAndPropertyAsync("invalid-video-owner");
         await UploadAndAnalyzeAsync(owner);
         fixture.Factory.StoryGenerator.Enqueue(SafeStory);
         await GenerateStoryAsync(owner);
+        var callsBefore = fixture.Factory.VideoDirector.CallCount;
         fixture.Factory.VideoDirector.Enqueue(request =>
         {
             var valid = CreateEditorialPlan(request);
@@ -120,18 +122,103 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
                 Scenes = [scene with { DurationMs = scene.DurationMs - 1 }],
             };
         });
+        fixture.Factory.VideoDirector.EnqueueRepair((request, validationFeedback) =>
+        {
+            Assert.Contains(validationFeedback, error =>
+                error.Contains("requested duration", StringComparison.Ordinal));
+            return CreateEditorialPlan(request);
+        });
 
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var plans = scope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>();
-        var exception = await Assert.ThrowsAsync<InvalidDataException>(() => plans.GenerateAsync(
+        var generated = await plans.GenerateAsync(
             owner.UserId,
             owner.PropertyId,
             RequestedDuration.Hero60,
-            VideoAspectRatio.Landscape16By9));
-        Assert.Contains("failed validation", exception.Message, StringComparison.Ordinal);
+            VideoAspectRatio.Landscape16By9);
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await dbContext.VideoProductionPlans.AnyAsync(plan => plan.PropertyId == owner.PropertyId));
+        Assert.NotNull(generated);
+        Assert.Equal(callsBefore + 2, fixture.Factory.VideoDirector.CallCount);
+        Assert.True(await dbContext.VideoProductionPlans.AnyAsync(plan => plan.PropertyId == owner.PropertyId));
+    }
+
+    [Fact]
+    public async Task NormalizesProviderCropAndUnapprovedMusicDeterministically()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("normalized-video-owner");
+        await UploadAndAnalyzeAsync(owner);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await GenerateStoryAsync(owner);
+        var callsBefore = fixture.Factory.VideoDirector.CallCount;
+        fixture.Factory.VideoDirector.Enqueue(request =>
+        {
+            var plan = CreateEditorialPlan(request);
+            return plan with
+            {
+                Audio = plan.Audio with
+                {
+                    Music = new MusicPlan(null, MusicMood.WarmCinematic, 0, 60_000, -18, 1_000, 1_000, -28),
+                },
+                Scenes = plan.Scenes.Select(scene => scene with
+                {
+                    Motion = new MotionPlan(
+                        MotionKind.KenBurns,
+                        new NormalizedRect(0, 0, 1, 1),
+                        new NormalizedRect(0, 0, 1, 1),
+                        MotionEasing.EaseInOut),
+                }).ToArray(),
+            };
+        });
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var generated = await scope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>()
+            .GenerateAsync(
+                owner.UserId,
+                owner.PropertyId,
+                RequestedDuration.Hero60,
+                VideoAspectRatio.Landscape16By9);
+
+        Assert.NotNull(generated);
+        Assert.Equal(callsBefore + 1, fixture.Factory.VideoDirector.CallCount);
+        Assert.All(generated.Specification.Scenes, scene =>
+        {
+            Assert.Equal(MotionKind.None, scene.Motion.Type);
+            Assert.Equal(scene.Motion.StartViewport, scene.Motion.EndViewport);
+        });
+        Assert.Equal(MusicMood.None, generated.Specification.Audio.Music.Mood);
+        Assert.Equal(0, generated.Specification.Audio.Music.DurationMs);
+    }
+
+    [Fact]
+    public async Task UsesDeterministicFallbackWhenSinglePhotoPlanAndRepairAreInvalid()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("fallback-video-owner");
+        await UploadAndAnalyzeAsync(owner);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await GenerateStoryAsync(owner);
+        var callsBefore = fixture.Factory.VideoDirector.CallCount;
+        static DirectedEditorialPlan InvalidPlan(VideoDirectionRequest request)
+        {
+            var valid = CreateEditorialPlan(request);
+            return valid with { Scenes = [valid.Scenes[0] with { DurationMs = 59_999 }] };
+        }
+        fixture.Factory.VideoDirector.Enqueue(InvalidPlan);
+        fixture.Factory.VideoDirector.Enqueue(InvalidPlan);
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var generated = await scope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>()
+            .GenerateAsync(
+                owner.UserId,
+                owner.PropertyId,
+                RequestedDuration.Hero60,
+                VideoAspectRatio.Landscape16By9);
+
+        Assert.NotNull(generated);
+        Assert.Equal("deterministic-single-photo-v1", generated.DirectorVersion);
+        Assert.Equal(2, generated.Specification.Scenes.Count);
+        Assert.Equal(60_000, generated.Specification.Scenes.Sum(scene => scene.DurationMs));
+        Assert.Equal(callsBefore + 2, fixture.Factory.VideoDirector.CallCount);
     }
 
     [Fact]
@@ -205,6 +292,56 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
         Assert.Single(plans, plan => plan!.Reused);
     }
 
+    [Fact]
+    public async Task IncludesEveryApprovedNeighborhoodFactInTheMasterPlan()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("neighborhood-video-owner");
+        await UploadAndAnalyzeAsync(owner);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await GenerateStoryAsync(owner);
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var insight = NeighborhoodInsight.Create(
+                owner.OrganizationId,
+                owner.PropertyId,
+                "example-park-place-id",
+                NeighborhoodPlaceCategory.Park,
+                "Example Park",
+                "10 Park Lane, Raleigh, NC 27601",
+                0.5m,
+                "https://maps.google.test/example-park",
+                false,
+                null,
+                null,
+                null,
+                DateTimeOffset.UtcNow);
+            insight.SetApproval(true);
+            db.NeighborhoodInsights.Add(insight);
+            await db.SaveChangesAsync();
+        }
+
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        await using var generationScope = fixture.Factory.Services.CreateAsyncScope();
+        var generated = await generationScope.ServiceProvider
+            .GetRequiredService<IVideoProductionPlanService>()
+            .GenerateAsync(
+                owner.UserId,
+                owner.PropertyId,
+                RequestedDuration.Hero60,
+                VideoAspectRatio.Landscape16By9);
+
+        Assert.NotNull(generated);
+        var binding = Assert.Single(
+            generated.Specification.FactBindings,
+            candidate => candidate.Source == FactSource.ApprovedNeighborhood);
+        Assert.Equal("neighborhood.1", binding.Key);
+        Assert.Contains("Example Park", binding.Value, StringComparison.Ordinal);
+        Assert.Contains(generated.Specification.Scenes.SelectMany(scene => scene.TextOverlays), overlay =>
+            overlay.GroundingKey == binding.Key && overlay.Text == binding.Value);
+    }
+
     private static DirectedEditorialPlan CreateEditorialPlan(VideoDirectionRequest request)
     {
         var narrationBinding = request.FactBindings.Single(binding => binding.Key == "story.voiceover");
@@ -217,6 +354,18 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
         var duration = (int)request.RequestedDuration * 1_000;
         var narration = new NarrationSegment(
             "narration-1", 500, 3_000, narrationBinding.Value, narrationBinding.Key);
+        var neighborhoodOverlays = request.FactBindings
+            .Where(binding => binding.Source == FactSource.ApprovedNeighborhood)
+            .Select((binding, index) => new TextOverlay(
+                $"neighborhood-{index + 1}",
+                binding.Value,
+                binding.Key,
+                5_000 + index * 4_000,
+                3_000,
+                OverlayAnchor.BottomCenter,
+                new NormalizedRect(0.15m, 0.60m, 0.70m, 0.10m),
+                TextOverlayStyle.PropertyFact))
+            .ToArray();
         return new DirectedEditorialPlan(
             new AudioPlan(
                 [narration],
@@ -230,6 +379,7 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
                     new TransitionPlan(TransitionKind.Cut, 0),
                     new MotionPlan(MotionKind.None, viewport, viewport, MotionEasing.Linear),
                     [
+                        .. neighborhoodOverlays,
                         new TextOverlay(
                             "closing-cta", cta.Text, cta.GroundingKey, duration - 5_000, 4_000,
                             OverlayAnchor.BottomCenter, new NormalizedRect(0.15m, 0.75m, 0.7m, 0.1m),

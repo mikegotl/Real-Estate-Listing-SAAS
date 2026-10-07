@@ -68,6 +68,8 @@ public sealed class ListingStudioWebApplicationFactory(
 {
     public FakePropertyMediaAnalyzer MediaAnalyzer { get; } = new();
 
+    public FakePropertyVideoTranscoder PropertyVideoTranscoder { get; } = new();
+
     public AdjustableTimeProvider TimeProvider { get; } = new();
 
     public FakePropertyStoryGenerator StoryGenerator { get; } = new();
@@ -105,6 +107,8 @@ public sealed class ListingStudioWebApplicationFactory(
         {
             services.RemoveAll<IPropertyMediaAnalyzer>();
             services.AddSingleton<IPropertyMediaAnalyzer>(MediaAnalyzer);
+            services.RemoveAll<IPropertyVideoTranscoder>();
+            services.AddSingleton<IPropertyVideoTranscoder>(PropertyVideoTranscoder);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(TimeProvider);
             services.RemoveAll<IPropertyStoryGenerator>();
@@ -121,6 +125,51 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IBillingProviderGateway>(BillingProvider);
             additionalServices?.Invoke(services);
         });
+    }
+}
+
+public sealed class FakePropertyVideoTranscoder : IPropertyVideoTranscoder
+{
+    private readonly ConcurrentQueue<Exception> failures = new();
+    private int probeCallCount;
+    private int enhancementCallCount;
+
+    public string EnhancementVersion => "fake-stabilize-color-v1";
+    public int ProbeCallCount => probeCallCount;
+    public int EnhancementCallCount => enhancementCallCount;
+    public PropertyVideoMetadata Metadata { get; set; } = new("mov,mp4,m4a,3gp,3g2,mj2", 1_920, 1_080, 12_000, 29.97m, true);
+
+    public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
+    public Task<PropertyVideoMetadata> ProbeAsync(
+        Stream content,
+        string originalFilename,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref probeCallCount);
+        Assert.True(content.CanRead);
+        return Task.FromResult(Metadata);
+    }
+
+    public Task<PropertyVideoEnhancementResult> EnhanceAsync(
+        Stream content,
+        string originalFilename,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref enhancementCallCount);
+        Assert.True(content.CanRead);
+        if (failures.TryDequeue(out var failure))
+        {
+            return Task.FromException<PropertyVideoEnhancementResult>(failure);
+        }
+
+        byte[] enhanced = [0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109, 1, 2, 3, 4];
+        return Task.FromResult(new PropertyVideoEnhancementResult(
+            new MemoryStream(enhanced),
+            enhanced.Length,
+            Metadata with { FrameRate = 30m }));
     }
 }
 
@@ -293,7 +342,7 @@ public sealed class FakeVoiceProvider : IVoiceProvider
 
 public sealed class FakeVideoDirector : IVideoDirector
 {
-    private readonly ConcurrentQueue<Func<VideoDirectionRequest, DirectedEditorialPlan>> outcomes = new();
+    private readonly ConcurrentQueue<Func<VideoDirectionRequest, IReadOnlyList<string>, DirectedEditorialPlan>> outcomes = new();
     private int callCount;
 
     public string DirectorVersion => "fake-video-director-v1";
@@ -302,17 +351,26 @@ public sealed class FakeVideoDirector : IVideoDirector
 
     public VideoDirectionRequest? LastRequest { get; private set; }
 
-    public void Enqueue(Func<VideoDirectionRequest, DirectedEditorialPlan> factory) => outcomes.Enqueue(factory);
+    public IReadOnlyList<string> LastValidationFeedback { get; private set; } = [];
+
+    public void Enqueue(Func<VideoDirectionRequest, DirectedEditorialPlan> factory) =>
+        outcomes.Enqueue((request, _) => factory(request));
+
+    public void EnqueueRepair(
+        Func<VideoDirectionRequest, IReadOnlyList<string>, DirectedEditorialPlan> factory) =>
+        outcomes.Enqueue(factory);
 
     public Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,
+        IReadOnlyList<string>? validationFeedback = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref callCount);
         LastRequest = request;
+        LastValidationFeedback = validationFeedback ?? [];
         Assert.True(outcomes.TryDequeue(out var outcome), "A fake video-direction outcome must be queued.");
-        return Task.FromResult(outcome(request));
+        return Task.FromResult(outcome(request, LastValidationFeedback));
     }
 }
 

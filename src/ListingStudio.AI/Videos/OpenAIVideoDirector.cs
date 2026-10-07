@@ -24,7 +24,10 @@ public sealed class OpenAIVideoDirector(
         Scene starts must be contiguous from zero and the scene durations must total the requested duration exactly.
         The first transition must be a zero-duration cut. Every displayed or spoken string must exactly equal one of
         the supplied fact bindings and use its key. Reference only supplied property media IDs. Return only the
-        requested structured editorial plan. Keep overlays within the supplied safe_zone. Generative instructions may
+        requested structured editorial plan. Every fact binding whose source is approvedNeighborhood MUST appear at
+        least once as either a text overlay or a narration segment, using its exact value and key. Present these as a
+        neutral nearby-places segment; do not imply school assignment, quality, safety, demographics, travel time, or
+        suitability for any protected class. Keep overlays within the supplied safe_zone. Generative instructions may
         only be: slow cinematic push forward, slow cinematic pull back, slow horizontal pan, or
         Slow camera push while preserving the property image. A generative request must use the same supplied
         property image for its fallback. Never change architecture, materials, furnishings, landscaping or features.
@@ -32,10 +35,11 @@ public sealed class OpenAIVideoDirector(
 
     private static readonly JsonElement OutputSchema = VideoSchemaContract.EditorialSchema;
 
-    public string DirectorVersion => "openai-video-director-v1.1";
+    public string DirectorVersion => "openai-video-director-v1.3";
 
     public async Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,
+        IReadOnlyList<string>? validationFeedback = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -70,7 +74,11 @@ public sealed class OpenAIVideoDirector(
             approved_generated_clip_ids = request.ApprovedGeneratedClipIds,
             approved_brand_asset_ids = request.ApprovedBrandAssetIds,
             approved_music_asset_ids = request.ApprovedMusicAssetIds,
+            validation_feedback = validationFeedback ?? [],
         }, VideoSpecificationJson.Options);
+        var task = validationFeedback is { Count: > 0 }
+            ? "Create a corrected editorial plan from this authoritative input. Resolve every validation_feedback item without changing authoritative facts"
+            : "Create the editorial plan from this authoritative input";
         var payload = new
         {
             model = configuration.Model,
@@ -87,7 +95,7 @@ public sealed class OpenAIVideoDirector(
                         new
                         {
                             type = "input_text",
-                            text = $"Create the editorial plan from this authoritative input:\n{groundedInput}",
+                            text = $"{task}:\n{groundedInput}",
                         },
                     },
                 },

@@ -25,6 +25,7 @@ using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using ListingStudio.Application.Neighborhoods;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -130,6 +131,66 @@ app.MapGet("/property-media/{mediaId:guid}", async (
     return media is null
         ? Results.NotFound()
         : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
+app.MapGet("/property-videos/{videoId:guid}", async (
+    Guid videoId,
+    bool? enhanced,
+    bool? download,
+    HttpContext context,
+    IPropertyVideoService videoService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var video = await videoService.OpenReadAsync(userId, videoId, enhanced == true, cancellationToken);
+    return video is null
+        ? Results.NotFound()
+        : Results.Stream(
+            video.Content,
+            video.MimeType,
+            fileDownloadName: download == true ? video.Filename : null,
+            enableRangeProcessing: true);
+}).RequireAuthorization();
+
+app.MapGet("/neighborhood-insights/{insightId:guid}/photo", async (
+    Guid insightId,
+    HttpContext context,
+    INeighborhoodInsightService neighborhoodService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var photo = await neighborhoodService.OpenPhotoAsync(userId, insightId, cancellationToken);
+    return photo is null
+        ? Results.NotFound()
+        : Results.Stream(photo.Content, photo.ContentType);
+}).RequireAuthorization();
+
+app.MapGet("/neighborhood-insights/{insightId:guid}/video-photo", async (
+    Guid insightId,
+    HttpContext context,
+    INeighborhoodInsightService neighborhoodService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var photo = await neighborhoodService.OpenVideoPhotoAsync(userId, insightId, cancellationToken);
+    return photo is null
+        ? Results.NotFound()
+        : Results.Stream(photo.Content, photo.ContentType, enableRangeProcessing: true);
 }).RequireAuthorization();
 
 app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (

@@ -105,6 +105,47 @@ public sealed class CampaignDerivativeGeneratorTests
         Assert.Throws<ArgumentException>(() => new CampaignDerivativeGenerator().Generate(duplicateMedia));
     }
 
+    [Fact]
+    public void GeneratePreservesNarrationThatSpansMultipleScenes()
+    {
+        var fixture = CreateFixture();
+        var spanning = new NarrationSegment(
+            "narration-spanning",
+            1_000,
+            39_000,
+            "A continuous narration across the opening scenes.",
+            "story.voiceover");
+        var scenes = fixture.Master.Scenes.Select(scene => scene with
+        {
+            NarrationSegmentIds = scene.StartMs < spanning.StartMs + spanning.DurationMs
+                && scene.StartMs + scene.DurationMs > spanning.StartMs
+                    ? [spanning.Id]
+                    : [],
+        }).ToArray();
+        var master = fixture.Master with
+        {
+            Audio = fixture.Master.Audio with { NarrationSegments = [spanning] },
+            Scenes = scenes,
+        };
+
+        var result = new CampaignDerivativeGenerator().Generate(
+            fixture.Request with { MasterSpecification = master });
+
+        foreach (var derivative in result.Derivatives)
+        {
+            var narration = Assert.Single(derivative.Specification.Audio.NarrationSegments);
+            Assert.Equal(spanning.Id, narration.Id);
+            Assert.True(narration.StartMs >= 0);
+            Assert.True(narration.DurationMs > 0);
+            Assert.True(
+                narration.StartMs + narration.DurationMs
+                <= (int)derivative.Specification.RequestedDuration * 1_000);
+            Assert.Contains(
+                derivative.Specification.Scenes,
+                scene => scene.NarrationSegmentIds.Contains(spanning.Id, StringComparer.Ordinal));
+        }
+    }
+
     private static Fixture CreateFixture()
     {
         const int width = 1_600;

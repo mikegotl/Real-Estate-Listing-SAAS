@@ -87,6 +87,54 @@ public sealed class VideoProductionSpecificationValidatorTests
     }
 
     [Fact]
+    public void RequiresEveryApprovedNeighborhoodFactToBeDisplayedOrNarrated()
+    {
+        var original = CreateInput();
+        var neighborhood = new FactBinding(
+            "neighborhood.1",
+            "Example Park • Park • 0.5 miles straight-line distance",
+            FactSource.ApprovedNeighborhood,
+            "https://maps.google.test/example-park");
+        var input = original with { FactBindings = [.. original.FactBindings, neighborhood] };
+        var specification = CreateSpecification(input);
+
+        var missing = validator.Validate(input, specification);
+
+        Assert.False(missing.IsValid);
+        Assert.Contains(missing.Errors, error => error.Contains(
+            "Approved neighborhood fact neighborhood.1",
+            StringComparison.Ordinal));
+
+        var scene = specification.Scenes[0];
+        specification = specification with
+        {
+            Scenes =
+            [
+                scene with
+                {
+                    TextOverlays =
+                    [
+                        .. scene.TextOverlays,
+                        new TextOverlay(
+                            "neighborhood-1",
+                            neighborhood.Value,
+                            neighborhood.Key,
+                            5_000,
+                            3_000,
+                            OverlayAnchor.BottomCenter,
+                            new NormalizedRect(0.15m, 0.60m, 0.70m, 0.10m),
+                            TextOverlayStyle.PropertyFact),
+                    ],
+                },
+            ],
+        };
+
+        var included = validator.Validate(input, specification);
+
+        Assert.True(included.IsValid, string.Join(Environment.NewLine, included.Errors));
+    }
+
+    [Fact]
     public void RejectsUnsafeLayoutNarrationMismatchAndUnknownAssets()
     {
         var input = CreateInput();

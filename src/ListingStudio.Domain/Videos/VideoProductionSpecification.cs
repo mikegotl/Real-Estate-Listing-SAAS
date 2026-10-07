@@ -19,6 +19,7 @@ public enum FactSource
 {
     VerifiedProperty,
     PropertyStory,
+    ApprovedNeighborhood,
     BrandKit,
 }
 
@@ -87,7 +88,12 @@ public sealed record VideoOutputProfile(
     int SampleRateHz,
     int AudioChannels);
 
-public sealed record FactBinding(string Key, string Value, FactSource Source, string SourceReference);
+public sealed record FactBinding(
+    string Key,
+    string Value,
+    FactSource Source,
+    string SourceReference,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? VisualAssetReferenceId = null);
 
 public sealed record BrandKit(
     [property: JsonPropertyName("primaryLogoAssetId")] string? Logo,
