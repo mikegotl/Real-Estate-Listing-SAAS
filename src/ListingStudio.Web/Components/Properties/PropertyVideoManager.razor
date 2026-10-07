@@ -1,0 +1,270 @@
+@inherits OwningComponentBase<IPropertyVideoService>
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<MudPaper Class="pa-6 mt-6">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Listing videos</MudText>
+            <MudText Typo="Typo.body2">
+                Upload MP4, M4V, MOV, or WEBM clips up to @(IPropertyVideoService.MaximumFileSize / 1024 / 1024) MB
+                and @(IPropertyVideoService.MaximumDurationMs / 60_000) minutes each.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync">Refresh</MudButton>
+    </MudStack>
+
+    <MudAlert Severity="Severity.Info" Dense="true" Class="my-4">
+        Uploaded clips are processed in the background. The enhanced MP4 uses two-pass motion stabilization,
+        smoother frame cadence, flicker reduction, white-balance correction, and brightness/color normalization.
+        Your original remains unchanged.
+    </MudAlert>
+
+    @if (!IsReadOnly)
+    {
+        <label class="media-upload-control">
+            <span>Add listing videos</span>
+            <InputFile OnChange="FilesSelectedAsync" multiple
+                       accept=".mp4,.m4v,.mov,.webm,video/mp4,video/x-m4v,video/quicktime,video/webm" />
+        </label>
+    }
+
+    @if (message is not null)
+    {
+        <MudAlert Severity="@messageSeverity" Class="my-4">@message</MudAlert>
+    }
+
+    @foreach (var upload in uploads)
+    {
+        <MudPaper Outlined="true" Class="pa-3 my-2">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                <MudText>@upload.File.Name</MudText>
+                @if (upload.Failed)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
+                               OnClick="@(() => UploadOneAsync(upload))">Retry upload</MudButton>
+                }
+            </MudStack>
+            <MudProgressLinear Value="upload.Progress" Color="@(upload.Failed ? Color.Error : Color.Primary)" />
+            @if (upload.Error is not null)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error">@upload.Error</MudText>
+            }
+        </MudPaper>
+    }
+
+    @if (!loaded)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mt-4" />
+    }
+    else if (videos.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">No listing videos have been uploaded.</MudAlert>
+    }
+    else
+    {
+        <MudGrid Class="mt-2">
+            @foreach (var video in videos)
+            {
+                var isCompleted = video.ProcessingStatus == PropertyVideoProcessingStatus.Completed;
+                <MudItem xs="12" md="6">
+                    <MudCard>
+                        <video controls preload="metadata" style="width:100%;max-height:360px;background:#111;"
+                               src="@VideoUrl(video.Id, isCompleted)"></video>
+                        <MudCardContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.subtitle1">@video.OriginalFilename</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="@StatusColor(video.ProcessingStatus)">
+                                    @StatusLabel(video.ProcessingStatus)
+                                </MudChip>
+                            </MudStack>
+                            <MudText Typo="Typo.caption">
+                                @video.Width × @video.Height · @FormatDuration(video.DurationMs) · @video.FrameRate.ToString("0.###") fps
+                                · @FormatSize(video.OriginalFileSize) · Audio: @(video.HasAudio ? "Yes" : "No")
+                            </MudText>
+                            @if (isCompleted)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Success">
+                                    Enhanced to @video.EnhancedWidth × @video.EnhancedHeight ·
+                                    @video.EnhancedFrameRate?.ToString("0.###") fps · @FormatSize(video.EnhancedFileSize ?? 0)
+                                </MudText>
+                            }
+                            else if (video.ProcessingStatus == PropertyVideoProcessingStatus.Failed)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Error">
+                                    Attempt @video.ProcessingAttemptCount failed: @video.ProcessingLastError
+                                </MudText>
+                            }
+                        </MudCardContent>
+                        <MudCardActions>
+                            @if (isCompleted)
+                            {
+                                <MudButton Href="@($"/property-videos/{video.Id}?enhanced=true&download=true")"
+                                           StartIcon="@Icons.Material.Filled.Download" Variant="Variant.Text">
+                                    Download enhanced MP4
+                                </MudButton>
+                            }
+                            else if (!IsReadOnly && video.ProcessingStatus == PropertyVideoProcessingStatus.Failed)
+                            {
+                                <MudButton OnClick="@(() => RetryAsync(video.Id))" Color="Color.Warning" Variant="Variant.Text">
+                                    Retry enhancement
+                                </MudButton>
+                            }
+                            <MudSpacer />
+                            @if (!IsReadOnly)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               aria-label="Delete video" OnClick="@(() => DeleteAsync(video.Id))" />
+                            }
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private readonly List<UploadState> uploads = [];
+    private List<PropertyVideoItem> videos = [];
+    private bool loaded;
+    private string? message;
+    private Severity messageSeverity = Severity.Info;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loaded = false;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        videos = [.. await Service.ListAsync(userId, PropertyId)];
+        loaded = true;
+    }
+
+    private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs)
+    {
+        message = null;
+        IReadOnlyList<IBrowserFile> files;
+        try
+        {
+            files = eventArgs.GetMultipleFiles(IPropertyVideoService.MaximumVideosPerProperty);
+        }
+        catch (InvalidOperationException)
+        {
+            ShowMessage($"Select no more than {IPropertyVideoService.MaximumVideosPerProperty} videos at once.", Severity.Error);
+            return;
+        }
+
+        if (videos.Count + files.Count > IPropertyVideoService.MaximumVideosPerProperty)
+        {
+            ShowMessage($"These files would exceed the {IPropertyVideoService.MaximumVideosPerProperty}-video property limit.", Severity.Error);
+            return;
+        }
+
+        var selected = files.Select(file => new UploadState(file)).ToArray();
+        uploads.AddRange(selected);
+        foreach (var upload in selected)
+        {
+            await UploadOneAsync(upload);
+        }
+    }
+
+    private async Task UploadOneAsync(UploadState upload)
+    {
+        upload.Failed = false;
+        upload.Error = null;
+        upload.Progress = 0;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var source = upload.File.OpenReadStream(IPropertyVideoService.MaximumFileSize);
+            await using var progressStream = new ProgressReadStream(source, upload.File.Size, bytes =>
+            {
+                upload.Progress = upload.File.Size == 0 ? 0 : (double)bytes / upload.File.Size * 100;
+                _ = InvokeAsync(StateHasChanged);
+            });
+            await Service.UploadAsync(
+                userId,
+                PropertyId,
+                new PropertyVideoUpload(upload.File.Name, upload.File.ContentType, upload.File.Size, progressStream));
+            upload.Progress = 100;
+            uploads.Remove(upload);
+            await LoadAsync();
+            ShowMessage("Video uploaded. Enhancement is queued; use Refresh to check progress.", Severity.Success);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
+        {
+            upload.Failed = true;
+            upload.Error = exception.Message;
+            ShowMessage("The video could not be uploaded. Correct the issue and retry.", Severity.Error);
+        }
+    }
+
+    private async Task RetryAsync(Guid videoId)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await Service.RetryProcessingAsync(userId, PropertyId, videoId))
+        {
+            await LoadAsync();
+            ShowMessage("Video enhancement queued for retry.", Severity.Success);
+        }
+    }
+
+    private async Task DeleteAsync(Guid videoId)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await Service.DeleteAsync(userId, PropertyId, videoId))
+        {
+            await LoadAsync();
+            ShowMessage("Video deleted.", Severity.Success);
+        }
+    }
+
+    private static string VideoUrl(Guid videoId, bool enhanced) =>
+        $"/property-videos/{videoId}?enhanced={enhanced.ToString().ToLowerInvariant()}";
+
+    private static Color StatusColor(PropertyVideoProcessingStatus status) => status switch
+    {
+        PropertyVideoProcessingStatus.Completed => Color.Success,
+        PropertyVideoProcessingStatus.Failed => Color.Error,
+        PropertyVideoProcessingStatus.Processing => Color.Primary,
+        _ => Color.Default,
+    };
+
+    private static string StatusLabel(PropertyVideoProcessingStatus status) => status switch
+    {
+        PropertyVideoProcessingStatus.Completed => "Enhanced",
+        PropertyVideoProcessingStatus.Processing => "Enhancing",
+        PropertyVideoProcessingStatus.Failed => "Enhancement failed",
+        _ => "Queued",
+    };
+
+    private void ShowMessage(string text, Severity severity)
+    {
+        message = text;
+        messageSeverity = severity;
+    }
+
+    private static string FormatDuration(int milliseconds) => TimeSpan.FromMilliseconds(milliseconds) switch
+    {
+        var duration when duration.TotalHours >= 1 => duration.ToString(@"h\:mm\:ss"),
+        var duration => duration.ToString(@"m\:ss"),
+    };
+
+    private static string FormatSize(long bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / 1024d / 1024d:0.##} MB"
+        : $"{bytes / 1024d:0.##} KB";
+
+    private sealed class UploadState(IBrowserFile file)
+    {
+        public IBrowserFile File { get; } = file;
+        public double Progress { get; set; }
+        public bool Failed { get; set; }
+        public string? Error { get; set; }
+    }
+}

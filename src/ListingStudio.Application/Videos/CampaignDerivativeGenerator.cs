@@ -177,39 +177,50 @@ public sealed class CampaignDerivativeGenerator : ICampaignDerivativeGenerator
         VideoScene[] selected,
         List<VideoScene> derivatives)
     {
-        var sourceSegments = master.Audio.NarrationSegments.ToDictionary(segment => segment.Id, StringComparer.Ordinal);
         var result = new List<NarrationSegment>();
-        var used = new HashSet<string>(StringComparer.Ordinal);
         var previousEnd = 0;
-        for (var index = 0; index < selected.Length; index++)
+        foreach (var segment in master.Audio.NarrationSegments.OrderBy(segment => segment.StartMs))
         {
-            var sourceScene = selected[index];
-            var targetScene = derivatives[index];
-            foreach (var id in sourceScene.NarrationSegmentIds
-                .Where(sourceSegments.ContainsKey)
-                .OrderBy(id => sourceSegments[id].StartMs))
+            var mappedIntervals = new List<(int StartMs, int EndMs)>();
+            for (var index = 0; index < selected.Length; index++)
             {
-                if (used.Contains(id) || !sourceSegments.TryGetValue(id, out var segment)
-                    || segment.StartMs < sourceScene.StartMs
-                    || segment.StartMs + segment.DurationMs > sourceScene.StartMs + sourceScene.DurationMs
-                    || segment.DurationMs > targetScene.DurationMs)
+                var sourceScene = selected[index];
+                if (!sourceScene.NarrationSegmentIds.Contains(segment.Id, StringComparer.Ordinal))
                 {
                     continue;
                 }
 
+                var sourceEnd = sourceScene.StartMs + sourceScene.DurationMs;
+                var overlapStart = Math.Max(segment.StartMs, sourceScene.StartMs);
+                var overlapEnd = Math.Min(segment.StartMs + segment.DurationMs, sourceEnd);
+                if (overlapEnd <= overlapStart)
+                {
+                    continue;
+                }
+
+                var targetScene = derivatives[index];
                 var ratio = targetScene.DurationMs / (decimal)sourceScene.DurationMs;
-                var relative = (int)Math.Round((segment.StartMs - sourceScene.StartMs) * ratio);
-                var start = targetScene.StartMs + Math.Min(relative, targetScene.DurationMs - segment.DurationMs);
-                start = Math.Max(start, previousEnd);
-                if (start + segment.DurationMs > targetScene.StartMs + targetScene.DurationMs)
-                {
-                    continue;
-                }
-
-                result.Add(segment with { StartMs = start });
-                used.Add(id);
-                previousEnd = start + segment.DurationMs;
+                var mappedStart = targetScene.StartMs
+                    + (int)Math.Round((overlapStart - sourceScene.StartMs) * ratio);
+                var mappedEnd = targetScene.StartMs
+                    + (int)Math.Round((overlapEnd - sourceScene.StartMs) * ratio);
+                mappedIntervals.Add((mappedStart, mappedEnd));
             }
+
+            if (mappedIntervals.Count == 0)
+            {
+                continue;
+            }
+
+            var start = Math.Max(previousEnd, mappedIntervals.Min(interval => interval.StartMs));
+            var end = mappedIntervals.Max(interval => interval.EndMs);
+            if (end <= start)
+            {
+                continue;
+            }
+
+            result.Add(segment with { StartMs = start, DurationMs = end - start });
+            previousEnd = end;
         }
 
         return result;

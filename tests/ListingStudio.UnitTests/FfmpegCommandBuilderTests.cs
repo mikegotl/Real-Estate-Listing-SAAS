@@ -42,16 +42,20 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
-    public void BuildRejectsMultipleNarrationSegmentsWithoutTiming()
+    public void BuildUsesContinuousPlannedWindowForNarrationWithoutTiming()
     {
         var request = CreateRequest() with
         {
             Narration = new VideoRenderNarrationAsset(CreateFile("narration-untimed.wav"), null),
         };
 
-        var exception = Assert.Throws<ArgumentException>(() => FfmpegCommandBuilder.Build(request));
+        var command = FfmpegCommandBuilder.Build(request);
 
-        Assert.Contains("require measured timing", exception.Message, StringComparison.Ordinal);
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("atrim=duration=14.5", graph, StringComparison.Ordinal);
+        Assert.Contains("adelay=500:all=1[narration0]", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("asplit=2", graph, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -208,6 +212,64 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
 
         Assert.Equal(2, command.Arguments.Count(argument => argument == request.PropertyMedia[0].FilePath));
         Assert.DoesNotContain("-stream_loop", command.Arguments);
+    }
+
+    [Fact]
+    public void BuildOverlaysLicensedNeighborhoodPhotoWithTimedCredit()
+    {
+        var request = CreateRequest();
+        var insightId = Guid.NewGuid();
+        var neighborhoodPhoto = CreateFile("licensed park photo.jpg");
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            TextOverlays =
+            [
+                new TextOverlay(
+                    "nearby-park",
+                    "Lake Park • Park • 0.6 miles straight-line distance",
+                    "neighborhood.1",
+                    1_000,
+                    2_000,
+                    OverlayAnchor.BottomLeft,
+                    new NormalizedRect(0.08m, 0.75m, 0.84m, 0.1m),
+                    TextOverlayStyle.LowerThird),
+            ],
+        };
+        request = request with
+        {
+            Specification = request.Specification with
+            {
+                FactBindings =
+                [
+                    new FactBinding(
+                        "neighborhood.1",
+                        "Lake Park • Park • 0.6 miles straight-line distance",
+                        FactSource.ApprovedNeighborhood,
+                        "https://maps.example/park",
+                        insightId),
+                ],
+                Scenes = scenes,
+            },
+            NeighborhoodAssets =
+            [
+                new VideoRenderNeighborhoodAsset(
+                    insightId,
+                    neighborhoodPhoto,
+                    1_600,
+                    900,
+                    "Photo © Example Photographer"),
+            ],
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        Assert.Contains(neighborhoodPhoto, command.Arguments);
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("neighborhoodVisual0", graph, StringComparison.Ordinal);
+        Assert.Contains("between(t,0.5,3.5)", graph, StringComparison.Ordinal);
+        Assert.Contains("Photo © Example Photographer", graph, StringComparison.Ordinal);
     }
 
     [Fact]

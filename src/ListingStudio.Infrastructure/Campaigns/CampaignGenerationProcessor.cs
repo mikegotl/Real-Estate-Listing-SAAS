@@ -88,7 +88,8 @@ public sealed partial class CampaignGenerationProcessor(
             var now = timeProvider.GetUtcNow();
             var error = SanitizeError(exception, stageTimeout.IsCancellationRequested);
             var willRetry = !job.CancellationRequested
-                && attemptNumber < ICampaignGenerationProcessor.MaximumStageAttempts;
+                && attemptNumber < ICampaignGenerationProcessor.MaximumStageAttempts
+                && IsRetryable(exception, stageTimeout.IsCancellationRequested);
             if (job.CancellationRequested)
             {
                 job.Cancel(now);
@@ -339,6 +340,11 @@ public sealed partial class CampaignGenerationProcessor(
                 specification,
                 directory,
                 cancellationToken);
+            var neighborhoodAssets = await MaterializeNeighborhoodAssetsAsync(
+                job,
+                specification,
+                directory,
+                cancellationToken);
             await videoRenderer.RenderAsync(
                 new VideoRenderRequest(
                     specification,
@@ -347,7 +353,8 @@ public sealed partial class CampaignGenerationProcessor(
                     [],
                     null,
                     outputPath,
-                    generatedClips),
+                    generatedClips,
+                    neighborhoodAssets),
                 cancellationToken);
             var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{kind.ToString().ToLowerInvariant()}.mp4";
             var stored = false;
@@ -574,6 +581,52 @@ public sealed partial class CampaignGenerationProcessor(
         return [.. result];
     }
 
+    private async Task<VideoRenderNeighborhoodAsset[]> MaterializeNeighborhoodAssetsAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        var ids = specification.FactBindings
+            .Where(binding => binding.Source == FactSource.ApprovedNeighborhood)
+            .Select(binding => binding.VisualAssetReferenceId)
+            .OfType<Guid>()
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        var insights = await dbContext.NeighborhoodInsights.AsNoTracking()
+            .Where(insight => insight.OrganizationId == job.OrganizationId
+                && insight.PropertyId == job.PropertyId
+                && insight.IsApproved
+                && ids.Contains(insight.Id)
+                && insight.VideoPhotoBlobPath != null)
+            .ToArrayAsync(cancellationToken);
+        var result = new List<VideoRenderNeighborhoodAsset>(insights.Length);
+        foreach (var insight in insights)
+        {
+            await using var source = await propertyMediaStorage.OpenReadAsync(
+                insight.VideoPhotoBlobPath!, cancellationToken)
+                ?? throw new FileNotFoundException("A licensed neighborhood video photo could not be opened.");
+            var path = Path.Combine(
+                directory,
+                $"neighborhood-{insight.Id:N}{ExtensionFor(insight.VideoPhotoMimeType!)}");
+            await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await source.CopyToAsync(target, cancellationToken);
+            result.Add(new VideoRenderNeighborhoodAsset(
+                insight.Id,
+                path,
+                insight.VideoPhotoWidth!.Value,
+                insight.VideoPhotoHeight!.Value,
+                insight.VideoPhotoCredit!));
+        }
+
+        return [.. result];
+    }
+
     private async Task<bool> GenerateSocialCopyAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var job = await GetJobAsync(jobId, cancellationToken);
@@ -649,6 +702,7 @@ public sealed partial class CampaignGenerationProcessor(
         ? "The campaign stage exceeded its configured timeout."
         : exception switch
         {
+            VideoPlanValidationException => exception.Message,
             HttpRequestException => "An external provider request failed.",
             TimeoutException => "An external provider request timed out.",
             VideoRenderException => "A campaign video could not be rendered.",
@@ -659,6 +713,12 @@ public sealed partial class CampaignGenerationProcessor(
                 : "The campaign stage could not be completed.",
             _ => "The campaign stage failed unexpectedly.",
         };
+
+    private static bool IsRetryable(Exception exception, bool timedOut) => timedOut
+        || exception is HttpRequestException
+            or TimeoutException
+            or VideoRenderException
+            or IOException;
 
     [LoggerMessage(
         Level = LogLevel.Warning,

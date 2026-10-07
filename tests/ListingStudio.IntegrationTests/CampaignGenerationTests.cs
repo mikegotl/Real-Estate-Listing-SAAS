@@ -195,6 +195,33 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     }
 
     [Fact]
+    public async Task RetryReloadsCampaignChangedByWorkerAfterServiceTrackedEarlierState()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-stale-retry");
+        await UploadAsync(owner);
+        await using var browserScope = fixture.Factory.Services.CreateAsyncScope();
+        var campaigns = browserScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+        var queued = (await campaigns.EnqueueAsync(owner.UserId, owner.PropertyId))!;
+
+        await using (var workerScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var dbContext = workerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var job = await dbContext.CampaignGenerationJobs.SingleAsync(candidate => candidate.Id == queued.Id);
+            var now = DateTimeOffset.UtcNow;
+            job.BeginStage(now, TimeSpan.FromMinutes(1));
+            job.Fail("worker failure", now);
+            await dbContext.SaveChangesAsync();
+        }
+
+        Assert.True(await campaigns.RetryAsync(owner.UserId, queued.Id));
+        var retried = await campaigns.GetAsync(owner.UserId, queued.Id);
+        Assert.NotNull(retried);
+        Assert.Equal(CampaignGenerationStatus.Queued, retried.Status);
+        Assert.Null(retried.LastError);
+        Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
+    }
+
+    [Fact]
     public async Task StoryTimeoutIsRetriedAndReportedWithoutProviderDetails()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-story-timeout");
@@ -215,6 +242,40 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Equal(
             storyCallsBefore + ICampaignGenerationProcessor.MaximumStageAttempts,
             fixture.Factory.StoryGenerator.CallCount);
+    }
+
+    [Fact]
+    public async Task InvalidMasterPlanGetsOneGuidedRepairWithoutBlindStageRetries()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-invalid-plan");
+        await UploadAsync(owner);
+        await UploadAsync(owner);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        var directorCallsBefore = fixture.Factory.VideoDirector.CallCount;
+        static DirectedEditorialPlan InvalidPlan(VideoDirectionRequest request)
+        {
+            var valid = CreateEditorialPlan(request);
+            var first = valid.Scenes[0];
+            return valid with { Scenes = [first with { DurationMs = first.DurationMs - 1 }] };
+        }
+        fixture.Factory.VideoDirector.Enqueue(InvalidPlan);
+        fixture.Factory.VideoDirector.EnqueueRepair((request, feedback) =>
+        {
+            Assert.NotEmpty(feedback);
+            return InvalidPlan(request);
+        });
+
+        var queued = await EnqueueAsync(owner);
+        var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+        Assert.Equal(CampaignGenerationStage.GenerateMasterVideoPlan, failed.CurrentStage);
+        Assert.Contains("guided repair", failed.LastError, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("interior and exterior photos", failed.LastError, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, failed.Stages.Single(stage =>
+            stage.Stage == CampaignGenerationStage.GenerateMasterVideoPlan).AttemptCount);
+        Assert.Equal(directorCallsBefore + 2, fixture.Factory.VideoDirector.CallCount);
     }
 
     [Fact]

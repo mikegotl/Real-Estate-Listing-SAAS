@@ -35,6 +35,15 @@ public static class FfmpegCommandBuilder
         }
 
         var clips = clipGroups.ToDictionary(group => group.Key, group => group.Single());
+        var neighborhoodGroups = (request.NeighborhoodAssets ?? [])
+            .GroupBy(asset => asset.NeighborhoodInsightId)
+            .ToArray();
+        if (neighborhoodGroups.Any(group => group.Count() != 1))
+        {
+            throw new ArgumentException("Neighborhood visual assets must have unique IDs.", nameof(request));
+        }
+
+        var neighborhoodAssets = neighborhoodGroups.ToDictionary(group => group.Key, group => group.Single());
         var scenes = request.Specification.Scenes;
         if (scenes.Count == 0)
         {
@@ -48,6 +57,7 @@ public static class FfmpegCommandBuilder
         ValidateNarration(request.Specification, request.Narration);
         var brandAssets = ValidateBranding(request, brandingTemplate);
         ValidateMusic(request);
+        var neighborhoodOverlays = CreateNeighborhoodOverlays(request.Specification, neighborhoodAssets);
 
         var arguments = new List<string>
         {
@@ -111,10 +121,28 @@ public static class FfmpegCommandBuilder
             ]);
         }
 
-        var inputs = new RenderInputIndexes(narrationInput, musicInput, logoInputs);
+        var neighborhoodInputs = new List<int>(neighborhoodOverlays.Length);
+        foreach (var overlay in neighborhoodOverlays)
+        {
+            neighborhoodInputs.Add(nextInput++);
+            arguments.AddRange(
+            [
+                "-loop", "1",
+                "-framerate", request.Specification.Output.FrameRate.ToString(CultureInfo.InvariantCulture),
+                "-t", Seconds(programMs),
+                "-i", overlay.Asset.FilePath,
+            ]);
+        }
+
+        var inputs = new RenderInputIndexes(narrationInput, musicInput, logoInputs, neighborhoodInputs);
         arguments.AddRange(
         [
-            "-filter_complex", BuildFilterGraph(request, sceneAssets, inputs, brandingTemplate),
+            "-filter_complex", BuildFilterGraph(
+                request,
+                sceneAssets,
+                inputs,
+                brandingTemplate,
+                neighborhoodOverlays),
             "-map", "[vout]",
             "-map", "[aout]",
             "-c:v", VideoEncoder,
@@ -138,7 +166,8 @@ public static class FfmpegCommandBuilder
         VideoRenderRequest request,
         SceneVisualAsset[] assets,
         RenderInputIndexes inputs,
-        VideoBrandingTemplateOptions brandingTemplate)
+        VideoBrandingTemplateOptions brandingTemplate,
+        NeighborhoodOverlay[] neighborhoodOverlays)
     {
         var specification = request.Specification;
         var filters = new List<string>();
@@ -178,7 +207,13 @@ public static class FfmpegCommandBuilder
 
         var programMs = (int)specification.RequestedDuration * 1_000;
         filters.Add($"[{current}]trim=duration={Seconds(programMs)},setpts=PTS-STARTPTS[videoTimeline]");
-        current = BuildBrandingFilters(request, filters, inputs.LogoInputs, brandingTemplate, "videoTimeline");
+        current = BuildNeighborhoodFilters(
+            specification,
+            filters,
+            inputs.NeighborhoodInputs,
+            neighborhoodOverlays,
+            "videoTimeline");
+        current = BuildBrandingFilters(request, filters, inputs.LogoInputs, brandingTemplate, current);
         var videoFilters = new List<string>();
         if (brandingTemplate.VideoFadeInMs > 0)
         {
@@ -244,6 +279,96 @@ public static class FfmpegCommandBuilder
         var x = $"iw*({Number(motion.StartViewport.X)}+({Number(motion.EndViewport.X - motion.StartViewport.X)})*({progress}))";
         var y = $"ih*({Number(motion.StartViewport.Y)}+({Number(motion.EndViewport.Y - motion.StartViewport.Y)})*({progress}))";
         return $"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output.Width}x{output.Height}:fps={output.FrameRate}";
+    }
+
+    private static NeighborhoodOverlay[] CreateNeighborhoodOverlays(
+        VideoProductionSpecification specification,
+        Dictionary<Guid, VideoRenderNeighborhoodAsset> assets)
+    {
+        var programMs = (int)specification.RequestedDuration * 1_000;
+        var result = new List<NeighborhoodOverlay>();
+        foreach (var binding in specification.FactBindings.Where(binding =>
+                     binding.Source == FactSource.ApprovedNeighborhood
+                     && binding.VisualAssetReferenceId is not null))
+        {
+            if (!assets.TryGetValue(binding.VisualAssetReferenceId!.Value, out var asset))
+            {
+                continue;
+            }
+
+            if (asset.Width <= 0 || asset.Height <= 0 || !File.Exists(asset.FilePath)
+                || string.IsNullOrWhiteSpace(asset.Credit))
+            {
+                throw new ArgumentException($"Neighborhood asset {asset.NeighborhoodInsightId} is invalid.");
+            }
+
+            var windows = specification.Scenes
+                .SelectMany(scene => scene.TextOverlays
+                    .Where(overlay => overlay.GroundingKey == binding.Key)
+                    .Select(overlay => (Start: scene.StartMs + overlay.StartOffsetMs, overlay.DurationMs)))
+                .Concat(specification.Audio.NarrationSegments
+                    .Where(segment => segment.GroundingKey == binding.Key)
+                    .Select(segment => (Start: segment.StartMs, DurationMs: segment.DurationMs)))
+                .OrderBy(window => window.Start)
+                .ToArray();
+            if (windows.Length == 0)
+            {
+                continue;
+            }
+
+            var start = Math.Max(0, windows[0].Start - 500);
+            var end = Math.Min(programMs, windows[0].Start + windows[0].DurationMs + 500);
+            if (end - start < 2_500)
+            {
+                end = Math.Min(programMs, start + 2_500);
+                start = Math.Max(0, end - 2_500);
+            }
+
+            result.Add(new NeighborhoodOverlay(asset, start, end - start));
+        }
+
+        return result
+            .DistinctBy(overlay => overlay.Asset.NeighborhoodInsightId)
+            .OrderBy(overlay => overlay.StartMs)
+            .ThenBy(overlay => overlay.Asset.NeighborhoodInsightId)
+            .ToArray();
+    }
+
+    private static string BuildNeighborhoodFilters(
+        VideoProductionSpecification specification,
+        List<string> filters,
+        IReadOnlyList<int> inputs,
+        IReadOnlyList<NeighborhoodOverlay> overlays,
+        string sourceLabel)
+    {
+        var output = specification.Output;
+        var current = sourceLabel;
+        var width = (int)Math.Round(output.Width * 0.82m);
+        var height = (int)Math.Round(output.Height * 0.64m);
+        var x = (output.Width - width) / 2;
+        var y = (int)Math.Round(output.Height * 0.10m);
+        for (var index = 0; index < overlays.Count; index++)
+        {
+            var overlay = overlays[index];
+            var visual = $"neighborhoodVisual{index}";
+            var shown = $"neighborhoodShown{index}";
+            var credited = $"neighborhoodCredited{index}";
+            filters.Add(
+                $"[{inputs[index]}:v]scale=w={width}:h={height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                + $"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=0x111111,format=rgba[{visual}]");
+            var start = Seconds(overlay.StartMs);
+            var end = Seconds(overlay.StartMs + overlay.DurationMs);
+            filters.Add(
+                $"[{current}][{visual}]overlay=x={x}:y={y}:enable='between(t,{start},{end})':eof_action=repeat[{shown}]");
+            filters.Add(
+                $"[{shown}]drawtext=font='Sans':text='{EscapeFilterLiteral(overlay.Asset.Credit)}'"
+                + $":fontcolor=white:fontsize={Math.Max(22, output.Width / 64)}:box=1:boxcolor=black@0.75:boxborderw=10"
+                + $":x={x + 12}:y={y + height}-text_h-12:fix_bounds=1"
+                + $":enable='between(t,{start},{end})'[{credited}]");
+            current = credited;
+        }
+
+        return current;
     }
 
     private static string BuildBrandingFilters(
@@ -352,10 +477,11 @@ public static class FfmpegCommandBuilder
         var segmentLabels = new List<string>(segments.Count);
         if (narration.Timing is null)
         {
-            var segment = segments[0];
+            var narrationStartMs = segments.Min(segment => segment.StartMs);
+            var availableProgramMs = (int)request.Specification.RequestedDuration * 1_000 - narrationStartMs;
             filters.Add(
-                $"[{inputIndex}:a]atrim=duration={Seconds(segment.DurationMs)},asetpts=PTS-STARTPTS,"
-                + $"adelay={segment.StartMs}:all=1[narration0]");
+                $"[{inputIndex}:a]atrim=duration={Seconds(availableProgramMs)},asetpts=PTS-STARTPTS,"
+                + $"adelay={narrationStartMs}:all=1[narration0]");
             segmentLabels.Add("narration0");
         }
         else
@@ -698,11 +824,6 @@ public static class FfmpegCommandBuilder
 
         if (narration.Timing is null)
         {
-            if (segments.Count != 1)
-            {
-                throw new ArgumentException("Multiple narration segments require measured timing metadata.");
-            }
-
             return;
         }
 
@@ -853,7 +974,13 @@ public static class FfmpegCommandBuilder
     private sealed record RenderInputIndexes(
         int? NarrationInput,
         int? MusicInput,
-        IReadOnlyList<int> LogoInputs);
+        IReadOnlyList<int> LogoInputs,
+        IReadOnlyList<int> NeighborhoodInputs);
+
+    private sealed record NeighborhoodOverlay(
+        VideoRenderNeighborhoodAsset Asset,
+        int StartMs,
+        int DurationMs);
 
     private readonly record struct PixelBox(int X, int Y, int Width, int Height);
 

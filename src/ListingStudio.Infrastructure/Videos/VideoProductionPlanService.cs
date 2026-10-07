@@ -9,14 +9,16 @@ using ListingStudio.Domain.Stories;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ListingStudio.Infrastructure.Videos;
 
-public sealed class VideoProductionPlanService(
+public sealed partial class VideoProductionPlanService(
     ApplicationDbContext dbContext,
     IVideoDirector director,
     IVideoProductionSpecificationValidator validator,
-    IPropertyStoryGroundingValidator storyValidator) : IVideoProductionPlanService
+    IPropertyStoryGroundingValidator storyValidator,
+    ILogger<VideoProductionPlanService> logger) : IVideoProductionPlanService
 {
     public async Task<VideoProductionPlanResult?> GetLatestAsync(
         string userId,
@@ -86,9 +88,33 @@ public sealed class VideoProductionPlanService(
             .Where(organization => organization.Id == organizationId)
             .Select(organization => organization.Name)
             .SingleAsync(cancellationToken);
-        var request = CreateRequest(property, media, story, organizationName, duration, aspectRatio);
+        var approvedNeighborhoodFacts = await dbContext.NeighborhoodInsights
+            .AsNoTracking()
+            .Where(insight => insight.OrganizationId == organizationId
+                && insight.PropertyId == propertyId
+                && insight.IsApproved)
+            .OrderBy(insight => insight.Category)
+            .ThenBy(insight => insight.DistanceMiles)
+            .Select(insight => new ApprovedNeighborhoodFact(
+                insight.Category.ToString(),
+                insight.Name,
+                insight.Address,
+                insight.DistanceMiles,
+                insight.SourceUrl,
+                insight.CheckedAtUtc,
+                insight.Id))
+            .ToArrayAsync(cancellationToken);
+        var request = CreateRequest(
+            property,
+            media,
+            story,
+            organizationName,
+            approvedNeighborhoodFacts,
+            duration,
+            aspectRatio);
         var storySource = new PropertyStoryGenerationRequest(request.VerifiedProperty,
-            request.Media.Select(m => m.Analysis).ToArray(), new(organizationName, request.Brand.AgentName));
+            request.Media.Select(m => m.Analysis).ToArray(), new(organizationName, request.Brand.AgentName),
+            approvedNeighborhoodFacts);
         if (!storyValidator.Validate(storySource, story.GetContent()).IsValid)
             throw new InvalidDataException("Stored property story no longer passes grounding against current verified facts. Generate a new story.");
         var fingerprint = CreateFingerprint(director.DirectorVersion, request);
@@ -99,27 +125,8 @@ public sealed class VideoProductionPlanService(
             return ToResult(existing, reused: true);
         }
 
-        var editorialPlan = await director.DirectAsync(request, cancellationToken);
-        var specification = new VideoProductionSpecification(
-            "1.0",
-            request.PropertyId,
-            request.PropertyStory.Id,
-            request.PropertyStory.Version,
-            request.RequestedDuration,
-            request.AspectRatio,
-            request.Output,
-            request.SafeZone,
-            request.FactBindings,
-            request.Brand,
-            request.CallToAction,
-            editorialPlan.Audio,
-            editorialPlan.Scenes);
-        var validation = validator.Validate(request, specification);
-        if (!validation.IsValid)
-        {
-            throw new InvalidDataException(
-                $"Generated video production specification failed validation: {string.Join(' ', validation.Errors)}");
-        }
+        var generated = await GenerateValidatedSpecificationAsync(request, cancellationToken);
+        var specification = generated.Specification;
 
         var specificationJson = JsonSerializer.Serialize(specification, VideoSpecificationJson.Options);
         var latestVersion = await dbContext.VideoProductionPlans
@@ -137,7 +144,7 @@ public sealed class VideoProductionPlanService(
             duration,
             aspectRatio,
             specification.SchemaVersion,
-            director.DirectorVersion,
+            generated.DirectorVersion,
             fingerprint,
             specificationJson);
         dbContext.VideoProductionPlans.Add(plan);
@@ -146,11 +153,230 @@ public sealed class VideoProductionPlanService(
         return ToResult(plan, reused: false);
     }
 
+    private async Task<ValidatedSpecification> GenerateValidatedSpecificationAsync(
+        VideoDirectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        DirectedEditorialPlan initialPlan;
+        try
+        {
+            initialPlan = await director.DirectAsync(request, cancellationToken: cancellationToken);
+        }
+        catch (InvalidDataException exception)
+        {
+            LogInvalidProviderResponse(exception, request.PropertyId);
+            return CreateFallbackOrThrow(request, ["The provider response was incomplete or malformed."]);
+        }
+
+        var initialSpecification = CreateSpecification(request, initialPlan);
+        var initialValidation = validator.Validate(request, initialSpecification);
+        if (initialValidation.IsValid)
+        {
+            return new(initialSpecification, director.DirectorVersion);
+        }
+
+        LogValidationFailure(request.PropertyId, "initial", initialValidation.Errors);
+        DirectedEditorialPlan repairedPlan;
+        try
+        {
+            repairedPlan = await director.DirectAsync(
+                request,
+                initialValidation.Errors,
+                cancellationToken);
+        }
+        catch (InvalidDataException exception)
+        {
+            LogInvalidProviderResponse(exception, request.PropertyId);
+            return CreateFallbackOrThrow(request, initialValidation.Errors);
+        }
+
+        var repairedSpecification = CreateSpecification(request, repairedPlan);
+        var repairedValidation = validator.Validate(request, repairedSpecification);
+        if (repairedValidation.IsValid)
+        {
+            return new(repairedSpecification, director.DirectorVersion);
+        }
+
+        LogValidationFailure(request.PropertyId, "repair", repairedValidation.Errors);
+        return CreateFallbackOrThrow(request, repairedValidation.Errors);
+    }
+
+    private ValidatedSpecification CreateFallbackOrThrow(
+        VideoDirectionRequest request,
+        IReadOnlyList<string> validationErrors)
+    {
+        if (request.Media.Count != 1)
+        {
+            throw new VideoPlanValidationException(
+                "Listing Studio could not create a valid master video plan after a guided repair. "
+                + "Confirm that every photo finished analysis, add clear interior and exterior photos if coverage is limited, "
+                + "then retry the failed stage.",
+                validationErrors);
+        }
+
+        LogFallbackUsed(request.PropertyId);
+        var fallback = CreateSpecification(request, CreateSinglePhotoFallback(request));
+        var fallbackValidation = validator.Validate(request, fallback);
+        if (!fallbackValidation.IsValid)
+        {
+            throw new VideoPlanValidationException(
+                "Listing Studio could not create a valid master video plan from the available photo. "
+                + "Upload additional analyzed interior and exterior photos, then retry the failed stage.",
+                fallbackValidation.Errors);
+        }
+
+        return new(fallback, "deterministic-single-photo-v1");
+    }
+
+    private static VideoProductionSpecification CreateSpecification(
+        VideoDirectionRequest request,
+        DirectedEditorialPlan editorialPlan)
+    {
+        var media = request.Media.ToDictionary(item => item.MediaId);
+        var scenes = editorialPlan.Scenes.Select(scene =>
+        {
+            var mediaId = scene.VisualSource.PropertyMediaId
+                ?? scene.VisualSource.FallbackPropertyMediaId;
+            if (mediaId is not { } id || !media.TryGetValue(id, out var source))
+            {
+                return scene;
+            }
+
+            var viewport = CreateAspectFillViewport(source, request.AspectRatio);
+            return scene with
+            {
+                Motion = new MotionPlan(
+                    MotionKind.None,
+                    viewport,
+                    viewport,
+                    MotionEasing.Linear),
+            };
+        }).ToArray();
+        var audio = request.ApprovedMusicAssetIds.Count == 0
+            ? editorialPlan.Audio with
+            {
+                Music = new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0),
+            }
+            : editorialPlan.Audio;
+
+        return new VideoProductionSpecification(
+            "1.0",
+            request.PropertyId,
+            request.PropertyStory.Id,
+            request.PropertyStory.Version,
+            request.RequestedDuration,
+            request.AspectRatio,
+            request.Output,
+            request.SafeZone,
+            request.FactBindings,
+            request.Brand,
+            request.CallToAction,
+            audio,
+            scenes);
+    }
+
+    private static DirectedEditorialPlan CreateSinglePhotoFallback(VideoDirectionRequest request)
+    {
+        var media = request.Media.Single();
+        var durationMs = (int)request.RequestedDuration * 1_000;
+        var firstDurationMs = durationMs * 2 / 3;
+        var secondDurationMs = durationMs - firstDurationMs;
+        var narrationBinding = request.FactBindings.Single(binding => binding.Key == "story.voiceover");
+        var narration = new NarrationSegment(
+            "narration-1",
+            500,
+            firstDurationMs - 1_000,
+            narrationBinding.Value,
+            narrationBinding.Key);
+        var viewport = CreateAspectFillViewport(media, request.AspectRatio);
+        var visualSource = new VisualSource(
+            VisualSourceKind.PropertyMedia,
+            media.MediaId,
+            null,
+            null,
+            null);
+        var motion = new MotionPlan(MotionKind.None, viewport, viewport, MotionEasing.Linear);
+        return new DirectedEditorialPlan(
+            new AudioPlan(
+                [narration],
+                new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)),
+            [
+                new VideoScene(
+                    1,
+                    0,
+                    firstDurationMs,
+                    visualSource,
+                    new TransitionPlan(TransitionKind.Cut, 0),
+                    motion,
+                    [],
+                    [],
+                    [narration.Id]),
+                new VideoScene(
+                    2,
+                    firstDurationMs,
+                    secondDurationMs,
+                    visualSource,
+                    new TransitionPlan(TransitionKind.Crossfade, 500),
+                    motion,
+                    [new TextOverlay(
+                        "closing-cta",
+                        request.CallToAction.Text,
+                        request.CallToAction.GroundingKey,
+                        secondDurationMs - 5_000,
+                        4_000,
+                        OverlayAnchor.BottomCenter,
+                        new NormalizedRect(0.15m, 0.75m, 0.7m, 0.1m),
+                        TextOverlayStyle.ClosingCta)],
+                    [],
+                    []),
+            ]);
+    }
+
+    private static NormalizedRect CreateAspectFillViewport(
+        VideoMediaInput media,
+        VideoAspectRatio aspectRatio)
+    {
+        var outputAspect = aspectRatio == VideoAspectRatio.Landscape16By9 ? 16m / 9m : 9m / 16m;
+        var normalizedAspect = outputAspect * media.Height / media.Width;
+        return normalizedAspect >= 1
+            ? new NormalizedRect(0, (1 - 1 / normalizedAspect) / 2, 1, 1 / normalizedAspect)
+            : new NormalizedRect((1 - normalizedAspect) / 2, 0, normalizedAspect, 1);
+    }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Video plan for property {PropertyId} failed {Attempt} semantic validation: {ValidationErrors}")]
+    private partial void LogValidationFailure(
+        Guid propertyId,
+        string attempt,
+        string validationErrors);
+
+    private void LogValidationFailure(
+        Guid propertyId,
+        string attempt,
+        IReadOnlyList<string> validationErrors) =>
+        LogValidationFailure(propertyId, attempt, string.Join(" | ", validationErrors));
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Video director returned invalid structured data for property {PropertyId}")]
+    private partial void LogInvalidProviderResponse(Exception exception, Guid propertyId);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Using the deterministic single-photo video plan fallback for property {PropertyId}")]
+    private partial void LogFallbackUsed(Guid propertyId);
+
+    private sealed record ValidatedSpecification(
+        VideoProductionSpecification Specification,
+        string DirectorVersion);
+
     private static VideoDirectionRequest CreateRequest(
         ListingProperty property,
         IReadOnlyList<PropertyMedia> propertyMedia,
         PropertyStory story,
         string organizationName,
+        IReadOnlyList<ApprovedNeighborhoodFact> approvedNeighborhoodFacts,
         RequestedDuration duration,
         VideoAspectRatio aspectRatio)
     {
@@ -197,7 +423,11 @@ public sealed class VideoProductionPlanService(
             null,
             "#17324D",
             "#F4F0E8");
-        var bindings = CreateFactBindings(verified, content, organizationName);
+        var bindings = CreateFactBindings(
+            verified,
+            content,
+            organizationName,
+            approvedNeighborhoodFacts);
         return new VideoDirectionRequest(
             property.Id,
             storyInput,
@@ -218,7 +448,8 @@ public sealed class VideoProductionPlanService(
     private static List<FactBinding> CreateFactBindings(
         VerifiedPropertyData property,
         PropertyStoryContent story,
-        string organizationName)
+        string organizationName,
+        IReadOnlyList<ApprovedNeighborhoodFact> approvedNeighborhoodFacts)
     {
         var address = string.Join(", ", new[]
         {
@@ -257,6 +488,17 @@ public sealed class VideoProductionPlanService(
                 story.Highlights[index],
                 FactSource.PropertyStory,
                 $"Highlights[{index}]"));
+        }
+
+        for (var index = 0; index < approvedNeighborhoodFacts.Count; index++)
+        {
+            var fact = approvedNeighborhoodFacts[index];
+            facts.Add(new FactBinding(
+                $"neighborhood.{index + 1}",
+                $"{fact.Name} • {fact.Category} • {fact.DistanceMiles:0.##} miles straight-line distance",
+                FactSource.ApprovedNeighborhood,
+                fact.SourceUrl,
+                fact.InsightId));
         }
 
         return facts;

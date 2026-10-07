@@ -307,6 +307,108 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("CampaignGenerationJobs", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Neighborhoods.NeighborhoodInsight", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("CheckedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("DistanceMiles")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)");
+
+                    b.Property<bool>("HasPhoto")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsApproved")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PhotoAttribution")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("PhotoAttributionUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("PhotoSourceUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProviderPlaceId")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("VideoPhotoBlobPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("VideoPhotoCredit")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<long?>("VideoPhotoFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("VideoPhotoFilename")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<int?>("VideoPhotoHeight")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("VideoPhotoMimeType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("VideoPhotoUploadedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("VideoPhotoWidth")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "IsApproved");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "ProviderPlaceId")
+                        .IsUnique();
+
+                    b.ToTable("NeighborhoodInsights", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Organizations.Organization", b =>
                 {
                     b.Property<Guid>("Id")
@@ -557,6 +659,120 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId", "PropertyId", "DisplayOrder");
 
                     b.ToTable("PropertyMedia", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyVideo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EnhancedBlobPath")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<int?>("EnhancedDurationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<long?>("EnhancedFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("EnhancedFrameRate")
+                        .HasPrecision(8, 3)
+                        .HasColumnType("numeric(8,3)");
+
+                    b.Property<int?>("EnhancedHeight")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EnhancedWidth")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EnhancementVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("FrameRate")
+                        .HasPrecision(8, 3)
+                        .HasColumnType("numeric(8,3)");
+
+                    b.Property<bool>("HasAudio")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OriginalBlobPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<long>("OriginalFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("OriginalFilename")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("OriginalMimeType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ProcessingAttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ProcessingCompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ProcessingLastAttemptedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProcessingLastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset?>("ProcessingNextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProcessingStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UploadedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("Id", "PropertyId", "OrganizationId");
+
+                    b.HasIndex("EnhancedBlobPath")
+                        .IsUnique();
+
+                    b.HasIndex("OriginalBlobPath")
+                        .IsUnique();
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "UploadedAtUtc");
+
+                    b.HasIndex("ProcessingStatus", "ProcessingNextAttemptAtUtc", "ProcessingAttemptCount")
+                        .HasDatabaseName("IX_PropertyVideos_ProcessingQueue");
+
+                    b.ToTable("PropertyVideos", (string)null);
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Stories.PropertyStory", b =>
@@ -1148,6 +1364,18 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("VideoNarration");
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Neighborhoods.NeighborhoodInsight", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany("NeighborhoodInsights")
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Organizations.OrganizationMember", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
@@ -1180,6 +1408,18 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
                         .WithMany("Media")
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyVideo", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany("Videos")
                         .HasForeignKey("PropertyId", "OrganizationId")
                         .HasPrincipalKey("Id", "OrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1364,7 +1604,11 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                 {
                     b.Navigation("Media");
 
+                    b.Navigation("NeighborhoodInsights");
+
                     b.Navigation("Stories");
+
+                    b.Navigation("Videos");
                 });
 #pragma warning restore 612, 618
         }

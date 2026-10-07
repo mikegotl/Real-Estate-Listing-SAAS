@@ -7,6 +7,7 @@ using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using ListingStudio.Application.Neighborhoods;
 
 namespace ListingStudio.Infrastructure.Stories;
 
@@ -76,7 +77,8 @@ public sealed class PropertyStoryService(
         if (!grounding.IsValid)
         {
             throw new InvalidDataException(
-                $"Generated property story failed grounding validation: {string.Join(' ', grounding.Errors)}");
+                $"The story could not be saved because it contains unverified property information. "
+                + string.Join(' ', grounding.Errors));
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -136,7 +138,22 @@ public sealed class PropertyStoryService(
             .OrderBy(media => media.DisplayOrder)
             .Select(media => ToObservation(media, media.GetAnalysis()!))
             .ToArray();
-        return new PropertyStoryGenerationRequest(verified, observations, branding);
+        var neighborhoodFacts = await dbContext.NeighborhoodInsights
+            .AsNoTracking()
+            .Where(insight => insight.OrganizationId == organizationId
+                && insight.PropertyId == property.Id
+                && insight.IsApproved)
+            .OrderBy(insight => insight.Category)
+            .ThenBy(insight => insight.DistanceMiles)
+            .Select(insight => new ApprovedNeighborhoodFact(
+                insight.Category.ToString(),
+                insight.Name,
+                insight.Address,
+                insight.DistanceMiles,
+                insight.SourceUrl,
+                insight.CheckedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new PropertyStoryGenerationRequest(verified, observations, branding, neighborhoodFacts);
     }
 
     private static PropertyMediaObservation ToObservation(

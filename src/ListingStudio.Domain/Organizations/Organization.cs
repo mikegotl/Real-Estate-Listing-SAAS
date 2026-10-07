@@ -28,6 +28,7 @@ public sealed class Organization
 
     public ICollection<PropertyStory> PropertyStories { get; } = [];
 
+
     public static Organization Create(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

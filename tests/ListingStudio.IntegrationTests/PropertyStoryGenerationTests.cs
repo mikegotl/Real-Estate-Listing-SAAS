@@ -83,7 +83,9 @@ public sealed class PropertyStoryGenerationTests(PostgreSqlWebApplicationFixture
             var stories = scope.ServiceProvider.GetRequiredService<IPropertyStoryService>();
             var exception = await Assert.ThrowsAsync<InvalidDataException>(
                 () => stories.GenerateAsync(owner.UserId, owner.PropertyId));
-            Assert.Contains("grounding validation", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("unverified property information", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("\"School\" is not verified", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("add that fact to the Description", exception.Message, StringComparison.Ordinal);
         }
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())

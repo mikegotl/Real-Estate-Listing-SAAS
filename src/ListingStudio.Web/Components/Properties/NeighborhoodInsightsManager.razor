@@ -1,0 +1,287 @@
+@inherits OwningComponentBase<INeighborhoodInsightService>
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<MudPaper Class="pa-6 mt-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Neighborhood insights</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Review verified nearby places before allowing them into AI-generated marketing.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="@(refreshing || IsReadOnly || !Service.IsConfigured)"
+                   OnClick="RefreshAsync">
+            @(insights.Count == 0 ? "Find nearby places" : "Refresh places")
+        </MudButton>
+    </MudStack>
+
+    <MudAlert Severity="Severity.Info" Class="mb-4">
+        School results are proximity information only. They do not guarantee attendance assignment or describe school
+        quality. Avoid demographic, safety, or “family-friendly” claims. Approved facts are included the next time the
+        story or campaign is generated.
+    </MudAlert>
+
+    @if (!Service.IsConfigured)
+    {
+        <MudAlert Severity="Severity.Warning">
+            Neighborhood lookup is not configured. Add an enabled Google Places API key under
+            <code>NeighborhoodInsights</code>; no paid request will be made until then.
+        </MudAlert>
+    }
+
+    @if (refreshing)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+    }
+
+    @if (insights.Count > 0)
+    {
+        <MudGrid Spacing="3">
+            @foreach (var insight in insights)
+            {
+                <MudItem xs="12" sm="6" lg="4">
+                    <MudCard Style="height:100%">
+                        @if (insight.HasPhoto)
+                        {
+                            <img src="@($"/neighborhood-insights/{insight.Id}/photo")"
+                                 alt="@($"Provider photo of {insight.Name}")"
+                                 loading="lazy"
+                                 style="width:100%;height:180px;object-fit:cover" />
+                        }
+                        <MudCardContent>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                @DisplayCategory(insight.Category)
+                            </MudChip>
+                            <MudText Typo="Typo.h6" Class="mt-2">@insight.Name</MudText>
+                            <MudText Typo="Typo.body2">@insight.Address</MudText>
+                            <MudText Typo="Typo.body2" Class="mt-2">
+                                @insight.DistanceMiles.ToString("0.##") miles straight-line distance
+                            </MudText>
+                            @if (insight.HasPhoto)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                                    Photo:
+                                    @if (insight.PhotoAttributionUrl is not null)
+                                    {
+                                        <MudLink Href="@insight.PhotoAttributionUrl" Target="_blank">
+                                            @(insight.PhotoAttribution ?? "Google Maps contributor")
+                                        </MudLink>
+                                    }
+                                    else
+                                    {
+                                        @(insight.PhotoAttribution ?? "Google Maps contributor")
+                                    }
+                                    @if (insight.PhotoSourceUrl is not null)
+                                    {
+                                        <span> · </span><MudLink Href="@insight.PhotoSourceUrl" Target="_blank">View source photo</MudLink>
+                                    }
+                                </MudText>
+                            }
+                            <MudLink Href="@insight.SourceUrl" Target="_blank" Typo="Typo.caption">
+                                Verify on Google Maps
+                            </MudLink>
+                            @if (insight.HasVideoPhoto)
+                            {
+                                <MudDivider Class="my-3" />
+                                <img src="@($"/neighborhood-insights/{insight.Id}/video-photo")"
+                                     alt="@($"Licensed video photo of {insight.Name}")"
+                                     style="width:100%;height:140px;object-fit:cover" />
+                                <MudText Typo="Typo.caption" Class="mt-1">
+                                    Video photo credit: @insight.VideoPhotoCredit
+                                </MudText>
+                            }
+                            else if (insight.IsApproved && !IsReadOnly)
+                            {
+                                <MudDivider Class="my-3" />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Google preview photos cannot be exported into downloadable videos. Upload a photo
+                                    you own or are licensed to use, and provide the credit that should appear in the video.
+                                </MudText>
+                                <MudTextField T="string"
+                                              Value="@GetCredit(insight.Id)"
+                                              ValueChanged="@(value => SetCredit(insight.Id, value))"
+                                              Label="Photo credit"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Class="my-2" />
+                                <label class="media-upload-control">
+                                    <span>Add licensed video photo</span>
+                                    <InputFile OnChange="@(args => UploadVideoPhotoAsync(insight, args))"
+                                               accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+                                </label>
+                            }
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudCheckBox T="bool"
+                                         Value="@insight.IsApproved"
+                                         ValueChanged="@(value => SetApprovalAsync(insight, value))"
+                                         Disabled="@(savingIds.Contains(insight.Id) || IsReadOnly)"
+                                         Label="Approved for marketing"
+                                         Color="Color.Success" />
+                            @if (insight.HasVideoPhoto && !IsReadOnly)
+                            {
+                                <MudSpacer />
+                                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                                           Disabled="@savingIds.Contains(insight.Id)"
+                                           OnClick="@(() => DeleteVideoPhotoAsync(insight))">
+                                    Remove video photo
+                                </MudButton>
+                            }
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-4">
+            Results and photos supplied by Google Maps · Last checked @insights.Max(item => item.CheckedAtUtc).ToLocalTime().ToString("g")
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private IReadOnlyList<NeighborhoodInsightResult> insights = [];
+    private readonly HashSet<Guid> savingIds = [];
+    private readonly Dictionary<Guid, string> credits = [];
+    private bool refreshing;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        insights = await Service.GetAsync(userId, PropertyId);
+        InitializeCredits();
+    }
+
+    private async Task RefreshAsync()
+    {
+        refreshing = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            insights = await Service.RefreshAsync(userId, PropertyId);
+            InitializeCredits();
+            if (insights.Count == 0)
+            {
+                error = "No supported nearby places were found. Verify the property address or increase the configured radius.";
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            refreshing = false;
+        }
+    }
+
+    private async Task SetApprovalAsync(NeighborhoodInsightResult insight, bool approved)
+    {
+        savingIds.Add(insight.Id);
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            if (!await Service.SetApprovalAsync(userId, PropertyId, insight.Id, approved))
+            {
+                error = "The nearby place is no longer available. Refresh the results and try again.";
+                return;
+            }
+
+            insights = insights.Select(item => item.Id == insight.Id ? item with { IsApproved = approved } : item).ToArray();
+        }
+        finally
+        {
+            savingIds.Remove(insight.Id);
+        }
+    }
+
+    private async Task UploadVideoPhotoAsync(NeighborhoodInsightResult insight, InputFileChangeEventArgs args)
+    {
+        savingIds.Add(insight.Id);
+        error = null;
+        try
+        {
+            var credit = GetCredit(insight.Id).Trim();
+            if (string.IsNullOrWhiteSpace(credit))
+            {
+                error = "Enter the required photo credit before uploading the licensed image.";
+                return;
+            }
+
+            var file = args.File;
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var content = file.OpenReadStream(20 * 1024 * 1024);
+            if (!await Service.UploadVideoPhotoAsync(
+                    userId,
+                    PropertyId,
+                    insight.Id,
+                    new NeighborhoodVideoPhotoUpload(file.Name, file.ContentType, file.Size, credit, content)))
+            {
+                error = "The nearby place is no longer available. Refresh the results and try again.";
+                return;
+            }
+
+            insights = await Service.GetAsync(userId, PropertyId);
+            InitializeCredits();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            savingIds.Remove(insight.Id);
+        }
+    }
+
+    private async Task DeleteVideoPhotoAsync(NeighborhoodInsightResult insight)
+    {
+        savingIds.Add(insight.Id);
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await Service.DeleteVideoPhotoAsync(userId, PropertyId, insight.Id);
+            insights = await Service.GetAsync(userId, PropertyId);
+            InitializeCredits();
+        }
+        finally
+        {
+            savingIds.Remove(insight.Id);
+        }
+    }
+
+    private string GetCredit(Guid insightId) => credits.GetValueOrDefault(insightId, string.Empty);
+
+    private void SetCredit(Guid insightId, string value) => credits[insightId] = value;
+
+    private void InitializeCredits()
+    {
+        foreach (var insight in insights)
+        {
+            credits.TryAdd(insight.Id, insight.VideoPhotoCredit ?? string.Empty);
+        }
+    }
+
+    private static string DisplayCategory(NeighborhoodPlaceCategory category) => category switch
+    {
+        NeighborhoodPlaceCategory.Grocery => "Groceries",
+        NeighborhoodPlaceCategory.Healthcare => "Healthcare",
+        _ => category.ToString(),
+    };
+}
