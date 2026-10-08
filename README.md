@@ -180,6 +180,10 @@ Integration tests require a running Docker daemon. They start a disposable Postg
 
 Stop PostgreSQL with `docker compose down`; add `--volumes` only when you also intend to delete local database data.
 
+## Design system
+
+The brand palette and typography live in the `MudTheme` in `src/ListingStudio.Web/Components/Layout/MainLayout.razor`. `wwwroot/app.css` reads those colours through MudBlazor's `--mud-palette-*` variables and exposes them as `--ls-*` tokens, so a palette change is made in one place. Inter (body) and Fraunces (headings) are self-hosted from `wwwroot/fonts` under the SIL Open Font License; their license files sit next to the font files. No font or style request leaves the application.
+
 ## Production deployment
 
 The repository contains separate production containers for Web, Worker and the EF migration bundle, plus Bicep for Azure Container Apps, PostgreSQL Flexible Server, Blob Storage, ACR, Application Insights, Log Analytics, Key Vault, managed identity and private database networking. Production hosts expose `/health/live` and `/health/ready`; readiness checks PostgreSQL and the container-installed FFmpeg binary. Production logging is structured JSON and is exported through Azure Monitor OpenTelemetry when `APPLICATIONINSIGHTS_CONNECTION_STRING` is configured.

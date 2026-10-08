@@ -14,28 +14,53 @@
 </MudLayout>
 
 @code {
+    private static readonly string[] BodyFont = ["Inter Variable", "Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"];
+    private static readonly string[] DisplayFont = ["Fraunces Variable", "Georgia", "Cambria", "Times New Roman", "serif"];
+
+    // Listing Studio brand: harbor navy for actions, brass for accents, warm paper backgrounds.
+    // app.css reads these values through the --mud-palette-* variables, so this is the single source of colour.
     private static readonly MudTheme Theme = new()
     {
         PaletteLight = new PaletteLight
         {
-            Primary = "#4F46E5",
-            Secondary = "#0EA5E9",
-            Tertiary = "#F59E0B",
-            Success = "#16A34A",
-            Warning = "#D97706",
-            Error = "#DC2626",
-            Dark = "#111827",
-            Background = "#F5F7FB",
+            Primary = "#1F4B6E",
+            Secondary = "#9A6A2A",
+            Tertiary = "#4F7A65",
+            Info = "#2D6A9F",
+            Success = "#2F7D4F",
+            Warning = "#B7791F",
+            Error = "#B42318",
+            Dark = "#0E1B2B",
+            Background = "#F7F5F1",
             Surface = "#FFFFFF",
-            AppbarBackground = "#0B1220",
-            AppbarText = "#F8FAFC",
-            TextPrimary = "#172033",
-            TextSecondary = "#64748B",
-            Divider = "#E2E8F0",
+            AppbarBackground = "#0E1B2B",
+            AppbarText = "#F5F1EA",
+            TextPrimary = "#1B2430",
+            TextSecondary = "#5B6573",
+            Divider = "#E6E1D8",
+            TableLines = "#ECE8E1",
+            LinesDefault = "#E6E1D8",
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = BodyFont, LetterSpacing = "normal" },
+            H1 = new H1Typography { FontFamily = DisplayFont, FontWeight = "600", LetterSpacing = "-.02em" },
+            H2 = new H2Typography { FontFamily = DisplayFont, FontWeight = "600", LetterSpacing = "-.02em" },
+            H3 = new H3Typography { FontFamily = DisplayFont, FontWeight = "600", LetterSpacing = "-.015em" },
+            H4 = new H4Typography { FontFamily = DisplayFont, FontWeight = "600", LetterSpacing = "-.01em" },
+            H5 = new H5Typography { FontFamily = BodyFont, FontWeight = "650", LetterSpacing = "-.01em" },
+            H6 = new H6Typography { FontFamily = BodyFont, FontWeight = "600" },
+            Subtitle1 = new Subtitle1Typography { FontFamily = BodyFont },
+            Subtitle2 = new Subtitle2Typography { FontFamily = BodyFont },
+            Body1 = new Body1Typography { FontFamily = BodyFont },
+            Body2 = new Body2Typography { FontFamily = BodyFont },
+            Caption = new CaptionTypography { FontFamily = BodyFont },
+            Overline = new OverlineTypography { FontFamily = BodyFont, FontWeight = "700", LetterSpacing = ".08em" },
+            Button = new ButtonTypography { FontFamily = BodyFont, FontWeight = "600", TextTransform = "none", LetterSpacing = "normal" },
         },
         LayoutProperties = new LayoutProperties
         {
-            DefaultBorderRadius = "12px",
+            DefaultBorderRadius = "10px",
         },
     };
 }

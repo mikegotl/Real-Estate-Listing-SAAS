@@ -5,7 +5,7 @@
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
         <div>
             <MudText Typo="Typo.h5" HtmlTag="h2">Neighborhood insights</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
                 Review verified nearby places before allowing them into AI-generated marketing.
             </MudText>
         </div>
@@ -66,7 +66,7 @@
                             </MudText>
                             @if (insight.HasPhoto)
                             {
-                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
                                     Photo:
                                     @if (insight.PhotoAttributionUrl is not null)
                                     {
@@ -100,7 +100,7 @@
                             else if (insight.IsApproved && !IsReadOnly)
                             {
                                 <MudDivider Class="my-3" />
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                <MudText Class="mud-text-secondary" Typo="Typo.caption">
                                     Google preview photos cannot be exported into downloadable videos. Upload a photo
                                     you own or are licensed to use, and provide the credit that should appear in the video.
                                 </MudText>
@@ -139,7 +139,7 @@
                 </MudItem>
             }
         </MudGrid>
-        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-4">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mt-4">
             Results and photos supplied by Google Maps · Last checked @insights.Max(item => item.CheckedAtUtc).ToLocalTime().ToString("g")
         </MudText>
     }

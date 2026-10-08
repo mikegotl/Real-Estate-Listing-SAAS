@@ -7,10 +7,10 @@
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
         <div>
             <MudText Typo="Typo.h5" HtmlTag="h2">Campaign</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
                 Generate, monitor, and download the complete video campaign.
             </MudText>
-            <MudText Typo="Typo.caption" Color="Color.Secondary">
+            <MudText Class="mud-text-secondary" Typo="Typo.caption">
                 Video narration is generated with an AI voice.
             </MudText>
         </div>
@@ -93,7 +93,7 @@
                     <MudItem xs="12" md="4">
                         <MudPaper Outlined="true" Class="pa-4">
                             <MudText Typo="Typo.h6">@deliverable.Kind</MudText>
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            <MudText Class="mud-text-secondary" Typo="Typo.body2">
                                 @deliverable.DurationSeconds seconds · @deliverable.AspectRatio
                             </MudText>
                             @if (deliverable.Status == CampaignDeliverableStatus.Rendered)
@@ -124,9 +124,9 @@
 
         @if (job.Status == CampaignGenerationStatus.Completed)
         {
-            <MudText Typo="Typo.overline" Color="Color.Secondary">Short social caption</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.overline">Short social caption</MudText>
             <MudText Typo="Typo.body1" Class="mb-3">@job.SocialCaptionShort</MudText>
-            <MudText Typo="Typo.overline" Color="Color.Secondary">Long social caption</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.overline">Long social caption</MudText>
             <MudText Typo="Typo.body1">@job.SocialCaptionLong</MudText>
         }
 

@@ -18,7 +18,7 @@
         <MudText Typo="Typo.h4" HtmlTag="h1" Class="account-title">@Title</MudText>
         @if (!string.IsNullOrWhiteSpace(Description))
         {
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="account-description">@Description</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary account-description">@Description</MudText>
         }
         @ChildContent
     </MudPaper>
