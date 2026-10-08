@@ -30,30 +30,12 @@
         </div>
     </div>
 
-    <div class="hero-visual" aria-label="Listing Studio workspace preview">
+    <div class="hero-visual" aria-label="Featured home">
         <div class="visual-glow"></div>
-        <MudPaper Elevation="8" Class="preview-window">
-            <div class="preview-toolbar">
-                <span class="preview-dot red"></span><span class="preview-dot amber"></span><span class="preview-dot green"></span>
-                <span class="preview-address">Listing workspace</span>
-            </div>
-            <div class="preview-content">
-                <div class="property-image-placeholder">
-                    <MudIcon Icon="@Icons.Material.Filled.HolidayVillage" />
-                    <span>PROPERTY MEDIA</span>
-                </div>
-                <div class="preview-details">
-                    <span class="eyebrow">CAMPAIGN READY</span>
-                    <MudText Typo="Typo.h5">A clear path from data to creative</MudText>
-                    <div class="preview-progress"><span></span></div>
-                    <div class="preview-metrics">
-                        <div><strong>01</strong><small>Property</small></div>
-                        <div><strong>06</strong><small>Media</small></div>
-                        <div><strong>03</strong><small>Outputs</small></div>
-                    </div>
-                </div>
-            </div>
-        </MudPaper>
+        <figure class="hero-photo">
+            <img src="/images/hero-home.webp" width="1200" height="1500" fetchpriority="high"
+                 alt="@HeroPhotoAlt" />
+        </figure>
         <MudPaper Elevation="5" Class="floating-card story-card">
             <MudIcon Icon="@Icons.Material.Filled.AutoStories" Color="Color.Primary" />
             <div><small>MARKETING STORY</small><strong>Grounded and ready</strong></div>
@@ -95,3 +77,8 @@
         </MudItem>
     </MudGrid>
 </section>
+
+@code {
+    // Free-licensed stock photo; source and license are recorded in wwwroot/images/CREDITS.md.
+    private const string HeroPhotoAlt = "PLACEHOLDER";
+}
