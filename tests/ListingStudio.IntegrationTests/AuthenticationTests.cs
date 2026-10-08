@@ -166,6 +166,7 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("Listing Studio", content, StringComparison.Ordinal);
         Assert.Contains("Every listing deserves", content, StringComparison.Ordinal);
+        Assert.Contains("/images/agent-portrait.webp", content, StringComparison.Ordinal);
         Assert.Contains("_content/MudBlazor/MudBlazor.min.css", content, StringComparison.Ordinal);
         Assert.Contains("app-header", content, StringComparison.Ordinal);
     }
@@ -181,6 +182,17 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("font/woff2", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task AgentPortraitIsServed()
+    {
+        using var client = fixture.Factory.CreateClient();
+
+        using var response = await client.GetAsync("/images/agent-portrait.webp");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
     }
 
     [Fact]
