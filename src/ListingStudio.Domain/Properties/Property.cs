@@ -64,6 +64,8 @@ public sealed class ListingProperty
 
     public ICollection<PropertyVideo> Videos { get; } = [];
 
+    public PropertyNarrationScript? NarrationScript { get; private set; }
+
     public ICollection<PropertyStory> Stories { get; } = [];
 
     public ICollection<NeighborhoodInsight> NeighborhoodInsights { get; } = [];

@@ -293,6 +293,71 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
     }
 
     [Fact]
+    public async Task UploadedScriptOnlyReplacesNarrationAfterMarketingAcceptance()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("accepted-script-video-owner");
+        await UploadAndAnalyzeAsync(owner);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await GenerateStoryAsync(owner);
+        var scriptText = "Begin at the welcoming entry. Continue through the bright kitchen and finish in the private backyard.";
+
+        Guid scriptId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var scripts = uploadScope.ServiceProvider.GetRequiredService<IPropertyNarrationScriptService>();
+            var bytes = System.Text.Encoding.UTF8.GetBytes(scriptText);
+            await using var content = new MemoryStream(bytes);
+            scriptId = await scripts.UploadAsync(
+                owner.UserId,
+                owner.PropertyId,
+                new PropertyNarrationScriptUpload("tour-script.txt", "text/plain", bytes.Length, content));
+        }
+
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        await using (var uncheckedScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var generated = await uncheckedScope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>()
+                .GenerateAsync(
+                    owner.UserId,
+                    owner.PropertyId,
+                    RequestedDuration.Hero60,
+                    VideoAspectRatio.Landscape16By9);
+            Assert.NotNull(generated);
+            Assert.Null(fixture.Factory.VideoDirector.LastRequest!.AcceptedNarrationScript);
+            Assert.Contains(generated.Specification.Audio.NarrationSegments,
+                segment => segment.GroundingKey == "story.voiceover");
+        }
+
+        await using (var acceptScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var scripts = acceptScope.ServiceProvider.GetRequiredService<IPropertyNarrationScriptService>();
+            Assert.True(await scripts.SetMarketingUseAcceptedAsync(
+                owner.UserId, owner.PropertyId, scriptId, accepted: true));
+        }
+
+        fixture.Factory.VideoDirector.Enqueue(CreateAcceptedScriptEditorialPlan);
+        await using var acceptedScope = fixture.Factory.Services.CreateAsyncScope();
+        var acceptedPlan = await acceptedScope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>()
+            .GenerateAsync(
+                owner.UserId,
+                owner.PropertyId,
+                RequestedDuration.Hero60,
+                VideoAspectRatio.Landscape16By9);
+
+        Assert.NotNull(acceptedPlan);
+        var acceptedInput = Assert.IsType<AcceptedNarrationScriptInput>(
+            fixture.Factory.VideoDirector.LastRequest!.AcceptedNarrationScript);
+        Assert.Equal(scriptId, acceptedInput.ScriptId);
+        Assert.Equal(
+            acceptedInput.Segments.Select(segment => segment.Text),
+            acceptedPlan.Specification.Audio.NarrationSegments
+                .OrderBy(segment => segment.StartMs)
+                .Select(segment => segment.Text));
+        Assert.DoesNotContain(acceptedPlan.Specification.Audio.NarrationSegments,
+            segment => segment.GroundingKey == "story.voiceover");
+    }
+
+    [Fact]
     public async Task IncludesEveryApprovedNeighborhoodFactInTheMasterPlan()
     {
         var owner = await CreateOwnerAndPropertyAsync("neighborhood-video-owner");
@@ -388,6 +453,29 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
                     [],
                     [narration.Id]),
             ]);
+    }
+
+    private static DirectedEditorialPlan CreateAcceptedScriptEditorialPlan(VideoDirectionRequest request)
+    {
+        var accepted = Assert.IsType<AcceptedNarrationScriptInput>(request.AcceptedNarrationScript);
+        var basePlan = CreateEditorialPlan(request);
+        var narration = accepted.Segments.Select((segment, index) => new NarrationSegment(
+            $"accepted-script-{index + 1}",
+            500 + index * 4_000,
+            3_500,
+            segment.Text,
+            segment.Key)).ToArray();
+        return basePlan with
+        {
+            Audio = basePlan.Audio with { NarrationSegments = narration },
+            Scenes =
+            [
+                basePlan.Scenes[0] with
+                {
+                    NarrationSegmentIds = narration.Select(segment => segment.Id).ToArray(),
+                },
+            ],
+        };
     }
 
     private async Task GenerateStoryAsync(OwnerProperty owner)

@@ -169,7 +169,9 @@
         "propertyMediaId": "11111111-1111-4111-8111-111111111111",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "cut", "durationMs": 0 },
       "motion": {
@@ -210,7 +212,9 @@
         "propertyMediaId": "22222222-2222-4222-8222-222222222222",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {
@@ -243,7 +247,9 @@
         "propertyMediaId": "33333333-3333-4333-8333-333333333333",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {
@@ -276,7 +282,9 @@
         "propertyMediaId": "44444444-4444-4444-8444-444444444444",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {
@@ -298,7 +306,9 @@
         "propertyMediaId": "55555555-5555-4555-8555-555555555555",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {
@@ -320,7 +330,9 @@
         "propertyMediaId": "66666666-6666-4666-8666-666666666666",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {
@@ -342,7 +354,9 @@
         "propertyMediaId": "77777777-7777-4777-8777-777777777777",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {
@@ -364,7 +378,9 @@
         "propertyMediaId": "88888888-8888-4888-8888-888888888888",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {
@@ -386,7 +402,9 @@
         "propertyMediaId": "99999999-9999-4999-8999-999999999999",
         "generatedClipId": null,
         "fallbackPropertyMediaId": "99999999-9999-4999-8999-999999999999",
-        "generationInstruction": "Slow cinematic push forward while preserving every visible property feature."
+        "generationInstruction": "Slow cinematic push forward while preserving every visible property feature.",
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "dipToBlack", "durationMs": 500 },
       "motion": {
@@ -408,7 +426,9 @@
         "propertyMediaId": "11111111-1111-4111-8111-111111111111",
         "generatedClipId": null,
         "fallbackPropertyMediaId": null,
-        "generationInstruction": null
+        "generationInstruction": null,
+        "propertyVideoId": null,
+        "propertyVideoStartMs": null
       },
       "transitionIn": { "type": "crossfade", "durationMs": 600 },
       "motion": {

@@ -69,7 +69,7 @@ public sealed class OpenAIVideoDirectorTests
             request,
             ["scenes must end at the exact requested duration."]);
 
-        Assert.Equal("openai-video-director-v1.3", director.DirectorVersion);
+        Assert.Equal("openai-video-director-v1.4", director.DirectorVersion);
         Assert.Single(result.Scenes);
         Assert.Equal(request.Media[0].MediaId, result.Scenes[0].VisualSource.PropertyMediaId);
         Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-api-key"), handler.Authorization);
@@ -99,8 +99,11 @@ public sealed class OpenAIVideoDirectorTests
     }
 
     [Theory]
-    [InlineData("incomplete")] [InlineData("unknown")] [InlineData("missing")]
-    [InlineData("null")] [InlineData("malformed")]
+    [InlineData("incomplete")]
+    [InlineData("unknown")]
+    [InlineData("missing")]
+    [InlineData("null")]
+    [InlineData("malformed")]
     public async Task RejectsIncompleteAndInvalidStructuredResponses(string failure)
     {
         const string valid = "{\"audio\":{\"narrationSegments\":[],\"music\":{\"assetId\":null,\"mood\":\"none\",\"startMs\":0,\"durationMs\":0,\"gainDb\":0,\"fadeInMs\":0,\"fadeOutMs\":0,\"duckingGainDb\":0}},\"scenes\":[]}";

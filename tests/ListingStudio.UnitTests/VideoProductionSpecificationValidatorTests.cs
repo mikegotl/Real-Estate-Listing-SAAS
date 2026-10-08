@@ -236,6 +236,63 @@ public sealed class VideoProductionSpecificationValidatorTests
     }
 
     [Fact]
+    public void AcceptedScriptMustBeNarratedVerbatimInOrderAndCanUseApprovedWalkthroughVideo()
+    {
+        var original = CreateInput();
+        var videoId = Guid.NewGuid();
+        var script = new AcceptedNarrationScriptInput(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            [
+                new AcceptedNarrationScriptSegment("acceptedScript.segment.1", "Begin in the sunlit living room."),
+                new AcceptedNarrationScriptSegment("acceptedScript.segment.2", "Continue through the open kitchen."),
+            ]);
+        var scriptBindings = script.Segments.Select(segment =>
+            new FactBinding(segment.Key, segment.Text, FactSource.AcceptedScript, script.ScriptId.ToString("D")));
+        var input = original with
+        {
+            FactBindings = [.. original.FactBindings, .. scriptBindings],
+            AcceptedNarrationScript = script,
+            WalkthroughVideos = [new VideoWalkthroughInput(videoId, "walkthrough.mp4", 1_920, 1_080, 90_000)],
+        };
+        var specification = CreateSpecification(input);
+        var acceptedNarration = new[]
+        {
+            new NarrationSegment("script-1", 500, 3_000, script.Segments[0].Text, script.Segments[0].Key),
+            new NarrationSegment("script-2", 4_000, 3_000, script.Segments[1].Text, script.Segments[1].Key),
+        };
+        var scene = specification.Scenes[0] with
+        {
+            VisualSource = new VisualSource(
+                VisualSourceKind.PropertyVideo, null, null, null, null, videoId, 10_000),
+            NarrationSegmentIds = acceptedNarration.Select(segment => segment.Id).ToArray(),
+        };
+        specification = specification with
+        {
+            Audio = specification.Audio with { NarrationSegments = acceptedNarration },
+            Scenes = [scene],
+        };
+
+        var valid = validator.Validate(input, specification);
+        Assert.True(valid.IsValid, string.Join(Environment.NewLine, valid.Errors));
+
+        var altered = specification with
+        {
+            Audio = specification.Audio with
+            {
+                NarrationSegments =
+                [
+                    acceptedNarration[0],
+                    acceptedNarration[1] with { Text = "A paraphrased kitchen description." },
+                ],
+            },
+        };
+        var invalid = validator.Validate(input, altered);
+        Assert.False(invalid.IsValid);
+        Assert.Contains(invalid.Errors, error => error.Contains("preserve the accepted script", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void SerializesCanonicalDurationAndAspectRatio()
     {
         var input = CreateInput(RequestedDuration.Hero60, VideoAspectRatio.Landscape16By9);
@@ -253,7 +310,10 @@ public sealed class VideoProductionSpecificationValidatorTests
     }
 
     [Theory]
-    [InlineData(0)] [InlineData(1)] [InlineData(2)] [InlineData(3)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
     public void RejectsSchemaNullsUnsupportedEnumsAndOutOfRangeGain(int mutation)
     {
         var input = CreateInput();
@@ -275,8 +335,11 @@ public sealed class VideoProductionSpecificationValidatorTests
         var input = CreateInput();
         var plan = CreateSpecification(input);
         var scene = plan.Scenes[0];
-        plan = plan with { Scenes = [scene with { VisualSource = new(VisualSourceKind.GenerativeMotionRequest,
-            input.Media[0].MediaId, null, input.Media[0].MediaId, "Add an ocean view and a pool") }] };
+        plan = plan with
+        {
+            Scenes = [scene with { VisualSource = new(VisualSourceKind.GenerativeMotionRequest,
+            input.Media[0].MediaId, null, input.Media[0].MediaId, "Add an ocean view and a pool") }]
+        };
         Assert.False(validator.Validate(input, plan).IsValid);
     }
 

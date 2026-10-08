@@ -21,6 +21,13 @@ public sealed class OpenAIVideoDirector(
         infer property facts. Do not supply codecs, output dimensions, tenant identity, property identity, brand
         values, safe zones, or fact bindings; the application owns those values.
 
+        When accepted_narration_script is present, narration must use only its segment keys and exact text. Include
+        every accepted script segment exactly once, in the supplied order; never paraphrase, omit, duplicate, or add
+        narration. Match each script segment to the most relevant supplied photo analysis. Property walkthrough video
+        may be selected for script passages about layout, flow, movement through the home, or a general tour; choose a
+        valid start point whose scene window fits inside the supplied video duration. Property-video scenes must not
+        request still-image motion. When no accepted script is present, direct narration from other grounded bindings.
+
         Scene starts must be contiguous from zero and the scene durations must total the requested duration exactly.
         The first transition must be a zero-duration cut. Every displayed or spoken string must exactly equal one of
         the supplied fact bindings and use its key. Reference only supplied property media IDs. Return only the
@@ -35,7 +42,7 @@ public sealed class OpenAIVideoDirector(
 
     private static readonly JsonElement OutputSchema = VideoSchemaContract.EditorialSchema;
 
-    public string DirectorVersion => "openai-video-director-v1.3";
+    public string DirectorVersion => "openai-video-director-v1.4";
 
     public async Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,
@@ -65,6 +72,8 @@ public sealed class OpenAIVideoDirector(
             verified_property_data = request.VerifiedProperty,
             property_story = request.PropertyStory,
             media = request.Media,
+            walkthrough_videos = request.WalkthroughVideos ?? [],
+            accepted_narration_script = request.AcceptedNarrationScript,
             requested_duration_seconds = (int)request.RequestedDuration,
             aspect_ratio = request.AspectRatio == VideoAspectRatio.Landscape16By9 ? "16:9" : "9:16",
             safe_zone = request.SafeZone,

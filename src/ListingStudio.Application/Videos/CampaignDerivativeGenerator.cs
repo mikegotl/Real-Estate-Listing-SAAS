@@ -27,13 +27,21 @@ public sealed class CampaignDerivativeGenerator : ICampaignDerivativeGenerator
         }
 
         var media = groupedMedia.ToDictionary(group => group.Key, group => group.First());
+        var groupedVideos = (request.PropertyVideos ?? []).GroupBy(item => item.PropertyVideoId).ToArray();
+        if (groupedVideos.Any(group => group.Count() != 1)
+            || (request.PropertyVideos ?? []).Any(item => item.Width <= 0 || item.Height <= 0 || item.DurationMs <= 0))
+        {
+            throw new ArgumentException("Derivative property videos must have unique IDs and positive metadata.", nameof(request));
+        }
+
+        var videos = groupedVideos.ToDictionary(group => group.Key, group => group.First());
 
         var derivatives = new List<CampaignDerivative>(6);
         foreach (var aspectRatio in Enum.GetValues<VideoAspectRatio>())
         {
             foreach (var (kind, duration) in Deliverables)
             {
-                derivatives.Add(CreateDerivative(request.MasterSpecification, media, kind, duration, aspectRatio));
+                derivatives.Add(CreateDerivative(request.MasterSpecification, media, videos, kind, duration, aspectRatio));
             }
         }
 
@@ -43,6 +51,7 @@ public sealed class CampaignDerivativeGenerator : ICampaignDerivativeGenerator
     private static CampaignDerivative CreateDerivative(
         VideoProductionSpecification master,
         Dictionary<Guid, CampaignDerivativeMedia> media,
+        Dictionary<Guid, CampaignDerivativeVideo> videos,
         CampaignDeliverableKind kind,
         RequestedDuration duration,
         VideoAspectRatio aspectRatio)
@@ -57,11 +66,29 @@ public sealed class CampaignDerivativeGenerator : ICampaignDerivativeGenerator
         {
             var source = selected[index];
             var sceneDuration = allocatedDurations[index];
-            var mediaId = EffectiveMediaId(source.VisualSource)
-                ?? throw new ArgumentException($"Master scene {source.SceneNumber} has no property-media fallback.");
-            if (!media.TryGetValue(mediaId, out var dimensions))
+            CampaignDerivativeMedia dimensions;
+            if (source.VisualSource.Kind == VisualSourceKind.PropertyVideo)
             {
-                throw new ArgumentException($"Master scene {source.SceneNumber} references unsupplied property media.");
+                if (source.VisualSource.PropertyVideoId is not { } videoId
+                    || !videos.TryGetValue(videoId, out var video)
+                    || source.VisualSource.PropertyVideoStartMs is not { } videoStartMs
+                    || (long)videoStartMs + sceneDuration > video.DurationMs)
+                {
+                    throw new ArgumentException($"Master scene {source.SceneNumber} references an unavailable property video window.");
+                }
+
+                dimensions = new CampaignDerivativeMedia(video.PropertyVideoId, video.Width, video.Height);
+            }
+            else
+            {
+                var mediaId = EffectiveMediaId(source.VisualSource)
+                    ?? throw new ArgumentException($"Master scene {source.SceneNumber} has no property-media fallback.");
+                if (!media.TryGetValue(mediaId, out var suppliedDimensions))
+                {
+                    throw new ArgumentException($"Master scene {source.SceneNumber} references unsupplied property media.");
+                }
+
+                dimensions = suppliedDimensions;
             }
 
             var transition = index == 0
@@ -105,13 +132,14 @@ public sealed class CampaignDerivativeGenerator : ICampaignDerivativeGenerator
             Audio = new AudioPlan(narration, music),
             Scenes = scenes,
         };
-        ValidateDerivative(specification, media);
+        ValidateDerivative(specification, media, videos);
         return new CampaignDerivative(
             kind,
             aspectRatio,
             specification,
             scenes.Select(scene => EffectiveMediaId(scene.VisualSource)).OfType<Guid>().ToHashSet(),
-            scenes.Select(scene => scene.VisualSource.GeneratedClipId).OfType<Guid>().ToHashSet());
+            scenes.Select(scene => scene.VisualSource.GeneratedClipId).OfType<Guid>().ToHashSet(),
+            scenes.Select(scene => scene.VisualSource.PropertyVideoId).OfType<Guid>().ToHashSet());
     }
 
     private static VideoScene[] SelectScenes(IReadOnlyList<VideoScene> scenes, RequestedDuration duration)
@@ -377,19 +405,42 @@ public sealed class CampaignDerivativeGenerator : ICampaignDerivativeGenerator
 
     private static void ValidateDerivative(
         VideoProductionSpecification specification,
-        Dictionary<Guid, CampaignDerivativeMedia> media)
+        Dictionary<Guid, CampaignDerivativeMedia> media,
+        Dictionary<Guid, CampaignDerivativeVideo> videos)
     {
         var expectedStart = 0;
-        foreach (var scene in specification.Scenes)
+        for (var index = 0; index < specification.Scenes.Count; index++)
         {
+            var scene = specification.Scenes[index];
             if (scene.StartMs != expectedStart || scene.DurationMs <= 0)
             {
                 throw new InvalidOperationException("Generated derivative scene timing is invalid.");
             }
 
-            var id = EffectiveMediaId(scene.VisualSource)
-                ?? throw new InvalidOperationException("Generated derivative lost its property-media fallback.");
-            var dimensions = media[id];
+            CampaignDerivativeMedia dimensions;
+            if (scene.VisualSource.Kind == VisualSourceKind.PropertyVideo)
+            {
+                var videoId = scene.VisualSource.PropertyVideoId
+                    ?? throw new InvalidOperationException("Generated derivative lost its property-video source.");
+                var requiredDurationMs = scene.DurationMs
+                    + (index + 1 < specification.Scenes.Count
+                        ? specification.Scenes[index + 1].TransitionIn.DurationMs
+                        : 0);
+                if (!videos.TryGetValue(videoId, out var video)
+                    || scene.VisualSource.PropertyVideoStartMs is not { } startMs
+                    || (long)startMs + requiredDurationMs > video.DurationMs)
+                {
+                    throw new InvalidOperationException("Generated derivative has an invalid property-video window.");
+                }
+
+                dimensions = new CampaignDerivativeMedia(videoId, video.Width, video.Height);
+            }
+            else
+            {
+                var id = EffectiveMediaId(scene.VisualSource)
+                    ?? throw new InvalidOperationException("Generated derivative lost its property-media fallback.");
+                dimensions = media[id];
+            }
             var expectedAspect = (decimal)specification.Output.Width / specification.Output.Height;
             if (!HasAspect(scene.Motion.StartViewport, dimensions, expectedAspect)
                 || !HasAspect(scene.Motion.EndViewport, dimensions, expectedAspect)

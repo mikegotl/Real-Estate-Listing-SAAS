@@ -35,6 +35,15 @@ public static class FfmpegCommandBuilder
         }
 
         var clips = clipGroups.ToDictionary(group => group.Key, group => group.Single());
+        var propertyVideoGroups = (request.PropertyVideos ?? [])
+            .GroupBy(asset => asset.PropertyVideoId)
+            .ToArray();
+        if (propertyVideoGroups.Any(group => group.Count() != 1))
+        {
+            throw new ArgumentException("Property video assets must have unique IDs.", nameof(request));
+        }
+
+        var propertyVideos = propertyVideoGroups.ToDictionary(group => group.Key, group => group.Single());
         var neighborhoodGroups = (request.NeighborhoodAssets ?? [])
             .GroupBy(asset => asset.NeighborhoodInsightId)
             .ToArray();
@@ -52,7 +61,13 @@ public static class FfmpegCommandBuilder
 
         ValidateOutput(request.Specification);
         ValidateTimeline(request.Specification);
-        var sceneAssets = scenes.Select(scene => ResolveAsset(scene, media, clips)).ToArray();
+        var sceneAssets = scenes.Select((scene, index) => ResolveAsset(
+            scene,
+            media,
+            clips,
+            propertyVideos,
+            scene.DurationMs + (index + 1 < scenes.Count ? scenes[index + 1].TransitionIn.DurationMs : 0)))
+            .ToArray();
         ValidateMediaViewports(scenes, sceneAssets, request.Specification.Output);
         ValidateNarration(request.Specification, request.Narration);
         var brandAssets = ValidateBranding(request, brandingTemplate);
@@ -71,14 +86,23 @@ public static class FfmpegCommandBuilder
             var extensionMs = index + 1 < scenes.Count
                 ? scenes[index + 1].TransitionIn.DurationMs
                 : 0;
-            if (sceneAssets[index].IsGeneratedClip)
+            if (sceneAssets[index].IsVideo)
             {
+                if (sceneAssets[index].IsGeneratedClip)
+                {
+                    arguments.AddRange(["-stream_loop", "-1"]);
+                }
+
+                if (sceneAssets[index].StartMs > 0)
+                {
+                    arguments.AddRange(["-ss", Seconds(sceneAssets[index].StartMs)]);
+                }
+
                 arguments.AddRange(
-                [
-                    "-stream_loop", "-1",
-                    "-t", Seconds(scenes[index].DurationMs + extensionMs),
-                    "-i", sceneAssets[index].FilePath,
-                ]);
+                    [
+                        "-t", Seconds(scenes[index].DurationMs + extensionMs),
+                        "-i", sceneAssets[index].FilePath,
+                    ]);
             }
             else
             {
@@ -242,7 +266,7 @@ public static class FfmpegCommandBuilder
     {
         var durationMs = scene.DurationMs + extensionMs;
         string transform;
-        if (asset.IsGeneratedClip)
+        if (asset.IsVideo)
         {
             transform = $"scale={output.Width}:{output.Height}:force_original_aspect_ratio=increase:flags=lanczos,"
                 + $"crop={output.Width}:{output.Height}";
@@ -758,7 +782,9 @@ public static class FfmpegCommandBuilder
     private static SceneVisualAsset ResolveAsset(
         VideoScene scene,
         Dictionary<Guid, VideoRenderMediaAsset> media,
-        Dictionary<Guid, VideoRenderGeneratedClipAsset> clips)
+        Dictionary<Guid, VideoRenderGeneratedClipAsset> clips,
+        Dictionary<Guid, VideoRenderPropertyVideoAsset> propertyVideos,
+        int requiredDurationMs)
     {
         if (scene.VisualSource.Kind == VisualSourceKind.GeneratedClip
             && scene.VisualSource.GeneratedClipId is { } clipId
@@ -770,7 +796,31 @@ public static class FfmpegCommandBuilder
                 throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid generated video asset.");
             }
 
-            return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true);
+            return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true, true, 0);
+        }
+
+        if (scene.VisualSource.Kind == VisualSourceKind.PropertyVideo
+            && scene.VisualSource.PropertyVideoId is { } propertyVideoId
+            && propertyVideos.TryGetValue(propertyVideoId, out var propertyVideo))
+        {
+            var startMs = scene.VisualSource.PropertyVideoStartMs ?? 0;
+            if (propertyVideo.Width <= 0
+                || propertyVideo.Height <= 0
+                || propertyVideo.DurationMs <= 0
+                || startMs < 0
+                || (long)startMs + requiredDurationMs > propertyVideo.DurationMs
+                || !File.Exists(propertyVideo.FilePath))
+            {
+                throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid property video asset or window.");
+            }
+
+            return new SceneVisualAsset(
+                propertyVideo.FilePath,
+                propertyVideo.Width,
+                propertyVideo.Height,
+                true,
+                false,
+                startMs);
         }
 
         var mediaId = scene.VisualSource.Kind == VisualSourceKind.PropertyMedia
@@ -786,7 +836,7 @@ public static class FfmpegCommandBuilder
             throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid still-image asset.");
         }
 
-        return new SceneVisualAsset(asset.FilePath, asset.Width, asset.Height, false);
+        return new SceneVisualAsset(asset.FilePath, asset.Width, asset.Height, false, false, 0);
     }
 
     private static void ValidateNarration(
@@ -895,7 +945,7 @@ public static class FfmpegCommandBuilder
         var outputAspect = (decimal)output.Width / output.Height;
         for (var index = 0; index < scenes.Count; index++)
         {
-            if (assets[index].IsGeneratedClip)
+            if (assets[index].IsVideo)
             {
                 continue;
             }
@@ -984,5 +1034,11 @@ public static class FfmpegCommandBuilder
 
     private readonly record struct PixelBox(int X, int Y, int Width, int Height);
 
-    private sealed record SceneVisualAsset(string FilePath, int Width, int Height, bool IsGeneratedClip);
+    private sealed record SceneVisualAsset(
+        string FilePath,
+        int Width,
+        int Height,
+        bool IsVideo,
+        bool IsGeneratedClip,
+        int StartMs);
 }

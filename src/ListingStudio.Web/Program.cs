@@ -157,6 +157,24 @@ app.MapGet("/property-videos/{videoId:guid}", async (
             enableRangeProcessing: true);
 }).RequireAuthorization();
 
+app.MapGet("/property-narration-scripts/{scriptId:guid}", async (
+    Guid scriptId,
+    HttpContext context,
+    IPropertyNarrationScriptService scriptService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var script = await scriptService.OpenReadAsync(userId, scriptId, cancellationToken);
+    return script is null
+        ? Results.NotFound()
+        : Results.Stream(script.Content, script.ContentType, script.Filename);
+}).RequireAuthorization();
+
 app.MapGet("/neighborhood-insights/{insightId:guid}/photo", async (
     Guid insightId,
     HttpContext context,

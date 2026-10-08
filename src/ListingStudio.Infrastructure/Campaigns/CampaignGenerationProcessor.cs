@@ -284,7 +284,22 @@ public sealed partial class CampaignGenerationProcessor(
                 && candidate.OrganizationId == job.OrganizationId)
             .Select(candidate => new CampaignDerivativeMedia(candidate.Id, candidate.Width, candidate.Height))
             .ToArrayAsync(cancellationToken);
-        var derivatives = derivativeGenerator.Generate(new CampaignDerivativeRequest(specification, media));
+        var propertyVideos = await dbContext.PropertyVideos.AsNoTracking()
+            .Where(candidate => candidate.PropertyId == job.PropertyId
+                && candidate.OrganizationId == job.OrganizationId
+                && candidate.ProcessingStatus == PropertyVideoProcessingStatus.Completed
+                && candidate.EnhancedBlobPath != null
+                && candidate.EnhancedWidth != null
+                && candidate.EnhancedHeight != null
+                && candidate.EnhancedDurationMs != null)
+            .Select(candidate => new CampaignDerivativeVideo(
+                candidate.Id,
+                candidate.EnhancedWidth!.Value,
+                candidate.EnhancedHeight!.Value,
+                candidate.EnhancedDurationMs!.Value))
+            .ToArrayAsync(cancellationToken);
+        var derivatives = derivativeGenerator.Generate(
+            new CampaignDerivativeRequest(specification, media, propertyVideos));
         foreach (var derivative in derivatives.Derivatives.Where(candidate =>
             candidate.AspectRatio == VideoAspectRatio.Landscape16By9))
         {
@@ -345,6 +360,11 @@ public sealed partial class CampaignGenerationProcessor(
                 specification,
                 directory,
                 cancellationToken);
+            var propertyVideos = await MaterializePropertyVideosAsync(
+                job,
+                specification,
+                directory,
+                cancellationToken);
             await videoRenderer.RenderAsync(
                 new VideoRenderRequest(
                     specification,
@@ -354,7 +374,8 @@ public sealed partial class CampaignGenerationProcessor(
                     null,
                     outputPath,
                     generatedClips,
-                    neighborhoodAssets),
+                    neighborhoodAssets,
+                    propertyVideos),
                 cancellationToken);
             var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{kind.ToString().ToLowerInvariant()}.mp4";
             var stored = false;
@@ -576,6 +597,58 @@ public sealed partial class CampaignGenerationProcessor(
                 clip.Width,
                 clip.Height,
                 clip.DurationMs));
+        }
+
+        return [.. result];
+    }
+
+    private async Task<VideoRenderPropertyVideoAsset[]> MaterializePropertyVideosAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        var ids = specification.Scenes
+            .Where(scene => scene.VisualSource.Kind == VisualSourceKind.PropertyVideo)
+            .Select(scene => scene.VisualSource.PropertyVideoId)
+            .OfType<Guid>()
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        var videos = await dbContext.PropertyVideos.AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId
+                && candidate.ProcessingStatus == PropertyVideoProcessingStatus.Completed
+                && candidate.EnhancedBlobPath != null
+                && candidate.EnhancedWidth != null
+                && candidate.EnhancedHeight != null
+                && candidate.EnhancedDurationMs != null
+                && ids.Contains(candidate.Id))
+            .ToArrayAsync(cancellationToken);
+        if (videos.Length != ids.Length)
+        {
+            throw new InvalidOperationException("A derivative references an unavailable enhanced property video.");
+        }
+
+        var result = new List<VideoRenderPropertyVideoAsset>(videos.Length);
+        foreach (var video in videos)
+        {
+            await using var source = await propertyMediaStorage.OpenReadAsync(
+                video.EnhancedBlobPath!, cancellationToken)
+                ?? throw new FileNotFoundException("An enhanced property video could not be opened.");
+            var path = Path.Combine(directory, $"property-video-{video.Id:N}.mp4");
+            await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await source.CopyToAsync(target, cancellationToken);
+            result.Add(new VideoRenderPropertyVideoAsset(
+                video.Id,
+                path,
+                video.EnhancedWidth!.Value,
+                video.EnhancedHeight!.Value,
+                video.EnhancedDurationMs!.Value));
         }
 
         return [.. result];

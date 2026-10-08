@@ -128,7 +128,7 @@
         "value": { "type": "string" },
         "source": {
           "type": "string",
-          "enum": ["verifiedProperty", "propertyStory", "approvedNeighborhood", "brandKit"]
+          "enum": ["verifiedProperty", "propertyStory", "acceptedScript", "approvedNeighborhood", "brandKit"]
         },
         "sourceReference": { "type": "string" },
         "visualAssetReferenceId": { "$ref": "#/$defs/nullableUuid" }
@@ -225,19 +225,28 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["propertyMedia", "generatedClip", "generativeMotionRequest"]
+          "enum": ["propertyMedia", "generatedClip", "generativeMotionRequest", "propertyVideo"]
         },
         "propertyMediaId": { "$ref": "#/$defs/nullableUuid" },
         "generatedClipId": { "$ref": "#/$defs/nullableUuid" },
         "fallbackPropertyMediaId": { "$ref": "#/$defs/nullableUuid" },
-        "generationInstruction": { "$ref": "#/$defs/nullableString" }
+        "generationInstruction": { "$ref": "#/$defs/nullableString" },
+        "propertyVideoId": { "$ref": "#/$defs/nullableUuid" },
+        "propertyVideoStartMs": {
+          "anyOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        }
       },
       "required": [
         "kind",
         "propertyMediaId",
         "generatedClipId",
         "fallbackPropertyMediaId",
-        "generationInstruction"
+        "generationInstruction",
+        "propertyVideoId",
+        "propertyVideoStartMs"
       ]
     },
     "transition": {

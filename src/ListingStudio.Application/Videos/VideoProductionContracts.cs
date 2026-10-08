@@ -9,6 +9,20 @@ public sealed record VideoMediaInput(
     int Height,
     PropertyMediaObservation Analysis);
 
+public sealed record VideoWalkthroughInput(
+    Guid PropertyVideoId,
+    string Filename,
+    int Width,
+    int Height,
+    int DurationMs);
+
+public sealed record AcceptedNarrationScriptSegment(string Key, string Text);
+
+public sealed record AcceptedNarrationScriptInput(
+    Guid ScriptId,
+    DateTimeOffset AcceptedAtUtc,
+    IReadOnlyList<AcceptedNarrationScriptSegment> Segments);
+
 public sealed record VideoPropertyStoryInput(
     Guid Id,
     int Version,
@@ -36,7 +50,9 @@ public sealed record VideoDirectionRequest(
     GroundedText CallToAction,
     IReadOnlySet<Guid> ApprovedGeneratedClipIds,
     IReadOnlySet<string> ApprovedBrandAssetIds,
-    IReadOnlySet<string> ApprovedMusicAssetIds);
+    IReadOnlySet<string> ApprovedMusicAssetIds,
+    AcceptedNarrationScriptInput? AcceptedNarrationScript = null,
+    IReadOnlyList<VideoWalkthroughInput>? WalkthroughVideos = null);
 
 public sealed record DirectedEditorialPlan(AudioPlan Audio, IReadOnlyList<VideoScene> Scenes);
 
