@@ -131,7 +131,7 @@
         new Dictionary<string, AddressLookupSuggestion>(StringComparer.OrdinalIgnoreCase);
     private string addressInputText = string.Empty;
     private string? addressLookupMessage;
-    private Color addressLookupMessageColor = Color.Secondary;
+    private Color addressLookupMessageColor = Color.Default;
     private int addressLookupFieldVersion;
 
     private Task SubmitAsync() => OnValidSubmit.InvokeAsync();

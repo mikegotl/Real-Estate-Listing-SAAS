@@ -170,6 +170,19 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
         Assert.Contains("app-header", content, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("/fonts/inter-latin-wght-normal.woff2")]
+    [InlineData("/fonts/fraunces-latin-wght-normal.woff2")]
+    public async Task SelfHostedBrandFontsAreServed(string path)
+    {
+        using var client = fixture.Factory.CreateClient();
+
+        using var response = await client.GetAsync(path);
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("font/woff2", response.Content.Headers.ContentType?.MediaType);
+    }
+
     [Fact]
     public async Task UnknownPageReturnsNotFoundPageInsideTheAppShell()
     {

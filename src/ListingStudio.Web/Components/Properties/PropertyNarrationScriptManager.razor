@@ -21,6 +21,7 @@
     @if (!IsReadOnly)
     {
         <label class="media-upload-control">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" />
             <span>@(script is null ? "Upload narration script" : "Replace narration script")</span>
             <InputFile OnChange="UploadAsync"
                        accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />

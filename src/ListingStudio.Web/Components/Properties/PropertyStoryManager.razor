@@ -5,7 +5,7 @@
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
         <div>
             <MudText Typo="Typo.h5" HtmlTag="h2">Marketing story</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
                 Grounded in verified listing data and completed photo observations.
             </MudText>
         </div>
@@ -40,16 +40,16 @@
     }
     else
     {
-        <MudText Typo="Typo.caption" Color="Color.Secondary">
+        <MudText Class="mud-text-secondary" Typo="Typo.caption">
             Version @story.Version · @story.GenerationVersion · @story.CreatedAtUtc.ToLocalTime().ToString("g")
         </MudText>
         <MudText Typo="Typo.h5" HtmlTag="h3" Class="mt-3">@story.Content.CampaignTitle</MudText>
         <MudText Typo="Typo.subtitle1" Class="mt-2">@story.Content.OpeningHook</MudText>
 
-        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Property narrative</MudText>
+        <MudText Typo="Typo.overline" Class="mud-text-secondary mt-5">Property narrative</MudText>
         <MudText Typo="Typo.body1">@story.Content.PropertyNarrative</MudText>
 
-        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Highlights</MudText>
+        <MudText Typo="Typo.overline" Class="mud-text-secondary mt-5">Highlights</MudText>
         <MudList T="string" Dense="true">
             @foreach (var highlight in story.Content.Highlights)
             {
@@ -57,16 +57,16 @@
             }
         </MudList>
 
-        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Voiceover script</MudText>
+        <MudText Typo="Typo.overline" Class="mud-text-secondary mt-5">Voiceover script</MudText>
         <MudText Typo="Typo.body1">@story.Content.VoiceoverScript</MudText>
 
-        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Closing call to action</MudText>
+        <MudText Typo="Typo.overline" Class="mud-text-secondary mt-5">Closing call to action</MudText>
         <MudText Typo="Typo.body1">@story.Content.ClosingCta</MudText>
 
-        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Long social caption</MudText>
+        <MudText Typo="Typo.overline" Class="mud-text-secondary mt-5">Long social caption</MudText>
         <MudText Typo="Typo.body1">@story.Content.SocialCaptionLong</MudText>
 
-        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="mt-5">Short social caption</MudText>
+        <MudText Typo="Typo.overline" Class="mud-text-secondary mt-5">Short social caption</MudText>
         <MudText Typo="Typo.body1">@story.Content.SocialCaptionShort</MudText>
     }
 </MudPaper>

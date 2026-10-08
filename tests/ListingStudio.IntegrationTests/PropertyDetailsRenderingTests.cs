@@ -70,6 +70,10 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("$420,000", content, StringComparison.Ordinal);
         Assert.Contains("1,850", content, StringComparison.Ordinal);
         Assert.Contains("mobile-nav", content, StringComparison.Ordinal);
+        Assert.Contains("Next step", content, StringComparison.Ordinal);
+        Assert.Contains("Add listing photos", content, StringComparison.Ordinal);
+        Assert.Contains("Story &amp; script", content, StringComparison.Ordinal);
+        Assert.Contains("Neighborhood", content, StringComparison.Ordinal);
     }
 }
 

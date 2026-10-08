@@ -22,6 +22,7 @@
     @if (!IsReadOnly)
     {
         <label class="media-upload-control">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" />
             <span>Add listing videos</span>
             <InputFile OnChange="FilesSelectedAsync" multiple
                        accept=".mp4,.m4v,.mov,.webm,video/mp4,video/x-m4v,video/quicktime,video/webm" />
