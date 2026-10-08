@@ -1,8 +1,10 @@
 using System.Buffers.Binary;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -56,6 +58,48 @@ public sealed class PropertyMediaManagementTests(PostgreSqlWebApplicationFixture
         Assert.True(await mediaService.DeleteAsync(userId, propertyId, reordered[0].Id));
         Assert.Equal(39, (await mediaService.ListAsync(userId, propertyId)).Count);
         Assert.Null(await mediaService.OpenReadAsync(userId, reordered[0].Id));
+    }
+
+    [Fact]
+    public async Task PropertyListSummarizesPhotosCoverAndLatestCampaign()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var (userId, propertyId) = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "summary");
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var empty = Assert.Single(await properties.ListAsync(userId), item => item.Id == propertyId);
+        Assert.Equal(0, empty.PhotoCount);
+        Assert.Null(empty.CoverMediaId);
+        Assert.Null(empty.LatestCampaignStatus);
+
+        for (var index = 0; index < 2; index++)
+        {
+            await using var content = new MemoryStream(OnePixelPng);
+            await mediaService.UploadAsync(
+                userId,
+                propertyId,
+                new PropertyMediaUpload($"photo-{index}.png", "image/png", content.Length, content));
+        }
+
+        var uploaded = await mediaService.ListAsync(userId, propertyId);
+        Assert.True(await mediaService.ReorderAsync(userId, propertyId, [uploaded[1].Id, uploaded[0].Id]));
+        var failed = await dbContext.PropertyMedia.SingleAsync(media => media.Id == uploaded[0].Id);
+        failed.BeginAnalysis(DateTimeOffset.UtcNow);
+        failed.FailAnalysis("Vision request failed.", nextAttemptAtUtc: null);
+        var property = await dbContext.Properties.SingleAsync(candidate => candidate.Id == propertyId);
+        dbContext.CampaignGenerationJobs.Add(CampaignGenerationJob.Create(
+            property.OrganizationId, propertyId, userId, "fingerprint-summary", DateTimeOffset.UtcNow));
+        await dbContext.SaveChangesAsync();
+
+        var summary = Assert.Single(await properties.ListAsync(userId), item => item.Id == propertyId);
+        Assert.Equal(2, summary.PhotoCount);
+        Assert.Equal(1, summary.FailedAnalysisCount);
+        Assert.Equal(uploaded[1].Id, summary.CoverMediaId);
+        Assert.Equal(CampaignGenerationStatus.Queued, summary.LatestCampaignStatus);
+        Assert.Equal(3, summary.Bedrooms);
+        Assert.Equal(2_100, summary.SquareFeet);
     }
 
     [Fact]

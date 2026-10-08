@@ -1,3 +1,4 @@
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 
 namespace ListingStudio.Application.Properties;
@@ -27,7 +28,15 @@ public sealed record PropertySummary(
     decimal ListingPrice,
     PropertyType PropertyType,
     ListingStatus ListingStatus,
-    bool IsArchived);
+    bool IsArchived,
+    int Bedrooms,
+    decimal Bathrooms,
+    int? SquareFeet,
+    DateTimeOffset UpdatedAtUtc,
+    int PhotoCount,
+    int FailedAnalysisCount,
+    Guid? CoverMediaId,
+    CampaignGenerationStatus? LatestCampaignStatus);
 
 public sealed record PropertyDetailsResult(
     Guid Id,

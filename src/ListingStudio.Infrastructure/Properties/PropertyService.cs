@@ -1,4 +1,5 @@
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -33,7 +34,27 @@ public sealed class PropertyService(ApplicationDbContext dbContext) : IPropertyS
                 property.ListingPrice,
                 property.PropertyType,
                 property.ListingStatus,
-                property.ArchivedAtUtc != null))
+                property.ArchivedAtUtc != null,
+                property.Bedrooms,
+                property.Bathrooms,
+                property.SquareFeet,
+                property.UpdatedAtUtc,
+                dbContext.PropertyMedia.Count(media =>
+                    media.OrganizationId == organizationId && media.PropertyId == property.Id),
+                dbContext.PropertyMedia.Count(media =>
+                    media.OrganizationId == organizationId
+                    && media.PropertyId == property.Id
+                    && media.AnalysisStatus == PropertyMediaAnalysisStatus.Failed),
+                dbContext.PropertyMedia
+                    .Where(media => media.OrganizationId == organizationId && media.PropertyId == property.Id)
+                    .OrderBy(media => media.DisplayOrder)
+                    .Select(media => (Guid?)media.Id)
+                    .FirstOrDefault(),
+                dbContext.CampaignGenerationJobs
+                    .Where(job => job.OrganizationId == organizationId && job.PropertyId == property.Id)
+                    .OrderByDescending(job => job.CreatedAtUtc)
+                    .Select(job => (CampaignGenerationStatus?)job.Status)
+                    .FirstOrDefault()))
             .ToListAsync(cancellationToken);
     }
 

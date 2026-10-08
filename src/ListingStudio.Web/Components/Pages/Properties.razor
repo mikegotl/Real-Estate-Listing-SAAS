@@ -18,19 +18,23 @@
                StartIcon="@Icons.Material.Filled.Add">New property</MudButton>
 </section>
 
-<MudPaper Elevation="0" Class="content-card property-list-card">
-    <MudStack Row="true" AlignItems="AlignItems.Center" Class="property-toolbar">
-        <MudCheckBox T="bool" @bind-Value="includeArchived" Label="Show archived" Color="Color.Primary" />
-        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="LoadAsync"
-                   StartIcon="@Icons.Material.Filled.Refresh">Refresh</MudButton>
-    </MudStack>
+<div class="property-toolbar">
+    <MudTextField T="string" @bind-Value="search" Immediate="true" DebounceInterval="200" Clearable="true"
+                  Placeholder="Search by address, city or ZIP" Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Class="property-search" aria-label="Search properties" />
+    <MudCheckBox T="bool" Value="includeArchived" ValueChanged="IncludeArchivedChangedAsync" Label="Show archived" Color="Color.Primary" />
+    <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="LoadAsync"
+               StartIcon="@Icons.Material.Filled.Refresh">Refresh</MudButton>
+</div>
 
-    @if (!loaded)
-    {
-        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-    }
-    else if (properties.Count == 0)
-    {
+@if (!loaded)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (properties.Count == 0)
+{
+    <MudPaper Elevation="0" Class="content-card">
         <div class="empty-state">
             <span class="empty-state-icon"><MudIcon Icon="@Icons.Material.Filled.AddHomeWork" Size="Size.Large" /></span>
             <MudText Typo="Typo.h5" HtmlTag="h2">Your property workspace is ready</MudText>
@@ -38,47 +42,47 @@
             <MudButton Href="/properties/new" Variant="Variant.Filled" Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add">Add first property</MudButton>
         </div>
-    }
-    else
-    {
-        <MudTable Items="properties" Hover="true" Breakpoint="Breakpoint.Sm">
-            <HeaderContent>
-                <MudTh>Address</MudTh>
-                <MudTh>Type</MudTh>
-                <MudTh>Status</MudTh>
-                <MudTh>Price</MudTh>
-                <MudTh></MudTh>
-            </HeaderContent>
-            <RowTemplate Context="property">
-                <MudTd DataLabel="Address">
-                    @property.Address1<br />
-                    <MudText Typo="Typo.caption">@property.City, @property.State @property.ZipCode</MudText>
-                </MudTd>
-                <MudTd DataLabel="Type">@Display(property.PropertyType)</MudTd>
-                <MudTd DataLabel="Status">
-                    <MudChip T="string" Size="Size.Small" Color="@(property.IsArchived ? Color.Default : Color.Primary)">
-                        @(property.IsArchived ? "Archived" : Display(property.ListingStatus))
-                    </MudChip>
-                </MudTd>
-                <MudTd DataLabel="Price">@property.ListingPrice.ToString("C0")</MudTd>
-                <MudTd DataLabel="Actions">
-                    <MudButton Href="@($"/properties/{property.Id}")" Size="Size.Small" Variant="Variant.Text">Details</MudButton>
-                    @if (!property.IsArchived)
-                    {
-                        <MudButton Href="@($"/properties/{property.Id}/edit")" Size="Size.Small" Variant="Variant.Text">Edit</MudButton>
-                    }
-                </MudTd>
-            </RowTemplate>
-        </MudTable>
-    }
-</MudPaper>
+    </MudPaper>
+}
+else if (Filtered.Count == 0)
+{
+    <MudPaper Elevation="0" Class="content-card">
+        <div class="empty-state">
+            <span class="empty-state-icon"><MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" /></span>
+            <MudText Typo="Typo.h5" HtmlTag="h2">No properties match "@search"</MudText>
+            <MudText Typo="Typo.body2">Try a street name, city or ZIP code.</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => search = null)">Clear search</MudButton>
+        </div>
+    </MudPaper>
+}
+else
+{
+    <p class="property-count">@Filtered.Count @(Filtered.Count == 1 ? "property" : "properties")</p>
+    <div class="property-card-grid">
+        @foreach (var property in Filtered)
+        {
+            <PropertyCard @key="property.Id" Property="property" />
+        }
+    </div>
+}
 
 @code {
     private IReadOnlyList<PropertySummary> properties = [];
     private bool includeArchived;
     private bool loaded;
+    private string? search;
+
+    private IReadOnlyList<PropertySummary> Filtered => string.IsNullOrWhiteSpace(search)
+        ? properties
+        : [.. properties.Where(property => Matches(property, search.Trim()))];
 
     protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task IncludeArchivedChangedAsync(bool value)
+    {
+        includeArchived = value;
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -88,12 +92,8 @@
         loaded = true;
     }
 
-    private static string Display(Enum value) => value switch
-    {
-        PropertyType.SingleFamily => "Single family",
-        PropertyType.MultiFamily => "Multi-family",
-        ListingStatus.ComingSoon => "Coming soon",
-        ListingStatus.OffMarket => "Off market",
-        _ => value.ToString(),
-    };
+    private static bool Matches(PropertySummary property, string term) =>
+        property.Address1.Contains(term, StringComparison.OrdinalIgnoreCase)
+        || property.City.Contains(term, StringComparison.OrdinalIgnoreCase)
+        || property.ZipCode.Contains(term, StringComparison.OrdinalIgnoreCase);
 }
