@@ -1,12 +1,12 @@
 @page "/properties/{PropertyId:guid}"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@inherits OwningComponentBase
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject IPropertyService PropertyService
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
 
-<PageTitle>Property details</PageTitle>
+<PageTitle>@(property is null ? "Property details" : property.Address1)</PageTitle>
 
 <PropertyPageProviders />
 
@@ -21,47 +21,103 @@ else if (property is null)
 }
 else
 {
-    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="property-header mb-6">
-        <div>
-            <MudText Typo="Typo.h3" HtmlTag="h1">@property.Address1</MudText>
-            <MudText Typo="Typo.body1">@property.City, @property.State @property.ZipCode</MudText>
-        </div>
-        <MudStack Row="true" Spacing="2">
-            @if (!property.IsArchived)
-            {
-                <MudButton Href="@($"/properties/{PropertyId}/edit")" Variant="Variant.Outlined" Color="Color.Primary">Edit</MudButton>
-                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ArchiveAsync">Archive</MudButton>
-            }
-            <MudButton Href="/properties" Variant="Variant.Text">Back</MudButton>
-        </MudStack>
-    </MudStack>
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/properties">Properties</a>
+        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" />
+        <span aria-current="page">@property.Address1</span>
+    </nav>
 
-    @if (property.IsArchived)
+    <section class="property-hero @(coverMediaId is null ? "no-cover" : null)"
+             style="@(coverMediaId is null ? null : $"background-image: url('/property-media/{coverMediaId}')")">
+        <div class="property-hero-top">
+            <MudChip T="string" Size="Size.Small" Class="hero-status">
+                @(property.IsArchived ? "Archived" : Display(property.ListingStatus))
+            </MudChip>
+            <div class="property-hero-actions">
+                @if (!property.IsArchived)
+                {
+                    <MudButton Href="@($"/properties/{PropertyId}/edit")" Variant="Variant.Filled" Class="cta-on-night"
+                               StartIcon="@Icons.Material.Filled.Edit">Edit</MudButton>
+                    <MudButton Variant="Variant.Text" Class="hero-text-button" OnClick="ArchiveAsync"
+                               StartIcon="@Icons.Material.Filled.Archive">Archive</MudButton>
+                }
+            </div>
+        </div>
+        @if (coverMediaId is null)
+        {
+            <div class="property-hero-empty">
+                <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
+                <span>Your first listing photo becomes the cover image</span>
+            </div>
+        }
+        <div class="property-hero-copy">
+            <span class="hero-price">@property.ListingPrice.ToString("C0")</span>
+            <MudText Typo="Typo.h3" HtmlTag="h1">@property.Address1</MudText>
+            <span class="hero-locality">
+                @(string.IsNullOrWhiteSpace(property.Address2) ? null : $"{property.Address2} · ")@property.City, @property.State @property.ZipCode
+            </span>
+        </div>
+    </section>
+
+    <dl class="fact-strip">
+        <div><dt>Bedrooms</dt><dd>@property.Bedrooms</dd></div>
+        <div><dt>Bathrooms</dt><dd>@property.Bathrooms.ToString("0.#")</dd></div>
+        <div><dt>Square feet</dt><dd>@(property.SquareFeet?.ToString("N0") ?? "—")</dd></div>
+        <div><dt>Lot size</dt><dd>@(property.LotSize is null ? "—" : $"{property.LotSize:0.##} ac")</dd></div>
+        <div><dt>Year built</dt><dd>@(property.YearBuilt?.ToString() ?? "—")</dd></div>
+        <div><dt>Type</dt><dd>@Display(property.PropertyType)</dd></div>
+    </dl>
+
+    @if (nextStep is not null)
     {
-        <MudAlert Severity="Severity.Info" Class="mb-4">This property is archived and read-only.</MudAlert>
+        <section class="next-step" aria-live="polite">
+            <span class="next-step-icon"><MudIcon Icon="@Icons.Material.Filled.Flag" /></span>
+            <div>
+                <span class="eyebrow">Next step</span>
+                <strong>@nextStep.Title</strong>
+                <p>@nextStep.Description</p>
+            </div>
+            @if (nextStep.Tab is { } tab && nextStep.ActionLabel is not null)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => ShowTabAsync(tab))"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">@nextStep.ActionLabel</MudButton>
+            }
+        </section>
     }
 
-    <MudPaper Class="pa-6">
-        <MudGrid Spacing="3">
-            <MudItem xs="12" md="4"><Detail Label="Listing price" Value="@property.ListingPrice.ToString("C0")" /></MudItem>
-            <MudItem xs="12" md="4"><Detail Label="Status" Value="@Display(property.ListingStatus)" /></MudItem>
-            <MudItem xs="12" md="4"><Detail Label="Property type" Value="@Display(property.PropertyType)" /></MudItem>
-            <MudItem xs="6" md="3"><Detail Label="Bedrooms" Value="@property.Bedrooms.ToString()" /></MudItem>
-            <MudItem xs="6" md="3"><Detail Label="Bathrooms" Value="@property.Bathrooms.ToString("0.#")" /></MudItem>
-            <MudItem xs="6" md="3"><Detail Label="Square feet" Value="@(property.SquareFeet?.ToString("N0") ?? "—")" /></MudItem>
-            <MudItem xs="6" md="3"><Detail Label="Lot size" Value="@(property.LotSize is null ? "—" : $"{property.LotSize:0.##} acres")" /></MudItem>
-            <MudItem xs="12" md="6"><Detail Label="Year built" Value="@(property.YearBuilt?.ToString() ?? "—")" /></MudItem>
-            <MudItem xs="12" md="6"><Detail Label="Address line 2" Value="@(property.Address2 ?? "—")" /></MudItem>
-            <MudItem xs="12"><Detail Label="Description" Value="@(property.Description ?? "—")" /></MudItem>
-        </MudGrid>
-    </MudPaper>
-
-    <PropertyMediaManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
-    <PropertyVideoManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
-    <NeighborhoodInsightsManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
-    <PropertyStoryManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
-    <PropertyNarrationScriptManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
-    <CampaignGenerationManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+    <MudTabs @bind-ActivePanelIndex="activeTab" @bind-ActivePanelIndex:after="RefreshSummaryAsync"
+             KeepPanelsAlive="true" Elevation="0" ApplyEffectsToContainer="true"
+             Class="property-tabs" TabPanelsClass="property-tab-panels">
+        <MudTabPanel Text="Overview" Icon="@Icons.Material.Filled.Info">
+            <MudPaper Class="pa-6">
+                <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">About this property</MudText>
+                <MudText Typo="Typo.body1" Class="property-description">
+                    @(string.IsNullOrWhiteSpace(property.Description) ? "No description yet. Add one from Edit so generated marketing can draw on it." : property.Description)
+                </MudText>
+                <MudDivider Class="my-6" />
+                <MudGrid Spacing="3">
+                    <MudItem xs="6" md="3"><Detail Label="Listing price" Value="@property.ListingPrice.ToString("C0")" /></MudItem>
+                    <MudItem xs="6" md="3"><Detail Label="Status" Value="@Display(property.ListingStatus)" /></MudItem>
+                    <MudItem xs="6" md="3"><Detail Label="Property type" Value="@Display(property.PropertyType)" /></MudItem>
+                    <MudItem xs="6" md="3"><Detail Label="Address line 2" Value="@(property.Address2 ?? "—")" /></MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudTabPanel>
+        <MudTabPanel Text="Media" Icon="@Icons.Material.Filled.PhotoLibrary" BadgeData="@(photoCount > 0 ? photoCount : null)" BadgeColor="Color.Secondary">
+            <PropertyMediaManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" MediaChanged="RefreshSummaryAsync" />
+            <PropertyVideoManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+        </MudTabPanel>
+        <MudTabPanel Text="Neighborhood" Icon="@Icons.Material.Filled.Map">
+            <NeighborhoodInsightsManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+        </MudTabPanel>
+        <MudTabPanel Text="Story & script" Icon="@Icons.Material.Filled.AutoStories">
+            <PropertyStoryManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+            <PropertyNarrationScriptManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+        </MudTabPanel>
+        <MudTabPanel Text="Campaign" Icon="@Icons.Material.Filled.MovieCreation">
+            <CampaignGenerationManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+        </MudTabPanel>
+    </MudTabs>
 }
 
 @code {
@@ -70,12 +126,53 @@ else
 
     private PropertyDetailsResult? property;
     private bool loaded;
+    private int activeTab;
+    private int photoCount;
+    private Guid? coverMediaId;
+    private PropertyNextStep? nextStep;
+
+    private IPropertyService PropertyService => ScopedServices.GetRequiredService<IPropertyService>();
 
     protected override async Task OnParametersSetAsync()
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         property = await PropertyService.GetAsync(userId, PropertyId);
+        if (property is not null)
+        {
+            await LoadSummaryAsync(userId);
+        }
+
         loaded = true;
+    }
+
+    private async Task RefreshSummaryAsync()
+    {
+        if (property is null)
+        {
+            return;
+        }
+
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await LoadSummaryAsync(userId);
+    }
+
+    private async Task LoadSummaryAsync(string userId)
+    {
+        var media = await ScopedServices.GetRequiredService<IPropertyMediaService>().ListAsync(userId, PropertyId);
+        var campaign = await ScopedServices.GetRequiredService<ICampaignGenerationService>().GetLatestAsync(userId, PropertyId);
+        photoCount = media.Count;
+        coverMediaId = media.OrderBy(item => item.DisplayOrder).Select(item => (Guid?)item.Id).FirstOrDefault();
+        nextStep = PropertyNextSteps.Determine(
+            property!.IsArchived,
+            media.Count,
+            media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed),
+            campaign?.Status);
+    }
+
+    private async Task ShowTabAsync(PropertyDetailsTab tab)
+    {
+        activeTab = (int)tab;
+        await RefreshSummaryAsync();
     }
 
     private async Task ArchiveAsync()

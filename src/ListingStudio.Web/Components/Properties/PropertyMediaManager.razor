@@ -11,6 +11,7 @@
     @if (!IsReadOnly)
     {
         <label class="media-upload-control">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" />
             <span>Add listing photos</span>
             <InputFile OnChange="FilesSelectedAsync" multiple
                        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
@@ -126,6 +127,9 @@
     [Parameter]
     public bool IsReadOnly { get; set; }
 
+    [Parameter]
+    public EventCallback MediaChanged { get; set; }
+
     private readonly List<UploadState> uploads = [];
     private List<PropertyMediaItem> media = [];
     private Guid? draggedMediaId;
@@ -133,7 +137,20 @@
     private string? message;
     private Severity messageSeverity = Severity.Info;
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    private Guid? loadedPropertyId;
+
+    // Reload only when the property changes. The parent re-renders after MediaChanged, and reloading here
+    // would overlap the next upload's call on this component's DbContext.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedPropertyId == PropertyId)
+        {
+            return;
+        }
+
+        loadedPropertyId = PropertyId;
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -141,6 +158,12 @@
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         media = [.. await Service.ListAsync(userId, PropertyId)];
         loaded = true;
+    }
+
+    private async Task ReloadAfterChangeAsync()
+    {
+        await LoadAsync();
+        await MediaChanged.InvokeAsync();
     }
 
     private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs)
@@ -193,7 +216,7 @@
                 new PropertyMediaUpload(upload.File.Name, upload.File.ContentType, upload.File.Size, progressStream));
             upload.Progress = 100;
             uploads.Remove(upload);
-            await LoadAsync();
+            await ReloadAfterChangeAsync();
             ShowMessage("Photo uploaded.", Severity.Success);
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
@@ -209,7 +232,7 @@
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         if (await Service.DeleteAsync(userId, PropertyId, mediaId))
         {
-            await LoadAsync();
+            await ReloadAfterChangeAsync();
             ShowMessage("Photo deleted.", Severity.Success);
         }
     }
@@ -251,7 +274,7 @@
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         await Service.ReorderAsync(userId, PropertyId, media.Select(item => item.Id).ToArray());
-        await LoadAsync();
+        await ReloadAfterChangeAsync();
         ShowMessage("Photo order saved.", Severity.Success);
     }
 
@@ -260,7 +283,7 @@
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         if (await Service.RetryAnalysisAsync(userId, PropertyId, mediaId))
         {
-            await LoadAsync();
+            await ReloadAfterChangeAsync();
             ShowMessage("Photo analysis queued for retry.", Severity.Success);
         }
     }
