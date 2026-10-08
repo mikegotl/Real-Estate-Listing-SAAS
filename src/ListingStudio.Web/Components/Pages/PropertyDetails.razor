@@ -124,6 +124,10 @@ else
     [Parameter]
     public Guid PropertyId { get; set; }
 
+    // Lets property cards and the workspace link straight to the tab a next step points at, such as ?tab=media.
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
     private PropertyDetailsResult? property;
     private bool loaded;
     private int activeTab;
@@ -132,6 +136,14 @@ else
     private PropertyNextStep? nextStep;
 
     private IPropertyService PropertyService => ScopedServices.GetRequiredService<IPropertyService>();
+
+    protected override void OnInitialized()
+    {
+        if (Enum.TryParse<PropertyDetailsTab>(Tab, ignoreCase: true, out var tab) && Enum.IsDefined(tab))
+        {
+            activeTab = (int)tab;
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {

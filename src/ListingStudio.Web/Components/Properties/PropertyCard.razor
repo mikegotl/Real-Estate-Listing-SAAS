@@ -1,0 +1,53 @@
+<article class="property-card @(Property.IsArchived ? "is-archived" : null)">
+    <a class="property-card-cover @(Property.CoverMediaId is null ? "no-cover" : null)" href="@PropertyDisplay.DetailsUrl(Property.Id)"
+       style="@(Property.CoverMediaId is null ? null : $"background-image: url('/property-media/{Property.CoverMediaId}')")"
+       aria-label="@($"Open {Property.Address1}")">
+        @if (Property.CoverMediaId is null)
+        {
+            <span class="property-card-placeholder">
+                <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
+                <span>No photos yet</span>
+            </span>
+        }
+        <span class="property-card-status">@PropertyDisplay.Status(Property)</span>
+        @if (Property.PhotoCount > 0)
+        {
+            <span class="property-card-photos">
+                <MudIcon Icon="@Icons.Material.Filled.PhotoLibrary" Size="Size.Small" /> @Property.PhotoCount
+            </span>
+        }
+    </a>
+    <div class="property-card-body">
+        <span class="property-card-price">@Property.ListingPrice.ToString("C0")</span>
+        <h3><a href="@PropertyDisplay.DetailsUrl(Property.Id)">@Property.Address1</a></h3>
+        <span class="property-card-locality">@Property.City, @Property.State @Property.ZipCode</span>
+        <ul class="property-card-facts">
+            <li>@Property.Bedrooms bd</li>
+            <li>@Property.Bathrooms.ToString("0.#") ba</li>
+            @if (Property.SquareFeet is { } squareFeet)
+            {
+                <li>@squareFeet.ToString("N0") sq ft</li>
+            }
+            <li>@PropertyDisplay.Name(Property.PropertyType)</li>
+        </ul>
+    </div>
+    <div class="property-card-footer">
+        <a class="stage-pill @PropertyDisplay.StageTone(Property)" href="@PropertyDisplay.DetailsUrl(Property.Id, nextStep.Tab)">
+            @nextStep.Title
+        </a>
+        @if (!Property.IsArchived)
+        {
+            <MudIconButton Href="@($"/properties/{Property.Id}/edit")" Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           aria-label="@($"Edit {Property.Address1}")" />
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public PropertySummary Property { get; set; } = default!;
+
+    private PropertyNextStep nextStep = default!;
+
+    protected override void OnParametersSet() => nextStep = WorkspaceSummary.NextStepFor(Property);
+}

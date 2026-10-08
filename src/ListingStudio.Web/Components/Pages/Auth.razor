@@ -1,37 +1,146 @@
 @page "/auth"
 @attribute [Authorize]
+@attribute [StreamRendering]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPropertyService PropertyService
+@inject IBillingService BillingService
 
 <PageTitle>Workspace</PageTitle>
 
 <section class="workspace-hero">
     <div>
-        <span class="eyebrow">YOUR WORKSPACE</span>
-        <MudText Typo="Typo.h2" HtmlTag="h1">Welcome to Listing Studio</MudText>
-        <MudText Typo="Typo.h6" HtmlTag="p">Manage your inventory, build campaigns, and keep production moving.</MudText>
+        <span class="eyebrow light">@(billing?.OrganizationName ?? "Your workspace")</span>
+        <MudText Typo="Typo.h2" HtmlTag="h1">Welcome back</MudText>
+        <MudText Typo="Typo.h6" HtmlTag="p">@HeroSubtitle</MudText>
     </div>
     <MudButton Href="/properties/new" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Class="cta-on-night"
                StartIcon="@Icons.Material.Filled.Add">Add a property</MudButton>
 </section>
 
-<MudGrid Spacing="3" Class="workspace-grid">
-    <MudItem xs="12" md="8">
-        <MudPaper Elevation="0" Class="workspace-card primary-workspace-card">
-            <span class="feature-icon indigo"><MudIcon Icon="@Icons.Material.Filled.HomeWork" /></span>
-            <div>
-                <span class="eyebrow">PROPERTY PIPELINE</span>
-                <MudText Typo="Typo.h4" HtmlTag="h2">Build your next listing campaign</MudText>
-                <MudText Typo="Typo.body1">Start with verified property details, add media, then generate your story and campaign assets.</MudText>
-                <MudButton Href="/properties" Variant="Variant.Filled" Color="Color.Primary" Class="mt-5"
-                           EndIcon="@Icons.Material.Filled.ArrowForward">View properties</MudButton>
+@if (summary is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (summary.ActiveListings == 0)
+{
+    <MudPaper Elevation="0" Class="workspace-card primary-workspace-card">
+        <span class="feature-icon indigo"><MudIcon Icon="@Icons.Material.Filled.HomeWork" /></span>
+        <div>
+            <span class="eyebrow">GET STARTED</span>
+            <MudText Typo="Typo.h4" HtmlTag="h2">Build your first listing campaign</MudText>
+            <MudText Typo="Typo.body1">Start with verified property details, add photos, then generate your story, narration and videos.</MudText>
+            <MudButton Href="/properties/new" Variant="Variant.Filled" Color="Color.Primary" Class="mt-5"
+                       EndIcon="@Icons.Material.Filled.ArrowForward">Add your first property</MudButton>
+        </div>
+    </MudPaper>
+}
+else
+{
+    <dl class="workspace-metrics">
+        <div><dt>Active listings</dt><dd>@summary.ActiveListings</dd></div>
+        <div class="@(summary.ListingsNeedingPhotos > 0 ? "attention" : null)"><dt>Need photos</dt><dd>@summary.ListingsNeedingPhotos</dd></div>
+        <div><dt>Campaigns in production</dt><dd>@summary.CampaignsInProgress</dd></div>
+        <div><dt>Campaigns ready</dt><dd>@summary.CampaignsReady</dd></div>
+    </dl>
+
+    <div class="workspace-columns">
+        <MudPaper Elevation="0" Class="content-card attention-card">
+            <div class="section-row">
+                <MudText Typo="Typo.h5" HtmlTag="h2">Needs your attention</MudText>
+                <MudButton Href="/properties" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">All properties</MudButton>
             </div>
+            @if (summary.NeedsAttention.Count == 0)
+            {
+                <div class="attention-clear">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" />
+                    <span>Nothing is waiting on you. Campaigns in production will appear here if a stage needs attention.</span>
+                </div>
+            }
+            else
+            {
+                <ul class="attention-list">
+                    @foreach (var item in summary.NeedsAttention)
+                    {
+                        <li>
+                            <span class="attention-thumb @(item.Property.CoverMediaId is null ? "no-cover" : null)"
+                                  style="@(item.Property.CoverMediaId is null ? null : $"background-image: url('/property-media/{item.Property.CoverMediaId}')")">
+                                @if (item.Property.CoverMediaId is null)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" Size="Size.Small" />
+                                }
+                            </span>
+                            <div class="attention-copy">
+                                <a href="@PropertyDisplay.DetailsUrl(item.Property.Id)">@item.Property.Address1</a>
+                                <span class="stage-pill @PropertyDisplay.StageTone(item.Property)">@item.NextStep.Title</span>
+                                <p>@item.NextStep.Description</p>
+                            </div>
+                            @if (item.NextStep.ActionLabel is not null)
+                            {
+                                <MudButton Href="@PropertyDisplay.DetailsUrl(item.Property.Id, item.NextStep.Tab)" Variant="Variant.Outlined"
+                                           Color="Color.Primary" Size="Size.Small">@item.NextStep.ActionLabel</MudButton>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
         </MudPaper>
-    </MudItem>
-    <MudItem xs="12" md="4">
-        <MudPaper Elevation="0" Class="workspace-card compact-workspace-card">
-            <span class="feature-icon sky"><MudIcon Icon="@Icons.Material.Filled.CreditCard" /></span>
-            <MudText Typo="Typo.h5" HtmlTag="h2">Plan and usage</MudText>
-            <MudText Typo="Typo.body2">Review your subscription, monthly allowance, and campaign usage.</MudText>
-            <MudButton Href="/billing" Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward">Open billing</MudButton>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+
+        @if (billing is not null)
+        {
+            <MudPaper Elevation="0" Class="content-card plan-card">
+                <span class="eyebrow">PLAN AND USAGE</span>
+                <MudText Typo="Typo.h5" HtmlTag="h2">@billing.Plan plan</MudText>
+                @if (billing.MonthlyCampaignAllowance > 0)
+                {
+                    <div class="plan-usage">
+                        <strong>@billing.CampaignUsage</strong>
+                        <span>of @billing.MonthlyCampaignAllowance campaigns used this period</span>
+                    </div>
+                    <MudProgressLinear Value="@UsagePercent" Color="Color.Secondary" Rounded="true" Size="Size.Medium" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Resets @billing.CurrentPeriodEndUtc.ToString("MMMM d")</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">This plan includes no monthly campaigns. @billing.CampaignUsage generated this period.</MudText>
+                }
+                <MudButton Href="/billing" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">Open billing</MudButton>
+            </MudPaper>
+        }
+    </div>
+
+    <div class="section-row">
+        <MudText Typo="Typo.h5" HtmlTag="h2">Recently updated</MudText>
+    </div>
+    <div class="property-card-grid">
+        @foreach (var property in summary.RecentlyUpdated)
+        {
+            <PropertyCard @key="property.Id" Property="property" />
+        }
+    </div>
+}
+
+@code {
+    private WorkspaceSummary? summary;
+    private BillingOverview? billing;
+
+    private string HeroSubtitle => summary switch
+    {
+        null => "Loading your listings…",
+        { ActiveListings: 0 } => "Add a listing to start producing campaigns.",
+        { NeedsAttention.Count: 0 } => "Every listing is moving. Nothing needs you right now.",
+        { NeedsAttention.Count: var count } => $"{count} {(count == 1 ? "listing needs" : "listings need")} your attention.",
+    };
+
+    private double UsagePercent => billing is null || billing.MonthlyCampaignAllowance <= 0
+        ? 0
+        : Math.Min(100, billing.CampaignUsage * 100d / billing.MonthlyCampaignAllowance);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        summary = WorkspaceSummary.From(await PropertyService.ListAsync(userId));
+        billing = await BillingService.GetOverviewAsync(userId);
+    }
+}

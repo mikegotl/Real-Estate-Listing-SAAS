@@ -75,6 +75,71 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("Story &amp; script", content, StringComparison.Ordinal);
         Assert.Contains("Neighborhood", content, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task WorkspaceAndPropertyListRenderPropertyCards()
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = HeaderAuthenticationHandler.SchemeName;
+                    options.DefaultChallengeScheme = HeaderAuthenticationHandler.SchemeName;
+                })
+                .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
+                    HeaderAuthenticationHandler.SchemeName,
+                    _ => { });
+        });
+        await using var scope = factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        var registered = await registration.RegisterAsync(new RegisterAccountCommand(
+            $"cards-owner-{Guid.NewGuid():N}@example.com",
+            "Password123",
+            $"Cards Realty {Guid.NewGuid():N}"));
+        Assert.True(registered.Succeeded, string.Join(", ", registered.Errors));
+        var propertyId = await properties.CreateAsync(registered.UserId!, new PropertyInput(
+            "48 Harbor View Rd",
+            null,
+            "Annapolis",
+            "MD",
+            "21403",
+            1_250_000m,
+            4,
+            3.5m,
+            3_200,
+            0.4m,
+            1998,
+            PropertyType.SingleFamily,
+            "Waterfront regression property.",
+            ListingStatus.Active));
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            HeaderAuthenticationHandler.SchemeName,
+            registered.UserId);
+
+        using var workspace = await client.GetAsync("/auth");
+        workspace.EnsureSuccessStatusCode();
+        var workspaceContent = await workspace.Content.ReadAsStringAsync();
+        Assert.Contains("Needs your attention", workspaceContent, StringComparison.Ordinal);
+        Assert.Contains("48 Harbor View Rd", workspaceContent, StringComparison.Ordinal);
+        Assert.Contains("Add listing photos", workspaceContent, StringComparison.Ordinal);
+        Assert.Contains($"/properties/{propertyId}?tab=media", workspaceContent, StringComparison.Ordinal);
+        Assert.Contains("PLAN AND USAGE", workspaceContent, StringComparison.Ordinal);
+
+        using var list = await client.GetAsync("/properties");
+        list.EnsureSuccessStatusCode();
+        var listContent = await list.Content.ReadAsStringAsync();
+        Assert.Contains("property-card", listContent, StringComparison.Ordinal);
+        Assert.Contains("48 Harbor View Rd", listContent, StringComparison.Ordinal);
+        Assert.Contains("$1,250,000", listContent, StringComparison.Ordinal);
+        Assert.Contains("3,200 sq ft", listContent, StringComparison.Ordinal);
+        Assert.Contains("No photos yet", listContent, StringComparison.Ordinal);
+
+        using var mediaTab = await client.GetAsync($"/properties/{propertyId}?tab=media");
+        mediaTab.EnsureSuccessStatusCode();
+    }
 }
 
 public sealed class HeaderAuthenticationHandler(
