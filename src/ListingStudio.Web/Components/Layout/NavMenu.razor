@@ -27,6 +27,16 @@
                     <MudIconButton ButtonType="ButtonType.Submit" Icon="@Icons.Material.Filled.Logout"
                                    Color="Color.Inherit" aria-label="Log out" />
                 </form>
+                <details class="mobile-nav">
+                    <summary aria-label="Open navigation menu">
+                        <MudIcon Icon="@Icons.Material.Filled.Menu" />
+                    </summary>
+                    <div class="mobile-nav-panel">
+                        <a href="/auth"><MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Small" /> Workspace</a>
+                        <a href="/properties"><MudIcon Icon="@Icons.Material.Filled.HomeWork" Size="Size.Small" /> Properties</a>
+                        <a href="/billing"><MudIcon Icon="@Icons.Material.Filled.CreditCard" Size="Size.Small" /> Billing</a>
+                    </div>
+                </details>
             </div>
         </Authorized>
         <NotAuthorized>

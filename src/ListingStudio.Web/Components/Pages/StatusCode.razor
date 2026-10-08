@@ -1,0 +1,22 @@
+@page "/status/{Code:int}"
+
+@if (Code == StatusCodes.Status404NotFound)
+{
+    <NotFound />
+}
+else
+{
+    <PageTitle>Request failed</PageTitle>
+
+    <div class="state-page">
+        <span class="state-icon error"><MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Large" /></span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">We couldn't complete that request</MudText>
+        <MudText Typo="Typo.body1">The server returned status @Code. Please go back and try again.</MudText>
+        <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary">Return home</MudButton>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Code { get; set; }
+}

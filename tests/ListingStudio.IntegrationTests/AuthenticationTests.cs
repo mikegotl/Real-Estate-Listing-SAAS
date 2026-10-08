@@ -171,6 +171,19 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
     }
 
     [Fact]
+    public async Task UnknownPageReturnsNotFoundPageInsideTheAppShell()
+    {
+        using var client = fixture.Factory.CreateClient();
+
+        using var response = await client.GetAsync("/no-such-page");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Page not found", content, StringComparison.Ordinal);
+        Assert.Contains("app-header", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DisabledExternalProvidersAreNotOfferedOnLoginPage()
     {
         using var client = fixture.Factory.CreateClient();
