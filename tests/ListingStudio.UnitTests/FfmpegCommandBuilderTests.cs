@@ -215,6 +215,49 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildUsesTheApprovedWindowFromAnEnhancedPropertyVideoWithoutItsAudio()
+    {
+        var request = CreateRequest();
+        var videoId = Guid.NewGuid();
+        var videoPath = CreateFile("enhanced walkthrough.mp4");
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            VisualSource = new VisualSource(
+                VisualSourceKind.PropertyVideo,
+                null,
+                null,
+                null,
+                null,
+                videoId,
+                2_000),
+            Motion = new MotionPlan(
+                MotionKind.None,
+                new NormalizedRect(0, 0, 1, 1),
+                new NormalizedRect(0, 0, 1, 1),
+                MotionEasing.Linear),
+        };
+        request = request with
+        {
+            Specification = request.Specification with { Scenes = scenes },
+            PropertyVideos = [new VideoRenderPropertyVideoAsset(videoId, videoPath, 1_920, 1_080, 12_000)],
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var videoInput = arguments.IndexOf(videoPath);
+        Assert.True(videoInput > 4);
+        var seekArgument = arguments.LastIndexOf("-ss", videoInput);
+        Assert.True(seekArgument >= 0);
+        Assert.Equal("2", arguments[seekArgument + 1]);
+        Assert.DoesNotContain("-stream_loop", arguments.Take(videoInput));
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("[0:v]scale=1920:1080", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("[0:a]", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildOverlaysLicensedNeighborhoodPhotoWithTimedCredit()
     {
         var request = CreateRequest();

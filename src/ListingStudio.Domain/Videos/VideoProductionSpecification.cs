@@ -19,6 +19,7 @@ public enum FactSource
 {
     VerifiedProperty,
     PropertyStory,
+    AcceptedScript,
     ApprovedNeighborhood,
     BrandKit,
 }
@@ -28,6 +29,7 @@ public enum VisualSourceKind
     PropertyMedia,
     GeneratedClip,
     GenerativeMotionRequest,
+    PropertyVideo,
 }
 
 public enum TransitionKind
@@ -131,7 +133,9 @@ public sealed record VisualSource(
     Guid? PropertyMediaId,
     Guid? GeneratedClipId,
     Guid? FallbackPropertyMediaId,
-    string? GenerationInstruction);
+    string? GenerationInstruction,
+    Guid? PropertyVideoId = null,
+    int? PropertyVideoStartMs = null);
 
 public sealed record TransitionPlan(TransitionKind Type, int DurationMs);
 

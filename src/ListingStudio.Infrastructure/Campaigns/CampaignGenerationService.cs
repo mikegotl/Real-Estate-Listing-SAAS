@@ -17,7 +17,7 @@ public sealed class CampaignGenerationService(
     TimeProvider timeProvider,
     IBillingUsageRecorder billingUsageRecorder) : ICampaignGenerationService
 {
-    private const string WorkflowVersion = "campaign-natural-neighborhood-narration-v5";
+    private const string WorkflowVersion = "campaign-accepted-script-walkthrough-v6";
 
     public async Task<CampaignGenerationResult?> EnqueueAsync(
         string userId,
@@ -84,7 +84,39 @@ public sealed class CampaignGenerationService(
                 candidate.VideoPhotoUploadedAtUtc,
             })
             .ToArrayAsync(cancellationToken);
-        var fingerprint = CreateFingerprint(property.UpdatedAtUtc, media, neighborhoodFacts);
+        var acceptedScript = await dbContext.PropertyNarrationScripts
+            .AsNoTracking()
+            .Where(script => script.OrganizationId == organizationId
+                && script.PropertyId == propertyId
+                && script.MarketingUseAccepted)
+            .Select(script => new
+            {
+                script.Id,
+                script.ExtractedText,
+                script.MarketingUseAcceptedAtUtc,
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        var walkthroughVideos = await dbContext.PropertyVideos
+            .AsNoTracking()
+            .Where(video => video.OrganizationId == organizationId
+                && video.PropertyId == propertyId
+                && video.ProcessingStatus == Domain.Properties.PropertyVideoProcessingStatus.Completed)
+            .OrderBy(video => video.Id)
+            .Select(video => new
+            {
+                video.Id,
+                video.EnhancedBlobPath,
+                video.EnhancedDurationMs,
+                video.EnhancementVersion,
+                video.ProcessingCompletedAtUtc,
+            })
+            .ToArrayAsync(cancellationToken);
+        var fingerprint = CreateFingerprint(
+            property.UpdatedAtUtc,
+            media,
+            neighborhoodFacts,
+            acceptedScript,
+            walkthroughVideos);
         var existing = await dbContext.CampaignGenerationJobs
             .Include(candidate => candidate.Deliverables)
             .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId
@@ -221,7 +253,9 @@ public sealed class CampaignGenerationService(
     private static string CreateFingerprint(
         DateTimeOffset propertyUpdatedAtUtc,
         object media,
-        object neighborhoodFacts)
+        object neighborhoodFacts,
+        object? acceptedScript,
+        object walkthroughVideos)
     {
         var source = JsonSerializer.Serialize(new
         {
@@ -229,6 +263,8 @@ public sealed class CampaignGenerationService(
             propertyUpdatedAtUtc,
             media,
             neighborhoodFacts,
+            acceptedScript,
+            walkthroughVideos,
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
     }

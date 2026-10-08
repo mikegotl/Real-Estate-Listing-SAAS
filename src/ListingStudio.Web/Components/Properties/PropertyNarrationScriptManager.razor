@@ -1,0 +1,195 @@
+@inherits OwningComponentBase<IPropertyNarrationScriptService>
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<MudPaper Class="pa-6 mt-6">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Custom video narration</MudText>
+            <MudText Typo="Typo.body2">
+                Upload a TXT, Markdown, or DOCX script up to @(IPropertyNarrationScriptService.MaximumFileSize / 1024 / 1024) MB.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync">Refresh</MudButton>
+    </MudStack>
+
+    <MudAlert Severity="Severity.Info" Dense="true" Class="my-4">
+        The file is stored privately but is not used until you accept it for marketing. Acceptance applies only to
+        campaigns created or refreshed afterward. The 60-second video uses the complete accepted script; shorter
+        deliverables use script excerpts and never substitute AI-written narration.
+    </MudAlert>
+
+    @if (!IsReadOnly)
+    {
+        <label class="media-upload-control">
+            <span>@(script is null ? "Upload narration script" : "Replace narration script")</span>
+            <InputFile OnChange="UploadAsync"
+                       accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        </label>
+    }
+
+    @if (message is not null)
+    {
+        <MudAlert Severity="@messageSeverity" Class="my-4">@message</MudAlert>
+    }
+
+    @if (!loaded)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mt-4" />
+    }
+    else if (script is null)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">No custom narration script has been uploaded.</MudAlert>
+    }
+    else
+    {
+        <MudCard Outlined="true" Class="mt-4">
+            <MudCardContent>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">@script.OriginalFilename</MudText>
+                        <MudText Typo="Typo.caption">
+                            @FormatSize(script.FileSize) · @script.WordCount words · uploaded @script.UploadedAtUtc.LocalDateTime.ToString("g")
+                        </MudText>
+                    </div>
+                    <MudChip T="string" Color="@(script.MarketingUseAccepted ? Color.Success : Color.Default)">
+                        @(script.MarketingUseAccepted ? "Accepted" : "Stored only")
+                    </MudChip>
+                </MudStack>
+                <MudText Typo="Typo.overline" Class="mt-4">Extracted narration preview</MudText>
+                <MudText Typo="Typo.body2" Style="white-space: pre-wrap; max-height: 12rem; overflow-y: auto;">
+                    @script.ExtractedText
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudCheckBox T="bool"
+                             Value="@script.MarketingUseAccepted"
+                             ValueChanged="SetAcceptanceAsync"
+                             Disabled="@(saving || IsReadOnly)"
+                             Label="I confirm this script is accurate and approved for real-estate marketing"
+                             Color="Color.Success" />
+                <MudSpacer />
+                <MudButton Href="@($"/property-narration-scripts/{script.Id}")"
+                           StartIcon="@Icons.Material.Filled.Download" Variant="Variant.Text">
+                    Download
+                </MudButton>
+                @if (!IsReadOnly)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   Disabled="@saving" aria-label="Delete narration script" OnClick="DeleteAsync" />
+                }
+            </MudCardActions>
+        </MudCard>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private PropertyNarrationScriptItem? script;
+    private bool loaded;
+    private bool saving;
+    private string? message;
+    private Severity messageSeverity = Severity.Info;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loaded = false;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        script = await Service.GetAsync(userId, PropertyId);
+        loaded = true;
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs eventArgs)
+    {
+        saving = true;
+        message = null;
+        try
+        {
+            var file = eventArgs.File;
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var content = file.OpenReadStream(IPropertyNarrationScriptService.MaximumFileSize);
+            await Service.UploadAsync(
+                userId,
+                PropertyId,
+                new PropertyNarrationScriptUpload(file.Name, file.ContentType, file.Size, content));
+            await LoadAsync();
+            ShowMessage(
+                "Script uploaded and stored. Review the extracted text, then check the marketing acceptance box to use it in a newly generated or refreshed campaign.",
+                Severity.Success);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task SetAcceptanceAsync(bool accepted)
+    {
+        if (script is null)
+        {
+            return;
+        }
+
+        saving = true;
+        message = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            if (await Service.SetMarketingUseAcceptedAsync(userId, PropertyId, script.Id, accepted))
+            {
+                await LoadAsync();
+                ShowMessage(
+                    accepted
+                        ? "Script accepted. Generate or refresh the campaign to use it as the narration source."
+                        : "Marketing acceptance removed. Existing videos are unchanged; refreshed videos will return to generated narration.",
+                    Severity.Success);
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (script is null)
+        {
+            return;
+        }
+
+        saving = true;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await Service.DeleteAsync(userId, PropertyId, script.Id))
+        {
+            script = null;
+            ShowMessage("Narration script deleted. Existing videos are unchanged.", Severity.Success);
+        }
+
+        saving = false;
+    }
+
+    private void ShowMessage(string text, Severity severity)
+    {
+        message = text;
+        messageSeverity = severity;
+    }
+
+    private static string FormatSize(long bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / 1024d / 1024d:0.##} MB"
+        : $"{bytes / 1024d:0.##} KB";
+}

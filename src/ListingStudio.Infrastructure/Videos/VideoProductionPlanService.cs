@@ -104,12 +104,28 @@ public sealed partial class VideoProductionPlanService(
                 insight.CheckedAtUtc,
                 insight.Id))
             .ToArrayAsync(cancellationToken);
+        var narrationScript = await dbContext.PropertyNarrationScripts
+            .AsNoTracking()
+            .SingleOrDefaultAsync(script => script.OrganizationId == organizationId
+                && script.PropertyId == propertyId
+                && script.MarketingUseAccepted,
+                cancellationToken);
+        var walkthroughVideos = await dbContext.PropertyVideos
+            .AsNoTracking()
+            .Where(video => video.OrganizationId == organizationId
+                && video.PropertyId == propertyId
+                && video.ProcessingStatus == PropertyVideoProcessingStatus.Completed
+                && video.EnhancedBlobPath != null)
+            .OrderBy(video => video.UploadedAtUtc)
+            .ToArrayAsync(cancellationToken);
         var request = CreateRequest(
             property,
             media,
             story,
             organizationName,
             approvedNeighborhoodFacts,
+            narrationScript,
+            walkthroughVideos,
             duration,
             aspectRatio);
         var storySource = new PropertyStoryGenerationRequest(request.VerifiedProperty,
@@ -233,8 +249,23 @@ public sealed partial class VideoProductionPlanService(
         DirectedEditorialPlan editorialPlan)
     {
         var media = request.Media.ToDictionary(item => item.MediaId);
+        var walkthroughs = (request.WalkthroughVideos ?? []).ToDictionary(item => item.PropertyVideoId);
         var scenes = editorialPlan.Scenes.Select(scene =>
         {
+            if (scene.VisualSource.Kind == VisualSourceKind.PropertyVideo
+                && scene.VisualSource.PropertyVideoId is { } videoId
+                && walkthroughs.TryGetValue(videoId, out var walkthrough))
+            {
+                var videoViewport = CreateAspectFillViewport(
+                    walkthrough.Width,
+                    walkthrough.Height,
+                    request.AspectRatio);
+                return scene with
+                {
+                    Motion = new MotionPlan(MotionKind.None, videoViewport, videoViewport, MotionEasing.Linear),
+                };
+            }
+
             var mediaId = scene.VisualSource.PropertyMediaId
                 ?? scene.VisualSource.FallbackPropertyMediaId;
             if (mediaId is not { } id || !media.TryGetValue(id, out var source))
@@ -281,13 +312,32 @@ public sealed partial class VideoProductionPlanService(
         var durationMs = (int)request.RequestedDuration * 1_000;
         var firstDurationMs = durationMs * 2 / 3;
         var secondDurationMs = durationMs - firstDurationMs;
-        var narrationBinding = request.FactBindings.Single(binding => binding.Key == "story.voiceover");
-        var narration = new NarrationSegment(
-            "narration-1",
-            500,
-            firstDurationMs - 1_000,
-            narrationBinding.Value,
-            narrationBinding.Key);
+        var narrationBindings = request.AcceptedNarrationScript is { } accepted
+            ? accepted.Segments.Select(segment => new GroundedText(segment.Text, segment.Key)).ToArray()
+            : [new GroundedText(
+                request.FactBindings.Single(binding => binding.Key == "story.voiceover").Value,
+                "story.voiceover")];
+        var narrationWindowMs = durationMs - 6_000;
+        var totalWords = narrationBindings.Sum(binding => CountWords(binding.Text));
+        var narration = new List<NarrationSegment>(narrationBindings.Length);
+        var narrationStart = 500;
+        var allocated = 0;
+        for (var index = 0; index < narrationBindings.Length; index++)
+        {
+            var remaining = narrationWindowMs - allocated;
+            var segmentDuration = index == narrationBindings.Length - 1
+                ? remaining
+                : Math.Max(1_000, narrationWindowMs * CountWords(narrationBindings[index].Text) / totalWords);
+            segmentDuration = Math.Min(segmentDuration, remaining - (narrationBindings.Length - index - 1));
+            narration.Add(new NarrationSegment(
+                $"narration-{index + 1}",
+                narrationStart + allocated,
+                segmentDuration,
+                narrationBindings[index].Text,
+                narrationBindings[index].GroundingKey));
+            allocated += segmentDuration;
+        }
+
         var viewport = CreateAspectFillViewport(media, request.AspectRatio);
         var visualSource = new VisualSource(
             VisualSourceKind.PropertyMedia,
@@ -298,7 +348,7 @@ public sealed partial class VideoProductionPlanService(
         var motion = new MotionPlan(MotionKind.None, viewport, viewport, MotionEasing.Linear);
         return new DirectedEditorialPlan(
             new AudioPlan(
-                [narration],
+                narration,
                 new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)),
             [
                 new VideoScene(
@@ -310,7 +360,9 @@ public sealed partial class VideoProductionPlanService(
                     motion,
                     [],
                     [],
-                    [narration.Id]),
+                    narration.Where(segment => segment.StartMs < firstDurationMs
+                        && segment.StartMs + segment.DurationMs > 0)
+                        .Select(segment => segment.Id).ToArray()),
                 new VideoScene(
                     2,
                     firstDurationMs,
@@ -328,16 +380,27 @@ public sealed partial class VideoProductionPlanService(
                         new NormalizedRect(0.15m, 0.75m, 0.7m, 0.1m),
                         TextOverlayStyle.ClosingCta)],
                     [],
-                    []),
+                    narration.Where(segment => segment.StartMs < durationMs
+                        && segment.StartMs + segment.DurationMs > firstDurationMs)
+                        .Select(segment => segment.Id).ToArray()),
             ]);
     }
 
+    private static int CountWords(string value) => value.Split(
+        (char[]?)null,
+        StringSplitOptions.RemoveEmptyEntries).Length;
+
     private static NormalizedRect CreateAspectFillViewport(
         VideoMediaInput media,
+        VideoAspectRatio aspectRatio) => CreateAspectFillViewport(media.Width, media.Height, aspectRatio);
+
+    private static NormalizedRect CreateAspectFillViewport(
+        int width,
+        int height,
         VideoAspectRatio aspectRatio)
     {
         var outputAspect = aspectRatio == VideoAspectRatio.Landscape16By9 ? 16m / 9m : 9m / 16m;
-        var normalizedAspect = outputAspect * media.Height / media.Width;
+        var normalizedAspect = outputAspect * height / width;
         return normalizedAspect >= 1
             ? new NormalizedRect(0, (1 - 1 / normalizedAspect) / 2, 1, 1 / normalizedAspect)
             : new NormalizedRect((1 - normalizedAspect) / 2, 0, normalizedAspect, 1);
@@ -377,6 +440,8 @@ public sealed partial class VideoProductionPlanService(
         PropertyStory story,
         string organizationName,
         IReadOnlyList<ApprovedNeighborhoodFact> approvedNeighborhoodFacts,
+        PropertyNarrationScript? narrationScript,
+        IReadOnlyList<PropertyVideo> walkthroughVideos,
         RequestedDuration duration,
         VideoAspectRatio aspectRatio)
     {
@@ -427,7 +492,24 @@ public sealed partial class VideoProductionPlanService(
             verified,
             content,
             organizationName,
-            approvedNeighborhoodFacts);
+            approvedNeighborhoodFacts,
+            narrationScript);
+        var acceptedScript = narrationScript is null
+            ? null
+            : new AcceptedNarrationScriptInput(
+                narrationScript.Id,
+                narrationScript.MarketingUseAcceptedAtUtc!.Value,
+                SplitAcceptedScript(narrationScript.ExtractedText)
+                    .Select((text, index) => new AcceptedNarrationScriptSegment(
+                        $"acceptedScript.segment.{index + 1}",
+                        text))
+                    .ToArray());
+        var videos = walkthroughVideos.Select(video => new VideoWalkthroughInput(
+            video.Id,
+            video.OriginalFilename,
+            video.EnhancedWidth!.Value,
+            video.EnhancedHeight!.Value,
+            video.EnhancedDurationMs!.Value)).ToArray();
         return new VideoDirectionRequest(
             property.Id,
             storyInput,
@@ -442,14 +524,17 @@ public sealed partial class VideoProductionPlanService(
             new GroundedText(content.ClosingCta, "story.closingCta"),
             new HashSet<Guid>(),
             new HashSet<string>(StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
+            new HashSet<string>(StringComparer.Ordinal),
+            acceptedScript,
+            videos);
     }
 
     private static List<FactBinding> CreateFactBindings(
         VerifiedPropertyData property,
         PropertyStoryContent story,
         string organizationName,
-        IReadOnlyList<ApprovedNeighborhoodFact> approvedNeighborhoodFacts)
+        IReadOnlyList<ApprovedNeighborhoodFact> approvedNeighborhoodFacts,
+        PropertyNarrationScript? narrationScript)
     {
         var address = string.Join(", ", new[]
         {
@@ -501,7 +586,59 @@ public sealed partial class VideoProductionPlanService(
                 fact.InsightId));
         }
 
+        if (narrationScript is not null)
+        {
+            var segments = SplitAcceptedScript(narrationScript.ExtractedText);
+            for (var index = 0; index < segments.Count; index++)
+            {
+                facts.Add(new FactBinding(
+                    $"acceptedScript.segment.{index + 1}",
+                    segments[index],
+                    FactSource.AcceptedScript,
+                    narrationScript.Id.ToString("D")));
+            }
+        }
+
         return facts;
+    }
+
+    private static List<string> SplitAcceptedScript(string text)
+    {
+        const int targetLength = 260;
+        var sentences = text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .SelectMany(paragraph => System.Text.RegularExpressions.Regex.Split(
+                paragraph,
+                @"(?<=[.!?])\s+"))
+            .Where(sentence => !string.IsNullOrWhiteSpace(sentence))
+            .Select(sentence => sentence.Trim())
+            .ToArray();
+        var result = new List<string>();
+        var current = new StringBuilder();
+        foreach (var sentence in sentences)
+        {
+            if (current.Length > 0 && current.Length + 1 + sentence.Length > targetLength)
+            {
+                result.Add(current.ToString());
+                current.Clear();
+            }
+
+            if (current.Length > 0)
+            {
+                current.Append(' ');
+            }
+
+            current.Append(sentence);
+        }
+
+        if (current.Length > 0)
+        {
+            result.Add(current.ToString());
+        }
+
+        return result;
     }
 
     private static PropertyMediaObservation ToObservation(PropertyMedia media, PropertyMediaAnalysis analysis) => new(
@@ -559,6 +696,8 @@ public sealed partial class VideoProductionPlanService(
             request.FactBindings,
             request.Brand,
             request.CallToAction,
+            request.AcceptedNarrationScript,
+            WalkthroughVideos = (request.WalkthroughVideos ?? []).OrderBy(video => video.PropertyVideoId).ToArray(),
             ApprovedGeneratedClipIds = request.ApprovedGeneratedClipIds.Order().ToArray(),
             ApprovedBrandAssetIds = request.ApprovedBrandAssetIds.Order(StringComparer.Ordinal).ToArray(),
             ApprovedMusicAssetIds = request.ApprovedMusicAssetIds.Order(StringComparer.Ordinal).ToArray(),

@@ -37,6 +37,13 @@ public sealed record VideoRenderGeneratedClipAsset(
     int Height,
     int DurationMs);
 
+public sealed record VideoRenderPropertyVideoAsset(
+    Guid PropertyVideoId,
+    string FilePath,
+    int Width,
+    int Height,
+    int DurationMs);
+
 public sealed record VideoRenderNeighborhoodAsset(
     Guid NeighborhoodInsightId,
     string FilePath,
@@ -52,7 +59,8 @@ public sealed record VideoRenderRequest(
     VideoRenderMusicAsset? Music,
     string OutputFilePath,
     IReadOnlyList<VideoRenderGeneratedClipAsset>? GeneratedClips = null,
-    IReadOnlyList<VideoRenderNeighborhoodAsset>? NeighborhoodAssets = null);
+    IReadOnlyList<VideoRenderNeighborhoodAsset>? NeighborhoodAssets = null,
+    IReadOnlyList<VideoRenderPropertyVideoAsset>? PropertyVideos = null);
 
 public sealed record VideoRenderResult(
     string OutputFilePath,

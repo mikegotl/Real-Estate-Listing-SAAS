@@ -9,9 +9,12 @@ public interface ICampaignDerivativeGenerator
 
 public sealed record CampaignDerivativeMedia(Guid PropertyMediaId, int Width, int Height);
 
+public sealed record CampaignDerivativeVideo(Guid PropertyVideoId, int Width, int Height, int DurationMs);
+
 public sealed record CampaignDerivativeRequest(
     VideoProductionSpecification MasterSpecification,
-    IReadOnlyList<CampaignDerivativeMedia> PropertyMedia);
+    IReadOnlyList<CampaignDerivativeMedia> PropertyMedia,
+    IReadOnlyList<CampaignDerivativeVideo>? PropertyVideos = null);
 
 public enum CampaignDeliverableKind
 {
@@ -25,7 +28,8 @@ public sealed record CampaignDerivative(
     VideoAspectRatio AspectRatio,
     VideoProductionSpecification Specification,
     IReadOnlySet<Guid> ReusedPropertyMediaIds,
-    IReadOnlySet<Guid> ReusedGeneratedClipIds);
+    IReadOnlySet<Guid> ReusedGeneratedClipIds,
+    IReadOnlySet<Guid>? ReusedPropertyVideoIds = null);
 
 public sealed record CampaignDerivativeSet(IReadOnlyList<CampaignDerivative> Derivatives)
 {

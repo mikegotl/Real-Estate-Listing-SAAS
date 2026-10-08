@@ -25,6 +25,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         ValidateAuthority(authoritativeInput, specification, errors);
         ValidateTimeline(authoritativeInput, specification, errors);
         ValidateAudioAndGrounding(authoritativeInput, specification, errors);
+        ValidateAcceptedNarrationScript(authoritativeInput, specification, errors);
         ValidateApprovedNeighborhoodCoverage(authoritativeInput, specification, errors);
 
         return errors.Count == 0
@@ -56,6 +57,9 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         AddIf(input.Output != expectedOutput, "The requested aspect ratio does not match the fixed output profile.", errors);
         AddIf(input.Media.Select(media => media.MediaId).Distinct().Count() != input.Media.Count,
             "The authoritative media set contains duplicate IDs.", errors);
+        var walkthroughs = input.WalkthroughVideos ?? [];
+        AddIf(walkthroughs.Select(video => video.PropertyVideoId).Distinct().Count() != walkthroughs.Count,
+            "The authoritative walkthrough-video set contains duplicate IDs.", errors);
     }
 
     private static void ValidateTimeline(
@@ -84,7 +88,11 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
             expectedStart = End(scene.StartMs, scene.DurationMs);
 
             ValidateTransition(specification.Scenes, index, errors);
-            var effectiveMediaId = ValidateVisualSource(input, scene.VisualSource, path, errors);
+            var visualDurationMs = scene.DurationMs
+                + (index + 1 < specification.Scenes.Count
+                    ? specification.Scenes[index + 1].TransitionIn.DurationMs
+                    : 0);
+            var effectiveMediaId = ValidateVisualSource(input, scene.VisualSource, visualDurationMs, path, errors);
             ValidateMotion(scene.Motion, effectiveMediaId, media, input.AspectRatio, path, errors);
 
             foreach (var overlay in scene.TextOverlays)
@@ -149,6 +157,7 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
     private static Guid? ValidateVisualSource(
         VideoDirectionRequest input,
         VisualSource source,
+        int sceneDurationMs,
         string path,
         List<string> errors)
     {
@@ -157,13 +166,15 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         {
             case VisualSourceKind.PropertyMedia:
                 AddIf(source.PropertyMediaId is null || source.GeneratedClipId is not null
-                    || source.FallbackPropertyMediaId is not null || source.GenerationInstruction is not null,
+                    || source.FallbackPropertyMediaId is not null || source.GenerationInstruction is not null
+                    || source.PropertyVideoId is not null || source.PropertyVideoStartMs is not null,
                     $"{path}.visualSource has invalid propertyMedia fields.", errors);
                 mediaId = source.PropertyMediaId;
                 break;
             case VisualSourceKind.GeneratedClip:
                 AddIf(source.PropertyMediaId is not null || source.GeneratedClipId is null
-                    || source.FallbackPropertyMediaId is null || source.GenerationInstruction is not null,
+                    || source.FallbackPropertyMediaId is null || source.GenerationInstruction is not null
+                    || source.PropertyVideoId is not null || source.PropertyVideoStartMs is not null,
                     $"{path}.visualSource has invalid generatedClip fields.", errors);
                 AddIf(source.GeneratedClipId is { } clipId && !input.ApprovedGeneratedClipIds.Contains(clipId),
                     $"{path}.visualSource references an unapproved generated clip.", errors);
@@ -171,17 +182,38 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
                 break;
             case VisualSourceKind.GenerativeMotionRequest:
                 AddIf(source.PropertyMediaId is null || source.GeneratedClipId is not null
-                    || source.FallbackPropertyMediaId != source.PropertyMediaId || !IsCameraInstruction(source.GenerationInstruction),
+                    || source.FallbackPropertyMediaId != source.PropertyMediaId || !IsCameraInstruction(source.GenerationInstruction)
+                    || source.PropertyVideoId is not null || source.PropertyVideoStartMs is not null,
                     $"{path}.visualSource has invalid generativeMotionRequest fields.", errors);
                 mediaId = source.FallbackPropertyMediaId;
+                break;
+            case VisualSourceKind.PropertyVideo:
+                AddIf(source.PropertyMediaId is not null || source.GeneratedClipId is not null
+                    || source.FallbackPropertyMediaId is not null || source.GenerationInstruction is not null
+                    || source.PropertyVideoId is null || source.PropertyVideoStartMs is null,
+                    $"{path}.visualSource has invalid propertyVideo fields.", errors);
+                var video = (input.WalkthroughVideos ?? []).FirstOrDefault(candidate =>
+                    candidate.PropertyVideoId == source.PropertyVideoId);
+                AddIf(video is null, $"{path}.visualSource references an unapproved property video.", errors);
+                if (video is not null && source.PropertyVideoStartMs is { } propertyVideoStartMs)
+                {
+                    AddIf(propertyVideoStartMs < 0
+                        || (long)propertyVideoStartMs + sceneDurationMs > video.DurationMs,
+                        $"{path}.visualSource property-video window is outside the available clip.", errors);
+                }
+
+                mediaId = null;
                 break;
             default:
                 errors.Add($"{path}.visualSource kind is not supported.");
                 return null;
         }
 
-        AddIf(mediaId is not { } id || input.Media.All(item => item.MediaId != id),
-            $"{path}.visualSource references media outside the authoritative set.", errors);
+        if (source.Kind != VisualSourceKind.PropertyVideo)
+        {
+            AddIf(mediaId is not { } id || input.Media.All(item => item.MediaId != id),
+                $"{path}.visualSource references media outside the authoritative set.", errors);
+        }
         if (source.PropertyMediaId is { } propertyMediaId)
         {
             AddIf(input.Media.All(item => item.MediaId != propertyMediaId),
@@ -189,6 +221,35 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         }
 
         return mediaId;
+    }
+
+    private static void ValidateAcceptedNarrationScript(
+        VideoDirectionRequest input,
+        VideoProductionSpecification specification,
+        List<string> errors)
+    {
+        if (input.AcceptedNarrationScript is not { } accepted)
+        {
+            return;
+        }
+
+        var expected = accepted.Segments.ToArray();
+        var actual = specification.Audio.NarrationSegments
+            .OrderBy(segment => segment.StartMs)
+            .ToArray();
+        AddIf(actual.Length != expected.Length,
+            "Accepted narration must include every script segment exactly once.", errors);
+        var count = Math.Min(actual.Length, expected.Length);
+        for (var index = 0; index < count; index++)
+        {
+            AddIf(actual[index].GroundingKey != expected[index].Key
+                || actual[index].Text != expected[index].Text,
+                $"Narration segment {index + 1} must preserve the accepted script text and order.",
+                errors);
+        }
+
+        AddIf(actual.Any(segment => expected.All(item => item.Key != segment.GroundingKey)),
+            "Accepted narration cannot include generated or non-script narration.", errors);
     }
 
     private static void ValidateMotion(

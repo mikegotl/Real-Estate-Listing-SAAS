@@ -24,6 +24,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<PropertyVideo> PropertyVideos => Set<PropertyVideo>();
 
+    public DbSet<PropertyNarrationScript> PropertyNarrationScripts => Set<PropertyNarrationScript>();
+
     public DbSet<PropertyStory> PropertyStories => Set<PropertyStory>();
 
     public DbSet<VideoProductionPlan> VideoProductionPlans => Set<VideoProductionPlan>();
