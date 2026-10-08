@@ -1,6 +1,7 @@
 @inherits OwningComponentBase<ICampaignGenerationService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IPropertyMediaService MediaService
+@inject ILogger<CampaignGenerationManager> Logger
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
@@ -27,6 +28,19 @@
     @if (!string.IsNullOrWhiteSpace(error))
     {
         <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+    }
+
+    @if (refreshError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4">@refreshError</MudAlert>
+    }
+
+    @if (failedAnalysisCount > 0 && job?.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4">
+            Analysis failed for @failedAnalysisCount @(failedAnalysisCount == 1 ? "photo" : "photos"). Listing Studio is retrying,
+            and the campaign will stop if a photo runs out of attempts. See Listing photos for details.
+        </MudAlert>
     }
 
     @if (mediaCount is > 0 and < 3)
@@ -146,7 +160,9 @@
     private bool busy;
     private bool pollingStarted;
     private string? error;
+    private string? refreshError;
     private int mediaCount;
+    private int failedAnalysisCount;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -160,11 +176,19 @@
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
-            mediaCount = (await MediaService.ListAsync(userId, PropertyId, pollingCancellation.Token)).Count;
+            var media = await MediaService.ListAsync(userId, PropertyId, pollingCancellation.Token);
+            mediaCount = media.Count;
+            failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             error = null;
+            refreshError = null;
         }
         catch (OperationCanceledException) when (pollingCancellation.IsCancellationRequested)
         {
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Refreshing campaign status for property {PropertyId} failed", PropertyId);
+            refreshError = "Campaign status could not be refreshed. Listing Studio will keep trying.";
         }
     }
 

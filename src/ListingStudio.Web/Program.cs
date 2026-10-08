@@ -71,7 +71,14 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseStatusCodePagesWithReExecute("/status/{0}", createScopeForStatusCodePages: true);
+
 app.UseHttpsRedirection();
+// Listings are U.S. properties priced in dollars, so formatting must not depend on the host locale or browser language.
+app.UseRequestLocalization(new RequestLocalizationOptions()
+    .SetDefaultCulture("en-US")
+    .AddSupportedCultures("en-US")
+    .AddSupportedUICultures("en-US"));
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();

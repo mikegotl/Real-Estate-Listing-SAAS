@@ -4,6 +4,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IPropertyService PropertyService
 @inject NavigationManager Navigation
+@inject IDialogService DialogService
 
 <PageTitle>Property details</PageTitle>
 
@@ -20,7 +21,7 @@ else if (property is null)
 }
 else
 {
-    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="property-header mb-6">
         <div>
             <MudText Typo="Typo.h3" HtmlTag="h1">@property.Address1</MudText>
             <MudText Typo="Typo.body1">@property.City, @property.State @property.ZipCode</MudText>
@@ -79,6 +80,16 @@ else
 
     private async Task ArchiveAsync()
     {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Archive this property?",
+            "Archived properties and their media become read-only and are hidden from the default property list.",
+            yesText: "Archive",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         if (await PropertyService.ArchiveAsync(userId, PropertyId))
         {

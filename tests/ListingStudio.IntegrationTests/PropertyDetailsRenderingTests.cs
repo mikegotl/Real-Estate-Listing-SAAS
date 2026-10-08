@@ -57,6 +57,7 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             HeaderAuthenticationHandler.SchemeName,
             registered.UserId);
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("de-DE");
 
         using var response = await client.GetAsync($"/properties/{propertyId}");
 
@@ -66,6 +67,9 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("Listing photos", content, StringComparison.Ordinal);
         Assert.Contains("Marketing story", content, StringComparison.Ordinal);
         Assert.Contains("Campaign", content, StringComparison.Ordinal);
+        Assert.Contains("$420,000", content, StringComparison.Ordinal);
+        Assert.Contains("1,850", content, StringComparison.Ordinal);
+        Assert.Contains("mobile-nav", content, StringComparison.Ordinal);
     }
 }
 
