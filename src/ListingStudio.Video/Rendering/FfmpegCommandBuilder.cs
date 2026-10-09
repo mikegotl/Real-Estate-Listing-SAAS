@@ -526,13 +526,19 @@ public static class FfmpegCommandBuilder
                 }
             }
 
-            for (var index = 0; index < segments.Count; index++)
+            // Each segment starts with the scene it was planned against. A segment that runs longer than its
+            // slot pushes the next one back rather than talking over it.
+            var previousEndMs = 0;
+            var ordered = segments.Select((segment, index) => (Segment: segment, Index: index))
+                .OrderBy(item => item.Segment.StartMs);
+            foreach (var (segment, index) in ordered)
             {
-                var segment = segments[index];
                 var timing = timings[segment.Id];
+                var startMs = Math.Max(segment.StartMs, previousEndMs);
+                previousEndMs = startMs + timing.EndMs - timing.StartMs;
                 filters.Add(
                     $"[{sources[index]}]atrim=start={Seconds(timing.StartMs)}:end={Seconds(timing.EndMs)},"
-                    + $"asetpts=PTS-STARTPTS,adelay={segment.StartMs}:all=1[narration{index}]");
+                    + $"asetpts=PTS-STARTPTS,adelay={startMs}:all=1[narration{index}]");
                 segmentLabels.Add($"narration{index}");
             }
         }
