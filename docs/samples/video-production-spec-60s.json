@@ -26,67 +26,78 @@
       "key": "property.address.full",
       "value": "123 Example Lane, Raleigh, NC 27601",
       "source": "verifiedProperty",
-      "sourceReference": "Address1+City+State+ZipCode"
+      "sourceReference": "Address1+City+State+ZipCode",
+      "visualAssetReferenceId": null
     },
     {
       "key": "property.listingPrice",
       "value": "$450,000",
       "source": "verifiedProperty",
-      "sourceReference": "ListingPrice"
+      "sourceReference": "ListingPrice",
+      "visualAssetReferenceId": null
     },
     {
       "key": "property.bedBathSquareFeet",
       "value": "3 beds • 2.5 baths • 2,100 sq ft",
       "source": "verifiedProperty",
-      "sourceReference": "Bedrooms+Bathrooms+SquareFeet"
+      "sourceReference": "Bedrooms+Bathrooms+SquareFeet",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.campaignTitle",
       "value": "A Welcome on Example Lane",
       "source": "propertyStory",
-      "sourceReference": "CampaignTitle"
+      "sourceReference": "CampaignTitle",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.voiceover.1",
       "value": "Welcome to 123 Example Lane, where a thoughtful tour begins at the front exterior.",
       "source": "propertyStory",
-      "sourceReference": "VoiceoverScript"
+      "sourceReference": "VoiceoverScript",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.voiceover.2",
       "value": "Step inside and follow the imagery through the main living spaces.",
       "source": "propertyStory",
-      "sourceReference": "VoiceoverScript"
+      "sourceReference": "VoiceoverScript",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.voiceover.3",
       "value": "The visual sequence moves naturally from the living room to the kitchen and dining area.",
       "source": "propertyStory",
-      "sourceReference": "VoiceoverScript"
+      "sourceReference": "VoiceoverScript",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.voiceover.4",
       "value": "The tour continues through the primary bedroom and bathroom imagery.",
       "source": "propertyStory",
-      "sourceReference": "VoiceoverScript"
+      "sourceReference": "VoiceoverScript",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.voiceover.5",
       "value": "Exterior imagery closes the visual journey around the property.",
       "source": "propertyStory",
-      "sourceReference": "VoiceoverScript"
+      "sourceReference": "VoiceoverScript",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.voiceover.6",
       "value": "Contact Example Realty to learn more about 123 Example Lane.",
       "source": "propertyStory",
-      "sourceReference": "VoiceoverScript"
+      "sourceReference": "VoiceoverScript",
+      "visualAssetReferenceId": null
     },
     {
       "key": "story.closingCta",
       "value": "Contact Example Realty to learn more.",
       "source": "propertyStory",
-      "sourceReference": "ClosingCTA"
+      "sourceReference": "ClosingCTA",
+      "visualAssetReferenceId": null
     }
   ],
   "brand": {
