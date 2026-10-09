@@ -95,7 +95,7 @@ public sealed record FactBinding(
     string Value,
     FactSource Source,
     string SourceReference,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? VisualAssetReferenceId = null);
+    Guid? VisualAssetReferenceId = null);
 
 public sealed record BrandKit(
     [property: JsonPropertyName("primaryLogoAssetId")] string? Logo,

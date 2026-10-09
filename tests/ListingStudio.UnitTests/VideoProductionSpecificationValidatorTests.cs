@@ -368,6 +368,54 @@ public sealed class VideoProductionSpecificationValidatorTests
         Assert.Equal(anchors, Enum.GetValues<OverlayAnchor>().Select(value => JsonSerializer.SerializeToElement(value, VideoSpecificationJson.Options).GetString()).Order(StringComparer.Ordinal));
     }
 
+    [Fact]
+    public void StructuredOutputSchemasRequireEveryDeclaredObjectProperty()
+    {
+        using var stream = typeof(VideoSchemaContract).Assembly.GetManifestResourceStream("VideoProductionSchema")!;
+        using var schema = JsonDocument.Parse(stream);
+
+        AssertAllObjectPropertiesRequired(schema.RootElement, "$canonical");
+        AssertAllObjectPropertiesRequired(VideoSchemaContract.EditorialSchema, "$editorial");
+    }
+
+    private static void AssertAllObjectPropertiesRequired(JsonElement node, string path)
+    {
+        if (node.ValueKind == JsonValueKind.Object)
+        {
+            if (node.TryGetProperty("type", out var type)
+                && type.ValueKind == JsonValueKind.String
+                && type.GetString() == "object"
+                && node.TryGetProperty("properties", out var properties))
+            {
+                var required = node.TryGetProperty("required", out var requiredNode)
+                    ? requiredNode.EnumerateArray()
+                        .Select(value => value.GetString()!)
+                        .ToHashSet(StringComparer.Ordinal)
+                    : [];
+
+                foreach (var property in properties.EnumerateObject())
+                {
+                    Assert.True(
+                        required.Contains(property.Name),
+                        $"{path}.properties.{property.Name} must be listed in required for strict Structured Outputs.");
+                }
+            }
+
+            foreach (var property in node.EnumerateObject())
+            {
+                AssertAllObjectPropertiesRequired(property.Value, $"{path}.{property.Name}");
+            }
+        }
+        else if (node.ValueKind == JsonValueKind.Array)
+        {
+            var index = 0;
+            foreach (var item in node.EnumerateArray())
+            {
+                AssertAllObjectPropertiesRequired(item, $"{path}[{index++}]");
+            }
+        }
+    }
+
     private static VideoDirectionRequest CreateInput(
         RequestedDuration duration = RequestedDuration.Hero60,
         VideoAspectRatio aspectRatio = VideoAspectRatio.Landscape16By9)

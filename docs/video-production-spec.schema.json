@@ -133,7 +133,7 @@
         "sourceReference": { "type": "string" },
         "visualAssetReferenceId": { "$ref": "#/$defs/nullableUuid" }
       },
-      "required": ["key", "value", "source", "sourceReference"]
+      "required": ["key", "value", "source", "sourceReference", "visualAssetReferenceId"]
     },
     "brandPlan": {
       "type": "object",
