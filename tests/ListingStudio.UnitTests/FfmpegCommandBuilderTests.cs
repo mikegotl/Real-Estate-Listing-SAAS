@@ -42,6 +42,29 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildStartsEachNarrationSegmentWithItsSceneAndNeverOverlapsAnOverrun()
+    {
+        var request = CreateRequest() with
+        {
+            Narration = new VideoRenderNarrationAsset(
+                CreateFile("narration-long.wav"),
+                new VoiceTimingMetadata(
+                    [],
+                    [
+                        new VoiceSegmentTiming("narration-1", 0, 9_000),
+                        new VoiceSegmentTiming("narration-2", 9_000, 10_000),
+                    ])),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("atrim=start=0:end=9,asetpts=PTS-STARTPTS,adelay=500:all=1[narration0]", graph, StringComparison.Ordinal);
+        Assert.Contains("atrim=start=9:end=10,asetpts=PTS-STARTPTS,adelay=9500:all=1[narration1]", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildUsesContinuousPlannedWindowForNarrationWithoutTiming()
     {
         var request = CreateRequest() with

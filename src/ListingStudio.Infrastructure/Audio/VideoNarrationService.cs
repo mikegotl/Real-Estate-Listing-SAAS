@@ -64,7 +64,7 @@ public sealed class VideoNarrationService(
         }
 
         var generated = await voiceProvider.GenerateAsync(request, cancellationToken);
-        ValidateGeneratedResult(request, generated);
+        ValidateGeneratedResult(request, generated, (int)specification.RequestedDuration * 1_000);
         var timingJson = generated.Timing is null
             ? null
             : JsonSerializer.Serialize(generated.Timing, SerializerOptions);
@@ -176,7 +176,8 @@ public sealed class VideoNarrationService(
 
     private static void ValidateGeneratedResult(
         VoiceGenerationRequest request,
-        VoiceGenerationResult result)
+        VoiceGenerationResult result,
+        int programDurationMs)
     {
         ArgumentNullException.ThrowIfNull(result);
         if (result.AudioData.Length is 0 or > MaximumAudioBytes)
@@ -212,8 +213,11 @@ public sealed class VideoNarrationService(
             throw new InvalidDataException("Voice provider timing does not match the requested narration segments.");
         }
 
+        // The renderer starts each segment at its planned time, or right after the previous one when that
+        // ran long, so a segment may overrun its own slot as long as the whole narration ends in the program.
         var timingById = result.Timing.Segments.ToDictionary(segment => segment.SegmentId, StringComparer.Ordinal);
-        foreach (var segment in request.Segments)
+        var placedEndMs = 0;
+        foreach (var segment in request.Segments.OrderBy(segment => segment.PlannedStartMs))
         {
             var measured = timingById[segment.Id];
             if (measured.StartMs < 0 || measured.EndMs <= measured.StartMs || measured.EndMs > result.DurationMs)
@@ -221,10 +225,11 @@ public sealed class VideoNarrationService(
                 throw new InvalidDataException($"Voice provider returned invalid timing for segment {segment.Id}.");
             }
 
-            if (measured.EndMs - measured.StartMs > segment.PlannedDurationMs + TimingToleranceMs)
+            placedEndMs = Math.Max(segment.PlannedStartMs, placedEndMs) + measured.EndMs - measured.StartMs;
+            if (placedEndMs > programDurationMs + TimingToleranceMs)
             {
                 throw new InvalidDataException(
-                    $"Generated narration segment {segment.Id} exceeds its planned interval.");
+                    $"Generated narration segment {segment.Id} runs past the end of the video.");
             }
         }
 

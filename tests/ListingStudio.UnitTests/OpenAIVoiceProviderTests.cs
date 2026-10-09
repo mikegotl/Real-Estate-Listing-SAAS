@@ -13,45 +13,48 @@ namespace ListingStudio.UnitTests;
 public sealed class OpenAIVoiceProviderTests
 {
     [Fact]
-    public async Task GenerateSendsSpeechRequestAndReturnsWaveDuration()
+    public async Task GenerateSynthesizesEachSegmentAndReturnsItsTimingInTheWave()
     {
-        var pcm = CreatePcm(durationMs: 1_000);
-        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new ByteArrayContent(pcm)
-            {
-                Headers = { ContentType = new MediaTypeHeaderValue("application/octet-stream") },
-            },
-        });
+        var first = CreatePcm(durationMs: 1_000, fill: 1);
+        var second = CreatePcm(durationMs: 1_500, fill: 2);
+        var handler = new RecordingHandler(CreatePcmResponse(first), CreatePcmResponse(second));
         using var httpClient = new HttpClient(handler);
         var provider = CreateProvider(httpClient);
 
         var result = await provider.GenerateAsync(new VoiceGenerationRequest(
         [
-            new VoiceNarrationSegment("one", "Hello.", 500, 2_000),
+            new VoiceNarrationSegment("one", " Hello. ", 500, 2_000),
             new VoiceNarrationSegment("two", "World.", 3_000, 2_000),
         ]));
 
-        Assert.Equal(pcm.Length + 44, result.AudioData.Length);
+        Assert.Equal(first.Length + second.Length + 44, result.AudioData.Length);
         Assert.Equal("RIFF", Encoding.ASCII.GetString(result.AudioData, 0, 4));
         Assert.Equal("WAVE", Encoding.ASCII.GetString(result.AudioData, 8, 4));
-        Assert.Equal(pcm, result.AudioData[44..]);
+        Assert.Equal(first.Concat(second).ToArray(), result.AudioData[44..]);
         Assert.Equal("audio/wav", result.ContentType);
         Assert.Equal(".wav", result.FileExtension);
-        Assert.Equal(1_000, result.DurationMs);
-        Assert.Null(result.Timing);
-        Assert.StartsWith("openai-tts-v2/test-tts/pcm-wrapped-wav/marin/instructions-", provider.GenerationVersion, StringComparison.Ordinal);
+        Assert.Equal(2_500, result.DurationMs);
+        var timing = Assert.IsType<VoiceTimingMetadata>(result.Timing);
+        Assert.Equal(
+            [new VoiceSegmentTiming("one", 0, 1_000), new VoiceSegmentTiming("two", 1_000, 2_500)],
+            timing.Segments);
+        Assert.StartsWith("openai-tts-v3/test-tts/segmented-pcm-wav/marin/instructions-", provider.GenerationVersion, StringComparison.Ordinal);
 
-        var sent = Assert.Single(handler.Requests);
-        Assert.Equal("https://api.openai.test/v1/audio/speech", sent.RequestUri);
-        Assert.Equal("Bearer", sent.AuthorizationScheme);
-        Assert.Equal("test-api-key", sent.AuthorizationParameter);
-        using var body = JsonDocument.Parse(sent.Body);
-        Assert.Equal("test-tts", body.RootElement.GetProperty("model").GetString());
-        Assert.Equal("marin", body.RootElement.GetProperty("voice").GetString());
-        Assert.Equal("Hello.\n\nWorld.", body.RootElement.GetProperty("input").GetString());
-        Assert.Equal("Speak clearly.", body.RootElement.GetProperty("instructions").GetString());
-        Assert.Equal("pcm", body.RootElement.GetProperty("response_format").GetString());
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, sent =>
+        {
+            Assert.Equal("https://api.openai.test/v1/audio/speech", sent.RequestUri);
+            Assert.Equal("Bearer", sent.AuthorizationScheme);
+            Assert.Equal("test-api-key", sent.AuthorizationParameter);
+            using var body = JsonDocument.Parse(sent.Body);
+            Assert.Equal("test-tts", body.RootElement.GetProperty("model").GetString());
+            Assert.Equal("marin", body.RootElement.GetProperty("voice").GetString());
+            Assert.Equal("Speak clearly.", body.RootElement.GetProperty("instructions").GetString());
+            Assert.Equal("pcm", body.RootElement.GetProperty("response_format").GetString());
+        });
+        Assert.Equal(
+            ["Hello.", "World."],
+            handler.Requests.Select(sent => JsonDocument.Parse(sent.Body).RootElement.GetProperty("input").GetString()));
     }
 
     [Fact]
@@ -121,13 +124,23 @@ public sealed class OpenAIVoiceProviderTests
             OpenAIInstructions = "Speak clearly.",
         }));
 
-    private static byte[] CreatePcm(int durationMs)
+    private static HttpResponseMessage CreatePcmResponse(byte[] pcm) => new(HttpStatusCode.OK)
+    {
+        Content = new ByteArrayContent(pcm)
+        {
+            Headers = { ContentType = new MediaTypeHeaderValue("application/octet-stream") },
+        },
+    };
+
+    private static byte[] CreatePcm(int durationMs, byte fill)
     {
         const int sampleRate = 24_000;
         const short channels = 1;
         const short bitsPerSample = 16;
         var byteRate = sampleRate * channels * bitsPerSample / 8;
-        return new byte[byteRate * durationMs / 1_000];
+        var pcm = new byte[byteRate * durationMs / 1_000];
+        Array.Fill(pcm, fill);
+        return pcm;
     }
 
     private sealed class RecordingHandler(params HttpResponseMessage[] responses) : HttpMessageHandler

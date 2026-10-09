@@ -85,7 +85,7 @@ public sealed class VideoNarrationTests(PostgreSqlWebApplicationFixture fixture)
     }
 
     [Fact]
-    public async Task RejectsNarrationThatExceedsPlannedSegmentWithoutStoringAudioMetadata()
+    public async Task RejectsNarrationThatRunsPastTheVideoWithoutStoringAudioMetadata()
     {
         fixture.Factory.VoiceProvider.SetGenerationVersion("fake-voice-invalid-v1");
         var owner = await CreateOwnerAndPropertyAsync("long-narration-owner");
@@ -93,21 +93,22 @@ public sealed class VideoNarrationTests(PostgreSqlWebApplicationFixture fixture)
         fixture.Factory.VoiceProvider.Enqueue(request =>
         {
             var segment = Assert.Single(request.Segments);
+            var spokenMs = 61_000;
             return new VoiceGenerationResult(
                 [1, 2, 3],
                 "audio/mpeg",
                 ".mp3",
-                4_000,
+                spokenMs,
                 new VoiceTimingMetadata(
-                    [new VoiceCharacterTiming("A", 0, 4_000)],
-                    [new VoiceSegmentTiming(segment.Id, 0, 4_000)]));
+                    [new VoiceCharacterTiming("A", 0, spokenMs)],
+                    [new VoiceSegmentTiming(segment.Id, 0, spokenMs)]));
         });
 
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var narrations = scope.ServiceProvider.GetRequiredService<IVideoNarrationService>();
         var exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => narrations.GenerateAsync(owner.UserId, plan.Id));
-        Assert.Contains("exceeds its planned interval", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("runs past the end of the video", exception.Message, StringComparison.Ordinal);
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.False(await dbContext.VideoNarrations.AnyAsync(item => item.VideoProductionPlanId == plan.Id));

@@ -20,6 +20,7 @@ public sealed class OpenAIVoiceProvider(
     private const short PcmChannels = 1;
     private const short PcmBitsPerSample = 16;
     private const int PcmByteRate = PcmSampleRate * PcmChannels * PcmBitsPerSample / 8;
+    private const int PcmBlockAlign = PcmChannels * PcmBitsPerSample / 8;
 
     public string GenerationVersion
     {
@@ -28,7 +29,7 @@ public sealed class OpenAIVoiceProvider(
             var voice = voiceOptions.Value;
             var instructionsHash = Convert.ToHexString(SHA256.HashData(
                 Encoding.UTF8.GetBytes(voice.OpenAIInstructions)))[..16].ToLowerInvariant();
-            return $"openai-tts-v2/{voice.OpenAIModel}/pcm-wrapped-wav/{voice.OpenAIVoice}/instructions-{instructionsHash}";
+            return $"openai-tts-v3/{voice.OpenAIModel}/segmented-pcm-wav/{voice.OpenAIVoice}/instructions-{instructionsHash}";
         }
     }
 
@@ -40,15 +41,51 @@ public sealed class OpenAIVoiceProvider(
         var openAI = openAIOptions.Value;
         var voice = voiceOptions.Value;
         ValidateConfiguration(openAI, voice);
-        var script = BuildScript(request);
+        var texts = ValidateSegments(request);
 
+        // Each segment is synthesized on its own so the renderer can place it at its planned start, next to
+        // the scene it describes. One continuous take drifts ahead of the visuals as soon as the voice reads
+        // faster than the plan.
+        using var pcm = new MemoryStream();
+        var segments = new List<VoiceSegmentTiming>(texts.Count);
+        for (var index = 0; index < texts.Count; index++)
+        {
+            var segmentPcm = await SynthesizeAsync(openAI, voice, texts[index], pcm.Length, cancellationToken);
+            if (segmentPcm.Length % PcmBlockAlign != 0)
+            {
+                throw new InvalidDataException("OpenAI returned malformed PCM narration audio.");
+            }
+
+            var startMs = (int)(pcm.Length * 1_000L / PcmByteRate);
+            await pcm.WriteAsync(segmentPcm, cancellationToken);
+            var endMs = checked((int)Math.Ceiling(pcm.Length * 1_000d / PcmByteRate));
+            segments.Add(new VoiceSegmentTiming(request.Segments[index].Id, startMs, endMs));
+        }
+
+        var audio = WrapPcmInWave(pcm.ToArray());
+        var durationMs = checked((int)Math.Ceiling(pcm.Length * 1_000d / PcmByteRate));
+        return new VoiceGenerationResult(
+            audio,
+            "audio/wav",
+            ".wav",
+            durationMs,
+            new VoiceTimingMetadata([], segments));
+    }
+
+    private async Task<byte[]> SynthesizeAsync(
+        OpenAIOptions openAI,
+        VoiceOptions voice,
+        string text,
+        long bytesSoFar,
+        CancellationToken cancellationToken)
+    {
         using var message = new HttpRequestMessage(HttpMethod.Post, openAI.SpeechEndpoint)
         {
             Content = JsonContent.Create(new
             {
                 model = voice.OpenAIModel,
                 voice = voice.OpenAIVoice,
-                input = script,
+                input = text,
                 instructions = voice.OpenAIInstructions,
                 response_format = "pcm",
             }),
@@ -71,13 +108,10 @@ public sealed class OpenAIVoiceProvider(
                 response.StatusCode);
         }
 
-        var pcm = await ReadLimitedAsync(response, cancellationToken);
-        var audio = WrapPcmInWave(pcm);
-        var durationMs = checked((int)Math.Ceiling(pcm.Length * 1_000d / PcmByteRate));
-        return new VoiceGenerationResult(audio, "audio/wav", ".wav", durationMs, null);
+        return await ReadLimitedAsync(response, MaximumAudioBytes - bytesSoFar, cancellationToken);
     }
 
-    private static string BuildScript(VoiceGenerationRequest request)
+    private static List<string> ValidateSegments(VoiceGenerationRequest request)
     {
         if (request.Segments.Count == 0)
         {
@@ -100,17 +134,17 @@ public sealed class OpenAIVoiceProvider(
                 throw new ArgumentOutOfRangeException(nameof(request), "Narration timing must be positive.");
             }
 
-            parts.Add(segment.Text.Trim());
+            var text = segment.Text.Trim();
+            if (text.Length > MaximumInputCharacters)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAI narration input cannot exceed {MaximumInputCharacters} characters per segment. Shorten the voiceover script and retry.");
+            }
+
+            parts.Add(text);
         }
 
-        var script = string.Join("\n\n", parts);
-        if (script.Length > MaximumInputCharacters)
-        {
-            throw new InvalidOperationException(
-                $"OpenAI narration input cannot exceed {MaximumInputCharacters} characters. Shorten the voiceover script and retry.");
-        }
-
-        return script;
+        return parts;
     }
 
     private static void ValidateConfiguration(OpenAIOptions openAI, VoiceOptions voice)
@@ -132,6 +166,7 @@ public sealed class OpenAIVoiceProvider(
 
     private static async Task<byte[]> ReadLimitedAsync(
         HttpResponseMessage response,
+        long maximumBytes,
         CancellationToken cancellationToken)
     {
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -145,7 +180,7 @@ public sealed class OpenAIVoiceProvider(
                 break;
             }
 
-            if (output.Length + count > MaximumAudioBytes)
+            if (output.Length + count > maximumBytes)
             {
                 throw new InvalidDataException("OpenAI returned an oversized narration audio file.");
             }
@@ -163,7 +198,7 @@ public sealed class OpenAIVoiceProvider(
         const int headerLength = 44;
         const short audioFormatPcm = 1;
         const int formatChunkSize = 16;
-        if (pcm.Length % (PcmChannels * PcmBitsPerSample / 8) != 0)
+        if (pcm.Length % PcmBlockAlign != 0)
         {
             throw new InvalidDataException("OpenAI returned malformed PCM narration audio.");
         }
@@ -181,7 +216,7 @@ public sealed class OpenAIVoiceProvider(
         BinaryPrimitives.WriteInt32LittleEndian(header.Slice(28, 4), PcmByteRate);
         BinaryPrimitives.WriteInt16LittleEndian(
             header.Slice(32, 2),
-            (short)(PcmChannels * PcmBitsPerSample / 8));
+            (short)PcmBlockAlign);
         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(34, 2), PcmBitsPerSample);
         "data"u8.CopyTo(header[36..]);
         BinaryPrimitives.WriteInt32LittleEndian(header.Slice(40, 4), pcm.Length);
