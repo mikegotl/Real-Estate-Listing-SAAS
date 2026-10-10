@@ -43,9 +43,9 @@ public sealed partial class CampaignGenerationProcessor(
             return null;
         }
 
-        var (jobId, stage, attemptNumber) = claimed.Value;
+        var (jobId, stage, attemptNumber, stageTimeoutSeconds) = claimed.Value;
         using var stageTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        stageTimeout.CancelAfter(TimeSpan.FromSeconds(options.Value.StageTimeoutSeconds));
+        stageTimeout.CancelAfter(TimeSpan.FromSeconds(stageTimeoutSeconds));
         try
         {
             var completed = await ExecuteStageAsync(jobId, stage, stageTimeout.Token);
@@ -108,7 +108,7 @@ public sealed partial class CampaignGenerationProcessor(
         }
     }
 
-    private async Task<(Guid JobId, CampaignGenerationStage Stage, int AttemptNumber)?> ClaimNextAsync(
+    private async Task<(Guid JobId, CampaignGenerationStage Stage, int AttemptNumber, int StageTimeoutSeconds)?> ClaimNextAsync(
         CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
@@ -141,12 +141,49 @@ public sealed partial class CampaignGenerationProcessor(
             return null;
         }
 
-        job.BeginStage(now, TimeSpan.FromSeconds(options.Value.LeaseSeconds));
+        var requestedDurationSeconds = job.CurrentStage == CampaignGenerationStage.RenderLongForm
+            ? await dbContext.CampaignDeliverables.AsNoTracking()
+                .Where(candidate => candidate.CampaignGenerationJobId == job.Id
+                    && candidate.Kind == CampaignOutputKind.LongForm)
+                .Select(candidate => (int?)candidate.RequestedDuration)
+                .SingleOrDefaultAsync(cancellationToken)
+            : null;
+        var stageTimeoutSeconds = CalculateStageTimeoutSeconds(
+            options.Value.StageTimeoutSeconds,
+            job.CurrentStage,
+            requestedDurationSeconds);
+        var leaseSeconds = Math.Max(options.Value.LeaseSeconds, stageTimeoutSeconds + 60);
+        job.BeginStage(now, TimeSpan.FromSeconds(leaseSeconds));
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        var result = (job.Id, job.CurrentStage, job.StageAttemptCount);
+        var result = (job.Id, job.CurrentStage, job.StageAttemptCount, stageTimeoutSeconds);
         dbContext.ChangeTracker.Clear();
         return result;
+    }
+
+    public static int CalculateStageTimeoutSeconds(
+        int configuredTimeoutSeconds,
+        CampaignGenerationStage stage,
+        int? requestedDurationSeconds)
+    {
+        if (configuredTimeoutSeconds is < 30 or > 3_600)
+        {
+            throw new ArgumentOutOfRangeException(nameof(configuredTimeoutSeconds));
+        }
+
+        if (stage != CampaignGenerationStage.RenderLongForm || requestedDurationSeconds is null)
+        {
+            return configuredTimeoutSeconds;
+        }
+
+        if (requestedDurationSeconds is < 15 or > 900)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedDurationSeconds));
+        }
+
+        return Math.Min(
+            3_600,
+            Math.Max(configuredTimeoutSeconds, checked((requestedDurationSeconds.Value * 3) + 120)));
     }
 
     private Task<bool> ExecuteStageAsync(
@@ -164,6 +201,7 @@ public sealed partial class CampaignGenerationProcessor(
             CampaignGenerationStage.RenderHero => RenderAsync(jobId, CampaignOutputKind.Hero, cancellationToken),
             CampaignGenerationStage.RenderFeature => RenderAsync(jobId, CampaignOutputKind.Feature, cancellationToken),
             CampaignGenerationStage.RenderTeaser => RenderAsync(jobId, CampaignOutputKind.Teaser, cancellationToken),
+            CampaignGenerationStage.RenderLongForm => RenderLongFormAsync(jobId, cancellationToken),
             CampaignGenerationStage.GenerateSocialCopy => GenerateSocialCopyAsync(jobId, cancellationToken),
             CampaignGenerationStage.FinalizeCampaign => FinalizeAsync(jobId, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(stage)),
@@ -271,6 +309,10 @@ public sealed partial class CampaignGenerationProcessor(
         {
             throw new InvalidOperationException("The master plan is missing.");
         }
+        if (job.VideoNarrationId is not { } shortFormNarrationId)
+        {
+            throw new InvalidOperationException("The campaign narration is missing.");
+        }
 
         var plan = await dbContext.VideoProductionPlans.AsNoTracking().SingleAsync(
             candidate => candidate.Id == planId && candidate.OrganizationId == job.OrganizationId,
@@ -300,6 +342,30 @@ public sealed partial class CampaignGenerationProcessor(
             .ToArrayAsync(cancellationToken);
         var derivatives = derivativeGenerator.Generate(
             new CampaignDerivativeRequest(specification, media, propertyVideos));
+        var acceptedScript = await dbContext.PropertyNarrationScripts.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId
+                && candidate.MarketingUseAccepted,
+                cancellationToken);
+        VideoProductionPlanResult? longFormPlan = null;
+        VideoNarrationResult? longFormNarration = null;
+        if (acceptedScript is not null && NarrationScriptPolicy.RequiresLongForm(acceptedScript.ExtractedText))
+        {
+            var durationSeconds = NarrationScriptPolicy.EstimateLongFormDurationSeconds(acceptedScript.ExtractedText);
+            longFormPlan = await productionPlanService.GenerateAsync(
+                job.RequestedByUserId,
+                job.PropertyId,
+                (RequestedDuration)durationSeconds,
+                VideoAspectRatio.Landscape16By9,
+                cancellationToken)
+                ?? throw new InvalidOperationException("The long-form video plan could not be created.");
+            longFormNarration = await narrationService.GenerateAsync(
+                job.RequestedByUserId,
+                longFormPlan.Id,
+                cancellationToken)
+                ?? throw new InvalidOperationException("The long-form narration could not be created.");
+        }
+
         foreach (var derivative in derivatives.Derivatives.Where(candidate =>
             candidate.AspectRatio == VideoAspectRatio.Landscape16By9))
         {
@@ -307,10 +373,24 @@ public sealed partial class CampaignGenerationProcessor(
                 job.Id,
                 job.OrganizationId,
                 job.PropertyId,
+                shortFormNarrationId,
                 ToOutputKind(derivative.Kind),
                 derivative.Specification.RequestedDuration,
                 derivative.AspectRatio,
                 JsonSerializer.Serialize(derivative.Specification, SerializerOptions),
+                timeProvider.GetUtcNow()));
+        }
+        if (longFormPlan is not null && longFormNarration is not null)
+        {
+            dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
+                job.Id,
+                job.OrganizationId,
+                job.PropertyId,
+                longFormNarration.Id,
+                CampaignOutputKind.LongForm,
+                longFormPlan.Specification.RequestedDuration,
+                longFormPlan.Specification.AspectRatio,
+                JsonSerializer.Serialize(longFormPlan.Specification, SerializerOptions),
                 timeProvider.GetUtcNow()));
         }
 
@@ -349,7 +429,11 @@ public sealed partial class CampaignGenerationProcessor(
         try
         {
             var mediaAssets = await MaterializeMediaAsync(job, specification, directory, cancellationToken);
-            var narrationAsset = await MaterializeNarrationAsync(job, directory, cancellationToken);
+            var narrationAsset = await MaterializeNarrationAsync(
+                job,
+                deliverable.VideoNarrationId,
+                directory,
+                cancellationToken);
             var generatedClips = await MaterializeGeneratedClipsAsync(
                 job,
                 specification,
@@ -417,6 +501,15 @@ public sealed partial class CampaignGenerationProcessor(
         }
 
         return true;
+    }
+
+    private async Task<bool> RenderLongFormAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.CampaignDeliverables.AsNoTracking().AnyAsync(candidate =>
+            candidate.CampaignGenerationJobId == jobId
+                && candidate.Kind == CampaignOutputKind.LongForm,
+            cancellationToken);
+        return !exists || await RenderAsync(jobId, CampaignOutputKind.LongForm, cancellationToken);
     }
 
     private async Task<bool> GenerateRequiredAiVideoAsync(
@@ -534,16 +627,14 @@ public sealed partial class CampaignGenerationProcessor(
 
     private async Task<VideoRenderNarrationAsset?> MaterializeNarrationAsync(
         CampaignGenerationJob job,
+        Guid narrationId,
         string directory,
         CancellationToken cancellationToken)
     {
-        if (job.VideoNarrationId is not { } narrationId)
-        {
-            return null;
-        }
-
         var narration = await dbContext.VideoNarrations.AsNoTracking().SingleAsync(candidate =>
-            candidate.Id == narrationId && candidate.OrganizationId == job.OrganizationId,
+            candidate.Id == narrationId
+                && candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId,
             cancellationToken);
         await using var source = await campaignAssetStorage.OpenReadAsync(narration.AssetPath, cancellationToken)
             ?? throw new FileNotFoundException("The narration asset could not be opened.");
@@ -721,7 +812,16 @@ public sealed partial class CampaignGenerationProcessor(
         var job = await dbContext.CampaignGenerationJobs.AsNoTracking()
             .Include(candidate => candidate.Deliverables)
             .SingleAsync(candidate => candidate.Id == jobId, cancellationToken);
-        if (job.Deliverables.Count != 3
+        var requiredKinds = new[]
+        {
+            CampaignOutputKind.Hero,
+            CampaignOutputKind.Feature,
+            CampaignOutputKind.Teaser,
+        };
+        if (job.Deliverables.Count is < 3 or > 4
+            || requiredKinds.Any(kind => job.Deliverables.All(candidate => candidate.Kind != kind))
+            || (job.Deliverables.Count == 4
+                && job.Deliverables.All(candidate => candidate.Kind != CampaignOutputKind.LongForm))
             || job.Deliverables.Any(candidate => candidate.Status != CampaignDeliverableStatus.Rendered)
             || string.IsNullOrWhiteSpace(job.SocialCaptionLong)
             || string.IsNullOrWhiteSpace(job.SocialCaptionShort))
@@ -748,7 +848,8 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignGenerationStage.GenerateRequiredAiVideo => CampaignGenerationStage.RenderHero,
         CampaignGenerationStage.RenderHero => CampaignGenerationStage.RenderFeature,
         CampaignGenerationStage.RenderFeature => CampaignGenerationStage.RenderTeaser,
-        CampaignGenerationStage.RenderTeaser => CampaignGenerationStage.GenerateSocialCopy,
+        CampaignGenerationStage.RenderTeaser => CampaignGenerationStage.RenderLongForm,
+        CampaignGenerationStage.RenderLongForm => CampaignGenerationStage.GenerateSocialCopy,
         CampaignGenerationStage.GenerateSocialCopy => CampaignGenerationStage.FinalizeCampaign,
         _ => throw new ArgumentOutOfRangeException(nameof(stage)),
     };

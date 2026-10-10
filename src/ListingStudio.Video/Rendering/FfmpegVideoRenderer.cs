@@ -34,6 +34,9 @@ public sealed class FfmpegVideoRenderer(
             $".{Path.GetFileNameWithoutExtension(outputPath)}.{Guid.NewGuid():N}.rendering.mp4");
         var normalizedRequest = request with { OutputFilePath = temporaryOutputPath };
         var command = FfmpegCommandBuilder.Build(normalizedRequest, brandingOptions.Value);
+        var renderTimeoutSeconds = CalculateRenderTimeoutSeconds(
+            configuration.RenderTimeoutSeconds,
+            (int)request.Specification.RequestedDuration);
 
         using var process = new Process
         {
@@ -59,7 +62,7 @@ public sealed class FfmpegVideoRenderer(
 
         var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var standardErrorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(configuration.RenderTimeoutSeconds));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(renderTimeoutSeconds));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
@@ -73,7 +76,7 @@ public sealed class FfmpegVideoRenderer(
             if (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
                 throw new VideoRenderException(
-                    $"FFmpeg rendering exceeded the {configuration.RenderTimeoutSeconds}-second timeout.",
+                    $"FFmpeg rendering exceeded the {renderTimeoutSeconds}-second timeout.",
                     innerException: exception);
             }
 
@@ -148,6 +151,28 @@ public sealed class FfmpegVideoRenderer(
         {
             throw new InvalidOperationException("FFmpeg:RenderTimeoutSeconds must be between 1 and 3600.");
         }
+    }
+
+    public static int CalculateRenderTimeoutSeconds(
+        int configuredMinimumSeconds,
+        int requestedDurationSeconds)
+    {
+        if (configuredMinimumSeconds is < 1 or > 3_600)
+        {
+            throw new ArgumentOutOfRangeException(nameof(configuredMinimumSeconds));
+        }
+
+        if (requestedDurationSeconds is < 1 or > 900)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedDurationSeconds));
+        }
+
+        // Long-form exports can take longer than their playback duration when filters,
+        // overlays, and software H.264 encoding are used. Keep the configured value as
+        // the floor for short edits and allow three times the program length plus setup.
+        return Math.Min(
+            3_600,
+            Math.Max(configuredMinimumSeconds, checked((requestedDurationSeconds * 3) + 60)));
     }
 
     private static void Kill(Process process)

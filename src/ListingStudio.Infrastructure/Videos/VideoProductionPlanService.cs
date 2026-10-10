@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Properties;
@@ -110,6 +111,12 @@ public sealed partial class VideoProductionPlanService(
                 && script.PropertyId == propertyId
                 && script.MarketingUseAccepted,
                 cancellationToken);
+        if (narrationScript is not null
+            && NarrationScriptPolicy.RequiresLongForm(narrationScript.ExtractedText)
+            && duration == RequestedDuration.Hero60)
+        {
+            narrationScript = null;
+        }
         var walkthroughVideos = await dbContext.PropertyVideos
             .AsNoTracking()
             .Where(video => video.OrganizationId == organizationId
@@ -617,7 +624,7 @@ public sealed partial class VideoProductionPlanService(
             .ToArray();
         var result = new List<string>();
         var current = new StringBuilder();
-        foreach (var sentence in sentences)
+        foreach (var sentence in sentences.SelectMany(value => SplitLongScriptSegment(value, targetLength)))
         {
             if (current.Length > 0 && current.Length + 1 + sentence.Length > targetLength)
             {
@@ -639,6 +646,27 @@ public sealed partial class VideoProductionPlanService(
         }
 
         return result;
+    }
+
+    private static IEnumerable<string> SplitLongScriptSegment(string value, int maximumLength)
+    {
+        var remaining = value.Trim();
+        while (remaining.Length > maximumLength)
+        {
+            var split = remaining[..maximumLength].LastIndexOf(' ');
+            if (split < maximumLength / 2)
+            {
+                split = maximumLength;
+            }
+
+            yield return remaining[..split].Trim();
+            remaining = remaining[split..].TrimStart();
+        }
+
+        if (remaining.Length > 0)
+        {
+            yield return remaining;
+        }
     }
 
     private static PropertyMediaObservation ToObservation(PropertyMedia media, PropertyMediaAnalysis analysis) => new(
@@ -738,7 +766,8 @@ public sealed partial class VideoProductionPlanService(
 
     private static void EnsureSupportedOutput(RequestedDuration duration, VideoAspectRatio aspectRatio)
     {
-        if (!Enum.IsDefined(duration) || !Enum.IsDefined(aspectRatio))
+        if ((int)duration is < 15 or > IPropertyNarrationScriptService.MaximumLongFormDurationSeconds
+            || !Enum.IsDefined(aspectRatio))
         {
             throw new ArgumentOutOfRangeException(nameof(duration), "The requested output is not supported.");
         }

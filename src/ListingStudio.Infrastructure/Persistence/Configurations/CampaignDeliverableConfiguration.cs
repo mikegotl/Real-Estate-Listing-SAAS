@@ -35,5 +35,15 @@ public sealed class CampaignDeliverableConfiguration : IEntityTypeConfiguration<
             })
             .HasPrincipalKey(job => new { job.Id, job.PropertyId, job.OrganizationId })
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(deliverable => deliverable.VideoNarration)
+            .WithMany()
+            .HasForeignKey(deliverable => new
+            {
+                deliverable.VideoNarrationId,
+                deliverable.PropertyId,
+                deliverable.OrganizationId,
+            })
+            .HasPrincipalKey(narration => new { narration.Id, narration.PropertyId, narration.OrganizationId })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

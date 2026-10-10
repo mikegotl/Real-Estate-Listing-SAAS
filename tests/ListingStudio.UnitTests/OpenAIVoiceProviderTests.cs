@@ -38,7 +38,7 @@ public sealed class OpenAIVoiceProviderTests
         Assert.Equal(
             [new VoiceSegmentTiming("one", 0, 1_000), new VoiceSegmentTiming("two", 1_000, 2_500)],
             timing.Segments);
-        Assert.StartsWith("openai-tts-v3/test-tts/segmented-pcm-wav/marin/instructions-", provider.GenerationVersion, StringComparison.Ordinal);
+        Assert.StartsWith("openai-tts-v4/test-tts/segmented-chunked-pcm-wav/marin/instructions-", provider.GenerationVersion, StringComparison.Ordinal);
 
         Assert.Equal(2, handler.Requests.Count);
         Assert.All(handler.Requests, sent =>
@@ -58,18 +58,30 @@ public sealed class OpenAIVoiceProviderTests
     }
 
     [Fact]
-    public async Task GenerateRejectsOversizedInputBeforeCallingProvider()
+    public async Task GenerateChunksOversizedInputAndCombinesPcmAudio()
     {
-        var handler = new RecordingHandler();
+        var first = CreatePcm(durationMs: 500, fill: 1);
+        var second = CreatePcm(durationMs: 750, fill: 2);
+        var handler = new RecordingHandler(
+            CreatePcmResponse(first),
+            CreatePcmResponse(second));
         using var httpClient = new HttpClient(handler);
         var provider = CreateProvider(httpClient);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GenerateAsync(
+        var result = await provider.GenerateAsync(
             new VoiceGenerationRequest(
-                [new VoiceNarrationSegment("one", new string('a', 4_097), 0, 2_000)])));
+                [new VoiceNarrationSegment("one", new string('a', 4_097), 0, 10_000)]));
 
-        Assert.Contains("4096", exception.Message, StringComparison.Ordinal);
-        Assert.Empty(handler.Requests);
+        Assert.Equal(1_250, result.DurationMs);
+        Assert.Equal(first.Concat(second), result.AudioData[44..]);
+        var timing = Assert.IsType<VoiceTimingMetadata>(result.Timing);
+        Assert.Equal([new VoiceSegmentTiming("one", 0, 1_250)], timing.Segments);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, request =>
+        {
+            using var body = JsonDocument.Parse(request.Body);
+            Assert.InRange(body.RootElement.GetProperty("input").GetString()!.Length, 1, 4_096);
+        });
     }
 
     [Fact]

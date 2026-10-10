@@ -1,10 +1,25 @@
 using ListingStudio.Video.Processing;
+using ListingStudio.Video.Rendering;
 using Xunit;
 
 namespace ListingStudio.UnitTests;
 
 public sealed class FfmpegPropertyVideoTranscoderTests
 {
+    [Theory]
+    [InlineData(300, 60, 300)]
+    [InlineData(300, 736, 2_268)]
+    [InlineData(300, 900, 2_760)]
+    public void RenderTimeoutScalesForLongFormPrograms(
+        int configuredMinimum,
+        int duration,
+        int expected)
+    {
+        Assert.Equal(
+            expected,
+            FfmpegVideoRenderer.CalculateRenderTimeoutSeconds(configuredMinimum, duration));
+    }
+
     [Fact]
     public void EnhancementCommandStabilizesCadenceBrightnessAndColor()
     {
