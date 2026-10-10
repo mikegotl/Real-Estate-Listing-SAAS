@@ -148,7 +148,7 @@ public sealed partial class PropertyNarrationScriptService(
 
         if (accepted)
         {
-            var wordCount = CountWords(script.ExtractedText);
+            var wordCount = NarrationScriptPolicy.CountWords(script.ExtractedText);
             if (wordCount < 5)
             {
                 throw new InvalidOperationException("The narration script must contain at least five words before marketing use can be accepted.");
@@ -157,7 +157,7 @@ public sealed partial class PropertyNarrationScriptService(
             if (wordCount > IPropertyNarrationScriptService.MaximumAcceptedWords)
             {
                 throw new InvalidOperationException(
-                    $"The narration script has {wordCount} words. Shorten it to {IPropertyNarrationScriptService.MaximumAcceptedWords} words or fewer so it can fit the 60-second master video.");
+                    $"The narration script has {wordCount} words. Long-form narration supports up to {IPropertyNarrationScriptService.MaximumAcceptedWords:N0} words.");
             }
         }
 
@@ -360,10 +360,6 @@ public sealed partial class PropertyNarrationScriptService(
         return string.Join('\n', lines).Trim();
     }
 
-    private static int CountWords(string value) => value.Split(
-        (char[]?)null,
-        StringSplitOptions.RemoveEmptyEntries).Length;
-
     private async Task<Guid> GetOrganizationIdAsync(string userId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
@@ -380,7 +376,7 @@ public sealed partial class PropertyNarrationScriptService(
         script.ContentType,
         script.FileSize,
         script.ExtractedText,
-        CountWords(script.ExtractedText),
+        NarrationScriptPolicy.CountWords(script.ExtractedText),
         script.UploadedAtUtc,
         script.MarketingUseAccepted,
         script.MarketingUseAcceptedAtUtc);

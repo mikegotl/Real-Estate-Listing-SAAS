@@ -12,6 +12,7 @@ using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using System.Text;
 using Xunit;
 using ListingStudio.Domain.Billing;
 
@@ -67,7 +68,12 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
             var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
-            foreach (var kind in Enum.GetValues<CampaignOutputKind>())
+            foreach (var kind in new[]
+            {
+                CampaignOutputKind.Hero,
+                CampaignOutputKind.Feature,
+                CampaignOutputKind.Teaser,
+            })
             {
                 var download = await campaigns.OpenDeliverableAsync(owner.UserId, queued.Id, kind);
                 Assert.NotNull(download);
@@ -152,6 +158,48 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                 Assert.Null(await assets.OpenReadAsync(path));
             }
         }
+    }
+
+    [Fact]
+    public async Task AcceptedLongScriptAddsNarrationLengthDeliverable()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-long-form");
+        await UploadAsync(owner);
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var scripts = scope.ServiceProvider.GetRequiredService<IPropertyNarrationScriptService>();
+            var text = string.Join(' ', Enumerable.Repeat("welcome", 1_000));
+            var bytes = Encoding.UTF8.GetBytes(text);
+            await using var content = new MemoryStream(bytes);
+            var scriptId = await scripts.UploadAsync(
+                owner.UserId,
+                owner.PropertyId,
+                new PropertyNarrationScriptUpload("long-form.txt", "text/plain", bytes.Length, content));
+            Assert.True(await scripts.SetMarketingUseAcceptedAsync(
+                owner.UserId, owner.PropertyId, scriptId, accepted: true));
+        }
+
+        var directorCallsBefore = fixture.Factory.VideoDirector.CallCount;
+        var voiceCallsBefore = fixture.Factory.VoiceProvider.CallCount;
+        var renderCallsBefore = fixture.Factory.VideoRenderer.CallCount;
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        fixture.Factory.VideoDirector.Enqueue(CreateLongFormEditorialPlan);
+        fixture.Factory.VoiceProvider.Enqueue(_ => new VoiceGenerationResult(
+            [1, 2, 3, 4], "audio/mpeg", ".mp3", 1_000, null));
+
+        var queued = await EnqueueAsync(owner);
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        Assert.Equal(4, completed.Deliverables.Count);
+        var longForm = Assert.Single(completed.Deliverables, item => item.Kind == CampaignOutputKind.LongForm);
+        Assert.Equal(420, longForm.DurationSeconds);
+        Assert.Equal(CampaignDeliverableStatus.Rendered, longForm.Status);
+        Assert.Equal(directorCallsBefore + 2, fixture.Factory.VideoDirector.CallCount);
+        Assert.Equal(voiceCallsBefore + 2, fixture.Factory.VoiceProvider.CallCount);
+        Assert.Equal(renderCallsBefore + 4, fixture.Factory.VideoRenderer.CallCount);
     }
 
     [Fact]
@@ -455,6 +503,52 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             new VoiceTimingMetadata(
                 [new VoiceCharacterTiming("W", 0, 1_000)],
                 [new VoiceSegmentTiming(segment.Id, 0, 1_000)]));
+    }
+
+    private static DirectedEditorialPlan CreateLongFormEditorialPlan(VideoDirectionRequest request)
+    {
+        var accepted = Assert.IsType<AcceptedNarrationScriptInput>(request.AcceptedNarrationScript);
+        Assert.NotEmpty(accepted.Segments);
+        var media = request.Media[0];
+        var viewportHeight = 9m * media.Width / (16m * media.Height);
+        var viewport = viewportHeight <= 1
+            ? new NormalizedRect(0, 0, 1, viewportHeight)
+            : new NormalizedRect(0, 0, 16m * media.Height / (9m * media.Width), 1);
+        var duration = (int)request.RequestedDuration * 1_000;
+        var narrationWindow = duration - 6_000;
+        var narrationDuration = narrationWindow / accepted.Segments.Count;
+        var narration = accepted.Segments.Select((segment, index) => new NarrationSegment(
+            $"long-form-narration-{index + 1}",
+            500 + index * narrationDuration,
+            index == accepted.Segments.Count - 1
+                ? narrationWindow - index * narrationDuration
+                : narrationDuration,
+            segment.Text,
+            segment.Key)).ToArray();
+        return new DirectedEditorialPlan(
+            new AudioPlan(
+                narration,
+                new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)),
+            [
+                new VideoScene(
+                    1,
+                    0,
+                    duration,
+                    new VisualSource(VisualSourceKind.PropertyMedia, media.MediaId, null, null, null),
+                    new TransitionPlan(TransitionKind.Cut, 0),
+                    new MotionPlan(MotionKind.KenBurns, viewport, viewport, MotionEasing.EaseInOut),
+                    [new TextOverlay(
+                        "long-form-closing-cta",
+                        request.CallToAction.Text,
+                        request.CallToAction.GroundingKey,
+                        duration - 5_000,
+                        4_000,
+                        OverlayAnchor.BottomCenter,
+                        new NormalizedRect(0.15m, 0.75m, 0.7m, 0.1m),
+                        TextOverlayStyle.ClosingCta)],
+                    [],
+                    narration.Select(item => item.Id).ToArray()),
+            ]);
     }
 
     private async Task<Guid> UploadAsync(OwnerProperty owner)

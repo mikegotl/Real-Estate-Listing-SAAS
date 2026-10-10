@@ -29,7 +29,7 @@ public sealed class OpenAIVoiceProvider(
             var voice = voiceOptions.Value;
             var instructionsHash = Convert.ToHexString(SHA256.HashData(
                 Encoding.UTF8.GetBytes(voice.OpenAIInstructions)))[..16].ToLowerInvariant();
-            return $"openai-tts-v3/{voice.OpenAIModel}/segmented-pcm-wav/{voice.OpenAIVoice}/instructions-{instructionsHash}";
+            return $"openai-tts-v4/{voice.OpenAIModel}/segmented-chunked-pcm-wav/{voice.OpenAIVoice}/instructions-{instructionsHash}";
         }
     }
 
@@ -50,14 +50,18 @@ public sealed class OpenAIVoiceProvider(
         var segments = new List<VoiceSegmentTiming>(texts.Count);
         for (var index = 0; index < texts.Count; index++)
         {
-            var segmentPcm = await SynthesizeAsync(openAI, voice, texts[index], pcm.Length, cancellationToken);
-            if (segmentPcm.Length % PcmBlockAlign != 0)
+            var startMs = (int)(pcm.Length * 1_000L / PcmByteRate);
+            foreach (var chunk in SplitToFit(texts[index]))
             {
-                throw new InvalidDataException("OpenAI returned malformed PCM narration audio.");
+                var segmentPcm = await SynthesizeAsync(openAI, voice, chunk, pcm.Length, cancellationToken);
+                if (segmentPcm.Length % PcmBlockAlign != 0)
+                {
+                    throw new InvalidDataException("OpenAI returned malformed PCM narration audio.");
+                }
+
+                await pcm.WriteAsync(segmentPcm, cancellationToken);
             }
 
-            var startMs = (int)(pcm.Length * 1_000L / PcmByteRate);
-            await pcm.WriteAsync(segmentPcm, cancellationToken);
             var endMs = checked((int)Math.Ceiling(pcm.Length * 1_000d / PcmByteRate));
             segments.Add(new VoiceSegmentTiming(request.Segments[index].Id, startMs, endMs));
         }
@@ -135,16 +139,32 @@ public sealed class OpenAIVoiceProvider(
             }
 
             var text = segment.Text.Trim();
-            if (text.Length > MaximumInputCharacters)
-            {
-                throw new InvalidOperationException(
-                    $"OpenAI narration input cannot exceed {MaximumInputCharacters} characters per segment. Shorten the voiceover script and retry.");
-            }
-
             parts.Add(text);
         }
 
         return parts;
+    }
+
+    private static IEnumerable<string> SplitToFit(string text)
+    {
+        var remaining = text.Trim();
+        while (remaining.Length > MaximumInputCharacters)
+        {
+            var candidate = remaining[..MaximumInputCharacters];
+            var split = candidate.LastIndexOfAny([' ', '\n', '\t']);
+            if (split < MaximumInputCharacters / 2)
+            {
+                split = MaximumInputCharacters;
+            }
+
+            yield return remaining[..split].Trim();
+            remaining = remaining[split..].TrimStart();
+        }
+
+        if (remaining.Length > 0)
+        {
+            yield return remaining;
+        }
     }
 
     private static void ValidateConfiguration(OpenAIOptions openAI, VoiceOptions voice)

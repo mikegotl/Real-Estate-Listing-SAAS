@@ -4,7 +4,9 @@ public interface IPropertyNarrationScriptService
 {
     const long MaximumFileSize = 2L * 1024 * 1024;
     const int MaximumExtractedCharacters = 12_000;
-    const int MaximumAcceptedWords = 145;
+    const int ShortFormWordLimit = 145;
+    const int MaximumAcceptedWords = 2_000;
+    const int MaximumLongFormDurationSeconds = 900;
 
     Task<PropertyNarrationScriptItem?> GetAsync(
         string userId,

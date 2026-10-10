@@ -14,8 +14,9 @@
 
     <MudAlert Severity="Severity.Info" Dense="true" Class="my-4">
         The file is stored privately but is not used until you accept it for marketing. Acceptance applies only to
-        campaigns created or refreshed afterward. The 60-second video uses the complete accepted script; shorter
-        deliverables use script excerpts and never substitute AI-written narration.
+        campaigns created or refreshed afterward. Scripts up to @IPropertyNarrationScriptService.ShortFormWordLimit words
+        become the HERO narration. Longer accepted scripts automatically add a landscape long-form video timed for the
+        complete script; HERO, FEATURE, and TEASER remain available as concise edits.
     </MudAlert>
 
     @if (!IsReadOnly)
@@ -52,9 +53,17 @@
                             @FormatSize(script.FileSize) · @script.WordCount words · uploaded @script.UploadedAtUtc.LocalDateTime.ToString("g")
                         </MudText>
                     </div>
-                    <MudChip T="string" Color="@(script.MarketingUseAccepted ? Color.Success : Color.Default)">
-                        @(script.MarketingUseAccepted ? "Accepted" : "Stored only")
-                    </MudChip>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        @if (script.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit)
+                        {
+                            <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined">
+                                Long form · about @FormatDuration(NarrationScriptPolicy.EstimateLongFormDurationSeconds(script.ExtractedText))
+                            </MudChip>
+                        }
+                        <MudChip T="string" Color="@(script.MarketingUseAccepted ? Color.Success : Color.Default)">
+                            @(script.MarketingUseAccepted ? "Accepted" : "Stored only")
+                        </MudChip>
+                    </MudStack>
                 </MudStack>
                 <MudText Typo="Typo.overline" Class="mt-4">Extracted narration preview</MudText>
                 <MudText Typo="Typo.body2" Style="white-space: pre-wrap; max-height: 12rem; overflow-y: auto;">
@@ -151,7 +160,9 @@
                 await LoadAsync();
                 ShowMessage(
                     accepted
-                        ? "Script accepted. Generate or refresh the campaign to use it as the narration source."
+                        ? script.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
+                            ? $"Script accepted. Generate or refresh the campaign to add an approximately {FormatDuration(NarrationScriptPolicy.EstimateLongFormDurationSeconds(script.ExtractedText))} long-form video."
+                            : "Script accepted. Generate or refresh the campaign to use it as the HERO narration source."
                         : "Marketing acceptance removed. Existing videos are unchanged; refreshed videos will return to generated narration.",
                     Severity.Success);
             }
@@ -193,4 +204,7 @@
     private static string FormatSize(long bytes) => bytes >= 1024 * 1024
         ? $"{bytes / 1024d / 1024d:0.##} MB"
         : $"{bytes / 1024d:0.##} KB";
+
+    private static string FormatDuration(int seconds) =>
+        $"{seconds / 60}:{seconds % 60:00}";
 }

@@ -7,6 +7,7 @@ public enum CampaignOutputKind
     Hero,
     Feature,
     Teaser,
+    LongForm,
 }
 
 public enum CampaignDeliverableStatus
@@ -25,6 +26,7 @@ public sealed class CampaignDeliverable
         Guid campaignGenerationJobId,
         Guid organizationId,
         Guid propertyId,
+        Guid videoNarrationId,
         CampaignOutputKind kind,
         RequestedDuration requestedDuration,
         VideoAspectRatio aspectRatio,
@@ -35,6 +37,7 @@ public sealed class CampaignDeliverable
         CampaignGenerationJobId = campaignGenerationJobId;
         OrganizationId = organizationId;
         PropertyId = propertyId;
+        VideoNarrationId = videoNarrationId;
         Kind = kind;
         RequestedDuration = requestedDuration;
         AspectRatio = aspectRatio;
@@ -50,6 +53,8 @@ public sealed class CampaignDeliverable
     public Guid OrganizationId { get; private set; }
 
     public Guid PropertyId { get; private set; }
+
+    public Guid VideoNarrationId { get; private set; }
 
     public CampaignOutputKind Kind { get; private set; }
 
@@ -73,22 +78,26 @@ public sealed class CampaignDeliverable
 
     public CampaignGenerationJob CampaignGenerationJob { get; private set; } = null!;
 
+    public VideoNarration VideoNarration { get; private set; } = null!;
+
     public static CampaignDeliverable Create(
         Guid campaignGenerationJobId,
         Guid organizationId,
         Guid propertyId,
+        Guid videoNarrationId,
         CampaignOutputKind kind,
         RequestedDuration requestedDuration,
         VideoAspectRatio aspectRatio,
         string specificationJson,
         DateTimeOffset now)
     {
-        if (campaignGenerationJobId == Guid.Empty || organizationId == Guid.Empty || propertyId == Guid.Empty)
+        if (campaignGenerationJobId == Guid.Empty || organizationId == Guid.Empty || propertyId == Guid.Empty
+            || videoNarrationId == Guid.Empty)
         {
             throw new ArgumentException("Campaign, organization, and property identities are required.");
         }
 
-        if (!Enum.IsDefined(kind) || !Enum.IsDefined(requestedDuration) || !Enum.IsDefined(aspectRatio))
+        if (!Enum.IsDefined(kind) || (int)requestedDuration is < 15 or > 900 || !Enum.IsDefined(aspectRatio))
         {
             throw new ArgumentOutOfRangeException(nameof(kind));
         }
@@ -97,6 +106,7 @@ public sealed class CampaignDeliverable
             campaignGenerationJobId,
             organizationId,
             propertyId,
+            videoNarrationId,
             kind,
             requestedDuration,
             aspectRatio,

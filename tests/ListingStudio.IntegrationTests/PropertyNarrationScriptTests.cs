@@ -57,19 +57,38 @@ public sealed class PropertyNarrationScriptTests(PostgreSqlWebApplicationFixture
     }
 
     [Fact]
-    public async Task MarketingAcceptanceRejectsNarrationThatCannotFitTheMasterVideo()
+    public async Task MarketingAcceptanceRejectsNarrationBeyondLongFormLimit()
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var owner = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "script-length");
         var service = scope.ServiceProvider.GetRequiredService<IPropertyNarrationScriptService>();
-        var text = string.Join(' ', Enumerable.Repeat("welcome", IPropertyNarrationScriptService.MaximumAcceptedWords + 1));
+        var text = string.Join(' ', Enumerable.Repeat("a", IPropertyNarrationScriptService.MaximumAcceptedWords + 1));
         var scriptId = await UploadTextAsync(service, owner, "long.txt", text);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.SetMarketingUseAcceptedAsync(owner.UserId, owner.PropertyId, scriptId, accepted: true));
 
-        Assert.Contains("Shorten it", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("supports up to", exception.Message, StringComparison.Ordinal);
         Assert.False((await service.GetAsync(owner.UserId, owner.PropertyId))!.MarketingUseAccepted);
+    }
+
+    [Fact]
+    public async Task MarketingAcceptanceAllowsLongFormNarration()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var owner = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "script-long-form");
+        var service = scope.ServiceProvider.GetRequiredService<IPropertyNarrationScriptService>();
+        var text = string.Join(' ', Enumerable.Repeat("welcome", 1_000));
+        var scriptId = await UploadTextAsync(service, owner, "long-form.txt", text);
+
+        Assert.True(await service.SetMarketingUseAcceptedAsync(
+            owner.UserId, owner.PropertyId, scriptId, accepted: true));
+        var stored = await service.GetAsync(owner.UserId, owner.PropertyId);
+        Assert.NotNull(stored);
+        Assert.True(stored.MarketingUseAccepted);
+        Assert.Equal(1_000, stored.WordCount);
+        Assert.True(NarrationScriptPolicy.RequiresLongForm(stored.ExtractedText));
+        Assert.Equal(420, NarrationScriptPolicy.EstimateLongFormDurationSeconds(stored.ExtractedText));
     }
 
     private static async Task<Guid> UploadTextAsync(

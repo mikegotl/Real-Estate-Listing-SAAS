@@ -85,7 +85,7 @@ public sealed class VideoProductionPlan
 
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(version);
 
-        if (!Enum.IsDefined(requestedDuration) || !Enum.IsDefined(aspectRatio))
+        if ((int)requestedDuration is < 15 or > 900 || !Enum.IsDefined(aspectRatio))
         {
             throw new ArgumentOutOfRangeException(nameof(requestedDuration), "The requested output is not supported.");
         }

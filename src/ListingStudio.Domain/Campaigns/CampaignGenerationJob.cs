@@ -25,6 +25,7 @@ public enum CampaignGenerationStage
     RenderHero,
     RenderFeature,
     RenderTeaser,
+    RenderLongForm,
     GenerateSocialCopy,
     FinalizeCampaign,
 }

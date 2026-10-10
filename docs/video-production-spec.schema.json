@@ -23,7 +23,8 @@
     },
     "requestedDurationSeconds": {
       "type": "integer",
-      "enum": [15, 30, 60]
+      "minimum": 15,
+      "maximum": 900
     },
     "aspectRatio": {
       "type": "string",
