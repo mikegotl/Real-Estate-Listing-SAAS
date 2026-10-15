@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
@@ -587,7 +588,7 @@ public sealed partial class VideoProductionPlanService(
             var fact = approvedNeighborhoodFacts[index];
             facts.Add(new FactBinding(
                 $"neighborhood.{index + 1}",
-                $"{fact.Name} • {fact.Category} • {fact.DistanceMiles:0.##} miles straight-line distance",
+                $"{fact.Name} • {fact.Category} • {NeighborhoodDistancePhrasing.Describe(fact.DistanceMiles)}",
                 FactSource.ApprovedNeighborhood,
                 fact.SourceUrl,
                 fact.InsightId));

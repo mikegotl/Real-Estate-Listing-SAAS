@@ -402,7 +402,7 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
             generated.Specification.FactBindings,
             candidate => candidate.Source == FactSource.ApprovedNeighborhood);
         Assert.Equal("neighborhood.1", binding.Key);
-        Assert.Contains("Example Park", binding.Value, StringComparison.Ordinal);
+        Assert.Equal("Example Park • Park • less than a mile away", binding.Value);
         Assert.Contains(generated.Specification.Scenes.SelectMany(scene => scene.TextOverlays), overlay =>
             overlay.GroundingKey == binding.Key && overlay.Text == binding.Value);
     }

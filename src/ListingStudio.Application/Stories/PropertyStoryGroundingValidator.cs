@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Domain.Stories;
 
 namespace ListingStudio.Application.Stories;
@@ -132,7 +133,8 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
         AddNumbersFromText(allowed, request.Branding.AgentName);
         foreach (var fact in request.ApprovedNeighborhoodFacts ?? [])
         {
-            allowed.Add(fact.DistanceMiles);
+            // The generator only receives the whole-mile phrase, so an exact decimal distance is never grounded.
+            allowed.Add(NeighborhoodDistancePhrasing.RoundToWholeMiles(fact.DistanceMiles));
             AddNumbersFromText(allowed, fact.Name);
             AddNumbersFromText(allowed, fact.Address);
         }
