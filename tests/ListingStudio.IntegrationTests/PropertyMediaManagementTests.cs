@@ -239,6 +239,109 @@ public sealed class PropertyMediaManagementTests(PostgreSqlWebApplicationFixture
             new PropertyMediaUpload("blocked.png", "image/png", additionalContent.Length, additionalContent)));
     }
 
+    [Fact]
+    public async Task StoryboardUploadsFollowWalkthroughOrderWhateverOrderTheyArrive()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var (userId, propertyId) = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "storyboard");
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+
+        var kitchen = await UploadAsync(mediaService, userId, propertyId, "kitchen.png", "Kitchen");
+        var living = await UploadAsync(mediaService, userId, propertyId, "living.png", "living   room");
+        var foyer = await UploadAsync(mediaService, userId, propertyId, "foyer.png", WalkthroughStoryboard.EntryFoyer);
+        var front = await UploadAsync(mediaService, userId, propertyId, "front.png", "exterior front");
+        var secondKitchen = await UploadAsync(mediaService, userId, propertyId, "kitchen-2.png", "kitchen");
+        var approach = await UploadAsync(mediaService, userId, propertyId, "approach.png", WalkthroughStoryboard.ExteriorFront);
+
+        var listed = await mediaService.ListAsync(userId, propertyId);
+        Assert.Equal([front, approach, foyer, kitchen, secondKitchen, living], listed.Select(item => item.Id));
+        Assert.Equal(Enumerable.Range(0, 6), listed.Select(item => item.DisplayOrder));
+        Assert.Equal(
+            [WalkthroughStoryboard.ExteriorFront, WalkthroughStoryboard.ExteriorFront, WalkthroughStoryboard.EntryFoyer,
+                "Kitchen", "Kitchen", "Living room"],
+            listed.Select(item => item.WalkthroughStop));
+
+        // Swapping the two custom stops moves the living room ahead of the kitchen; template stops stay first.
+        Assert.True(await mediaService.ReorderAsync(
+            userId,
+            propertyId,
+            [living, front, approach, foyer, kitchen, secondKitchen]));
+        Assert.Equal(
+            [front, approach, foyer, living, kitchen, secondKitchen],
+            (await mediaService.ListAsync(userId, propertyId)).Select(item => item.Id));
+
+        Assert.True(await mediaService.SetWalkthroughStopAsync(userId, propertyId, approach, "Living room"));
+        Assert.Equal(
+            [front, foyer, living, approach, kitchen, secondKitchen],
+            (await mediaService.ListAsync(userId, propertyId)).Select(item => item.Id));
+
+        Assert.True(await mediaService.DeleteAsync(userId, propertyId, foyer));
+        Assert.Equal(
+            [front, living, approach, kitchen, secondKitchen],
+            (await mediaService.ListAsync(userId, propertyId)).Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task PhotosFromBeforeTheStoryboardKeepTheirOrderUntilPlaced()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var (userId, propertyId) = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "storyboard-legacy");
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        var kitchen = await UploadAsync(mediaService, userId, propertyId, "kitchen.png", null);
+        var bedroom = await UploadAsync(mediaService, userId, propertyId, "bedroom.png", null);
+        var front = await UploadAsync(mediaService, userId, propertyId, "front.png", null);
+
+        Assert.True(await mediaService.ReorderAsync(userId, propertyId, [bedroom, front, kitchen]));
+        var legacy = await mediaService.ListAsync(userId, propertyId);
+        Assert.Equal([bedroom, front, kitchen], legacy.Select(item => item.Id));
+        Assert.All(legacy, item => Assert.Null(item.WalkthroughStop));
+
+        Assert.True(await mediaService.SetWalkthroughStopAsync(userId, propertyId, front, WalkthroughStoryboard.ExteriorFront));
+        Assert.Equal([front, bedroom, kitchen], (await mediaService.ListAsync(userId, propertyId)).Select(item => item.Id));
+
+        Assert.True(await mediaService.SetWalkthroughStopAsync(userId, propertyId, front, " "));
+        var cleared = await mediaService.ListAsync(userId, propertyId);
+        Assert.Null(cleared.Single(item => item.Id == front).WalkthroughStop);
+        Assert.Equal([bedroom, kitchen, front], cleared.Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task WalkthroughStopsAreRestrictedToOwningOrganizationAndActiveProperties()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var owner = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "storyboard-owner");
+        var outsider = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "storyboard-outsider");
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        var mediaId = await UploadAsync(mediaService, owner.UserId, owner.PropertyId, "front.png", null);
+
+        Assert.False(await mediaService.SetWalkthroughStopAsync(
+            outsider.UserId, owner.PropertyId, mediaId, WalkthroughStoryboard.ExteriorFront));
+        Assert.False(await mediaService.SetWalkthroughStopAsync(
+            outsider.UserId, outsider.PropertyId, mediaId, WalkthroughStoryboard.ExteriorFront));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => mediaService.SetWalkthroughStopAsync(
+            owner.UserId, owner.PropertyId, mediaId, new string('x', PropertyMedia.MaximumWalkthroughStopLength + 1)));
+        Assert.Null((await mediaService.ListAsync(owner.UserId, owner.PropertyId)).Single().WalkthroughStop);
+
+        Assert.True(await scope.ServiceProvider.GetRequiredService<IPropertyService>()
+            .ArchiveAsync(owner.UserId, owner.PropertyId));
+        Assert.False(await mediaService.SetWalkthroughStopAsync(
+            owner.UserId, owner.PropertyId, mediaId, WalkthroughStoryboard.ExteriorFront));
+    }
+
+    private static async Task<Guid> UploadAsync(
+        IPropertyMediaService mediaService,
+        string userId,
+        Guid propertyId,
+        string filename,
+        string? walkthroughStop)
+    {
+        await using var content = new MemoryStream(OnePixelPng);
+        return await mediaService.UploadAsync(
+            userId,
+            propertyId,
+            new PropertyMediaUpload(filename, "image/png", content.Length, content, walkthroughStop));
+    }
+
     private static async Task<(string UserId, Guid PropertyId)> CreateOwnerAndPropertyAsync(
         IServiceProvider services,
         string prefix)

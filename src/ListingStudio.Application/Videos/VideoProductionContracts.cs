@@ -7,7 +7,8 @@ public sealed record VideoMediaInput(
     Guid MediaId,
     int Width,
     int Height,
-    PropertyMediaObservation Analysis);
+    PropertyMediaObservation Analysis,
+    string? WalkthroughStop = null);
 
 public sealed record VideoWalkthroughInput(
     Guid PropertyVideoId,

@@ -2,6 +2,8 @@ namespace ListingStudio.Domain.Properties;
 
 public sealed class PropertyMedia
 {
+    public const int MaximumWalkthroughStopLength = 80;
+
     private string[] potentialProblems = [];
 
     private PropertyMedia()
@@ -73,6 +75,10 @@ public sealed class PropertyMedia
     public int Height { get; private set; }
 
     public int DisplayOrder { get; private set; }
+
+    // The agent's walkthrough storyboard stop, such as "Exterior front" or "Kitchen". Null for photos added before
+    // the storyboard existed; those keep their display order until the agent places them.
+    public string? WalkthroughStop { get; private set; }
 
     public DateTimeOffset UploadedAt { get; private set; }
 
@@ -151,6 +157,13 @@ public sealed class PropertyMedia
         }
 
         DisplayOrder = displayOrder;
+    }
+
+    public void SetWalkthroughStop(string? walkthroughStop)
+    {
+        WalkthroughStop = string.IsNullOrWhiteSpace(walkthroughStop)
+            ? null
+            : Required(walkthroughStop, MaximumWalkthroughStopLength, nameof(walkthroughStop));
     }
 
     public void BeginAnalysis(DateTimeOffset attemptedAtUtc)

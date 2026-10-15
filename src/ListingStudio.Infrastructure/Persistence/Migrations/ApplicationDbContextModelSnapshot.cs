@@ -643,6 +643,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("UploadedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("WalkthroughStop")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
                     b.Property<int>("Width")
                         .HasColumnType("integer");
 

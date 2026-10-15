@@ -69,7 +69,7 @@ public sealed class OpenAIVideoDirectorTests
             request,
             ["scenes must end at the exact requested duration."]);
 
-        Assert.Equal("openai-video-director-v1.4", director.DirectorVersion);
+        Assert.Equal("openai-video-director-v1.5", director.DirectorVersion);
         Assert.Single(result.Scenes);
         Assert.Equal(request.Media[0].MediaId, result.Scenes[0].VisualSource.PropertyMediaId);
         Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-api-key"), handler.Authorization);
@@ -93,6 +93,8 @@ public sealed class OpenAIVideoDirectorTests
         Assert.Contains("approvedNeighborhood", input, StringComparison.Ordinal);
         Assert.Contains("brand", input, StringComparison.Ordinal);
         Assert.Contains("validation_feedback", input, StringComparison.Ordinal);
+        Assert.Contains("\"walkthroughStop\":\"Exterior front\"", input, StringComparison.Ordinal);
+        Assert.Contains("walkthrough storyboard order", sent.RootElement.GetProperty("instructions").GetString(), StringComparison.Ordinal);
         Assert.Contains("scenes must end at the exact requested duration", input, StringComparison.Ordinal);
         Assert.DoesNotContain("safeZone", input, StringComparison.Ordinal);
         Assert.DoesNotContain("videoCodec", input, StringComparison.Ordinal);
@@ -145,7 +147,8 @@ public sealed class OpenAIVideoDirectorTests
                     mediaId, 1_600, 900,
                     new PropertyMediaObservation(
                         mediaId, 0, PropertyMediaCategory.FrontExterior, "Exterior", 90, 95,
-                        true, false, false, [], "Front exterior.", 0)),
+                        true, false, false, [], "Front exterior.", 0),
+                    "Exterior front"),
             ],
             RequestedDuration.Hero60,
             VideoAspectRatio.Landscape16By9,

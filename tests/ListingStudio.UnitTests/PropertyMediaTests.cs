@@ -136,4 +136,23 @@ public sealed class PropertyMediaTests
         10,
         10,
         0);
+
+    [Fact]
+    public void SetWalkthroughStopTrimsClearsAndRejectsLongValues()
+    {
+        var media = PropertyMedia.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "organizations/org/properties/property/front.png", "front.png",
+            "image/png", 1_024, 1_920, 1_080, 0);
+        Assert.Null(media.WalkthroughStop);
+
+        media.SetWalkthroughStop("  Exterior front ");
+        Assert.Equal("Exterior front", media.WalkthroughStop);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => media.SetWalkthroughStop(
+            new string('x', PropertyMedia.MaximumWalkthroughStopLength + 1)));
+        Assert.Equal("Exterior front", media.WalkthroughStop);
+
+        media.SetWalkthroughStop(" ");
+        Assert.Null(media.WalkthroughStop);
+    }
 }

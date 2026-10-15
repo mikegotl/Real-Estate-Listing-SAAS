@@ -17,6 +17,7 @@ public sealed class PropertyMediaConfiguration : IEntityTypeConfiguration<Proper
         builder.Property(media => media.AnalysisStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(media => media.Category).HasConversion<string>().HasMaxLength(64);
         builder.Property(media => media.RoomType).HasMaxLength(100);
+        builder.Property(media => media.WalkthroughStop).HasMaxLength(PropertyMedia.MaximumWalkthroughStopLength);
         builder.Property(media => media.AnalysisDescription).HasMaxLength(2_000);
         builder.Property(media => media.AnalysisLastError).HasMaxLength(1_000);
         builder.Ignore(media => media.PotentialProblems);
