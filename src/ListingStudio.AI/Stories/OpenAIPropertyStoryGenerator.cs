@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ListingStudio.AI.Configuration;
+using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Application.Stories;
 using ListingStudio.Domain.Stories;
 using Microsoft.Extensions.Options;
@@ -28,10 +29,12 @@ public sealed class OpenAIPropertyStoryGenerator(
         manufacture or alter square footage, room counts, upgrades, materials, views, amenities, school information,
         neighborhood claims, location claims, HOA information, or financial claims. When APPROVED_NEIGHBORHOOD_FACTS
         are supplied, include every one in the voiceover or highlights as a neutral nearby-place statement using the
-        supplied name and straight-line distance exactly. Category is structured context for choosing natural wording;
-        never append or speak it in parentheses after the place name, and do not repeat a category already conveyed by
-        the name. For example, say "Walker Elementary School, 0.54 miles away by straight-line distance," not
-        "Walker Elementary School (School)." Never claim school assignment, quality, ratings,
+        supplied name and its approximateDistance phrase exactly. Never state a neighborhood distance as a decimal or
+        a more precise figure than the supplied whole-mile phrase. Category is structured context for choosing natural
+        wording; never append or speak it in parentheses after the place name, and do not repeat a category already
+        conveyed by the name. For example, say "Walker Elementary School, about 2 miles away," not
+        "Walker Elementary School, 2.3 miles away" or "Walker Elementary School (School)." Never claim school
+        assignment, quality, ratings,
         attendance boundaries, travel time, safety,
         demographics, suitability for families or children, or any preference for a protected class. Do not use phrases
         such as "family-friendly", "great for families", "safe", or "best schools". Preserve every number exactly.
@@ -66,7 +69,7 @@ public sealed class OpenAIPropertyStoryGenerator(
         Converters = { new JsonStringEnumConverter() },
     };
 
-    public string GenerationVersion => "property-story-v3";
+    public string GenerationVersion => "property-story-v4";
 
     public async Task<PropertyStoryContent> GenerateAsync(
         PropertyStoryGenerationRequest request,
@@ -95,7 +98,14 @@ public sealed class OpenAIPropertyStoryGenerator(
             {
                 verified_property_data = request.VerifiedProperty,
                 media_observations = request.MediaObservations,
-                approved_neighborhood_facts = request.ApprovedNeighborhoodFacts ?? [],
+                approved_neighborhood_facts = (request.ApprovedNeighborhoodFacts ?? [])
+                    .Select(fact => new
+                    {
+                        fact.Category,
+                        fact.Name,
+                        fact.Address,
+                        ApproximateDistance = NeighborhoodDistancePhrasing.Describe(fact.DistanceMiles),
+                    }),
                 branding = request.Branding,
             },
             SerializerOptions);

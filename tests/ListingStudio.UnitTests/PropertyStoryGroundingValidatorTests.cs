@@ -111,7 +111,7 @@ public sealed class PropertyStoryGroundingValidatorTests
         };
         var factual = SafeStory with
         {
-            PropertyNarrative = "Example Elementary School is 1.2 miles away by straight-line distance.",
+            PropertyNarrative = "Example Elementary School is about 1 mile away.",
         };
 
         var valid = validator.Validate(request, factual);
@@ -125,6 +125,37 @@ public sealed class PropertyStoryGroundingValidatorTests
         Assert.False(invalid.IsValid);
         Assert.Contains(invalid.Errors, error => error.Contains("family-friendly", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(invalid.Errors, error => error.Contains("excellent schools", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AcceptsWholeMileNeighborhoodDistanceButRejectsExactDecimal()
+    {
+        var request = Request with
+        {
+            ApprovedNeighborhoodFacts =
+            [
+                new ApprovedNeighborhoodFact(
+                    "Park",
+                    "Lake Park",
+                    "1 Lake Drive, Raleigh, NC 27601",
+                    6.5m,
+                    "https://maps.google.test/lake-park",
+                    DateTimeOffset.UtcNow),
+            ],
+        };
+
+        var rounded = validator.Validate(request, SafeStory with
+        {
+            VoiceoverScript = "Lake Park is about 7 miles away.",
+        });
+        Assert.True(rounded.IsValid, string.Join(", ", rounded.Errors));
+
+        var exact = validator.Validate(request, SafeStory with
+        {
+            VoiceoverScript = "Lake Park is 6.5 miles away.",
+        });
+        Assert.False(exact.IsValid);
+        Assert.Contains(exact.Errors, error => error.Contains("6.5", StringComparison.Ordinal));
     }
 
     private static PropertyStoryGenerationRequest Request => new(
