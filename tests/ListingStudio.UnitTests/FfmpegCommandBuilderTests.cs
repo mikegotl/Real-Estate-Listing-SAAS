@@ -367,6 +367,84 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         Assert.Contains("exit code 23", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildPlaysWalkthroughClipAtTheEndOfTheFirstPhotoAndCutsToTheNext()
+    {
+        var (request, clip) = CreateWalkthroughRequest(clipDurationMs: 5_000);
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        Assert.Contains(clip, arguments);
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("[scene0still]trim=duration=2,setpts=PTS-STARTPTS[scene0hold]", graph, StringComparison.Ordinal);
+        Assert.Contains("setpts=1*(PTS-STARTPTS)", graph, StringComparison.Ordinal);
+        Assert.Contains("tpad=stop_mode=clone:stop_duration=5,trim=duration=5", graph, StringComparison.Ordinal);
+        Assert.Contains("[scene0hold][scene0walk]concat=n=2:v=1:a=0[scene0]", graph, StringComparison.Ordinal);
+        Assert.Contains("[scene0][scene1]concat=n=2:v=1:a=0[timeline1]", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("xfade", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("zoompan", graph, StringComparison.Ordinal);
+        Assert.Contains("adelay=9000:all=1", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSpeedsUpALongWalkthroughToFitItsScene()
+    {
+        var (request, _) = CreateWalkthroughRequest(clipDurationMs: 10_000);
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var graph = command.Arguments[command.Arguments.ToList().IndexOf("-filter_complex") + 1];
+        Assert.Contains("[scene0still]trim=duration=1,", graph, StringComparison.Ordinal);
+        Assert.Contains("setpts=0.6*(PTS-STARTPTS)", graph, StringComparison.Ordinal);
+        Assert.Contains("trim=duration=6,setpts=PTS-STARTPTS[scene0walk]", graph, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(20_000, false)]
+    [InlineData(5_000, true)]
+    public void BuildKeepsThePlannedTransitionWhenAWalkthroughCannotFitOrDoesNotMatch(int clipDurationMs, bool reversed)
+    {
+        var (request, clip) = CreateWalkthroughRequest(clipDurationMs, reversed);
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        Assert.DoesNotContain(clip, command.Arguments);
+        var graph = command.Arguments[command.Arguments.ToList().IndexOf("-filter_complex") + 1];
+        Assert.Contains("xfade=transition=fade:duration=0.5:offset=7", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("scene0walk", graph, StringComparison.Ordinal);
+    }
+
+    private (VideoRenderRequest Request, string ClipPath) CreateWalkthroughRequest(
+        int clipDurationMs,
+        bool reversed = false)
+    {
+        var request = CreateRequest();
+        var firstId = request.PropertyMedia[0].PropertyMediaId;
+        var secondId = Guid.NewGuid();
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[1] = scenes[1] with
+        {
+            VisualSource = new VisualSource(VisualSourceKind.PropertyMedia, secondId, null, null, null),
+        };
+        var clip = CreateFile($"walkthrough-{clipDurationMs}.mp4");
+        return (request with
+        {
+            Specification = request.Specification with { Scenes = scenes },
+            PropertyMedia =
+            [
+                .. request.PropertyMedia,
+                new VideoRenderMediaAsset(secondId, CreateFile("next room.ppm"), 320, 180),
+            ],
+            WalkthroughTransitions =
+            [
+                reversed
+                    ? new VideoRenderWalkthroughTransitionAsset(secondId, firstId, clip, clipDurationMs)
+                    : new VideoRenderWalkthroughTransitionAsset(firstId, secondId, clip, clipDurationMs),
+            ],
+        }, clip);
+    }
+
     public void Dispose()
     {
         Directory.Delete(directory, recursive: true);

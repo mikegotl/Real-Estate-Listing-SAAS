@@ -51,6 +51,16 @@ public sealed record VideoRenderNeighborhoodAsset(
     int Height,
     string Credit);
 
+/// <summary>
+/// A walk-through clip from one listing photo to the next. When two consecutive scenes show exactly these photos, the
+/// renderer plays the clip at the end of the first scene so the camera walks into the second.
+/// </summary>
+public sealed record VideoRenderWalkthroughTransitionAsset(
+    Guid FromPropertyMediaId,
+    Guid ToPropertyMediaId,
+    string FilePath,
+    int DurationMs);
+
 public sealed record VideoRenderRequest(
     VideoProductionSpecification Specification,
     IReadOnlyList<VideoRenderMediaAsset> PropertyMedia,
@@ -60,7 +70,8 @@ public sealed record VideoRenderRequest(
     string OutputFilePath,
     IReadOnlyList<VideoRenderGeneratedClipAsset>? GeneratedClips = null,
     IReadOnlyList<VideoRenderNeighborhoodAsset>? NeighborhoodAssets = null,
-    IReadOnlyList<VideoRenderPropertyVideoAsset>? PropertyVideos = null);
+    IReadOnlyList<VideoRenderPropertyVideoAsset>? PropertyVideos = null,
+    IReadOnlyList<VideoRenderWalkthroughTransitionAsset>? WalkthroughTransitions = null);
 
 public sealed record VideoRenderResult(
     string OutputFilePath,

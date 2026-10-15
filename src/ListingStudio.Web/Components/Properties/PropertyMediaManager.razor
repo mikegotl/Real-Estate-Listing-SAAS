@@ -1,5 +1,6 @@
 @inherits OwningComponentBase<IPropertyMediaService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IServiceScopeFactory ScopeFactory
 
 <MudPaper Class="pa-6 mt-6 storyboard">
     <div class="storyboard-header">
@@ -35,6 +36,29 @@
             Start with at least one photo of the front of the property. It opens the walkthrough video and becomes the
             listing cover.
         </MudAlert>
+    }
+
+    @if (loaded && ShowWalkthroughPanel)
+    {
+        <section class="walkthrough-panel" aria-labelledby="walkthrough-heading">
+            <MudIcon Icon="@Icons.Material.Filled.DirectionsWalk" Class="walkthrough-panel-icon" />
+            <div class="walkthrough-panel-body">
+                <h3 id="walkthrough-heading">AI walk-through clips</h3>
+                <p>
+                    A short clip walks the camera from each shot into the next one, using the two photos as its first and
+                    last frames. Press play on a shot to watch the walk into the following shot. Finished clips also play
+                    between those photos in the campaign video.
+                </p>
+                <span class="walkthrough-panel-count">@ReadyTransitionCount of @transitions.Count walk-throughs ready@(InProgressTransitionCount > 0 ? $" · {InProgressTransitionCount} generating" : "")</span>
+            </div>
+            @if (!IsReadOnly && transitionService?.IsEnabled == true)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(queueing || MissingTransitionCount == 0)"
+                           StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="QueueTransitionsAsync">
+                    @(MissingTransitionCount == 0 ? "All walk-throughs requested" : $"Create {MissingTransitionCount} walk-through {(MissingTransitionCount == 1 ? "clip" : "clips")}")
+                </MudButton>
+            }
+        </section>
     }
 
     @foreach (var upload in uploads)
@@ -228,6 +252,25 @@
 
     private Guid? loadedPropertyId;
 
+    private readonly SemaphoreSlim transitionGate = new(1, 1);
+    private readonly CancellationTokenSource transitionPolling = new();
+    private AsyncServiceScope? transitionScope;
+    private IWalkthroughTransitionService? transitionService;
+    private Dictionary<Guid, WalkthroughTransitionItem> transitions = [];
+    private Guid? playingFromId;
+    private bool queueing;
+    private bool transitionPollingStarted;
+
+    private bool ShowWalkthroughPanel => transitions.Count > 0
+        && (transitionService?.IsEnabled == true || ReadyTransitionCount > 0);
+
+    private int ReadyTransitionCount => transitions.Values.Count(item => item.IsReady);
+
+    private int InProgressTransitionCount => transitions.Values.Count(item => item.IsInProgress);
+
+    private int MissingTransitionCount => transitions.Values.Count(item =>
+        item.Status is null or WalkthroughTransitionStatus.Failed);
+
     private bool HasExteriorFront => stops.Count > 0 && stops[0].Items.Count > 0;
 
     private RenderFragment PhotoCard((IReadOnlyList<PropertyMediaItem> Group, int Index, string? Stop) context) => __builder =>
@@ -236,10 +279,32 @@
         var group = context.Group;
         var itemIndex = context.Index;
         var suggestion = item.Analysis is null ? null : WalkthroughStoryboard.SuggestStop(item.Analysis.Category);
+        var transition = transitions.GetValueOrDefault(item.Id);
+        var shotNumber = sequence.GetValueOrDefault(item.Id) + 1;
         <article class="storyboard-photo">
             <div class="storyboard-photo-image" style="@($"background-image: url('/property-media/{item.Id}')")"
                  role="img" aria-label="@item.OriginalFilename">
                 <span class="scene-number" title="Position in the walkthrough video">@(sequence.GetValueOrDefault(item.Id) + 1)</span>
+                @if (transition?.IsReady == true)
+                {
+                    @if (playingFromId == item.Id)
+                    {
+                        <video class="walkthrough-video" src="@($"/walkthrough-transitions/{transition.TransitionId}")"
+                               autoplay muted playsinline controls @onended="StopWalkthrough"
+                               aria-label="@($"Walk-through from shot {shotNumber} to shot {shotNumber + 1}")"></video>
+                        <button type="button" class="walkthrough-close" aria-label="Close walk-through" @onclick="StopWalkthrough">
+                            <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" class="walkthrough-play" @onclick="@(() => PlayWalkthrough(item.Id))"
+                                aria-label="@($"Play the walk-through from shot {shotNumber} to shot {shotNumber + 1}")"
+                                title="@($"Walk into shot {shotNumber + 1}")">
+                            <MudIcon Icon="@Icons.Material.Filled.PlayArrow" />
+                        </button>
+                    }
+                }
             </div>
             <div class="storyboard-photo-body">
                 <span class="storyboard-photo-name" title="@item.OriginalFilename">@item.OriginalFilename</span>
@@ -265,6 +330,14 @@
                 else
                 {
                     <span class="storyboard-photo-meta">Analysis: @item.AnalysisStatus</span>
+                }
+
+                @if (transition is not null && (transition.Status is not null || transitionService?.IsEnabled == true))
+                {
+                    <span class="@($"storyboard-photo-meta walkthrough-status {WalkthroughStatusClass(transition)}")">
+                        <MudIcon Icon="@Icons.Material.Filled.DirectionsWalk" Size="Size.Small" />
+                        Walk-through to shot @(shotNumber + 1): @WalkthroughStatusText(transition)
+                    </span>
                 }
 
                 @if (!IsReadOnly && context.Stop is null && suggestion is not null)
@@ -319,7 +392,142 @@
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         media = [.. await Service.ListAsync(userId, PropertyId)];
         BuildStoryboard();
+        await LoadTransitionsAsync(userId);
         loaded = true;
+    }
+
+    // Walk-through clips use their own scope so status polling never shares the media service's DbContext.
+    private async Task LoadTransitionsAsync(string userId)
+    {
+        transitionScope ??= ScopeFactory.CreateAsyncScope();
+        transitionService ??= transitionScope.Value.ServiceProvider.GetRequiredService<IWalkthroughTransitionService>();
+        await transitionGate.WaitAsync();
+        try
+        {
+            transitions = (await transitionService.ListAsync(userId, PropertyId))
+                .ToDictionary(item => item.FromPropertyMediaId);
+        }
+        finally
+        {
+            transitionGate.Release();
+        }
+
+        if (playingFromId is { } playing && transitions.GetValueOrDefault(playing)?.IsReady != true)
+        {
+            playingFromId = null;
+        }
+
+        if (InProgressTransitionCount > 0)
+        {
+            StartTransitionPolling();
+        }
+    }
+
+    private async Task QueueTransitionsAsync()
+    {
+        if (transitionService is null)
+        {
+            return;
+        }
+
+        queueing = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            int queued;
+            await transitionGate.WaitAsync();
+            try
+            {
+                queued = await transitionService.QueueAsync(userId, PropertyId);
+            }
+            finally
+            {
+                transitionGate.Release();
+            }
+
+            await LoadTransitionsAsync(userId);
+            ShowMessage(
+                queued == 0
+                    ? "Every walk-through clip is already requested."
+                    : $"Creating {queued} walk-through {(queued == 1 ? "clip" : "clips")}. Each shot gets a play button when its clip is ready.",
+                Severity.Success);
+        }
+        catch (InvalidOperationException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+        finally
+        {
+            queueing = false;
+        }
+    }
+
+    private void StartTransitionPolling()
+    {
+        if (transitionPollingStarted)
+        {
+            return;
+        }
+
+        transitionPollingStarted = true;
+        _ = PollTransitionsAsync();
+    }
+
+    private async Task PollTransitionsAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(transitionPolling.Token))
+            {
+                if (InProgressTransitionCount == 0)
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+                    await LoadTransitionsAsync(userId);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (transitionPolling.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void PlayWalkthrough(Guid fromMediaId) => playingFromId = fromMediaId;
+
+    private void StopWalkthrough() => playingFromId = null;
+
+    private static string WalkthroughStatusText(WalkthroughTransitionItem item) => item.Status switch
+    {
+        WalkthroughTransitionStatus.Completed => "ready, press play on the photo",
+        WalkthroughTransitionStatus.Pending or WalkthroughTransitionStatus.Submitting => "queued",
+        WalkthroughTransitionStatus.Generating => "generating…",
+        WalkthroughTransitionStatus.Failed => item.Error ?? "failed",
+        _ => "not created yet",
+    };
+
+    private static string WalkthroughStatusClass(WalkthroughTransitionItem item) => item.Status switch
+    {
+        WalkthroughTransitionStatus.Completed => "ready",
+        WalkthroughTransitionStatus.Failed => "error",
+        _ => string.Empty,
+    };
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        transitionPolling.Cancel();
+        transitionPolling.Dispose();
+        if (transitionScope is { } scope)
+        {
+            await scope.DisposeAsync();
+        }
+
+        await base.DisposeAsyncCore();
     }
 
     private void BuildStoryboard()

@@ -162,8 +162,19 @@ public sealed class PropertyMediaService(
             await campaignAssetStorage.DeleteAsync(clip.AssetPath, cancellationToken);
         }
 
+        var transitions = await dbContext.WalkthroughTransitions
+            .Where(transition => (transition.FromPropertyMediaId == mediaId || transition.ToPropertyMediaId == mediaId)
+                && transition.PropertyId == propertyId
+                && transition.OrganizationId == organizationId)
+            .ToArrayAsync(cancellationToken);
+        foreach (var assetPath in transitions.Select(transition => transition.AssetPath).OfType<string>())
+        {
+            await campaignAssetStorage.DeleteAsync(assetPath, cancellationToken);
+        }
+
         await storage.DeleteAsync(media.BlobPath, cancellationToken);
         dbContext.GeneratedVideoClips.RemoveRange(generatedClips);
+        dbContext.WalkthroughTransitions.RemoveRange(transitions);
         dbContext.PropertyMedia.Remove(media);
         await dbContext.SaveChangesAsync(cancellationToken);
         await NormalizeDisplayOrderAsync(organizationId, propertyId, cancellationToken);

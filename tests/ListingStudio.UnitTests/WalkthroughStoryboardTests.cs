@@ -83,5 +83,32 @@ public sealed class WalkthroughStoryboardTests
         }
     }
 
+    [Fact]
+    public void ShotPairsLinkEachShotToTheNextInStoryboardOrder()
+    {
+        Photo[] photos =
+        [
+            new("kitchen", "Kitchen", 0),
+            new("legacy", null, 1),
+            new("front", WalkthroughStoryboard.ExteriorFront, 2),
+            new("foyer", WalkthroughStoryboard.EntryFoyer, 3),
+        ];
+
+        var pairs = WalkthroughStoryboard.ShotPairs(photos, photo => photo.Stop, photo => photo.Order);
+
+        Assert.Equal(
+            [("front", "foyer"), ("foyer", "kitchen"), ("kitchen", "legacy")],
+            pairs.Select(pair => (pair.From.Name, pair.To.Name)));
+    }
+
+    [Fact]
+    public void ShotPairsNeedAtLeastTwoShots()
+    {
+        Assert.Empty(WalkthroughStoryboard.ShotPairs(
+            [new Photo("front", WalkthroughStoryboard.ExteriorFront, 0)],
+            photo => photo.Stop,
+            photo => photo.Order));
+    }
+
     private sealed record Photo(string Name, string? Stop, int Order);
 }

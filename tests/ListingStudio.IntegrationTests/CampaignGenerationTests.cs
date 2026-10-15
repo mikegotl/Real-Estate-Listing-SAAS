@@ -161,6 +161,44 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     }
 
     [Fact]
+    public async Task FinishedWalkthroughClipReachesTheRendererBetweenItsTwoPhotos()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-walkthrough");
+        var front = await UploadAsync(owner);
+        Guid foyer;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            await using var content = new MemoryStream(OnePixelPng);
+            foyer = await scope.ServiceProvider.GetRequiredService<IPropertyMediaService>().UploadAsync(
+                owner.UserId,
+                owner.PropertyId,
+                new PropertyMediaUpload("foyer.png", "image/png", content.Length, content));
+            var transitions = scope.ServiceProvider.GetRequiredService<IWalkthroughTransitionService>();
+            Assert.Equal(1, await transitions.QueueAsync(owner.UserId, owner.PropertyId));
+            var transitionId = Assert.Single(await transitions.ListAsync(owner.UserId, owner.PropertyId)).TransitionId!.Value;
+            var processor = scope.ServiceProvider.GetRequiredService<IWalkthroughTransitionProcessor>();
+            Assert.Equal(WalkthroughTransitionStatus.Generating, (await processor.ProcessNextAsync())!.Status);
+            fixture.Factory.TimeProvider.Advance(TimeSpan.FromSeconds(11));
+            fixture.Factory.WalkthroughVideoProvider.EnqueuePoll(transitionId, WalkthroughVideoState.Completed);
+            Assert.Equal(WalkthroughTransitionStatus.Completed, (await processor.ProcessNextAsync())!.Status);
+        }
+
+        var walkthroughInputsBefore = fixture.Factory.VideoRenderer.WalkthroughInputCount;
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(request => CreateTwoPhotoEditorialPlan(request, front, foyer));
+        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+
+        var queued = await EnqueueAsync(owner);
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        Assert.All(completed.Deliverables, deliverable =>
+            Assert.Equal(CampaignDeliverableStatus.Rendered, deliverable.Status));
+        Assert.True(fixture.Factory.VideoRenderer.WalkthroughInputCount > walkthroughInputsBefore);
+    }
+
+    [Fact]
     public async Task AcceptedLongScriptAddsNarrationLengthDeliverable()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-long-form");
@@ -490,6 +528,24 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                     [],
                     []),
             ]);
+    }
+
+    private static DirectedEditorialPlan CreateTwoPhotoEditorialPlan(
+        VideoDirectionRequest request,
+        Guid firstMediaId,
+        Guid secondMediaId)
+    {
+        var plan = CreateEditorialPlan(request);
+        var scenes = plan.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            VisualSource = new VisualSource(VisualSourceKind.PropertyMedia, firstMediaId, null, null, null),
+        };
+        scenes[1] = scenes[1] with
+        {
+            VisualSource = new VisualSource(VisualSourceKind.PropertyMedia, secondMediaId, null, null, null),
+        };
+        return plan with { Scenes = scenes };
     }
 
     private static VoiceGenerationResult CreateVoiceResult(VoiceGenerationRequest request)

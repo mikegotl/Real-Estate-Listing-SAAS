@@ -34,6 +34,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<GeneratedVideoClip> GeneratedVideoClips => Set<GeneratedVideoClip>();
 
+    public DbSet<WalkthroughTransition> WalkthroughTransitions => Set<WalkthroughTransition>();
+
     public DbSet<CampaignGenerationJob> CampaignGenerationJobs => Set<CampaignGenerationJob>();
 
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();

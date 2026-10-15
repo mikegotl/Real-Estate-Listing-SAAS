@@ -13,6 +13,8 @@ namespace ListingStudio.IntegrationTests;
 
 public sealed class FfmpegRenderingTests
 {
+    private static readonly string[] SetupArguments = ["-hide_banner", "-loglevel", "error", "-nostdin", "-n"];
+
     [Fact]
     public async Task GeneratesAndRendersCompleteCampaignDerivativeSet()
     {
@@ -192,6 +194,154 @@ public sealed class FfmpegRenderingTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task RendersAWalkthroughClipThatLandsOnTheNextPhoto()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("RUN_FFMPEG_E2E"), "1", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-walkthrough-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var frontPath = Path.Combine(directory, "front.ppm");
+            var foyerPath = Path.Combine(directory, "foyer.ppm");
+            var clipPath = Path.Combine(directory, "walkthrough.mp4");
+            var outputPath = Path.Combine(directory, "walkthrough-campaign.mp4");
+            await WriteSolidImageAsync(frontPath, 320, 180, 30, 90, 200);
+            await WriteSolidImageAsync(foyerPath, 320, 180, 200, 40, 40);
+            var executable = Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
+            await RunFfmpegAsync(
+                executable,
+                "-loop", "1", "-framerate", "24", "-t", "5", "-i", frontPath,
+                "-loop", "1", "-framerate", "24", "-t", "5", "-i", foyerPath,
+                "-filter_complex", "[0:v][1:v]xfade=transition=fade:duration=4:offset=0.5,scale=640:360,format=yuv420p",
+                "-t", "5", "-c:v", "libx264", "-an", clipPath);
+            var frontId = Guid.NewGuid();
+            var foyerId = Guid.NewGuid();
+            var viewport = new NormalizedRect(0, 0, 1, 1);
+            var specification = CreateMasterSpecification(frontId) with
+            {
+                RequestedDuration = RequestedDuration.Teaser15,
+                FactBindings = [],
+                Audio = new AudioPlan([], new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)),
+                Scenes =
+                [
+                    new VideoScene(
+                        1, 0, 7_000,
+                        new VisualSource(VisualSourceKind.PropertyMedia, frontId, null, null, null),
+                        new TransitionPlan(TransitionKind.Cut, 0),
+                        new MotionPlan(
+                            MotionKind.KenBurns, viewport, new NormalizedRect(0.05m, 0.05m, 0.9m, 0.9m),
+                            MotionEasing.EaseInOut),
+                        [], [], []),
+                    new VideoScene(
+                        2, 7_000, 8_000,
+                        new VisualSource(VisualSourceKind.PropertyMedia, foyerId, null, null, null),
+                        new TransitionPlan(TransitionKind.Crossfade, 500),
+                        new MotionPlan(MotionKind.None, viewport, viewport, MotionEasing.Linear),
+                        [], [], []),
+                ],
+            };
+            var options = Options.Create(new FfmpegOptions
+            {
+                ExecutablePath = executable,
+                ProbeExecutablePath = Environment.GetEnvironmentVariable("FFPROBE_PATH") ?? "ffprobe",
+                RenderTimeoutSeconds = 180,
+            });
+            var renderer = new FfmpegVideoRenderer(options, Options.Create(new VideoBrandingTemplateOptions()));
+
+            var result = await renderer.RenderAsync(new VideoRenderRequest(
+                specification,
+                [
+                    new VideoRenderMediaAsset(frontId, frontPath, 320, 180),
+                    new VideoRenderMediaAsset(foyerId, foyerPath, 320, 180),
+                ],
+                null,
+                [],
+                null,
+                outputPath,
+                WalkthroughTransitions:
+                [
+                    new VideoRenderWalkthroughTransitionAsset(frontId, foyerId, clipPath, 5_000),
+                ]));
+
+            Assert.Equal(0, result.ExitCode);
+            using var probe = await ProbeAsync(options.Value.ProbeExecutablePath, outputPath);
+            var duration = decimal.Parse(
+                probe.RootElement.GetProperty("format").GetProperty("duration").GetString()!,
+                System.Globalization.CultureInfo.InvariantCulture);
+            Assert.InRange(duration, 14.9m, 15.1m);
+            // The front photo holds for two seconds, the walk-through plays, and it arrives on the foyer at seven.
+            AssertColorNear(await SamplePixelAsync(executable, outputPath, 1.0), 30, 90, 200);
+            AssertColorNear(await SamplePixelAsync(executable, outputPath, 6.9), 200, 40, 40);
+            AssertColorNear(await SamplePixelAsync(executable, outputPath, 10.0), 200, 40, 40);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static void AssertColorNear(byte[] pixel, int red, int green, int blue)
+    {
+        Assert.True(
+            Math.Abs(pixel[0] - red) <= 20 && Math.Abs(pixel[1] - green) <= 20 && Math.Abs(pixel[2] - blue) <= 20,
+            $"Expected about ({red}, {green}, {blue}) but sampled ({pixel[0]}, {pixel[1]}, {pixel[2]}).");
+    }
+
+    private static async Task<byte[]> SamplePixelAsync(string executable, string videoPath, double seconds)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var argument in new[]
+        {
+            "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-ss", seconds.ToString(System.Globalization.CultureInfo.InvariantCulture), "-i", videoPath,
+            "-frames:v", "1", "-vf", "crop=200:200,scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+        })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("FFmpeg did not start for frame sampling.");
+        using var output = new MemoryStream();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.StandardOutput.BaseStream.CopyToAsync(output);
+        await process.WaitForExitAsync();
+        Assert.True(process.ExitCode == 0, await errorTask);
+        return output.ToArray();
+    }
+
+    private static async Task RunFfmpegAsync(string executable, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var argument in SetupArguments.Concat(arguments))
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("FFmpeg did not start for test setup.");
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        Assert.True(process.ExitCode == 0, await errorTask);
     }
 
     private static VideoProductionSpecification CreateSpecification(Guid mediaId)

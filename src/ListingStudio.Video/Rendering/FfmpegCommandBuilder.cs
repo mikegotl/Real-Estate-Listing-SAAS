@@ -10,6 +10,15 @@ public static class FfmpegCommandBuilder
 {
     private const string VideoEncoder = "libx264";
 
+    /// <summary>The shortest still hold before a walk-through clip starts, so each photo still registers.</summary>
+    internal const int MinimumWalkthroughHoldMs = 1_000;
+
+    /// <summary>The shortest playable walk-through; shorter windows keep the normal still transition.</summary>
+    internal const int MinimumWalkthroughMs = 1_000;
+
+    /// <summary>A walk-through may play up to this much faster than generated to fit its scene.</summary>
+    internal const decimal MaximumWalkthroughSpeedUp = 2m;
+
     public static FfmpegRenderCommand Build(
         VideoRenderRequest request,
         VideoBrandingTemplateOptions? brandingTemplate = null)
@@ -61,6 +70,15 @@ public static class FfmpegCommandBuilder
 
         ValidateOutput(request.Specification);
         ValidateTimeline(request.Specification);
+        var walkthroughs = PlanWalkthroughs(scenes, request.WalkthroughTransitions);
+        if (walkthroughs.Count > 0)
+        {
+            // A walk-through ends on the next photo, so the next scene cuts in instead of blending.
+            scenes = [.. scenes.Select((scene, index) => index > 0 && walkthroughs.ContainsKey(index - 1)
+                ? scene with { TransitionIn = new TransitionPlan(TransitionKind.Cut, 0) }
+                : scene)];
+            request = request with { Specification = request.Specification with { Scenes = scenes } };
+        }
         var sceneAssets = scenes.Select((scene, index) => ResolveAsset(
             scene,
             media,
@@ -158,7 +176,20 @@ public static class FfmpegCommandBuilder
             ]);
         }
 
-        var inputs = new RenderInputIndexes(narrationInput, musicInput, logoInputs, neighborhoodInputs);
+        var walkthroughInputs = new Dictionary<int, int>();
+        foreach (var (sceneIndex, walkthrough) in walkthroughs.OrderBy(entry => entry.Key))
+        {
+            walkthroughInputs[sceneIndex] = nextInput++;
+            arguments.AddRange(["-i", walkthrough.Asset.FilePath]);
+        }
+
+        var inputs = new RenderInputIndexes(
+            narrationInput,
+            musicInput,
+            logoInputs,
+            neighborhoodInputs,
+            walkthroughs,
+            walkthroughInputs);
         arguments.AddRange(
         [
             "-filter_complex", BuildFilterGraph(
@@ -201,7 +232,21 @@ public static class FfmpegCommandBuilder
             var extensionMs = index + 1 < specification.Scenes.Count
                 ? specification.Scenes[index + 1].TransitionIn.DurationMs
                 : 0;
-            filters.Add(BuildSceneFilter(index, scene, assets[index], specification.Output, extensionMs));
+            var hold = inputs.Walkthroughs.ContainsKey(index) || inputs.Walkthroughs.ContainsKey(index - 1);
+            var sceneFilter = BuildSceneFilter(index, scene, assets[index], specification.Output, extensionMs, hold);
+            if (!inputs.Walkthroughs.TryGetValue(index, out var walkthrough))
+            {
+                filters.Add(sceneFilter);
+            }
+            else
+            {
+                filters.Add(sceneFilter[..^$"[scene{index}]".Length] + $"[scene{index}still]");
+                filters.Add(BuildWalkthroughFilter(
+                    index,
+                    walkthrough,
+                    inputs.WalkthroughInputs[index],
+                    specification.Output));
+            }
         }
 
         var current = "scene0";
@@ -262,14 +307,15 @@ public static class FfmpegCommandBuilder
         VideoScene scene,
         SceneVisualAsset asset,
         VideoOutputProfile output,
-        int extensionMs)
+        int extensionMs,
+        bool walkthroughHold = false)
     {
         var durationMs = scene.DurationMs + extensionMs;
         string transform;
-        if (asset.IsVideo)
+        if (asset.IsVideo || walkthroughHold)
         {
-            transform = $"scale={output.Width}:{output.Height}:force_original_aspect_ratio=increase:flags=lanczos,"
-                + $"crop={output.Width}:{output.Height}";
+            // A still next to a walk-through holds the whole photo, matching the clip's first or last frame.
+            transform = FillTransform(output);
         }
         else if (scene.Motion.Type == MotionKind.None)
         {
@@ -288,6 +334,78 @@ public static class FfmpegCommandBuilder
 
         return $"[{index}:v]{transform},fps={output.FrameRate},format=yuv420p,settb=AVTB,"
             + $"trim=duration={Seconds(durationMs)},setpts=PTS-STARTPTS[scene{index}]";
+    }
+
+    private static string FillTransform(VideoOutputProfile output) =>
+        $"scale={output.Width}:{output.Height}:force_original_aspect_ratio=increase:flags=lanczos,"
+        + $"crop={output.Width}:{output.Height},setsar=1";
+
+    /// <summary>
+    /// Splits a scene into a still hold followed by the walk-through clip, keeping the scene's exact length so
+    /// narration and overlays stay where the plan put them.
+    /// </summary>
+    private static string BuildWalkthroughFilter(
+        int index,
+        SceneWalkthrough walkthrough,
+        int input,
+        VideoOutputProfile output)
+    {
+        var speed = walkthrough.PlayMs / (decimal)walkthrough.Asset.DurationMs;
+        var hold = $"[scene{index}still]trim=duration={Seconds(walkthrough.HoldMs)},setpts=PTS-STARTPTS[scene{index}hold]";
+        var walk = $"[{input}:v]{FillTransform(output)},setpts={Number(speed)}*(PTS-STARTPTS),"
+            + $"fps={output.FrameRate},format=yuv420p,settb=AVTB,"
+            + $"tpad=stop_mode=clone:stop_duration={Seconds(walkthrough.PlayMs)},"
+            + $"trim=duration={Seconds(walkthrough.PlayMs)},setpts=PTS-STARTPTS[scene{index}walk]";
+        return $"{hold};{walk};[scene{index}hold][scene{index}walk]concat=n=2:v=1:a=0[scene{index}]";
+    }
+
+    /// <summary>
+    /// Finds consecutive photo scenes with a walk-through clip between their photos. A pair whose first scene is too
+    /// short to hold the photo and play the clip at no more than double speed keeps its planned transition.
+    /// </summary>
+    private static Dictionary<int, SceneWalkthrough> PlanWalkthroughs(
+        IReadOnlyList<VideoScene> scenes,
+        IReadOnlyList<VideoRenderWalkthroughTransitionAsset>? transitions)
+    {
+        var result = new Dictionary<int, SceneWalkthrough>();
+        if (transitions is null || transitions.Count == 0)
+        {
+            return result;
+        }
+
+        var byPair = new Dictionary<(Guid, Guid), VideoRenderWalkthroughTransitionAsset>();
+        foreach (var transition in transitions)
+        {
+            if (transition.DurationMs <= 0 || !File.Exists(transition.FilePath)
+                || !byPair.TryAdd((transition.FromPropertyMediaId, transition.ToPropertyMediaId), transition))
+            {
+                throw new ArgumentException("Walk-through transitions must be unique, existing clips.");
+            }
+        }
+
+        for (var index = 0; index + 1 < scenes.Count; index++)
+        {
+            var from = scenes[index].VisualSource;
+            var to = scenes[index + 1].VisualSource;
+            if (from.Kind != VisualSourceKind.PropertyMedia
+                || to.Kind != VisualSourceKind.PropertyMedia
+                || from.PropertyMediaId is not { } fromId
+                || to.PropertyMediaId is not { } toId
+                || !byPair.TryGetValue((fromId, toId), out var asset))
+            {
+                continue;
+            }
+
+            var playMs = Math.Min(asset.DurationMs, scenes[index].DurationMs - MinimumWalkthroughHoldMs);
+            if (playMs < MinimumWalkthroughMs || asset.DurationMs > playMs * MaximumWalkthroughSpeedUp)
+            {
+                continue;
+            }
+
+            result[index] = new SceneWalkthrough(asset, scenes[index].DurationMs - playMs, playMs);
+        }
+
+        return result;
     }
 
     private static string BuildKenBurns(MotionPlan motion, VideoOutputProfile output, int sceneDurationMs)
@@ -1031,7 +1149,14 @@ public static class FfmpegCommandBuilder
         int? NarrationInput,
         int? MusicInput,
         IReadOnlyList<int> LogoInputs,
-        IReadOnlyList<int> NeighborhoodInputs);
+        IReadOnlyList<int> NeighborhoodInputs,
+        IReadOnlyDictionary<int, SceneWalkthrough> Walkthroughs,
+        IReadOnlyDictionary<int, int> WalkthroughInputs);
+
+    private sealed record SceneWalkthrough(
+        VideoRenderWalkthroughTransitionAsset Asset,
+        int HoldMs,
+        int PlayMs);
 
     private sealed record NeighborhoodOverlay(
         VideoRenderNeighborhoodAsset Asset,

@@ -63,6 +63,7 @@ builder.Services
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
+builder.Services.AddHostedService<WalkthroughTransitionWorker>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 
