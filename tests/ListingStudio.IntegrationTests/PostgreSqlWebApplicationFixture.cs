@@ -82,6 +82,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeAiVideoProvider AiVideoProvider { get; } = new();
 
+    public FakeWalkthroughVideoProvider WalkthroughVideoProvider { get; } = new();
+
     public FakeBillingProviderGateway BillingProvider { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -121,6 +123,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IVideoRenderer>(VideoRenderer);
             services.RemoveAll<IAiVideoProvider>();
             services.AddSingleton<IAiVideoProvider>(AiVideoProvider);
+            services.RemoveAll<IWalkthroughVideoProvider>();
+            services.AddSingleton<IWalkthroughVideoProvider>(WalkthroughVideoProvider);
             services.RemoveAll<IBillingProviderGateway>();
             services.AddSingleton<IBillingProviderGateway>(BillingProvider);
             additionalServices?.Invoke(services);
@@ -240,10 +244,13 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     private readonly ConcurrentQueue<Exception> failures = new();
     private int callCount;
     private int generatedClipInputCount;
+    private int walkthroughInputCount;
 
     public int CallCount => callCount;
 
     public int GeneratedClipInputCount => generatedClipInputCount;
+
+    public int WalkthroughInputCount => walkthroughInputCount;
 
     public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
 
@@ -254,6 +261,8 @@ public sealed class FakeVideoRenderer : IVideoRenderer
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref callCount);
         Interlocked.Add(ref generatedClipInputCount, request.GeneratedClips?.Count ?? 0);
+        Interlocked.Add(ref walkthroughInputCount, request.WalkthroughTransitions?.Count ?? 0);
+        Assert.All(request.WalkthroughTransitions ?? [], transition => Assert.True(File.Exists(transition.FilePath)));
         if (failures.TryDequeue(out var failure))
         {
             throw failure;
@@ -266,6 +275,57 @@ public sealed class FakeVideoRenderer : IVideoRenderer
             TimeSpan.FromMilliseconds(10),
             string.Empty,
             string.Empty);
+    }
+}
+
+public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
+{
+    private readonly ConcurrentQueue<Exception> submissionFailures = new();
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<WalkthroughVideoState>> polls = new();
+    private int submitCount;
+
+    public bool IsEnabled => true;
+
+    public string GenerationVersion => "fake-walkthrough-v1";
+
+    public int ClipDurationMs => 5_000;
+
+    public int SubmitCount => submitCount;
+
+    public static byte[] ClipBytes { get; } = [0, 0, 0, 20, 102, 116, 121, 112, 119, 97, 108, 107];
+
+    public void EnqueueSubmissionFailure(Exception exception) => submissionFailures.Enqueue(exception);
+
+    /// <summary>Sets the next poll outcome for a transition; polls without one report the clip as still generating.</summary>
+    public void EnqueuePoll(Guid transitionId, WalkthroughVideoState state) =>
+        polls.GetOrAdd(transitionId.ToString("N"), _ => new()).Enqueue(state);
+
+    public Task<string> SubmitAsync(
+        WalkthroughVideoSubmission submission,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref submitCount);
+        Assert.True(submission.StartFrame.Content.CanRead);
+        Assert.True(submission.EndFrame.Content.CanRead);
+        return submissionFailures.TryDequeue(out var failure)
+            ? Task.FromException<string>(failure)
+            : Task.FromResult($"fake-{submission.IdempotencyKey}");
+    }
+
+    public Task<WalkthroughVideoPollResult> PollAsync(
+        string providerRequestId,
+        CancellationToken cancellationToken = default)
+    {
+        var transitionKey = providerRequestId["fake-".Length..][..32];
+        var state = polls.TryGetValue(transitionKey, out var queue) && queue.TryDequeue(out var next)
+            ? next
+            : WalkthroughVideoState.InProgress;
+        return Task.FromResult(new WalkthroughVideoPollResult(
+            state,
+            state == WalkthroughVideoState.Completed ? new MemoryStream(ClipBytes) : null,
+            "fake-higgsfield",
+            "fake-model",
+            state == WalkthroughVideoState.Failed ? "The fake provider rejected the photos." : null));
     }
 }
 

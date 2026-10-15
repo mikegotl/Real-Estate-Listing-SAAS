@@ -449,6 +449,11 @@ public sealed partial class CampaignGenerationProcessor(
                 specification,
                 directory,
                 cancellationToken);
+            var walkthroughTransitions = await MaterializeWalkthroughTransitionsAsync(
+                job,
+                specification,
+                directory,
+                cancellationToken);
             await videoRenderer.RenderAsync(
                 new VideoRenderRequest(
                     specification,
@@ -459,7 +464,8 @@ public sealed partial class CampaignGenerationProcessor(
                     outputPath,
                     generatedClips,
                     neighborhoodAssets,
-                    propertyVideos),
+                    propertyVideos,
+                    walkthroughTransitions),
                 cancellationToken);
             var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{kind.ToString().ToLowerInvariant()}.mp4";
             var stored = false;
@@ -693,6 +699,63 @@ public sealed partial class CampaignGenerationProcessor(
         return [.. result];
     }
 
+    /// <summary>
+    /// Copies the finished walk-through clip for each pair of consecutive photo scenes. A clip that cannot be read is
+    /// skipped, and that pair keeps its planned still transition.
+    /// </summary>
+    private async Task<VideoRenderWalkthroughTransitionAsset[]> MaterializeWalkthroughTransitionsAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        var pairs = specification.Scenes.Zip(specification.Scenes.Skip(1))
+            .Where(pair => pair.First.VisualSource.Kind == VisualSourceKind.PropertyMedia
+                && pair.Second.VisualSource.Kind == VisualSourceKind.PropertyMedia
+                && pair.First.VisualSource.PropertyMediaId is not null
+                && pair.Second.VisualSource.PropertyMediaId is not null)
+            .Select(pair => (From: pair.First.VisualSource.PropertyMediaId!.Value, To: pair.Second.VisualSource.PropertyMediaId!.Value))
+            .Distinct()
+            .ToArray();
+        if (pairs.Length == 0)
+        {
+            return [];
+        }
+
+        var fromIds = pairs.Select(pair => pair.From).Distinct().ToArray();
+        var completed = await dbContext.WalkthroughTransitions.AsNoTracking()
+            .Where(transition => transition.OrganizationId == job.OrganizationId
+                && transition.PropertyId == job.PropertyId
+                && transition.Status == WalkthroughTransitionStatus.Completed
+                && fromIds.Contains(transition.FromPropertyMediaId))
+            .OrderByDescending(transition => transition.CompletedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        var result = new List<VideoRenderWalkthroughTransitionAsset>();
+        foreach (var pair in pairs)
+        {
+            var transition = completed.FirstOrDefault(candidate =>
+                candidate.FromPropertyMediaId == pair.From && candidate.ToPropertyMediaId == pair.To);
+            if (transition?.AssetPath is null || transition.DurationMs is not { } durationMs)
+            {
+                continue;
+            }
+
+            await using var source = await campaignAssetStorage.OpenReadAsync(transition.AssetPath, cancellationToken);
+            if (source is null)
+            {
+                LogWalkthroughUnavailable(job.Id, transition.Id);
+                continue;
+            }
+
+            var path = Path.Combine(directory, $"walkthrough-{transition.Id:N}.mp4");
+            await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await source.CopyToAsync(target, cancellationToken);
+            result.Add(new VideoRenderWalkthroughTransitionAsset(pair.From, pair.To, path, durationMs));
+        }
+
+        return [.. result];
+    }
+
     private async Task<VideoRenderPropertyVideoAsset[]> MaterializePropertyVideosAsync(
         CampaignGenerationJob job,
         VideoProductionSpecification specification,
@@ -893,6 +956,11 @@ public sealed partial class CampaignGenerationProcessor(
             or TimeoutException
             or VideoRenderException
             or IOException;
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} skipped walk-through transition {TransitionId} because its clip could not be opened")]
+    private partial void LogWalkthroughUnavailable(Guid jobId, Guid transitionId);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

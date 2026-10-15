@@ -51,7 +51,7 @@ dotnet user-secrets set --project src/ListingStudio.Worker "OpenAI:Model" "gpt-6
 dotnet user-secrets set --project src/ListingStudio.Worker "MediaAnalysis:Enabled" "true"
 ```
 
-The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `AddressLookup`, `NeighborhoodInsights`, `OpenAI`, `AIVideo`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`. The Web host also supports the `Authentication:Google` and `Authentication:Apple` sections described below.
+The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `AddressLookup`, `NeighborhoodInsights`, `OpenAI`, `AIVideo`, `Higgsfield`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`. The Web host also supports the `Authentication:Google` and `Authentication:Apple` sections described below.
 
 ### Google and Apple sign-in
 
@@ -151,6 +151,8 @@ Campaign generation is enabled by default. `CampaignGeneration:PollIntervalSecon
 Uploads are capped at 20 MiB, 15,000 pixels on either side, and 50 million pixels total. The server reads no more than one byte beyond the client-declared length when detecting a size mismatch.
 
 Selective image-to-video generation is disabled by default. When `AIVideo:Enabled=true`, configure `Provider`, `ApiKey`, `Endpoint`, `Model`, and `GenerationVersion` at runtime. The endpoint must be an HTTPS synchronous multipart gateway accepting `image`, `prompt`, `duration_seconds`, `aspect_ratio`, and `model`, and honoring the supplied `Idempotency-Key` header. It returns an MP4 body plus `X-Video-Width`, `X-Video-Height`, and `X-Video-Duration-Ms` headers, and may also return `X-Provider-Request-Id`, `X-Provider-Model`, and `X-Estimated-Cost-Usd`. Set `RequestTimeoutSeconds` and `MaxOutputMegabytes` to bound the call. Only production-plan scenes explicitly marked for generative motion invoke the gateway. Identical media/instruction/duration/aspect/version input reuses the private cached clip and its recorded provider, model, request, metadata, and estimated cost. If the feature is disabled, marked scenes render from their original property-photo fallback with no provider call.
+
+Storyboard walk-through clips are disabled by default. Set `Higgsfield:Enabled=true` with `Higgsfield:ApiKey` (the key ID) and `Higgsfield:ApiSecret` from the Higgsfield console on both the Web and Worker hosts, for example as `Higgsfield__ApiKey` and `Higgsfield__ApiSecret` secrets. The Media tab then offers to create a clip for each pair of consecutive shots: the Worker uploads both photos to Higgsfield, requests `Model` (default `kling-video/v3.0/std/image-to-video`) with the first photo as `image_url` and the next as `last_image_url`, polls until the clip is ready, and stores it with the campaign assets. Each source shot gets a play button for its clip, and campaign renders play a finished clip at the end of the first photo's scene, keeping scene timing, whenever two consecutive scenes show exactly that pair. Without a clip, or when a scene is too short to fit one at up to double speed, the render keeps its planned still transition. Changing `Model`, `ClipDurationSeconds`, or `GenerationVersion` creates new clips instead of reusing old ones.
 
 ### Stripe test-mode billing
 

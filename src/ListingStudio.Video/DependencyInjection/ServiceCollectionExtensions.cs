@@ -15,6 +15,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddVideo(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<AIVideoOptions>().Bind(configuration.GetSection(AIVideoOptions.SectionName));
+        services.AddOptions<HiggsfieldOptions>().Bind(configuration.GetSection(HiggsfieldOptions.SectionName));
         services.AddOptions<FfmpegOptions>()
             .Bind(configuration.GetSection(FfmpegOptions.SectionName))
             .Validate(options => options.EnhancementTimeoutSeconds is >= 60 and <= 7_200,
@@ -26,6 +27,8 @@ public static class ServiceCollectionExtensions
         services.AddHealthChecks()
             .AddCheck<FfmpegHealthCheck>("ffmpeg", tags: ["ready"]);
         services.AddHttpClient<IAiVideoProvider, HttpAiVideoProvider>(client =>
+            client.Timeout = Timeout.InfiniteTimeSpan);
+        services.AddHttpClient<IWalkthroughVideoProvider, HiggsfieldWalkthroughVideoProvider>(client =>
             client.Timeout = Timeout.InfiniteTimeSpan);
         return services;
     }

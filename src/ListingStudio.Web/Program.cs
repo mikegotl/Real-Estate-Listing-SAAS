@@ -140,6 +140,24 @@ app.MapGet("/property-media/{mediaId:guid}", async (
         : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);
 }).RequireAuthorization();
 
+app.MapGet("/walkthrough-transitions/{transitionId:guid}", async (
+    Guid transitionId,
+    HttpContext context,
+    IWalkthroughTransitionService transitionService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var clip = await transitionService.OpenReadAsync(userId, transitionId, cancellationToken);
+    return clip is null
+        ? Results.NotFound()
+        : Results.Stream(clip.Content, clip.ContentType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
 app.MapGet("/property-videos/{videoId:guid}", async (
     Guid videoId,
     bool? enhanced,

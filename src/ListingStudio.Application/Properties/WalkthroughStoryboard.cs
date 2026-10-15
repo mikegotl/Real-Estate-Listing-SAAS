@@ -101,6 +101,19 @@ public static partial class WalkthroughStoryboard
         .SelectMany(stop => stop.Items)
         .ToArray();
 
+    /// <summary>
+    /// Consecutive shot pairs in storyboard order (1 to 2, 2 to 3, and so on), each the source of a walk-through clip.
+    /// Stops without photos have no shots, so the photographed shots on either side of them form a pair.
+    /// </summary>
+    public static IReadOnlyList<(T From, T To)> ShotPairs<T>(
+        IEnumerable<T> items,
+        Func<T, string?> stopSelector,
+        Func<T, int> orderSelector)
+    {
+        var shots = Arrange(items, stopSelector, orderSelector);
+        return shots.Zip(shots.Skip(1)).ToArray();
+    }
+
     /// <summary>Maps a photo analysis category to the stop it most likely belongs to, for one-click placement.</summary>
     public static string? SuggestStop(PropertyMediaCategory category) => category switch
     {
