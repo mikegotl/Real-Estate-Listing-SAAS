@@ -28,6 +28,11 @@ public sealed class OpenAIVideoDirector(
         valid start point whose scene window fits inside the supplied video duration. Property-video scenes must not
         request still-image motion. When no accepted script is present, direct narration from other grounded bindings.
 
+        Media is listed in the agent's walkthrough storyboard order. When media items carry a walkthroughStop, sequence
+        the photo scenes in that order so the tour moves continuously through the home: open on the exterior front,
+        then the entry, then each adjacent room as listed. You may skip weaker photos, and an accepted script passage
+        may use the photo that best matches it, but do not jump back and forth between stops without a script reason.
+
         Scene starts must be contiguous from zero and the scene durations must total the requested duration exactly.
         The first transition must be a zero-duration cut. Every displayed or spoken string must exactly equal one of
         the supplied fact bindings and use its key. Reference only supplied property media IDs. Return only the
@@ -42,7 +47,7 @@ public sealed class OpenAIVideoDirector(
 
     private static readonly JsonElement OutputSchema = VideoSchemaContract.EditorialSchema;
 
-    public string DirectorVersion => "openai-video-director-v1.4";
+    public string DirectorVersion => "openai-video-director-v1.5";
 
     public async Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,

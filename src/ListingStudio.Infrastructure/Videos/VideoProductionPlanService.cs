@@ -485,7 +485,8 @@ public sealed partial class VideoProductionPlanService(
                 item.Id,
                 item.Width,
                 item.Height,
-                ToObservation(item, item.GetAnalysis()!)))
+                ToObservation(item, item.GetAnalysis()!),
+                item.WalkthroughStop))
             .ToArray();
         var brand = new BrandKit(
             null,

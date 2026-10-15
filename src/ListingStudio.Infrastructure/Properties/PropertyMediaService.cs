@@ -57,6 +57,7 @@ public sealed class PropertyMediaService(
     {
         ArgumentNullException.ThrowIfNull(upload);
         ArgumentNullException.ThrowIfNull(upload.Content);
+        var walkthroughStop = WalkthroughStoryboard.Normalize(upload.WalkthroughStop);
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -90,11 +91,22 @@ public sealed class PropertyMediaService(
             validated.Width,
             validated.Height,
             existingCount);
+        media.SetWalkthroughStop(walkthroughStop);
 
         await storage.StoreAsync(blobPath, bufferedContent, validated.ContentType, cancellationToken);
         try
         {
             dbContext.PropertyMedia.Add(media);
+            if (walkthroughStop is not null)
+            {
+                var existing = await dbContext.PropertyMedia
+                    .Where(candidate => candidate.OrganizationId == organizationId
+                        && candidate.PropertyId == propertyId
+                        && candidate.Id != media.Id)
+                    .ToListAsync(cancellationToken);
+                ApplyStoryboardOrder([.. existing, media]);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
@@ -187,7 +199,43 @@ public sealed class PropertyMediaService(
             byId[orderedMediaIds[index]].SetDisplayOrder(index);
         }
 
+        ApplyStoryboardOrder(media);
         await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> SetWalkthroughStopAsync(
+        string userId,
+        Guid propertyId,
+        Guid mediaId,
+        string? walkthroughStop,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedStop = WalkthroughStoryboard.Normalize(walkthroughStop);
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await PropertyExistsAsync(organizationId, propertyId, includeArchived: false, cancellationToken))
+        {
+            return false;
+        }
+
+        var media = await dbContext.PropertyMedia
+            .Where(candidate => candidate.PropertyId == propertyId && candidate.OrganizationId == organizationId)
+            .ToListAsync(cancellationToken);
+        var target = media.SingleOrDefault(candidate => candidate.Id == mediaId);
+        if (target is null)
+        {
+            return false;
+        }
+
+        if (!string.Equals(target.WalkthroughStop, normalizedStop, StringComparison.Ordinal))
+        {
+            target.SetWalkthroughStop(normalizedStop);
+            // Moving past every other photo places it last within its new stop once the storyboard is applied.
+            target.SetDisplayOrder(media.Count);
+            ApplyStoryboardOrder(media);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         return true;
     }
 
@@ -236,6 +284,15 @@ public sealed class PropertyMediaService(
         media.QueueAnalysisRetry();
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    private static void ApplyStoryboardOrder(IReadOnlyList<PropertyMedia> media)
+    {
+        var arranged = WalkthroughStoryboard.Arrange(media, item => item.WalkthroughStop, item => item.DisplayOrder);
+        for (var index = 0; index < arranged.Count; index++)
+        {
+            arranged[index].SetDisplayOrder(index);
+        }
     }
 
     private async Task NormalizeDisplayOrderAsync(
@@ -375,7 +432,8 @@ public sealed class PropertyMediaService(
         media.AnalysisStatus,
         media.GetAnalysis(),
         media.AnalysisAttemptCount,
-        media.AnalysisLastError);
+        media.AnalysisLastError,
+        media.WalkthroughStop);
 
     private sealed record ValidatedUpload(
         string Filename,

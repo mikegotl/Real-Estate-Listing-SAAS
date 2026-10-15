@@ -26,10 +26,25 @@ public interface IPropertyMediaService
         Guid mediaId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Saves a new photo order. The order is then grouped by walkthrough stop, so moving a stop's photos moves the
+    /// stop, while template stops stay first.
+    /// </summary>
     Task<bool> ReorderAsync(
         string userId,
         Guid propertyId,
         IReadOnlyList<Guid> orderedMediaIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Places a photo in a walkthrough storyboard stop (null removes it from the storyboard). The photo moves to the
+    /// end of that stop and the property's display order is rearranged to follow the storyboard.
+    /// </summary>
+    Task<bool> SetWalkthroughStopAsync(
+        string userId,
+        Guid propertyId,
+        Guid mediaId,
+        string? walkthroughStop,
         CancellationToken cancellationToken = default);
 
     Task<PropertyMediaContent?> OpenReadAsync(
@@ -48,7 +63,8 @@ public sealed record PropertyMediaUpload(
     string OriginalFilename,
     string ContentType,
     long FileSize,
-    Stream Content);
+    Stream Content,
+    string? WalkthroughStop = null);
 
 public sealed record PropertyMediaItem(
     Guid Id,
@@ -62,6 +78,7 @@ public sealed record PropertyMediaItem(
     PropertyMediaAnalysisStatus AnalysisStatus,
     PropertyMediaAnalysis? Analysis,
     int AnalysisAttemptCount,
-    string? AnalysisLastError);
+    string? AnalysisLastError,
+    string? WalkthroughStop = null);
 
 public sealed record PropertyMediaContent(Stream Content, string MimeType, string OriginalFilename);

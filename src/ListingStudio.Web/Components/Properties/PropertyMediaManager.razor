@@ -1,33 +1,47 @@
 @inherits OwningComponentBase<IPropertyMediaService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
-<MudPaper Class="pa-6 mt-6">
-    <MudText Typo="Typo.h5" HtmlTag="h2">Listing photos</MudText>
-    <MudText Typo="Typo.body2" Class="mb-4">
-        Upload up to @IPropertyMediaService.MaximumMediaPerProperty JPG, PNG, or WEBP images. Each image may be up to
-        @(IPropertyMediaService.MaximumFileSize / 1024 / 1024) MB.
+<MudPaper Class="pa-6 mt-6 storyboard">
+    <div class="storyboard-header">
+        <div>
+            <p class="storyboard-eyebrow">Walkthrough storyboard</p>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Listing photos</MudText>
+            <MudText Typo="Typo.body2" Class="storyboard-intro">
+                Add photos in the order a buyer would walk through the property: start outside at the front, step
+                through the entry, then continue room by room. The AI walkthrough video follows this sequence, so each
+                scene flows into the next.
+            </MudText>
+        </div>
+        @if (loaded)
+        {
+            <div class="storyboard-count" aria-label="Photo count">
+                <strong>@media.Count</strong>
+                <span>of @IPropertyMediaService.MaximumMediaPerProperty photos</span>
+            </div>
+        }
+    </div>
+    <MudText Typo="Typo.caption" Class="storyboard-limits">
+        JPG, PNG, or WEBP images up to @(IPropertyMediaService.MaximumFileSize / 1024 / 1024) MB each.
     </MudText>
-
-    @if (!IsReadOnly)
-    {
-        <label class="media-upload-control">
-            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" />
-            <span>Add listing photos</span>
-            <InputFile OnChange="FilesSelectedAsync" multiple
-                       accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
-        </label>
-    }
 
     @if (message is not null)
     {
         <MudAlert Severity="@messageSeverity" Class="my-4">@message</MudAlert>
     }
 
+    @if (loaded && !IsReadOnly && !HasExteriorFront)
+    {
+        <MudAlert Severity="Severity.Warning" Class="my-4" Icon="@Icons.Material.Filled.House">
+            Start with at least one photo of the front of the property. It opens the walkthrough video and becomes the
+            listing cover.
+        </MudAlert>
+    }
+
     @foreach (var upload in uploads)
     {
         <MudPaper Outlined="true" Class="pa-3 my-2">
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                <MudText>@upload.File.Name</MudText>
+                <MudText>@upload.File.Name <span class="storyboard-upload-stop">→ @(upload.Stop ?? "Storyboard")</span></MudText>
                 @if (upload.Failed)
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
@@ -46,76 +60,147 @@
     {
         <MudProgressLinear Indeterminate="true" Class="mt-4" />
     }
-    else if (media.Count == 0)
-    {
-        <MudAlert Severity="Severity.Info" Class="mt-4">No listing photos have been uploaded.</MudAlert>
-    }
     else
     {
-        <div class="media-grid mt-4">
-            @for (var index = 0; index < media.Count; index++)
+        @if (IsReadOnly && media.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-4">No listing photos have been uploaded.</MudAlert>
+        }
+
+        <ol class="storyboard-track">
+            @for (var stopIndex = 0; stopIndex < stops.Count; stopIndex++)
             {
-                var item = media[index];
-                var itemIndex = index;
-                <MudCard Class="media-card" draggable="@(!IsReadOnly)"
-                         @ondragstart="@(() => draggedMediaId = item.Id)"
-                         @ondragover:preventDefault="@(!IsReadOnly)"
-                         @ondrop="@(() => DropAsync(item.Id))">
-                    <MudCardMedia Image="@($"/property-media/{item.Id}")" Height="180" />
-                    <MudCardContent>
-                        <MudText Typo="Typo.subtitle2">@item.OriginalFilename</MudText>
-                        <MudText Typo="Typo.caption">@item.Width × @item.Height · @FormatSize(item.FileSize)</MudText>
-                        <MudText Typo="Typo.caption">Analysis: @item.AnalysisStatus</MudText>
-                        @if (item.Analysis is not null)
+                var stop = stops[stopIndex];
+                var previous = stopIndex == 0 ? null : stops[stopIndex - 1];
+                var currentStopIndex = stopIndex;
+                if (IsReadOnly && stop.Items.Count == 0)
+                {
+                    continue;
+                }
+
+                <li class="storyboard-stop @(stop.Items.Count == 0 ? "is-empty" : "is-filled")">
+                    <div class="stop-marker" aria-hidden="true">
+                        @if (stop.Items.Count > 0)
                         {
-                            <MudText Typo="Typo.body2" Class="mt-2">@item.Analysis.Category · @item.Analysis.RoomType</MudText>
-                            <MudText Typo="Typo.caption">
-                                Quality @item.Analysis.QualityScore/100 · Hero @item.Analysis.HeroScore/100 · Suggested position @(item.Analysis.SuggestedDisplayOrder + 1)
-                            </MudText>
-                            <MudText Typo="Typo.caption">
-                                @(item.Analysis.IsExterior ? "Exterior" : item.Analysis.IsInterior ? "Interior" : "Interior/exterior not determined")
-                                · People visible: @(item.Analysis.ContainsPeople ? "Yes" : "No")
-                            </MudText>
-                            <MudText Typo="Typo.body2" Class="mt-2">@item.Analysis.Description</MudText>
-                            @if (item.Analysis.PotentialProblems.Count > 0)
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Warning">
-                                    Potential problems: @string.Join(", ", item.Analysis.PotentialProblems)
-                                </MudText>
-                            }
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
                         }
-                        else if (item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed)
+                        else
                         {
-                            <MudText Typo="Typo.caption" Color="Color.Error">
-                                Attempt @item.AnalysisAttemptCount failed: @item.AnalysisLastError
-                            </MudText>
+                            @(stopIndex + 1)
+                        }
+                    </div>
+                    <div class="stop-body">
+                        <div class="stop-head">
+                            <div>
+                                <div class="stop-title">
+                                    <span class="stop-step">Stop @(stopIndex + 1)</span>
+                                    <h3>@stop.Name</h3>
+                                    @if (stop.Name == WalkthroughStoryboard.ExteriorFront)
+                                    {
+                                        <span class="stop-badge @(stop.Items.Count == 0 ? "required" : "done")">
+                                            @(stop.Items.Count == 0 ? "Required" : "Opening shot")
+                                        </span>
+                                    }
+                                    else if (stop.Name == WalkthroughStoryboard.EntryFoyer)
+                                    {
+                                        <span class="stop-badge">Recommended</span>
+                                    }
+                                </div>
+                                <p class="stop-hint">@Hint(stop, previous)</p>
+                            </div>
+                            @if (!IsReadOnly && !stop.IsTemplate)
+                            {
+                                <div class="stop-actions">
+                                    @if (stop.Items.Count > 0)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
+                                                       Disabled="@(!CanMoveStop(currentStopIndex, -1))"
+                                                       aria-label="@($"Move {stop.Name} earlier in the walkthrough")"
+                                                       OnClick="@(() => MoveStopAsync(currentStopIndex, -1))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
+                                                       Disabled="@(!CanMoveStop(currentStopIndex, 1))"
+                                                       aria-label="@($"Move {stop.Name} later in the walkthrough")"
+                                                       OnClick="@(() => MoveStopAsync(currentStopIndex, 1))" />
+                                    }
+                                    else
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                       aria-label="@($"Remove the empty {stop.Name} stop")"
+                                                       OnClick="@(() => RemovePendingStop(stop.Name))" />
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="stop-strip">
+                            @for (var index = 0; index < stop.Items.Count; index++)
+                            {
+                                @PhotoCard((stop.Items, index, stop.Name))
+                            }
                             @if (!IsReadOnly)
                             {
-                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
-                                           OnClick="@(() => RetryAnalysisAsync(item.Id))">Retry analysis</MudButton>
+                                <label class="media-upload-control stop-upload">
+                                    <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
+                                    <span>@(stop.Items.Count == 0 ? $"Add {stop.Name.ToLowerInvariant()} photos" : "Add another angle")</span>
+                                    <InputFile OnChange="@(eventArgs => FilesSelectedAsync(eventArgs, stop.Name))" multiple
+                                               aria-label="@($"Add photos to {stop.Name}")"
+                                               accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+                                </label>
                             }
-                        }
-                    </MudCardContent>
-                    @if (!IsReadOnly)
-                    {
-                        <MudCardActions>
-                            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
-                                           Disabled="@(itemIndex == 0)" aria-label="Move photo earlier"
-                                           OnClick="@(() => MoveAsync(itemIndex, -1))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small"
-                                           Disabled="@(itemIndex == media.Count - 1)" aria-label="Move photo later"
-                                           OnClick="@(() => MoveAsync(itemIndex, 1))" />
-                            <MudSpacer />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
-                                           aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
-                        </MudCardActions>
-                    }
-                </MudCard>
+                        </div>
+                    </div>
+                </li>
             }
-        </div>
-        @if (!IsReadOnly)
+
+            @if (!IsReadOnly)
+            {
+                <li class="storyboard-stop next-stop">
+                    <div class="stop-marker" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" /></div>
+                    <div class="stop-body">
+                        <div class="stop-title">
+                            <span class="stop-step">Stop @(stops.Count + 1)</span>
+                            <h3>Where does the walkthrough go next?</h3>
+                        </div>
+                        <p class="stop-hint">
+                            Which room do you step into from the @stops[^1].Name.ToLowerInvariant()? Add it as the next stop, then keep
+                            going room by room through the property.
+                        </p>
+                        <div class="next-stop-suggestions">
+                            @foreach (var suggestion in WalkthroughStoryboard.SuggestedStops.Where(IsUnusedStop))
+                            {
+                                <button type="button" class="stop-suggestion" @onclick="@(() => AddStop(suggestion))">
+                                    <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" />@suggestion
+                                </button>
+                            }
+                        </div>
+                        <div class="next-stop-custom">
+                            <MudTextField T="string" @bind-Value="customStopName" Label="Other room or area"
+                                          Placeholder="Sunroom, wine cellar, guest suite…" Variant="Variant.Outlined"
+                                          Margin="Margin.Dense" MaxLength="PropertyMedia.MaximumWalkthroughStopLength"
+                                          OnKeyDown="CustomStopKeyDownAsync" Immediate="true" />
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                       Disabled="@string.IsNullOrWhiteSpace(customStopName)"
+                                       OnClick="@(() => AddStop(customStopName))">Add stop</MudButton>
+                        </div>
+                    </div>
+                </li>
+            }
+        </ol>
+
+        @if (unsorted.Count > 0)
         {
-            <MudText Typo="Typo.caption" Class="mt-2">Drag photos to reorder them, or use the arrow buttons.</MudText>
+            <section class="storyboard-unsorted" aria-labelledby="unsorted-heading">
+                <h3 id="unsorted-heading">Not in the walkthrough yet</h3>
+                <p class="stop-hint">
+                    These photos were added before the storyboard. They still play in the video after the walkthrough,
+                    in this order. Place each one in a stop so it appears where a buyer would see it.
+                </p>
+                <div class="stop-strip">
+                    @for (var index = 0; index < unsorted.Count; index++)
+                    {
+                        @PhotoCard((unsorted, index, null))
+                    }
+                </div>
+            </section>
         }
     }
 </MudPaper>
@@ -131,13 +216,88 @@
     public EventCallback MediaChanged { get; set; }
 
     private readonly List<UploadState> uploads = [];
+    private readonly List<string> pendingStops = [];
     private List<PropertyMediaItem> media = [];
-    private Guid? draggedMediaId;
+    private IReadOnlyList<StopView> stops = [];
+    private IReadOnlyList<PropertyMediaItem> unsorted = [];
+    private Dictionary<Guid, int> sequence = [];
+    private string? customStopName;
     private bool loaded;
     private string? message;
     private Severity messageSeverity = Severity.Info;
 
     private Guid? loadedPropertyId;
+
+    private bool HasExteriorFront => stops.Count > 0 && stops[0].Items.Count > 0;
+
+    private RenderFragment PhotoCard((IReadOnlyList<PropertyMediaItem> Group, int Index, string? Stop) context) => __builder =>
+    {
+        var item = context.Group[context.Index];
+        var group = context.Group;
+        var itemIndex = context.Index;
+        var suggestion = item.Analysis is null ? null : WalkthroughStoryboard.SuggestStop(item.Analysis.Category);
+        <article class="storyboard-photo">
+            <div class="storyboard-photo-image" style="@($"background-image: url('/property-media/{item.Id}')")"
+                 role="img" aria-label="@item.OriginalFilename">
+                <span class="scene-number" title="Position in the walkthrough video">@(sequence.GetValueOrDefault(item.Id) + 1)</span>
+            </div>
+            <div class="storyboard-photo-body">
+                <span class="storyboard-photo-name" title="@item.OriginalFilename">@item.OriginalFilename</span>
+                @if (item.Analysis is not null)
+                {
+                    <span class="storyboard-photo-meta">AI sees: @item.Analysis.RoomType · Quality @item.Analysis.QualityScore</span>
+                    @if (item.Analysis.PotentialProblems.Count > 0)
+                    {
+                        <span class="storyboard-photo-meta warning" title="@string.Join(", ", item.Analysis.PotentialProblems)">
+                            @item.Analysis.PotentialProblems.Count possible @(item.Analysis.PotentialProblems.Count == 1 ? "issue" : "issues"): @string.Join(", ", item.Analysis.PotentialProblems)
+                        </span>
+                    }
+                }
+                else if (item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed)
+                {
+                    <span class="storyboard-photo-meta error">Analysis attempt @item.AnalysisAttemptCount failed: @item.AnalysisLastError</span>
+                    @if (!IsReadOnly)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                                   OnClick="@(() => RetryAnalysisAsync(item.Id))">Retry analysis</MudButton>
+                    }
+                }
+                else
+                {
+                    <span class="storyboard-photo-meta">Analysis: @item.AnalysisStatus</span>
+                }
+
+                @if (!IsReadOnly && context.Stop is null && suggestion is not null)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="storyboard-suggest"
+                               StartIcon="@Icons.Material.Filled.AutoAwesome"
+                               OnClick="@(() => AssignStopAsync(item.Id, suggestion))">Place in @suggestion</MudButton>
+                }
+            </div>
+            @if (!IsReadOnly)
+            {
+                <div class="storyboard-photo-actions">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                                   Disabled="@(itemIndex == 0)" aria-label="Move photo earlier"
+                                   OnClick="@(() => MoveWithinGroupAsync(group, itemIndex, -1))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small"
+                                   Disabled="@(itemIndex == group.Count - 1)" aria-label="Move photo later"
+                                   OnClick="@(() => MoveWithinGroupAsync(group, itemIndex, 1))" />
+                    <MudSpacer />
+                    <MudMenu Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
+                             AriaLabel="@(context.Stop is null ? "Place photo in a stop" : "Move photo to another stop")">
+                        <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">@(context.Stop is null ? "Place in stop" : "Move to stop")</MudText>
+                        @foreach (var target in stops.Where(candidate => candidate.Name != context.Stop))
+                        {
+                            <MudMenuItem OnClick="@(() => AssignStopAsync(item.Id, target.Name))">@target.Name</MudMenuItem>
+                        }
+                    </MudMenu>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                   aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
+                </div>
+            }
+        </article>
+    };
 
     // Reload only when the property changes. The parent re-renders after MediaChanged, and reloading here
     // would overlap the next upload's call on this component's DbContext.
@@ -149,6 +309,7 @@
         }
 
         loadedPropertyId = PropertyId;
+        pendingStops.Clear();
         await LoadAsync();
     }
 
@@ -157,7 +318,29 @@
         loaded = false;
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         media = [.. await Service.ListAsync(userId, PropertyId)];
+        BuildStoryboard();
         loaded = true;
+    }
+
+    private void BuildStoryboard()
+    {
+        var groups = WalkthroughStoryboard.Group(media, item => item.WalkthroughStop, item => item.DisplayOrder);
+        var built = WalkthroughStoryboard.TemplateStops
+            .Select(template => new StopView(
+                template,
+                groups.FirstOrDefault(group => SameStop(group.Stop, template))?.Items ?? [],
+                IsTemplate: true))
+            .ToList();
+        built.AddRange(groups
+            .Where(group => group.Stop is not null && !WalkthroughStoryboard.IsTemplateStop(group.Stop))
+            .Select(group => new StopView(group.Stop!, group.Items, IsTemplate: false)));
+        pendingStops.RemoveAll(pending => built.Any(stop => SameStop(stop.Name, pending)));
+        built.AddRange(pendingStops.Select(pending => new StopView(pending, [], IsTemplate: false)));
+        stops = built;
+        unsorted = groups.FirstOrDefault(group => group.Stop is null)?.Items ?? [];
+        sequence = stops.SelectMany(stop => stop.Items).Concat(unsorted)
+            .Select((item, index) => (item.Id, index))
+            .ToDictionary(entry => entry.Id, entry => entry.index);
     }
 
     private async Task ReloadAfterChangeAsync()
@@ -166,7 +349,7 @@
         await MediaChanged.InvokeAsync();
     }
 
-    private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs)
+    private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs, string stop)
     {
         message = null;
         IReadOnlyList<IBrowserFile> files;
@@ -188,7 +371,7 @@
             return;
         }
 
-        var selected = files.Select(file => new UploadState(file)).ToArray();
+        var selected = files.Select(file => new UploadState(file, stop)).ToArray();
         uploads.AddRange(selected);
         foreach (var upload in selected)
         {
@@ -213,11 +396,16 @@
             await Service.UploadAsync(
                 userId,
                 PropertyId,
-                new PropertyMediaUpload(upload.File.Name, upload.File.ContentType, upload.File.Size, progressStream));
+                new PropertyMediaUpload(
+                    upload.File.Name,
+                    upload.File.ContentType,
+                    upload.File.Size,
+                    progressStream,
+                    upload.Stop));
             upload.Progress = 100;
             uploads.Remove(upload);
             await ReloadAfterChangeAsync();
-            ShowMessage("Photo uploaded.", Severity.Success);
+            ShowMessage(upload.Stop is null ? "Photo uploaded." : $"Photo added to {upload.Stop}.", Severity.Success);
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
         {
@@ -237,45 +425,72 @@
         }
     }
 
-    private async Task MoveAsync(int from, int offset)
-    {
-        var to = from + offset;
-        if (to < 0 || to >= media.Count)
-        {
-            return;
-        }
-
-        (media[from], media[to]) = (media[to], media[from]);
-        await SaveOrderAsync();
-    }
-
-    private async Task DropAsync(Guid targetId)
-    {
-        if (IsReadOnly || draggedMediaId is null || draggedMediaId == targetId)
-        {
-            return;
-        }
-
-        var from = media.FindIndex(item => item.Id == draggedMediaId);
-        var to = media.FindIndex(item => item.Id == targetId);
-        if (from < 0 || to < 0)
-        {
-            return;
-        }
-
-        var moving = media[from];
-        media.RemoveAt(from);
-        media.Insert(to, moving);
-        draggedMediaId = null;
-        await SaveOrderAsync();
-    }
-
-    private async Task SaveOrderAsync()
+    private async Task AssignStopAsync(Guid mediaId, string stop)
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-        await Service.ReorderAsync(userId, PropertyId, media.Select(item => item.Id).ToArray());
+        if (await Service.SetWalkthroughStopAsync(userId, PropertyId, mediaId, stop))
+        {
+            await ReloadAfterChangeAsync();
+            ShowMessage($"Photo moved to {stop}.", Severity.Success);
+        }
+    }
+
+    private async Task MoveWithinGroupAsync(IReadOnlyList<PropertyMediaItem> group, int from, int offset)
+    {
+        var to = from + offset;
+        if (to < 0 || to >= group.Count)
+        {
+            return;
+        }
+
+        var order = CurrentGroups();
+        var target = order.Single(candidate => candidate.Count > 0 && candidate[0].Id == group[0].Id);
+        (target[from], target[to]) = (target[to], target[from]);
+        await SaveOrderAsync(order, "Photo order saved.");
+    }
+
+    private bool CanMoveStop(int stopIndex, int offset)
+    {
+        var to = stopIndex + offset;
+        return to >= 0
+            && to < stops.Count
+            && !stops[to].IsTemplate
+            && stops[to].Items.Count > 0;
+    }
+
+    private async Task MoveStopAsync(int stopIndex, int offset)
+    {
+        if (!CanMoveStop(stopIndex, offset))
+        {
+            return;
+        }
+
+        var filled = stops.Where(stop => stop.Items.Count > 0).ToList();
+        var from = filled.IndexOf(stops[stopIndex]);
+        var to = filled.IndexOf(stops[stopIndex + offset]);
+        (filled[from], filled[to]) = (filled[to], filled[from]);
+        var order = filled.Select(stop => stop.Items.ToList()).ToList();
+        order.Add([.. unsorted]);
+        await SaveOrderAsync(order, $"{stops[stopIndex].Name} moved {(offset < 0 ? "earlier" : "later")} in the walkthrough.");
+    }
+
+    private List<List<PropertyMediaItem>> CurrentGroups()
+    {
+        var order = stops.Where(stop => stop.Items.Count > 0).Select(stop => stop.Items.ToList()).ToList();
+        if (unsorted.Count > 0)
+        {
+            order.Add([.. unsorted]);
+        }
+
+        return order;
+    }
+
+    private async Task SaveOrderAsync(IEnumerable<List<PropertyMediaItem>> groups, string confirmation)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await Service.ReorderAsync(userId, PropertyId, groups.SelectMany(group => group).Select(item => item.Id).ToArray());
         await ReloadAfterChangeAsync();
-        ShowMessage("Photo order saved.", Severity.Success);
+        ShowMessage(confirmation, Severity.Success);
     }
 
     private async Task RetryAnalysisAsync(Guid mediaId)
@@ -288,19 +503,81 @@
         }
     }
 
+    private void AddStop(string? name)
+    {
+        string? stop;
+        try
+        {
+            stop = WalkthroughStoryboard.Normalize(name);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+            return;
+        }
+
+        if (stop is null)
+        {
+            return;
+        }
+
+        customStopName = null;
+        if (stops.Any(existing => SameStop(existing.Name, stop)))
+        {
+            ShowMessage($"{stop} is already in the walkthrough.", Severity.Info);
+            return;
+        }
+
+        pendingStops.Add(stop);
+        BuildStoryboard();
+        ShowMessage($"{stop} added as stop {stops.Count}. Add its photos to keep the walkthrough moving.", Severity.Success);
+    }
+
+    private async Task CustomStopKeyDownAsync(KeyboardEventArgs eventArgs)
+    {
+        if (eventArgs.Key == "Enter")
+        {
+            // Let the text field push its latest value before reading it.
+            await Task.Yield();
+            AddStop(customStopName);
+        }
+    }
+
+    private void RemovePendingStop(string stop)
+    {
+        pendingStops.RemoveAll(pending => SameStop(pending, stop));
+        BuildStoryboard();
+    }
+
+    private bool IsUnusedStop(string stop) => !stops.Any(existing => SameStop(existing.Name, stop));
+
+    private static bool SameStop(string? left, string? right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private static string Hint(StopView stop, StopView? previous) => stop.Name switch
+    {
+        WalkthroughStoryboard.ExteriorFront =>
+            "Start outside with a straight-on shot of the front of the property, as a buyer sees it on arrival. "
+            + "Add a wider angle or the approach if you have one.",
+        WalkthroughStoryboard.EntryFoyer =>
+            "Step through the front door. Show the entryway or foyer from the doorway, looking into the home.",
+        _ => previous is null
+            ? "Photograph this space from the doorway you enter by."
+            : $"The space you step into from the {previous.Name.ToLowerInvariant()}. Shoot from the doorway you enter by so the video flows from one room to the next.",
+    };
+
     private void ShowMessage(string text, Severity severity)
     {
         message = text;
         messageSeverity = severity;
     }
 
-    private static string FormatSize(long bytes) => bytes >= 1024 * 1024
-        ? $"{bytes / 1024d / 1024d:0.##} MB"
-        : $"{bytes / 1024d:0.##} KB";
+    private sealed record StopView(string Name, IReadOnlyList<PropertyMediaItem> Items, bool IsTemplate);
 
-    private sealed class UploadState(IBrowserFile file)
+    private sealed class UploadState(IBrowserFile file, string? stop)
     {
         public IBrowserFile File { get; } = file;
+        public string? Stop { get; } = stop;
         public double Progress { get; set; }
         public bool Failed { get; set; }
         public string? Error { get; set; }

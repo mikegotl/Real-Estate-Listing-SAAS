@@ -44,6 +44,8 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
             Assert.Equal(1, generated.Version);
             Assert.Equal(60_000, generated.Specification.Scenes.Sum(scene => scene.DurationMs));
             Assert.Equal("fake-video-director-v1", generated.DirectorVersion);
+            var directedMedia = Assert.Single(fixture.Factory.VideoDirector.LastRequest!.Media);
+            Assert.Equal(WalkthroughStoryboard.ExteriorFront, directedMedia.WalkthroughStop);
 
             var cached = (await plans.GenerateAsync(
                 owner.UserId,
@@ -523,7 +525,7 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
             await media.UploadAsync(
                 owner.UserId,
                 owner.PropertyId,
-                new PropertyMediaUpload("front.png", "image/png", content.Length, content));
+                new PropertyMediaUpload("front.png", "image/png", content.Length, content, "exterior  FRONT"));
         }
     }
 

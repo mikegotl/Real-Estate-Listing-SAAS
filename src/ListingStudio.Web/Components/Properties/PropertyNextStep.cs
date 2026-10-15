@@ -30,7 +30,7 @@ public static class PropertyNextSteps
 
         if (photoCount == 0)
         {
-            return new("Add listing photos", "Upload interior and exterior photos. They power the story, the video plan and every campaign deliverable.", "Add photos", PropertyDetailsTab.Media);
+            return new("Add listing photos", "Start with the front of the property, then walk through room by room. Photo order sets the walkthrough video.", "Add photos", PropertyDetailsTab.Media);
         }
 
         if (campaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
