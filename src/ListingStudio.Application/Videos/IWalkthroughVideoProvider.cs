@@ -1,3 +1,5 @@
+using ListingStudio.Domain.Properties;
+
 namespace ListingStudio.Application.Videos;
 
 /// <summary>
@@ -25,10 +27,15 @@ public interface IWalkthroughVideoProvider
 
 public sealed record WalkthroughVideoFrame(Stream Content, string ContentType);
 
+/// <summary>
+/// One clip to generate. <see cref="Direction"/> is the way the buyer turns or climbs to reach the end frame's space,
+/// as the agent set it on the walkthrough map; null when the two shots are in the same space or no direction is set.
+/// </summary>
 public sealed record WalkthroughVideoSubmission(
     WalkthroughVideoFrame StartFrame,
     WalkthroughVideoFrame EndFrame,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    WalkthroughDirection? Direction = null);
 
 public enum WalkthroughVideoState
 {
