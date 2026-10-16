@@ -848,6 +848,41 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("PropertyVideos", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Properties.WalkthroughStopDirection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Stop")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "Stop")
+                        .IsUnique();
+
+                    b.ToTable("WalkthroughStopDirections", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Properties.WalkthroughTransition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1611,6 +1646,26 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "OrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Properties.WalkthroughStopDirection", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
 
                     b.Navigation("Property");
                 });

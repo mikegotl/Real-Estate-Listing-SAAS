@@ -328,6 +328,42 @@ public sealed class PropertyMediaManagementTests(PostgreSqlWebApplicationFixture
             owner.UserId, owner.PropertyId, mediaId, WalkthroughStoryboard.ExteriorFront));
     }
 
+    [Fact]
+    public async Task StopDirectionsAreSavedPerStopAndScopedToTheOwningOrganization()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var owner = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "map-owner");
+        var outsider = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "map-outsider");
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+
+        Assert.True(await mediaService.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "kitchen", WalkthroughDirection.Left));
+        Assert.True(await mediaService.SetStopDirectionAsync(owner.UserId, owner.PropertyId, " Sun  room ", WalkthroughDirection.Right));
+        // A custom stop matches whatever case the agent typed it in, so this updates the note rather than adding one.
+        Assert.True(await mediaService.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "sun room", WalkthroughDirection.Upstairs));
+        Assert.Equal(
+            [new WalkthroughStopDirectionItem("Kitchen", WalkthroughDirection.Left),
+                new WalkthroughStopDirectionItem("Sun room", WalkthroughDirection.Upstairs)],
+            await mediaService.ListStopDirectionsAsync(owner.UserId, owner.PropertyId));
+
+        Assert.False(await mediaService.SetStopDirectionAsync(outsider.UserId, owner.PropertyId, "Kitchen", WalkthroughDirection.Right));
+        Assert.Empty(await mediaService.ListStopDirectionsAsync(outsider.UserId, owner.PropertyId));
+        Assert.Equal(
+            WalkthroughDirection.Left,
+            (await mediaService.ListStopDirectionsAsync(owner.UserId, owner.PropertyId)).Single(item => item.Stop == "Kitchen").Direction);
+
+        Assert.True(await mediaService.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "Kitchen", null));
+        Assert.Equal(
+            ["Sun room"],
+            (await mediaService.ListStopDirectionsAsync(owner.UserId, owner.PropertyId)).Select(item => item.Stop));
+        await Assert.ThrowsAsync<ArgumentException>(() => mediaService.SetStopDirectionAsync(
+            owner.UserId, owner.PropertyId, " ", WalkthroughDirection.Left));
+
+        Assert.True(await scope.ServiceProvider.GetRequiredService<IPropertyService>()
+            .ArchiveAsync(owner.UserId, owner.PropertyId));
+        Assert.False(await mediaService.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "Sun room", WalkthroughDirection.Left));
+        Assert.Single(await mediaService.ListStopDirectionsAsync(owner.UserId, owner.PropertyId));
+    }
+
     private static async Task<Guid> UploadAsync(
         IPropertyMediaService mediaService,
         string userId,

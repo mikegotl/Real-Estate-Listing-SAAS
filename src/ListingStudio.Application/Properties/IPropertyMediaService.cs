@@ -47,6 +47,25 @@ public interface IPropertyMediaService
         string? walkthroughStop,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The agent's direction notes for the walkthrough map: how each stop sits relative to the stop before it.
+    /// </summary>
+    Task<IReadOnlyList<WalkthroughStopDirectionItem>> ListStopDirectionsAsync(
+        string userId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records which way a buyer walks from the previous stop to reach <paramref name="walkthroughStop"/>. A null
+    /// direction clears the note, so the map falls back to assuming the stop is straight ahead.
+    /// </summary>
+    Task<bool> SetStopDirectionAsync(
+        string userId,
+        Guid propertyId,
+        string walkthroughStop,
+        WalkthroughDirection? direction,
+        CancellationToken cancellationToken = default);
+
     Task<PropertyMediaContent?> OpenReadAsync(
         string userId,
         Guid mediaId,
@@ -80,5 +99,7 @@ public sealed record PropertyMediaItem(
     int AnalysisAttemptCount,
     string? AnalysisLastError,
     string? WalkthroughStop = null);
+
+public sealed record WalkthroughStopDirectionItem(string Stop, WalkthroughDirection Direction);
 
 public sealed record PropertyMediaContent(Stream Content, string MimeType, string OriginalFilename);

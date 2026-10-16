@@ -36,6 +36,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<WalkthroughTransition> WalkthroughTransitions => Set<WalkthroughTransition>();
 
+    public DbSet<WalkthroughStopDirection> WalkthroughStopDirections => Set<WalkthroughStopDirection>();
+
     public DbSet<CampaignGenerationJob> CampaignGenerationJobs => Set<CampaignGenerationJob>();
 
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
