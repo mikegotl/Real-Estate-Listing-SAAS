@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(VideoBrandingTemplateOptions.SectionName));
         services.AddSingleton<IVideoRenderer, FfmpegVideoRenderer>();
         services.AddSingleton<IPropertyVideoTranscoder, FfmpegPropertyVideoTranscoder>();
+        services.AddSingleton<IPropertyVideoFrameExtractor, FfmpegPropertyVideoFrameExtractor>();
         services.AddHealthChecks()
             .AddCheck<FfmpegHealthCheck>("ffmpeg", tags: ["ready"]);
         services.AddHttpClient<IAiVideoProvider, HttpAiVideoProvider>(client =>

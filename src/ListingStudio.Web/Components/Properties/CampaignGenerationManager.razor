@@ -176,8 +176,10 @@
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
-            var media = await MediaService.ListAsync(userId, PropertyId, pollingCancellation.Token);
-            mediaCount = media.Count;
+            var media = (await MediaService.ListAsync(userId, PropertyId, pollingCancellation.Token))
+                .Where(item => !item.IsInGallery)
+                .ToArray();
+            mediaCount = media.Length;
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             error = null;
             refreshError = null;

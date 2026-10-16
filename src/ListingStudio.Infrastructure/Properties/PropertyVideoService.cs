@@ -9,7 +9,8 @@ namespace ListingStudio.Infrastructure.Properties;
 public sealed class PropertyVideoService(
     ApplicationDbContext dbContext,
     IPropertyMediaStorage storage,
-    IPropertyVideoTranscoder transcoder) : IPropertyVideoService
+    IPropertyVideoTranscoder transcoder,
+    TimeProvider timeProvider) : IPropertyVideoService
 {
     private static readonly Dictionary<string, string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -183,6 +184,33 @@ public sealed class PropertyVideoService(
         }
 
         video.QueueRetry();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> RequestFrameExtractionAsync(
+        string userId,
+        Guid propertyId,
+        Guid videoId,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await PropertyExistsAsync(organizationId, propertyId, includeArchived: false, cancellationToken))
+        {
+            return false;
+        }
+
+        var video = await dbContext.PropertyVideos.SingleOrDefaultAsync(
+            candidate => candidate.Id == videoId
+                && candidate.PropertyId == propertyId
+                && candidate.OrganizationId == organizationId,
+            cancellationToken);
+        if (video is null || video.IsFrameExtractionInProgress)
+        {
+            return false;
+        }
+
+        video.RequestFrameExtraction(timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -376,7 +404,17 @@ public sealed class PropertyVideoService(
         video.EnhancedHeight,
         video.EnhancedDurationMs,
         video.EnhancedFrameRate,
-        video.EnhancementVersion);
+        video.EnhancementVersion,
+        new PropertyVideoFrameExtractionItem(
+            video.FrameExtractionStatus,
+            video.FrameExtractionStage,
+            video.FrameExtractionStepsDone,
+            video.FrameExtractionStepsTotal,
+            video.FrameExtractionAttemptCount,
+            video.FrameExtractionLastError,
+            video.FrameExtractionRoomCount,
+            video.FrameExtractionPhotoCount,
+            video.FrameExtractionSkippedPhotoCount));
 
     private sealed record ValidatedVideoUpload(
         string Filename,

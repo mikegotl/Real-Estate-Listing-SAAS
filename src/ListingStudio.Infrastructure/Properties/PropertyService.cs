@@ -40,13 +40,16 @@ public sealed class PropertyService(ApplicationDbContext dbContext) : IPropertyS
                 property.SquareFeet,
                 property.UpdatedAtUtc,
                 dbContext.PropertyMedia.Count(media =>
-                    media.OrganizationId == organizationId && media.PropertyId == property.Id),
+                    media.OrganizationId == organizationId && media.PropertyId == property.Id && !media.IsInGallery),
                 dbContext.PropertyMedia.Count(media =>
                     media.OrganizationId == organizationId
                     && media.PropertyId == property.Id
+                    && !media.IsInGallery
                     && media.AnalysisStatus == PropertyMediaAnalysisStatus.Failed),
                 dbContext.PropertyMedia
-                    .Where(media => media.OrganizationId == organizationId && media.PropertyId == property.Id)
+                    .Where(media => media.OrganizationId == organizationId
+                        && media.PropertyId == property.Id
+                        && !media.IsInGallery)
                     .OrderBy(media => media.DisplayOrder)
                     .Select(media => (Guid?)media.Id)
                     .FirstOrDefault(),

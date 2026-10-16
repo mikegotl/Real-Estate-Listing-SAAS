@@ -216,7 +216,9 @@ public sealed partial class CampaignGenerationProcessor(
             && candidate.ArchivedAtUtc == null,
             cancellationToken);
         var mediaCount = await dbContext.PropertyMedia.AsNoTracking().CountAsync(candidate =>
-            candidate.PropertyId == job.PropertyId && candidate.OrganizationId == job.OrganizationId,
+            candidate.PropertyId == job.PropertyId
+            && candidate.OrganizationId == job.OrganizationId
+            && !candidate.IsInGallery,
             cancellationToken);
         if (!valid || mediaCount == 0)
         {
@@ -231,7 +233,8 @@ public sealed partial class CampaignGenerationProcessor(
         var job = await GetJobAsync(jobId, cancellationToken);
         var media = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.PropertyId == job.PropertyId
-                && candidate.OrganizationId == job.OrganizationId)
+                && candidate.OrganizationId == job.OrganizationId
+                && !candidate.IsInGallery)
             .Select(candidate => new { candidate.AnalysisStatus, candidate.AnalysisAttemptCount })
             .ToArrayAsync(cancellationToken);
         if (media.All(candidate => candidate.AnalysisStatus == PropertyMediaAnalysisStatus.Completed))
@@ -323,7 +326,8 @@ public sealed partial class CampaignGenerationProcessor(
             ?? throw new InvalidDataException("The stored master specification is invalid.");
         var media = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.PropertyId == job.PropertyId
-                && candidate.OrganizationId == job.OrganizationId)
+                && candidate.OrganizationId == job.OrganizationId
+                && !candidate.IsInGallery)
             .Select(candidate => new CampaignDerivativeMedia(candidate.Id, candidate.Width, candidate.Height))
             .ToArrayAsync(cancellationToken);
         var propertyVideos = await dbContext.PropertyVideos.AsNoTracking()

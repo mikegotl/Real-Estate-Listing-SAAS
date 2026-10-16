@@ -137,6 +137,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyMediaAnalysisProcessor, PropertyMediaAnalysisProcessor>();
         services.AddScoped<IPropertyVideoService, PropertyVideoService>();
         services.AddScoped<IPropertyVideoProcessingProcessor, PropertyVideoProcessingProcessor>();
+        services.AddScoped<IPropertyVideoFrameExtractionProcessor, PropertyVideoFrameExtractionProcessor>();
         services.AddScoped<IPropertyNarrationScriptService, PropertyNarrationScriptService>();
         services.AddScoped<IPropertyStoryService, PropertyStoryService>();
         services.AddScoped<INeighborhoodInsightService, NeighborhoodInsightService>();

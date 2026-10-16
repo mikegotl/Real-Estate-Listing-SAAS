@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using ListingStudio.Application.Properties;
@@ -47,7 +46,7 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             var outputPath = Path.Combine(directory, "enhanced.mp4");
             await CopyToFileAsync(content, inputPath, cancellationToken);
 
-            await RunAsync(
+            await FfmpegProcess.RunAsync(
                 options.Value.ExecutablePath,
                 directory,
                 [
@@ -60,7 +59,7 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
                 options.Value.EnhancementTimeoutSeconds,
                 cancellationToken);
 
-            await RunAsync(
+            await FfmpegProcess.RunAsync(
                 options.Value.ExecutablePath,
                 directory,
                 BuildEnhancementArguments(inputPath, outputPath),
@@ -114,7 +113,7 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
         string path,
         CancellationToken cancellationToken)
     {
-        var output = await RunAsync(
+        var output = await FfmpegProcess.RunAsync(
             options.Value.ProbeExecutablePath,
             Path.GetDirectoryName(path)!,
             ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", path],
@@ -201,90 +200,6 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
         await content.CopyToAsync(target, cancellationToken);
     }
 
-    private static async Task<ProcessOutput> RunAsync(
-        string executable,
-        string workingDirectory,
-        IReadOnlyList<string> arguments,
-        int timeoutSeconds,
-        CancellationToken cancellationToken)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = executable,
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        using var process = new Process { StartInfo = startInfo };
-        try
-        {
-            if (!process.Start())
-            {
-                throw new InvalidOperationException($"{Path.GetFileName(executable)} could not be started.");
-            }
-        }
-        catch (Exception exception) when (exception is not InvalidOperationException)
-        {
-            throw new InvalidOperationException($"{Path.GetFileName(executable)} could not be started.", exception);
-        }
-
-        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            TryKill(process);
-            throw new TimeoutException($"{Path.GetFileName(executable)} exceeded the {timeoutSeconds}-second timeout.");
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            throw;
-        }
-
-        var output = await standardOutput;
-        var error = await standardError;
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"{Path.GetFileName(executable)} exited with code {process.ExitCode}: {UsefulError(error)}");
-        }
-
-        return new ProcessOutput(output, error);
-    }
-
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-        }
-    }
-
-    private static string UsefulError(string error)
-    {
-        var normalized = error.ReplaceLineEndings(" ").Trim();
-        return normalized.Length <= 1_000 ? normalized : normalized[^1_000..];
-    }
-
     private static string CreateTemporaryDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), $"listing-studio-video-{Guid.NewGuid():N}");
@@ -307,8 +222,6 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             Directory.Delete(path, recursive: true);
         }
     }
-
-    private sealed record ProcessOutput(string StandardOutput, string StandardError);
 
     private sealed class TemporaryOutputStream(string path, string directory) : Stream
     {

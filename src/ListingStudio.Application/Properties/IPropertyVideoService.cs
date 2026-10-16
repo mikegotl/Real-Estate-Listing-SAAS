@@ -32,6 +32,16 @@ public interface IPropertyVideoService
         Guid videoId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Queues the video to be broken down into one or two photos per room it shows. They are added to the property's
+    /// photo gallery, ready to place in the storyboard.
+    /// </summary>
+    Task<bool> RequestFrameExtractionAsync(
+        string userId,
+        Guid propertyId,
+        Guid videoId,
+        CancellationToken cancellationToken = default);
+
     Task<bool> DeleteAsync(
         string userId,
         Guid propertyId,
@@ -64,6 +74,22 @@ public sealed record PropertyVideoItem(
     int? EnhancedHeight,
     int? EnhancedDurationMs,
     decimal? EnhancedFrameRate,
-    string? EnhancementVersion);
+    string? EnhancementVersion,
+    PropertyVideoFrameExtractionItem? FrameExtraction = null);
+
+public sealed record PropertyVideoFrameExtractionItem(
+    PropertyVideoFrameExtractionStatus Status,
+    PropertyVideoFrameExtractionStage? Stage,
+    int StepsDone,
+    int StepsTotal,
+    int AttemptCount,
+    string? LastError,
+    int? RoomCount,
+    int? PhotoCount,
+    int? SkippedPhotoCount)
+{
+    public bool IsInProgress => Status is PropertyVideoFrameExtractionStatus.Pending
+        or PropertyVideoFrameExtractionStatus.Extracting;
+}
 
 public sealed record PropertyVideoContent(Stream Content, string MimeType, string Filename);

@@ -20,6 +20,14 @@ public sealed class PropertyVideoConfiguration : IEntityTypeConfiguration<Proper
         builder.Property(video => video.EnhancedBlobPath).HasMaxLength(1_024);
         builder.Property(video => video.EnhancedFrameRate).HasPrecision(8, 3);
         builder.Property(video => video.EnhancementVersion).HasMaxLength(100);
+        builder.Property(video => video.FrameExtractionStatus)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(PropertyVideoFrameExtractionStatus.NotRequested)
+            .HasSentinel(PropertyVideoFrameExtractionStatus.NotRequested)
+            .IsRequired();
+        builder.Property(video => video.FrameExtractionStage).HasConversion<string>().HasMaxLength(32);
+        builder.Property(video => video.FrameExtractionLastError).HasMaxLength(1_000);
         builder.HasIndex(video => video.OriginalBlobPath).IsUnique();
         builder.HasIndex(video => video.EnhancedBlobPath).IsUnique();
         builder.HasIndex(video => new { video.OrganizationId, video.PropertyId, video.UploadedAtUtc });
@@ -29,6 +37,12 @@ public sealed class PropertyVideoConfiguration : IEntityTypeConfiguration<Proper
             video.ProcessingNextAttemptAtUtc,
             video.ProcessingAttemptCount,
         }).HasDatabaseName("IX_PropertyVideos_ProcessingQueue");
+        builder.HasIndex(video => new
+        {
+            video.FrameExtractionStatus,
+            video.FrameExtractionNextAttemptAtUtc,
+            video.FrameExtractionAttemptCount,
+        }).HasDatabaseName("IX_PropertyVideos_FrameExtractionQueue");
 
         builder
             .HasOne(video => video.Property)

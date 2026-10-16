@@ -62,6 +62,7 @@ builder.Services
     .ValidateOnStart();
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
+builder.Services.AddHostedService<PropertyVideoFrameExtractionWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
 builder.Services.AddHealthChecks()

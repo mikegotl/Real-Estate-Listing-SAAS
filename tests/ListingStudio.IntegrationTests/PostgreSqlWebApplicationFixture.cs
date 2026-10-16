@@ -70,6 +70,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakePropertyVideoTranscoder PropertyVideoTranscoder { get; } = new();
 
+    public FakePropertyVideoFrameExtractor PropertyVideoFrameExtractor { get; } = new();
+
     public AdjustableTimeProvider TimeProvider { get; } = new();
 
     public FakePropertyStoryGenerator StoryGenerator { get; } = new();
@@ -111,6 +113,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IPropertyMediaAnalyzer>(MediaAnalyzer);
             services.RemoveAll<IPropertyVideoTranscoder>();
             services.AddSingleton<IPropertyVideoTranscoder>(PropertyVideoTranscoder);
+            services.RemoveAll<IPropertyVideoFrameExtractor>();
+            services.AddSingleton<IPropertyVideoFrameExtractor>(PropertyVideoFrameExtractor);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(TimeProvider);
             services.RemoveAll<IPropertyStoryGenerator>();
@@ -174,6 +178,41 @@ public sealed class FakePropertyVideoTranscoder : IPropertyVideoTranscoder
             new MemoryStream(enhanced),
             enhanced.Length,
             Metadata with { FrameRate = 30m }));
+    }
+}
+
+public sealed class FakePropertyVideoFrameExtractor : IPropertyVideoFrameExtractor
+{
+    // An 8 by 6 pixel JPEG still.
+    public static readonly byte[] Still = Convert.FromBase64String(
+        "/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYwLjMxLjEwMgD/2wBDAAgKCgsKCw0NDQ0NDRAPEBAQEBAQEBAQEBASEhIVFRUSEhIQEBISFBQVFRcXFxUVFRUXFxkZGR4eHBwjIyQrKzP/xABLAAEBAAAAAAAAAAAAAAAAAAAABQEBAAAAAAAAAAAAAAAAAAAABBABAAAAAAAAAAAAAAAAAAAAABEBAAAAAAAAAAAAAAAAAAAAAP/AABEIAAYACAMBIgACEQADEQD/2gAMAwEAAhEDEQA/AKwBYr//2Q==");
+
+    private readonly ConcurrentQueue<object> outcomes = new();
+
+    public int LastMaximumCandidates { get; private set; }
+
+    /// <summary>Queues the stills the next extraction finds, one per timestamp.</summary>
+    public void Enqueue(params int[] timestampsMs) => outcomes.Enqueue(timestampsMs);
+
+    public void Enqueue(Exception exception) => outcomes.Enqueue(exception);
+
+    public Task<IReadOnlyList<VideoFrameCandidate>> ExtractCandidatesAsync(
+        Stream content,
+        string originalFilename,
+        int maximumCandidates,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Assert.True(content.CanRead);
+        LastMaximumCandidates = maximumCandidates;
+        Assert.True(outcomes.TryDequeue(out var outcome), "A fake frame-extraction outcome must be queued.");
+        return outcome switch
+        {
+            int[] timestamps => Task.FromResult<IReadOnlyList<VideoFrameCandidate>>(
+                [.. timestamps.Select(timestamp => new VideoFrameCandidate(timestamp, 100, Still))]),
+            Exception exception => Task.FromException<IReadOnlyList<VideoFrameCandidate>>(exception),
+            _ => throw new InvalidOperationException("Unsupported fake frame-extraction outcome."),
+        };
     }
 }
 

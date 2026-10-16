@@ -611,6 +611,9 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<bool?>("IsExterior")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsInGallery")
+                        .HasColumnType("boolean");
+
                     b.Property<bool?>("IsInterior")
                         .HasColumnType("boolean");
 
@@ -636,6 +639,12 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<string>("RoomType")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("SourceVideoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("SourceVideoTimestampMs")
+                        .HasColumnType("integer");
 
                     b.Property<int?>("SuggestedDisplayOrder")
                         .HasColumnType("integer");
@@ -666,6 +675,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_PropertyMedia_AnalysisQueue");
 
                     b.HasIndex("OrganizationId", "PropertyId", "DisplayOrder");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "SourceVideoId");
 
                     b.ToTable("PropertyMedia", (string)null);
                 });
@@ -767,6 +778,51 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int>("FrameExtractionAttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("FrameExtractionCompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("FrameExtractionLastAttemptedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FrameExtractionLastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset?>("FrameExtractionNextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("FrameExtractionPhotoCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("FrameExtractionRequestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("FrameExtractionRoomCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("FrameExtractionSkippedPhotoCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FrameExtractionStage")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("FrameExtractionStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("NotRequested");
+
+                    b.Property<int>("FrameExtractionStepsDone")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FrameExtractionStepsTotal")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("FrameRate")
                         .HasPrecision(8, 3)
                         .HasColumnType("numeric(8,3)");
@@ -839,6 +895,9 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("FrameExtractionStatus", "FrameExtractionNextAttemptAtUtc", "FrameExtractionAttemptCount")
+                        .HasDatabaseName("IX_PropertyVideos_FrameExtractionQueue");
 
                     b.HasIndex("OrganizationId", "PropertyId", "UploadedAtUtc");
 

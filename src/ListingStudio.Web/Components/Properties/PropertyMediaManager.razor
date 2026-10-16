@@ -72,7 +72,7 @@
     {
         <MudPaper Outlined="true" Class="pa-3 my-2">
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                <MudText>@upload.File.Name <span class="storyboard-upload-stop">→ @(upload.Stop ?? "Storyboard")</span></MudText>
+                <MudText>@upload.File.Name <span class="storyboard-upload-stop">→ @(upload.ToGallery ? "Photo gallery" : upload.Stop ?? "Storyboard")</span></MudText>
                 @if (upload.Failed)
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
@@ -243,6 +243,42 @@
             </section>
         }
 
+        <section class="photo-gallery" aria-labelledby="gallery-heading">
+            <div class="photo-gallery-head">
+                <div>
+                    <h3 id="gallery-heading">Photo gallery <span class="photo-gallery-count">@gallery.Count</span></h3>
+                    <p class="stop-hint">
+                        Photos kept here are not part of the walkthrough, the map, the clips or the video yet. Place one in
+                        a stop when you want buyers to see it there. Use Find room photos on a listing video to fill the
+                        gallery with the best shots of each room.
+                    </p>
+                </div>
+                @if (!IsReadOnly)
+                {
+                    <label class="media-upload-control gallery-upload">
+                        <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
+                        <span>Add to gallery</span>
+                        <InputFile OnChange="@(eventArgs => FilesSelectedAsync(eventArgs, null, toGallery: true))" multiple
+                                   aria-label="Add photos to the photo gallery"
+                                   accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+                    </label>
+                }
+            </div>
+            @if (gallery.Count == 0)
+            {
+                <p class="photo-gallery-empty">No photos in the gallery yet.</p>
+            }
+            else
+            {
+                <ul class="photo-gallery-strip">
+                    @foreach (var item in gallery)
+                    {
+                        @GalleryThumbnail(item)
+                    }
+                </ul>
+            }
+        </section>
+
         @if (MapStops.Count >= 2)
         {
             <div class="walkthrough-map-anchor" tabindex="-1" @ref="mapElement">
@@ -268,6 +304,7 @@
     private readonly List<UploadState> uploads = [];
     private readonly List<string> pendingStops = [];
     private List<PropertyMediaItem> media = [];
+    private IReadOnlyList<PropertyMediaItem> gallery = [];
     private IReadOnlyList<StopView> stops = [];
     private IReadOnlyList<PropertyMediaItem> unsorted = [];
     private Dictionary<Guid, int> sequence = [];
@@ -400,6 +437,8 @@
                         {
                             <MudMenuItem OnClick="@(() => AssignStopAsync(item.Id, target.Name))">@target.Name</MudMenuItem>
                         }
+                        <MudDivider />
+                        <MudMenuItem Icon="@Icons.Material.Filled.PhotoLibrary" OnClick="@(() => MoveToGalleryAsync(item.Id))">Move to photo gallery</MudMenuItem>
                     </MudMenu>
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
                                    aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
@@ -407,6 +446,55 @@
             }
         </article>
     };
+
+    private RenderFragment GalleryThumbnail(PropertyMediaItem item) => __builder =>
+    {
+        var suggestion = item.Analysis is null ? null : WalkthroughStoryboard.SuggestStop(item.Analysis.Category);
+        var label = item.Analysis?.RoomType ?? (item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed ? "Not recognized" : "Recognizing room…");
+        <li class="gallery-thumb">
+            <img src="@($"/property-media/{item.Id}")" alt="@item.OriginalFilename" loading="lazy" title="@item.OriginalFilename" />
+            <div class="gallery-thumb-body">
+                <span class="gallery-thumb-room">@label</span>
+                @if (item.SourceVideoTimestampMs is { } at)
+                {
+                    <span class="gallery-thumb-source">
+                        <MudIcon Icon="@Icons.Material.Filled.Movie" Size="Size.Small" />From video at @FormatTimestamp(at)
+                    </span>
+                }
+                @if (!IsReadOnly && suggestion is not null)
+                {
+                    <button type="button" class="gallery-place" @onclick="@(() => AssignStopAsync(item.Id, suggestion))"
+                            title="@($"Place in {suggestion}")" aria-label="@($"Place {item.OriginalFilename} in {suggestion}")">
+                        <MudIcon Icon="@Icons.Material.Filled.AddLocationAlt" Size="Size.Small" /><span>@suggestion</span>
+                    </button>
+                }
+            </div>
+            @if (!IsReadOnly)
+            {
+                <div class="gallery-thumb-actions">
+                    <MudSpacer />
+                    <MudMenu Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true" AriaLabel="Place photo in a stop">
+                        <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">Place in stop</MudText>
+                        @foreach (var target in stops)
+                        {
+                            <MudMenuItem OnClick="@(() => AssignStopAsync(item.Id, target.Name))">@target.Name</MudMenuItem>
+                        }
+                    </MudMenu>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                   aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
+                </div>
+            }
+        </li>
+    };
+
+    private static string FormatTimestamp(int milliseconds) => TimeSpan.FromMilliseconds(milliseconds).ToString(@"m\:ss");
+
+    /// <summary>Reloads photos changed elsewhere, such as room photos a video added to the gallery.</summary>
+    public async Task ReloadAsync()
+    {
+        await LoadAsync();
+        StateHasChanged();
+    }
 
     // Reload only when the property changes. The parent re-renders after MediaChanged, and reloading here
     // would overlap the next upload's call on this component's DbContext.
@@ -571,7 +659,11 @@
 
     private void BuildStoryboard()
     {
-        var groups = WalkthroughStoryboard.Group(media, item => item.WalkthroughStop, item => item.DisplayOrder);
+        gallery = [.. media.Where(item => item.IsInGallery).OrderBy(item => item.DisplayOrder)];
+        var groups = WalkthroughStoryboard.Group(
+            media.Where(item => !item.IsInGallery),
+            item => item.WalkthroughStop,
+            item => item.DisplayOrder);
         var built = WalkthroughStoryboard.TemplateStops
             .Select(template => new StopView(
                 template,
@@ -650,7 +742,7 @@
         await MediaChanged.InvokeAsync();
     }
 
-    private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs, string stop)
+    private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs, string? stop, bool toGallery = false)
     {
         message = null;
         IReadOnlyList<IBrowserFile> files;
@@ -672,7 +764,7 @@
             return;
         }
 
-        var selected = files.Select(file => new UploadState(file, stop)).ToArray();
+        var selected = files.Select(file => new UploadState(file, stop, toGallery)).ToArray();
         uploads.AddRange(selected);
         foreach (var upload in selected)
         {
@@ -702,11 +794,14 @@
                     upload.File.ContentType,
                     upload.File.Size,
                     progressStream,
-                    upload.Stop));
+                    upload.Stop,
+                    upload.ToGallery));
             upload.Progress = 100;
             uploads.Remove(upload);
             await ReloadAfterChangeAsync();
-            ShowMessage(upload.Stop is null ? "Photo uploaded." : $"Photo added to {upload.Stop}.", Severity.Success);
+            ShowMessage(
+                upload.ToGallery ? "Photo added to the gallery." : upload.Stop is null ? "Photo uploaded." : $"Photo added to {upload.Stop}.",
+                Severity.Success);
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
         {
@@ -733,6 +828,16 @@
         {
             await ReloadAfterChangeAsync();
             ShowMessage($"Photo moved to {stop}.", Severity.Success);
+        }
+    }
+
+    private async Task MoveToGalleryAsync(Guid mediaId)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await Service.MoveToGalleryAsync(userId, PropertyId, mediaId))
+        {
+            await ReloadAfterChangeAsync();
+            ShowMessage("Photo moved to the photo gallery. It is no longer part of the walkthrough.", Severity.Success);
         }
     }
 
@@ -875,10 +980,11 @@
 
     private sealed record StopView(string Name, IReadOnlyList<PropertyMediaItem> Items, bool IsTemplate);
 
-    private sealed class UploadState(IBrowserFile file, string? stop)
+    private sealed class UploadState(IBrowserFile file, string? stop, bool toGallery)
     {
         public IBrowserFile File { get; } = file;
         public string? Stop { get; } = stop;
+        public bool ToGallery { get; } = toGallery;
         public double Progress { get; set; }
         public bool Failed { get; set; }
         public string? Error { get; set; }

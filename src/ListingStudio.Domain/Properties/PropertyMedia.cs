@@ -80,6 +80,15 @@ public sealed class PropertyMedia
     // the storyboard existed; those keep their display order until the agent places them.
     public string? WalkthroughStop { get; private set; }
 
+    // True while the photo waits in the photo gallery: it stays with the property but is left out of the storyboard,
+    // the walkthrough map, walk-through clips, the story and the video until the agent places it in a stop.
+    public bool IsInGallery { get; private set; }
+
+    // Set for a photo taken from one of the property's videos: the video and where in it the frame was captured.
+    public Guid? SourceVideoId { get; private set; }
+
+    public int? SourceVideoTimestampMs { get; private set; }
+
     public DateTimeOffset UploadedAt { get; private set; }
 
     public PropertyMediaAnalysisStatus AnalysisStatus { get; private set; }
@@ -159,11 +168,39 @@ public sealed class PropertyMedia
         DisplayOrder = displayOrder;
     }
 
+    /// <summary>Places the photo in a storyboard stop. Placing a gallery photo takes it out of the gallery.</summary>
     public void SetWalkthroughStop(string? walkthroughStop)
     {
         WalkthroughStop = string.IsNullOrWhiteSpace(walkthroughStop)
             ? null
             : Required(walkthroughStop, MaximumWalkthroughStopLength, nameof(walkthroughStop));
+        if (WalkthroughStop is not null)
+        {
+            IsInGallery = false;
+        }
+    }
+
+    /// <summary>Holds the photo back in the gallery, out of its stop and out of the walkthrough.</summary>
+    public void MoveToGallery()
+    {
+        WalkthroughStop = null;
+        IsInGallery = true;
+    }
+
+    public void SetSourceVideoFrame(Guid videoId, int timestampMs)
+    {
+        if (videoId == Guid.Empty)
+        {
+            throw new ArgumentException("A source video is required.", nameof(videoId));
+        }
+
+        if (timestampMs < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timestampMs), "A frame timestamp cannot be negative.");
+        }
+
+        SourceVideoId = videoId;
+        SourceVideoTimestampMs = timestampMs;
     }
 
     public void BeginAnalysis(DateTimeOffset attemptedAtUtc)

@@ -61,6 +61,22 @@ public sealed class PropertyVideo
     public int? EnhancedDurationMs { get; private set; }
     public decimal? EnhancedFrameRate { get; private set; }
     public string? EnhancementVersion { get; private set; }
+
+    // Room photos: the agent can ask for the video to be broken down into one or two photos per room it shows,
+    // which land in the property's photo gallery.
+    public PropertyVideoFrameExtractionStatus FrameExtractionStatus { get; private set; }
+    public PropertyVideoFrameExtractionStage? FrameExtractionStage { get; private set; }
+    public int FrameExtractionStepsDone { get; private set; }
+    public int FrameExtractionStepsTotal { get; private set; }
+    public int FrameExtractionAttemptCount { get; private set; }
+    public DateTimeOffset? FrameExtractionRequestedAtUtc { get; private set; }
+    public DateTimeOffset? FrameExtractionLastAttemptedAtUtc { get; private set; }
+    public DateTimeOffset? FrameExtractionNextAttemptAtUtc { get; private set; }
+    public DateTimeOffset? FrameExtractionCompletedAtUtc { get; private set; }
+    public string? FrameExtractionLastError { get; private set; }
+    public int? FrameExtractionRoomCount { get; private set; }
+    public int? FrameExtractionPhotoCount { get; private set; }
+    public int? FrameExtractionSkippedPhotoCount { get; private set; }
     public ListingProperty Property { get; private set; } = null!;
 
     public static PropertyVideo Create(
@@ -153,6 +169,108 @@ public sealed class PropertyVideo
         ProcessingLastAttemptedAtUtc = null;
         ProcessingNextAttemptAtUtc = null;
         ProcessingLastError = null;
+    }
+
+    public bool IsFrameExtractionInProgress => FrameExtractionStatus
+        is PropertyVideoFrameExtractionStatus.Pending
+        or PropertyVideoFrameExtractionStatus.Extracting;
+
+    /// <summary>
+    /// Queues a room-photo extraction. A finished or failed extraction can be requested again; frames it already
+    /// added are not added twice.
+    /// </summary>
+    public void RequestFrameExtraction(DateTimeOffset requestedAtUtc)
+    {
+        if (IsFrameExtractionInProgress)
+        {
+            throw new InvalidOperationException("Room photos are already being found for this video.");
+        }
+
+        FrameExtractionStatus = PropertyVideoFrameExtractionStatus.Pending;
+        FrameExtractionStage = null;
+        FrameExtractionStepsDone = 0;
+        FrameExtractionStepsTotal = 0;
+        FrameExtractionAttemptCount = 0;
+        FrameExtractionRequestedAtUtc = requestedAtUtc;
+        FrameExtractionLastAttemptedAtUtc = null;
+        FrameExtractionNextAttemptAtUtc = null;
+        FrameExtractionCompletedAtUtc = null;
+        FrameExtractionLastError = null;
+        FrameExtractionRoomCount = null;
+        FrameExtractionPhotoCount = null;
+        FrameExtractionSkippedPhotoCount = null;
+    }
+
+    public void BeginFrameExtraction(DateTimeOffset attemptedAtUtc)
+    {
+        if (FrameExtractionStatus is PropertyVideoFrameExtractionStatus.NotRequested
+            or PropertyVideoFrameExtractionStatus.Completed)
+        {
+            throw new InvalidOperationException("Room-photo extraction must be requested before it can start.");
+        }
+
+        FrameExtractionStatus = PropertyVideoFrameExtractionStatus.Extracting;
+        FrameExtractionStage = PropertyVideoFrameExtractionStage.FindingScenes;
+        FrameExtractionStepsDone = 0;
+        FrameExtractionStepsTotal = 0;
+        FrameExtractionAttemptCount++;
+        FrameExtractionLastAttemptedAtUtc = attemptedAtUtc;
+        FrameExtractionNextAttemptAtUtc = null;
+        FrameExtractionLastError = null;
+    }
+
+    public void ReportFrameExtractionProgress(
+        PropertyVideoFrameExtractionStage stage,
+        int stepsDone,
+        int stepsTotal,
+        DateTimeOffset reportedAtUtc)
+    {
+        EnsureExtracting();
+        if (!Enum.IsDefined(stage) || stepsTotal < 0 || stepsDone < 0 || stepsDone > stepsTotal)
+        {
+            throw new ArgumentOutOfRangeException(nameof(stepsDone), "Progress must be within its total.");
+        }
+
+        FrameExtractionStage = stage;
+        FrameExtractionStepsDone = stepsDone;
+        FrameExtractionStepsTotal = stepsTotal;
+        // Progress renews the lease, so a long video is not mistaken for an abandoned run.
+        FrameExtractionLastAttemptedAtUtc = reportedAtUtc;
+    }
+
+    public void CompleteFrameExtraction(int roomCount, int photoCount, int skippedPhotoCount, DateTimeOffset completedAtUtc)
+    {
+        EnsureExtracting();
+        if (roomCount < 0 || photoCount < 0 || skippedPhotoCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(photoCount), "Counts cannot be negative.");
+        }
+
+        FrameExtractionStatus = PropertyVideoFrameExtractionStatus.Completed;
+        FrameExtractionStage = null;
+        FrameExtractionRoomCount = roomCount;
+        FrameExtractionPhotoCount = photoCount;
+        FrameExtractionSkippedPhotoCount = skippedPhotoCount;
+        FrameExtractionCompletedAtUtc = completedAtUtc;
+        FrameExtractionNextAttemptAtUtc = null;
+        FrameExtractionLastError = null;
+    }
+
+    public void FailFrameExtraction(string error, DateTimeOffset? nextAttemptAtUtc)
+    {
+        EnsureExtracting();
+        FrameExtractionLastError = Required(error, 1_000, nameof(error));
+        FrameExtractionNextAttemptAtUtc = nextAttemptAtUtc;
+        FrameExtractionStatus = PropertyVideoFrameExtractionStatus.Failed;
+        FrameExtractionStage = null;
+    }
+
+    private void EnsureExtracting()
+    {
+        if (FrameExtractionStatus != PropertyVideoFrameExtractionStatus.Extracting)
+        {
+            throw new InvalidOperationException("Room-photo extraction is not in progress.");
+        }
     }
 
     private static Guid RequiredId(Guid value, string name) =>
