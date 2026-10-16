@@ -140,6 +140,88 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         using var mediaTab = await client.GetAsync($"/properties/{propertyId}?tab=media");
         mediaTab.EnsureSuccessStatusCode();
     }
+
+    [Fact]
+    public async Task MediaTabDrawsTheWalkthroughMapFromStoryboardOrderAndDirections()
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = HeaderAuthenticationHandler.SchemeName;
+                    options.DefaultChallengeScheme = HeaderAuthenticationHandler.SchemeName;
+                })
+                .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
+                    HeaderAuthenticationHandler.SchemeName,
+                    _ => { });
+        });
+        await using var scope = factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        var registered = await registration.RegisterAsync(new RegisterAccountCommand(
+            $"map-owner-{Guid.NewGuid():N}@example.com",
+            "Password123",
+            $"Map Realty {Guid.NewGuid():N}"));
+        Assert.True(registered.Succeeded, string.Join(", ", registered.Errors));
+        var userId = registered.UserId!;
+        var propertyId = await properties.CreateAsync(userId, new PropertyInput(
+            "9 Lantern Way",
+            null,
+            "Annapolis",
+            "MD",
+            "21403",
+            780_000m,
+            3,
+            2m,
+            2_000,
+            0.2m,
+            2005,
+            PropertyType.SingleFamily,
+            "Walkthrough map regression property.",
+            ListingStatus.Draft));
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            HeaderAuthenticationHandler.SchemeName,
+            userId);
+
+        await UploadAsync(mediaService, userId, propertyId, "front.png", WalkthroughStoryboard.ExteriorFront);
+        var oneStop = await (await client.GetAsync($"/properties/{propertyId}?tab=media")).Content.ReadAsStringAsync();
+        Assert.DoesNotContain("walkthrough-map-heading", oneStop, StringComparison.Ordinal);
+
+        await UploadAsync(mediaService, userId, propertyId, "foyer.png", WalkthroughStoryboard.EntryFoyer);
+        await UploadAsync(mediaService, userId, propertyId, "kitchen.png", "Kitchen");
+        Assert.True(await mediaService.SetStopDirectionAsync(userId, propertyId, "Kitchen", WalkthroughDirection.Left));
+
+        using var response = await client.GetAsync($"/properties/{propertyId}?tab=media");
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("walkthrough-map-heading", content, StringComparison.Ordinal);
+        Assert.Contains("Main level", content, StringComparison.Ordinal);
+        Assert.Contains("Stop 1, Exterior front, where the walkthrough starts", content, StringComparison.Ordinal);
+        Assert.Contains(
+            "Stop 2, Entry / foyer, straight ahead from the previous stop (assumed)",
+            content,
+            StringComparison.Ordinal);
+        Assert.Contains("Stop 3, Kitchen, turn left from the previous stop", content, StringComparison.Ordinal);
+    }
+
+    private static async Task UploadAsync(
+        IPropertyMediaService mediaService,
+        string userId,
+        Guid propertyId,
+        string filename,
+        string walkthroughStop)
+    {
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z+VAAAAAASUVORK5CYII=");
+        await using var content = new MemoryStream(png);
+        await mediaService.UploadAsync(
+            userId,
+            propertyId,
+            new PropertyMediaUpload(filename, "image/png", content.Length, content, walkthroughStop));
+    }
 }
 
 public sealed class HeaderAuthenticationHandler(

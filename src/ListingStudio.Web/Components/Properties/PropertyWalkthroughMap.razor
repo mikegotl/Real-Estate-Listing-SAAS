@@ -1,0 +1,444 @@
+@* The walkthrough map: the storyboard's stops drawn as connected spaces, each placed in the direction the buyer walks
+   from the stop before it. Selecting a space shows its shot and the walk-through clips into and out of it. *@
+
+<section class="walkthrough-map" aria-labelledby="walkthrough-map-heading">
+    <div class="walkthrough-map-header">
+        <div>
+            <p class="storyboard-eyebrow">Walkthrough map</p>
+            <h3 id="walkthrough-map-heading">How the spaces connect</h3>
+            <p class="stop-hint">
+                Drawn from the shot-by-shot order: each space sits in the direction a buyer walks from the one before it.
+                @(IsReadOnly
+                    ? "It is a schematic, not a floor plan."
+                    : "Select a space to set which way it lies from the previous stop. It is a schematic, not a floor plan.")
+            </p>
+        </div>
+        <ul class="walkthrough-map-legend" aria-label="Map legend">
+            <li><svg width="34" height="10" aria-hidden="true"><line x1="2" y1="5" x2="32" y2="5" class="map-edge" /></svg>Direction set</li>
+            <li><svg width="34" height="10" aria-hidden="true"><line x1="2" y1="5" x2="32" y2="5" class="map-edge is-assumed" /></svg>Assumed straight ahead</li>
+            @if (HasReadyStep)
+            {
+                <li><span class="map-legend-play" aria-hidden="true">▶</span>Walk-through clip</li>
+            }
+        </ul>
+    </div>
+
+    <div class="walkthrough-map-body">
+        <div class="walkthrough-map-canvas">
+            <svg viewBox="@($"0 0 {canvasWidth} {canvasHeight}")" role="group" aria-label="Walkthrough map"
+                 style="@($"max-width: {Px(canvasWidth)}px; min-width: {Px(canvasWidth * .72)}px")" preserveAspectRatio="xMidYMin meet">
+                <defs>
+                    <marker id="map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M 0 0 L 10 5 L 0 10 z" class="map-arrowhead" />
+                    </marker>
+                </defs>
+
+                @foreach (var panel in panels)
+                {
+                    <g class="map-level">
+                        <rect x="@Px(panel.X)" y="@Px(panel.Y)" width="@Px(panel.Width)" height="@Px(panel.Height)" rx="16" class="map-level-frame" />
+                        <text x="@Px(panel.X + 16)" y="@Px(panel.Y + 24)" class="map-level-name">@WalkthroughMap.LevelName(panel.Level)</text>
+                    </g>
+                }
+
+                @if (streetY is { } street)
+                {
+                    <g class="map-street" aria-hidden="true">
+                        <line x1="@Px(street.X1)" y1="@Px(street.Y)" x2="@Px(street.X2)" y2="@Px(street.Y)" />
+                        <text x="@Px((street.X1 + street.X2) / 2)" y="@Px(street.Y + 18)" text-anchor="middle">Street</text>
+                    </g>
+                }
+
+                @foreach (var edge in edges)
+                {
+                    <line x1="@Px(edge.X1)" y1="@Px(edge.Y1)" x2="@Px(edge.X2)" y2="@Px(edge.Y2)"
+                          class="@($"map-edge {(edge.To.IsAssumed ? "is-assumed" : "")}")" marker-end="url(#map-arrow)" />
+                }
+
+                @foreach (var edge in edges.Where(edge => ClipInto(edge.To.Index)?.IsReady == true))
+                {
+                    var target = edge.To;
+                    <g class="map-edge-play" role="button" tabindex="0"
+                       aria-label="@($"Play the walk-through from {spaces[target.Index - 1].Name} into {target.Name}")"
+                       @onclick="@(() => PlayInto(target.Index))"
+                       @onkeydown="@(eventArgs => OnKey(eventArgs, () => PlayInto(target.Index)))">
+                        <circle cx="@Px((edge.X1 + edge.X2) / 2)" cy="@Px((edge.Y1 + edge.Y2) / 2)" r="11" />
+                        <path d="@PlayGlyph((edge.X1 + edge.X2) / 2, (edge.Y1 + edge.Y2) / 2)" />
+                    </g>
+                }
+
+                @foreach (var space in spaces)
+                {
+                    var box = Box(space);
+                    var current = space;
+                    var selected = space.Index == selectedIndex;
+                    <g class="@($"map-space {(selected ? "is-selected" : "")} {(space.Index == 0 ? "is-arrival" : "")}")"
+                       role="button" tabindex="0" aria-pressed="@(selected ? "true" : "false")"
+                       aria-label="@($"Stop {space.Index + 1}, {space.Name}{StepPhrase(space)}")"
+                       @onclick="@(() => Select(current.Index))"
+                       @onkeydown="@(eventArgs => OnKey(eventArgs, () => Select(current.Index)))">
+                        <title>@space.Name</title>
+                        <rect x="@Px(box.X)" y="@Px(box.Y)" width="@Px(RoomWidth)" height="@Px(RoomHeight)" rx="12" class="map-room" />
+                        <circle cx="@Px(box.X + 16)" cy="@Px(box.Y + 17)" r="10" class="map-room-step" />
+                        <text x="@Px(box.X + 16)" y="@Px(box.Y + 21)" text-anchor="middle" class="map-room-step-label">@(space.Index + 1)</text>
+                        <text x="@Px(box.X + RoomWidth / 2)" y="@Px(box.Y + 44)" text-anchor="middle" class="map-room-name">@Shorten(space.Name)</text>
+                        <text x="@Px(box.X + RoomWidth / 2)" y="@Px(box.Y + 59)" text-anchor="middle" class="map-room-meta">@ShotCount(space)</text>
+                        @if (space.Direction is WalkthroughDirection.Upstairs or WalkthroughDirection.Downstairs)
+                        {
+                            <g class="map-room-stairs">
+                                <circle cx="@Px(box.X + RoomWidth - 14)" cy="@Px(box.Y + 15)" r="10" />
+                                <text x="@Px(box.X + RoomWidth - 14)" y="@Px(box.Y + 19)" text-anchor="middle">@(space.Direction == WalkthroughDirection.Upstairs ? "↑" : "↓")</text>
+                            </g>
+                        }
+                    </g>
+                }
+            </svg>
+        </div>
+
+        @if (Selected is { } chosen)
+        {
+            var stop = Stops[chosen.Index];
+            var previous = chosen.Index > 0 ? spaces[chosen.Index - 1] : null;
+            var next = chosen.Index + 1 < spaces.Count ? spaces[chosen.Index + 1] : null;
+            var clipIn = ClipInto(chosen.Index);
+            var clipOut = next is null ? null : ClipInto(next.Index);
+            <aside class="walkthrough-map-detail" aria-live="polite" aria-label="@($"{chosen.Name} details")">
+                <div class="map-detail-media" style="@($"background-image: url('/property-media/{stop.Shots[0].Id}')")"
+                     role="img" aria-label="@($"First shot of {chosen.Name}")">
+                    @if (playing is { } clip)
+                    {
+                        <video class="walkthrough-video" src="@($"/walkthrough-transitions/{clip.TransitionId}")"
+                               autoplay muted playsinline controls @onended="StopPlaying"
+                               aria-label="@playingLabel"></video>
+                        <button type="button" class="walkthrough-close" aria-label="Close walk-through" @onclick="StopPlaying">
+                            <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                        </button>
+                    }
+                </div>
+                <div class="map-detail-body">
+                    <span class="stop-step">Stop @(chosen.Index + 1) of @spaces.Count</span>
+                    <h4>@chosen.Name</h4>
+                    @if (previous is null)
+                    {
+                        <p class="stop-hint">Where the buyer arrives. Every other space is placed from here.</p>
+                    }
+                    else
+                    {
+                        <p class="stop-hint">
+                            From the @previous.Name.ToLowerInvariant(), @WalkthroughMap.Describe(chosen.Direction!.Value)@(chosen.IsAssumed ? " (assumed until you set it)" : "").
+                        </p>
+                        @if (!IsReadOnly)
+                        {
+                            <div class="map-direction-picker" role="group" aria-label="@($"Which way is the {chosen.Name.ToLowerInvariant()} from the {previous.Name.ToLowerInvariant()}?")">
+                                @foreach (var option in Enum.GetValues<WalkthroughDirection>())
+                                {
+                                    var choice = option;
+                                    var active = !chosen.IsAssumed && chosen.Direction == option;
+                                    <button type="button" class="@($"map-direction {(active ? "is-active" : "")}")" aria-pressed="@(active ? "true" : "false")"
+                                            disabled="@savingDirection" @onclick="@(() => SetDirectionAsync(stop.Name, choice))">
+                                        <MudIcon Icon="@DirectionIcon(option)" Size="Size.Small" />@DirectionLabel(option)
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+
+                    <div class="map-detail-actions">
+                        @if (previous is not null && clipIn?.IsReady == true)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow"
+                                       OnClick="@(() => PlayInto(chosen.Index))">Walk in from @previous.Name.ToLowerInvariant()</MudButton>
+                        }
+                        @if (next is not null && clipOut?.IsReady == true)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.DirectionsWalk"
+                                       OnClick="@(() => PlayInto(next.Index))">Walk on to @next.Name.ToLowerInvariant()</MudButton>
+                        }
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PhotoLibrary"
+                                   OnClick="@(() => ShowShots.InvokeAsync(stop.Name))">
+                            Show @(stop.Shots.Count == 1 ? "its shot" : $"its {stop.Shots.Count} shots")
+                        </MudButton>
+                    </div>
+                </div>
+            </aside>
+        }
+    </div>
+
+    <ol class="walkthrough-route" aria-label="Walking route">
+        @foreach (var space in spaces)
+        {
+            var current = space;
+            <li>
+                <button type="button" class="@($"walkthrough-route-step {(space.Index == selectedIndex ? "is-selected" : "")}")"
+                        @onclick="@(() => Select(current.Index))">
+                    <span class="walkthrough-route-number">@(space.Index + 1)</span>
+                    <span>
+                        <strong>@space.Name</strong>
+                        @if (space.Index > 0)
+                        {
+                            <span class="@($"walkthrough-route-direction {(space.IsAssumed ? "is-assumed" : "")}")">@WalkthroughMap.Describe(space.Direction!.Value)</span>
+                        }
+                    </span>
+                </button>
+            </li>
+        }
+    </ol>
+</section>
+
+@code {
+    private const double CellWidth = 216;
+    private const double CellHeight = 148;
+    private const double RoomWidth = 148;
+    private const double RoomHeight = 72;
+    private const double PanelHeader = 40;
+    private const double PanelPadding = 12;
+    private const double PanelGap = 28;
+    private const double StreetBand = 34;
+
+    /// <summary>Photographed stops in storyboard order, each with its shots in order.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<WalkthroughMapStopShots> Stops { get; set; } = [];
+
+    [Parameter]
+    public IReadOnlyList<WalkthroughStopDirectionItem> Directions { get; set; } = [];
+
+    /// <summary>Walk-through clips keyed by the shot they start from.</summary>
+    [Parameter]
+    public IReadOnlyDictionary<Guid, WalkthroughTransitionItem> Transitions { get; set; } = new Dictionary<Guid, WalkthroughTransitionItem>();
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    [Parameter]
+    public EventCallback<(string Stop, WalkthroughDirection Direction)> DirectionChanged { get; set; }
+
+    /// <summary>Raised with a stop name when the agent asks to see that stop's shots in the storyboard.</summary>
+    [Parameter]
+    public EventCallback<string> ShowShots { get; set; }
+
+    /// <summary>Raised with the selected stop name so the storyboard can highlight it.</summary>
+    [Parameter]
+    public EventCallback<string?> SelectedStopChanged { get; set; }
+
+    private IReadOnlyList<WalkthroughMapSpace> spaces = [];
+    private List<LevelPanel> panels = [];
+    private List<Edge> edges = [];
+    private (double X1, double X2, double Y)? streetY;
+    private double canvasWidth;
+    private double canvasHeight;
+    private int selectedIndex;
+    private string? selectedStop;
+    private WalkthroughTransitionItem? playing;
+    private string? playingLabel;
+    private bool savingDirection;
+
+    private WalkthroughMapSpace? Selected => selectedIndex < spaces.Count ? spaces[selectedIndex] : null;
+
+    private bool HasReadyStep => spaces.Skip(1).Any(space => ClipInto(space.Index)?.IsReady == true);
+
+    protected override void OnParametersSet()
+    {
+        var notes = Directions
+            .GroupBy(note => note.Stop, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Direction, StringComparer.OrdinalIgnoreCase);
+        spaces = WalkthroughMap.Build(Stops
+                .Select(stop => new WalkthroughMapStop(stop.Name, notes.TryGetValue(stop.Name, out var note) ? note : null))
+                .ToArray())
+            .Spaces;
+
+        // Keep the same stop selected when the storyboard changes around it.
+        var stillThere = selectedStop is null
+            ? -1
+            : spaces.ToList().FindIndex(space => string.Equals(space.Name, selectedStop, StringComparison.OrdinalIgnoreCase));
+        selectedIndex = stillThere >= 0 ? stillThere : 0;
+        selectedStop = Selected?.Name;
+        if (playing is not null && !Transitions.Values.Any(item => item.TransitionId == playing.TransitionId && item.IsReady))
+        {
+            StopPlaying();
+        }
+
+        Layout();
+    }
+
+    private void Layout()
+    {
+        panels = [];
+        var layout = new WalkthroughMapLayout(spaces);
+        var x = 0d;
+        foreach (var level in layout.Levels)
+        {
+            var onLevel = spaces.Where(space => space.Level == level).ToArray();
+            var minColumn = onLevel.Min(space => space.Column);
+            var maxColumn = onLevel.Max(space => space.Column);
+            var minRow = onLevel.Min(space => space.Row);
+            var maxRow = onLevel.Max(space => space.Row);
+            var hasStreet = level == 0 && IsStreetSide(spaces[0].Name);
+            var width = (maxColumn - minColumn + 1) * CellWidth + PanelPadding * 2;
+            var height = PanelHeader + (maxRow - minRow + 1) * CellHeight + PanelPadding + (hasStreet ? StreetBand : 0);
+            panels.Add(new LevelPanel(level, x, 0, width, height, minColumn, minRow));
+            x += width + PanelGap;
+        }
+
+        canvasWidth = Math.Max(x - PanelGap, 1);
+        canvasHeight = panels.Count == 0 ? 1 : panels.Max(panel => panel.Height);
+
+        streetY = null;
+        if (spaces.Count > 0 && IsStreetSide(spaces[0].Name))
+        {
+            var main = PanelFor(spaces[0]);
+            var arrival = Box(spaces[0]);
+            streetY = (main.X + PanelPadding, main.X + main.Width - PanelPadding, arrival.Y + RoomHeight + (CellHeight - RoomHeight) / 2 + 12);
+        }
+
+        edges = [];
+        for (var index = 1; index < spaces.Count; index++)
+        {
+            var from = spaces[index - 1];
+            var to = spaces[index];
+            if (from.Level != to.Level)
+            {
+                // Stairs are marked on the space itself; a line across levels would cut through other spaces.
+                continue;
+            }
+
+            var (fromX, fromY) = Center(from);
+            var (toX, toY) = Center(to);
+            var horizontal = Math.Abs(toX - fromX) >= Math.Abs(toY - fromY);
+            var gapX = horizontal ? RoomWidth / 2 + 3 : 0;
+            var gapY = horizontal ? 0 : RoomHeight / 2 + 3;
+            var signX = Math.Sign(toX - fromX);
+            var signY = Math.Sign(toY - fromY);
+            edges.Add(new Edge(
+                to,
+                fromX + signX * gapX,
+                fromY + signY * gapY,
+                toX - signX * (gapX + 3),
+                toY - signY * (gapY + 3)));
+        }
+    }
+
+    private LevelPanel PanelFor(WalkthroughMapSpace space) => panels.First(panel => panel.Level == space.Level);
+
+    private (double X, double Y) Center(WalkthroughMapSpace space)
+    {
+        var panel = PanelFor(space);
+        return (
+            panel.X + PanelPadding + (space.Column - panel.MinColumn + .5) * CellWidth,
+            panel.Y + PanelHeader + (space.Row - panel.MinRow + .5) * CellHeight);
+    }
+
+    private (double X, double Y) Box(WalkthroughMapSpace space)
+    {
+        var (x, y) = Center(space);
+        return (x - RoomWidth / 2, y - RoomHeight / 2);
+    }
+
+    // The clip that walks from the last shot of the previous stop into the first shot of this one.
+    private WalkthroughTransitionItem? ClipInto(int index)
+    {
+        if (index <= 0 || index >= Stops.Count)
+        {
+            return null;
+        }
+
+        var from = Stops[index - 1].Shots[^1].Id;
+        var to = Stops[index].Shots[0].Id;
+        return Transitions.TryGetValue(from, out var clip) && clip.ToPropertyMediaId == to ? clip : null;
+    }
+
+    private async Task Select(int index)
+    {
+        if (index != selectedIndex)
+        {
+            StopPlaying();
+        }
+
+        selectedIndex = index;
+        selectedStop = spaces[index].Name;
+        await SelectedStopChanged.InvokeAsync(selectedStop);
+    }
+
+    private async Task PlayInto(int index)
+    {
+        var clip = ClipInto(index);
+        if (clip?.IsReady != true)
+        {
+            return;
+        }
+
+        await Select(index);
+        playing = clip;
+        playingLabel = $"Walk-through from {spaces[index - 1].Name} into {spaces[index].Name}";
+    }
+
+    private void StopPlaying()
+    {
+        playing = null;
+        playingLabel = null;
+    }
+
+    private async Task SetDirectionAsync(string stop, WalkthroughDirection direction)
+    {
+        savingDirection = true;
+        try
+        {
+            await DirectionChanged.InvokeAsync((stop, direction));
+        }
+        finally
+        {
+            savingDirection = false;
+        }
+    }
+
+    private static async Task OnKey(KeyboardEventArgs eventArgs, Func<Task> action)
+    {
+        if (eventArgs.Key is "Enter" or " ")
+        {
+            await action();
+        }
+    }
+
+    private static string StepPhrase(WalkthroughMapSpace space) => space.Direction is { } direction
+        ? $", {WalkthroughMap.Describe(direction)} from the previous stop{(space.IsAssumed ? " (assumed)" : "")}"
+        : ", where the walkthrough starts";
+
+    private string ShotCount(WalkthroughMapSpace space)
+    {
+        var count = Stops[space.Index].Shots.Count;
+        return count == 1 ? "1 shot" : $"{count} shots";
+    }
+
+    private static bool IsStreetSide(string stop) =>
+        string.Equals(stop, WalkthroughStoryboard.ExteriorFront, StringComparison.OrdinalIgnoreCase);
+
+    private static string Shorten(string name) => name.Length <= 18 ? name : $"{name[..17].TrimEnd()}…";
+
+    private static string Px(double value) => value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string PlayGlyph(double x, double y) =>
+        $"M {Px(x - 3.5)} {Px(y - 5.5)} L {Px(x + 5.5)} {Px(y)} L {Px(x - 3.5)} {Px(y + 5.5)} z";
+
+    private static string DirectionLabel(WalkthroughDirection direction) => direction switch
+    {
+        WalkthroughDirection.Ahead => "Ahead",
+        WalkthroughDirection.Left => "Left",
+        WalkthroughDirection.Right => "Right",
+        WalkthroughDirection.Upstairs => "Upstairs",
+        WalkthroughDirection.Downstairs => "Downstairs",
+        _ => direction.ToString(),
+    };
+
+    private static string DirectionIcon(WalkthroughDirection direction) => direction switch
+    {
+        WalkthroughDirection.Ahead => Icons.Material.Filled.ArrowUpward,
+        WalkthroughDirection.Left => Icons.Material.Filled.TurnLeft,
+        WalkthroughDirection.Right => Icons.Material.Filled.TurnRight,
+        WalkthroughDirection.Upstairs => Icons.Material.Filled.Stairs,
+        WalkthroughDirection.Downstairs => Icons.Material.Filled.SouthEast,
+        _ => Icons.Material.Filled.ArrowUpward,
+    };
+
+    private sealed record LevelPanel(int Level, double X, double Y, double Width, double Height, int MinColumn, int MinRow);
+
+    private sealed record Edge(WalkthroughMapSpace To, double X1, double Y1, double X2, double Y2);
+}

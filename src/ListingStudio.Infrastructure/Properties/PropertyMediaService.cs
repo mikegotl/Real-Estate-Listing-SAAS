@@ -10,7 +10,8 @@ namespace ListingStudio.Infrastructure.Properties;
 public sealed class PropertyMediaService(
     ApplicationDbContext dbContext,
     IPropertyMediaStorage storage,
-    ICampaignAssetStorage campaignAssetStorage) : IPropertyMediaService
+    ICampaignAssetStorage campaignAssetStorage,
+    TimeProvider timeProvider) : IPropertyMediaService
 {
     private static readonly Dictionary<string, string> AllowedContentTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -247,6 +248,64 @@ public sealed class PropertyMediaService(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
+        return true;
+    }
+
+    public async Task<IReadOnlyList<WalkthroughStopDirectionItem>> ListStopDirectionsAsync(
+        string userId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return await dbContext.WalkthroughStopDirections
+            .AsNoTracking()
+            .Where(direction => direction.OrganizationId == organizationId && direction.PropertyId == propertyId)
+            .OrderBy(direction => direction.Stop)
+            .Select(direction => new WalkthroughStopDirectionItem(direction.Stop, direction.Direction))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> SetStopDirectionAsync(
+        string userId,
+        Guid propertyId,
+        string walkthroughStop,
+        WalkthroughDirection? direction,
+        CancellationToken cancellationToken = default)
+    {
+        var stop = WalkthroughStoryboard.Normalize(walkthroughStop)
+            ?? throw new ArgumentException("A walkthrough stop is required.", nameof(walkthroughStop));
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await PropertyExistsAsync(organizationId, propertyId, includeArchived: false, cancellationToken))
+        {
+            return false;
+        }
+
+        // Stops match case-insensitively, like the storyboard groups them, so "sunroom" and "Sunroom" share a note.
+        var existing = (await dbContext.WalkthroughStopDirections
+                .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId)
+                .ToListAsync(cancellationToken))
+            .Where(candidate => string.Equals(candidate.Stop, stop, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (direction is null)
+        {
+            dbContext.WalkthroughStopDirections.RemoveRange(existing);
+        }
+        else if (existing.Count == 0)
+        {
+            dbContext.WalkthroughStopDirections.Add(WalkthroughStopDirection.Create(
+                organizationId,
+                propertyId,
+                stop,
+                direction.Value,
+                timeProvider.GetUtcNow()));
+        }
+        else
+        {
+            existing[0].SetDirection(direction.Value, timeProvider.GetUtcNow());
+            dbContext.WalkthroughStopDirections.RemoveRange(existing.Skip(1));
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
 

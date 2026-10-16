@@ -102,7 +102,8 @@
                     continue;
                 }
 
-                <li class="storyboard-stop @(stop.Items.Count == 0 ? "is-empty" : "is-filled")">
+                <li class="storyboard-stop @(stop.Items.Count == 0 ? "is-empty" : "is-filled") @(SameStop(stop.Name, highlightedStop) ? "is-highlighted" : "")"
+                    tabindex="-1" @ref="stopElements[stop.Name]">
                     <div class="stop-marker" aria-hidden="true">
                         @if (stop.Items.Count > 0)
                         {
@@ -226,6 +227,13 @@
                 </div>
             </section>
         }
+
+        @if (MapStops.Count >= 2)
+        {
+            <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
+                                    DirectionChanged="SetStopDirectionAsync" ShowShots="ShowStopShotsAsync"
+                                    SelectedStopChanged="HighlightStop" />
+        }
     }
 </MudPaper>
 
@@ -245,6 +253,11 @@
     private IReadOnlyList<StopView> stops = [];
     private IReadOnlyList<PropertyMediaItem> unsorted = [];
     private Dictionary<Guid, int> sequence = [];
+    private IReadOnlyList<WalkthroughStopDirectionItem> directions = [];
+    private IReadOnlyList<WalkthroughMapStopShots> MapStops = [];
+    private readonly Dictionary<string, ElementReference> stopElements = new(StringComparer.OrdinalIgnoreCase);
+    private string? highlightedStop;
+    private string? focusStop;
     private string? customStopName;
     private bool loaded;
     private string? message;
@@ -391,6 +404,7 @@
         loaded = false;
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         media = [.. await Service.ListAsync(userId, PropertyId)];
+        directions = await Service.ListStopDirectionsAsync(userId, PropertyId);
         BuildStoryboard();
         await LoadTransitionsAsync(userId);
         loaded = true;
@@ -549,6 +563,45 @@
         sequence = stops.SelectMany(stop => stop.Items).Concat(unsorted)
             .Select((item, index) => (item.Id, index))
             .ToDictionary(entry => entry.Id, entry => entry.index);
+        MapStops = stops
+            .Where(stop => stop.Items.Count > 0)
+            .Select(stop => new WalkthroughMapStopShots(stop.Name, stop.Items))
+            .ToArray();
+    }
+
+    private async Task SetStopDirectionAsync((string Stop, WalkthroughDirection Direction) change)
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            if (await Service.SetStopDirectionAsync(userId, PropertyId, change.Stop, change.Direction))
+            {
+                directions = await Service.ListStopDirectionsAsync(userId, PropertyId);
+                ShowMessage($"{change.Stop} is now {WalkthroughMap.Describe(change.Direction)} on the walkthrough map.", Severity.Success);
+            }
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+    }
+
+    private void HighlightStop(string? stop) => highlightedStop = stop;
+
+    private void ShowStopShotsAsync(string stop)
+    {
+        highlightedStop = stop;
+        focusStop = stop;
+    }
+
+    // Focusing the highlighted stop scrolls the storyboard to its shots and moves keyboard users there too.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusStop is { } stop && stopElements.TryGetValue(stop, out var element))
+        {
+            focusStop = null;
+            await element.FocusAsync(preventScroll: false);
+        }
     }
 
     private async Task ReloadAfterChangeAsync()
