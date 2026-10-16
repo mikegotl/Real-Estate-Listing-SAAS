@@ -57,7 +57,8 @@ public sealed class WalkthroughTransition
         Guid fromPropertyMediaId,
         Guid toPropertyMediaId,
         string generationVersion,
-        DateTimeOffset createdAtUtc)
+        DateTimeOffset createdAtUtc,
+        DateTimeOffset? notBeforeUtc = null)
     {
         if (organizationId == Guid.Empty
             || propertyId == Guid.Empty
@@ -82,6 +83,8 @@ public sealed class WalkthroughTransition
             GenerationVersion = Required(generationVersion, 100, nameof(generationVersion)),
             Status = WalkthroughTransitionStatus.Pending,
             CreatedAtUtc = createdAtUtc,
+            // A pending clip queued by a storyboard edit waits until then, so a burst of edits settles first.
+            NextCheckAtUtc = notBeforeUtc,
         };
     }
 

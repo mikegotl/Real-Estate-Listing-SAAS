@@ -14,6 +14,9 @@ public sealed class WalkthroughTransitionService(
     IWalkthroughVideoProvider provider,
     TimeProvider timeProvider) : IWalkthroughTransitionService
 {
+    /// <summary>How long a clip queued by a storyboard edit waits, so quick successive edits don't pay for clips.</summary>
+    public static readonly TimeSpan SettleDelay = TimeSpan.FromSeconds(45);
+
     public bool IsEnabled => provider.IsEnabled;
 
     public async Task<IReadOnlyList<WalkthroughTransitionItem>> ListAsync(
@@ -31,7 +34,7 @@ public sealed class WalkthroughTransitionService(
         var transitions = await LoadTransitionsAsync(organizationId, propertyId, tracking: false, cancellationToken);
         return pairs.Select(pair =>
         {
-            var currentVersion = WalkthroughClipDirection.Version(provider.GenerationVersion, pair.Direction);
+            var currentVersion = pair.Version;
             var candidates = transitions
                 .Where(transition => transition.FromPropertyMediaId == pair.From
                     && transition.ToPropertyMediaId == pair.To)
@@ -66,6 +69,33 @@ public sealed class WalkthroughTransitionService(
         }
 
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return await QueueMissingAsync(organizationId, propertyId, automatic: false, cancellationToken)
+            ?? throw new InvalidOperationException("The property is unavailable for walk-through clips.");
+    }
+
+    public async Task<int> RequeueAffectedAsync(
+        string userId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsEnabled)
+        {
+            return 0;
+        }
+
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return await QueueMissingAsync(organizationId, propertyId, automatic: true, cancellationToken) ?? 0;
+    }
+
+    // Queues a clip for each current pair without one. An automatic run only acts for a property whose clips the
+    // agent has already requested, waits SettleDelay before submitting, and leaves clips that failed for good alone.
+    // Returns null when the property is unavailable.
+    private async Task<int?> QueueMissingAsync(
+        Guid organizationId,
+        Guid propertyId,
+        bool automatic,
+        CancellationToken cancellationToken)
+    {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
             cancellationToken);
@@ -75,27 +105,38 @@ public sealed class WalkthroughTransitionService(
                     && property.ArchivedAtUtc == null,
                 cancellationToken))
         {
-            throw new InvalidOperationException("The property is unavailable for walk-through clips.");
+            return null;
+        }
+
+        var transitions = await LoadTransitionsAsync(organizationId, propertyId, tracking: true, cancellationToken);
+        if (automatic && transitions.Count == 0)
+        {
+            return 0;
         }
 
         var pairs = await LoadPairsAsync(organizationId, propertyId, cancellationToken);
-        var existing = (await LoadTransitionsAsync(organizationId, propertyId, tracking: true, cancellationToken))
-            .ToDictionary(transition => (
-                transition.FromPropertyMediaId,
-                transition.ToPropertyMediaId,
-                transition.GenerationVersion));
+        var existing = transitions.ToDictionary(transition => (
+            transition.FromPropertyMediaId,
+            transition.ToPropertyMediaId,
+            transition.GenerationVersion));
         var queued = 0;
         var now = timeProvider.GetUtcNow();
-        foreach (var (from, to, direction) in pairs)
+        DateTimeOffset? notBefore = automatic ? now.Add(SettleDelay) : null;
+        foreach (var pair in pairs)
         {
-            var version = WalkthroughClipDirection.Version(provider.GenerationVersion, direction);
-            if (!existing.TryGetValue((from, to, version), out var transition))
+            if (!existing.TryGetValue((pair.From, pair.To, pair.Version), out var transition))
             {
-                dbContext.WalkthroughTransitions.Add(
-                    WalkthroughTransition.Create(organizationId, propertyId, from, to, version, now));
+                dbContext.WalkthroughTransitions.Add(WalkthroughTransition.Create(
+                    organizationId,
+                    propertyId,
+                    pair.From,
+                    pair.To,
+                    pair.Version,
+                    now,
+                    notBefore));
                 queued++;
             }
-            else if (transition.Status == WalkthroughTransitionStatus.Failed && !transition.CanRetry)
+            else if (!automatic && transition.Status == WalkthroughTransitionStatus.Failed && !transition.CanRetry)
             {
                 transition.Requeue();
                 queued++;
@@ -127,29 +168,11 @@ public sealed class WalkthroughTransitionService(
         return content is null ? null : new WalkthroughTransitionContent(content, transition.ContentType);
     }
 
-    // Each consecutive shot pair with the walking direction its clip should follow, from the walkthrough map.
-    private async Task<IReadOnlyList<(Guid From, Guid To, WalkthroughDirection? Direction)>> LoadPairsAsync(
+    private Task<IReadOnlyList<WalkthroughShotPair>> LoadPairsAsync(
         Guid organizationId,
         Guid propertyId,
-        CancellationToken cancellationToken)
-    {
-        var shots = await dbContext.PropertyMedia.AsNoTracking()
-            .Where(media => media.OrganizationId == organizationId && media.PropertyId == propertyId)
-            .Select(media => new { media.Id, media.WalkthroughStop, media.DisplayOrder })
-            .ToArrayAsync(cancellationToken);
-        var directions = (await dbContext.WalkthroughStopDirections.AsNoTracking()
-                .Where(note => note.OrganizationId == organizationId && note.PropertyId == propertyId)
-                .Select(note => new { note.Stop, note.Direction })
-                .ToArrayAsync(cancellationToken))
-            .GroupBy(note => note.Stop, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First().Direction, StringComparer.OrdinalIgnoreCase);
-        return WalkthroughStoryboard.ShotPairs(shots, shot => shot.WalkthroughStop, shot => shot.DisplayOrder)
-            .Select(pair => (
-                pair.From.Id,
-                pair.To.Id,
-                WalkthroughClipDirection.ForPair(pair.From.WalkthroughStop, pair.To.WalkthroughStop, directions)))
-            .ToArray();
-    }
+        CancellationToken cancellationToken) =>
+        WalkthroughShotPairs.LoadAsync(dbContext, provider, organizationId, propertyId, cancellationToken);
 
     private Task<List<WalkthroughTransition>> LoadTransitionsAsync(
         Guid organizationId,

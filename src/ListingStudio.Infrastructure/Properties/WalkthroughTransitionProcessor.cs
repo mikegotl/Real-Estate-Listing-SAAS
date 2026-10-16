@@ -40,7 +40,7 @@ public sealed partial class WalkthroughTransitionProcessor(
         var candidates = await dbContext.WalkthroughTransitions.FromSqlInterpolated($"""
             SELECT *
             FROM "WalkthroughTransitions"
-            WHERE "Status" = 'Pending'
+            WHERE ("Status" = 'Pending' AND ("NextCheckAtUtc" IS NULL OR "NextCheckAtUtc" <= {now}))
                OR ("Status" = 'Failed'
                    AND "AttemptCount" < {WalkthroughTransition.MaximumAttempts}
                    AND "NextCheckAtUtc" <= {now})
@@ -75,10 +75,38 @@ public sealed partial class WalkthroughTransitionProcessor(
             return Result(transition);
         }
 
+        if (transition.Status is WalkthroughTransitionStatus.Pending or WalkthroughTransitionStatus.Failed
+            && !await IsStillNeededAsync(transition, cancellationToken))
+        {
+            // A later storyboard edit replaced this pair or its direction before it was generated, so it never is.
+            dbContext.WalkthroughTransitions.Remove(transition);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            LogDropped(transition.Id);
+            return new WalkthroughTransitionRunResult(
+                transition.Id,
+                transition.Status,
+                transition.AttemptCount,
+                "The storyboard changed, so this walk-through is no longer needed.");
+        }
+
         transition.BeginSubmission(now);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return await SubmitAsync(transition, cancellationToken);
+    }
+
+    private async Task<bool> IsStillNeededAsync(WalkthroughTransition transition, CancellationToken cancellationToken)
+    {
+        var pairs = await WalkthroughShotPairs.LoadAsync(
+            dbContext,
+            provider,
+            transition.OrganizationId,
+            transition.PropertyId,
+            cancellationToken);
+        return pairs.Any(pair => pair.From == transition.FromPropertyMediaId
+            && pair.To == transition.ToPropertyMediaId
+            && pair.Version == transition.GenerationVersion);
     }
 
     private async Task<WalkthroughTransitionRunResult> SubmitAsync(
@@ -279,6 +307,9 @@ public sealed partial class WalkthroughTransitionProcessor(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Walk-through transition {TransitionId} submission attempt {AttemptNumber} failed")]
     private partial void LogSubmissionFailed(Exception exception, Guid transitionId, int attemptNumber);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Walk-through transition {TransitionId} was dropped before generation because the storyboard changed")]
+    private partial void LogDropped(Guid transitionId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Walk-through transition {TransitionId} check on attempt {AttemptNumber} failed")]
     private partial void LogCheckFailed(Exception exception, Guid transitionId, int attemptNumber);

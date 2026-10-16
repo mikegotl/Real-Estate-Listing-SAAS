@@ -220,6 +220,14 @@
     [Parameter]
     public EventCallback<string?> SelectedStopChanged { get; set; }
 
+    /// <summary>A stop to select when <see cref="FocusRequest"/> changes, from the storyboard's "Show on map".</summary>
+    [Parameter]
+    public string? FocusStop { get; set; }
+
+    [Parameter]
+    public int FocusRequest { get; set; }
+
+    private int handledFocusRequest;
     private IReadOnlyList<WalkthroughMapSpace> spaces = [];
     private List<LevelPanel> panels = [];
     private List<Edge> edges = [];
@@ -245,6 +253,17 @@
                 .Select(stop => new WalkthroughMapStop(stop.Name, notes.TryGetValue(stop.Name, out var note) ? note : null))
                 .ToArray())
             .Spaces;
+
+        if (FocusRequest != handledFocusRequest)
+        {
+            handledFocusRequest = FocusRequest;
+            if (!string.Equals(FocusStop, selectedStop, StringComparison.OrdinalIgnoreCase))
+            {
+                StopPlaying();
+            }
+
+            selectedStop = FocusStop ?? selectedStop;
+        }
 
         // Keep the same stop selected when the storyboard changes around it.
         var stillThere = selectedStop is null

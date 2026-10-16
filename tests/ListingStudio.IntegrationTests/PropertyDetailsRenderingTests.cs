@@ -198,6 +198,8 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         response.EnsureSuccessStatusCode();
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("walkthrough-map-heading", content, StringComparison.Ordinal);
+        Assert.Contains("Show Kitchen on the walkthrough map", content, StringComparison.Ordinal);
+        Assert.Contains("Show Exterior front on the walkthrough map", content, StringComparison.Ordinal);
         Assert.Contains("Main level", content, StringComparison.Ordinal);
         Assert.Contains("Stop 1, Exterior front, where the walkthrough starts", content, StringComparison.Ordinal);
         Assert.Contains(
