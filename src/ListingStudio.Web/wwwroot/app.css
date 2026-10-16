@@ -268,6 +268,7 @@ h1:focus { outline: none; }
 .storyboard-unsorted { background: var(--ls-surface-muted); border: 1px dashed var(--ls-line-strong); border-radius: 16px; margin-top: 8px; padding: 18px; }
 .storyboard-unsorted h3 { font-family: var(--ls-font-display); font-size: 1.1rem; font-weight: 600; margin: 0 0 4px; }
 .storyboard-stop.is-highlighted .stop-body { background: var(--ls-accent-soft); border-radius: 14px; box-shadow: 0 0 0 8px var(--ls-accent-soft); }
+.storyboard-stop { scroll-margin-top: 96px; }
 .storyboard-stop:focus { outline: none; }
 .storyboard-stop:focus-visible .stop-marker { outline: 2px solid var(--ls-accent); outline-offset: 2px; }
 
