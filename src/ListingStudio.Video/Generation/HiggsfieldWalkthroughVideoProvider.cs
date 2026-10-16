@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Properties;
 using ListingStudio.Video.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -21,7 +22,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
 {
     public const string ProviderName = "higgsfield";
 
-    internal const string Prompt = """
+    public const string Prompt = """
         A smooth, steady first-person walk-through of a real home for a real-estate listing video.
         The camera starts on the first frame and moves naturally, at walking pace, to arrive exactly on the last frame,
         as if a buyer were walking from the first space into the next one.
@@ -29,6 +30,31 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         in the two photographs. Do not add, remove or redesign anything.
         Realistic real-estate photography. No people. No text. No camera shake.
         """;
+
+    /// <summary>
+    /// The prompt for one clip. Without a direction the model infers the path from the two frames and can turn the
+    /// wrong way, so a direction set on the walkthrough map is spelled out from the buyer's point of view.
+    /// </summary>
+    public static string PromptFor(WalkthroughDirection? direction) => direction switch
+    {
+        null => Prompt,
+        WalkthroughDirection.Ahead => Prompt + DirectionLine(
+            "straight ahead, through the opening in front of the camera. Keep moving forward; do not turn left or right."),
+        WalkthroughDirection.Left => Prompt + DirectionLine(
+            "to the LEFT. The camera turns left (pans toward the left side of the first frame) while walking forward; "
+            + "it must not turn right."),
+        WalkthroughDirection.Right => Prompt + DirectionLine(
+            "to the RIGHT. The camera turns right (pans toward the right side of the first frame) while walking forward; "
+            + "it must not turn left."),
+        WalkthroughDirection.Upstairs => Prompt + DirectionLine(
+            "UPSTAIRS. The camera climbs the stairs, moving upward, to reach the upper floor."),
+        WalkthroughDirection.Downstairs => Prompt + DirectionLine(
+            "DOWNSTAIRS. The camera descends the stairs, moving downward, to reach the lower floor."),
+        _ => throw new ArgumentOutOfRangeException(nameof(direction)),
+    };
+
+    private static string DirectionLine(string movement) =>
+        $"\nDirection: the next space is {movement}";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -58,7 +84,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         using var message = new HttpRequestMessage(HttpMethod.Post, ApiUri(configuration, configuration.Model.Trim('/')))
         {
             Content = JsonContent.Create(
-                new GenerationRequest(Prompt, startUrl, endUrl, configuration.ClipDurationSeconds, "off"),
+                new GenerationRequest(PromptFor(submission.Direction), startUrl, endUrl, configuration.ClipDurationSeconds, "off"),
                 options: SerializerOptions),
         };
         var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);

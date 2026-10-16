@@ -108,7 +108,8 @@ public sealed partial class WalkthroughTransitionProcessor(
                 new WalkthroughVideoSubmission(
                     new WalkthroughVideoFrame(start, NormalizeImageType(from.MimeType)),
                     new WalkthroughVideoFrame(end, NormalizeImageType(to.MimeType)),
-                    $"{transitionId:N}-{attempt}"),
+                    $"{transitionId:N}-{attempt}",
+                    WalkthroughClipDirection.FromVersion(claimed.GenerationVersion)),
                 cancellationToken);
             var current = await LoadClaimAsync(transitionId, organizationId, attempt, cancellationToken);
             var now = timeProvider.GetUtcNow();

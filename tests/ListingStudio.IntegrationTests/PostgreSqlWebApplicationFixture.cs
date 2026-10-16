@@ -292,6 +292,9 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
 
     public int SubmitCount => submitCount;
 
+    /// <summary>The walking direction each transition was last submitted with, keyed by transition ID.</summary>
+    public ConcurrentDictionary<Guid, WalkthroughDirection?> SubmittedDirections { get; } = new();
+
     public static byte[] ClipBytes { get; } = [0, 0, 0, 20, 102, 116, 121, 112, 119, 97, 108, 107];
 
     public void EnqueueSubmissionFailure(Exception exception) => submissionFailures.Enqueue(exception);
@@ -305,6 +308,7 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         CancellationToken cancellationToken = default)
     {
         Interlocked.Increment(ref submitCount);
+        SubmittedDirections[Guid.ParseExact(submission.IdempotencyKey[..32], "N")] = submission.Direction;
         Assert.True(submission.StartFrame.Content.CanRead);
         Assert.True(submission.EndFrame.Content.CanRead);
         return submissionFailures.TryDequeue(out var failure)

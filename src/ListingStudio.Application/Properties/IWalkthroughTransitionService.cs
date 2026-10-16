@@ -14,8 +14,8 @@ public interface IWalkthroughTransitionService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Queues a clip for every consecutive pair that has none yet, and requeues pairs whose clip failed for good.
-    /// Returns how many pairs were queued.
+    /// Queues a clip for every consecutive pair that has no clip for its current walking direction yet, and requeues
+    /// pairs whose clip failed for good. Returns how many pairs were queued.
     /// </summary>
     Task<int> QueueAsync(
         string userId,
@@ -28,12 +28,17 @@ public interface IWalkthroughTransitionService
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// A consecutive shot pair and its clip. <see cref="IsCurrent"/> is false when the clip shown was made before the
+/// latest generation settings or walking direction, so a new clip can be requested to replace it.
+/// </summary>
 public sealed record WalkthroughTransitionItem(
     Guid FromPropertyMediaId,
     Guid ToPropertyMediaId,
     Guid? TransitionId,
     WalkthroughTransitionStatus? Status,
-    string? Error)
+    string? Error,
+    bool IsCurrent = true)
 {
     public bool IsReady => Status == WalkthroughTransitionStatus.Completed && TransitionId is not null;
 

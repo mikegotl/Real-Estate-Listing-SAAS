@@ -281,8 +281,9 @@
 
     private int InProgressTransitionCount => transitions.Values.Count(item => item.IsInProgress);
 
+    // Pairs with no clip, a failed clip, or a clip made before the stop's walking direction was set or changed.
     private int MissingTransitionCount => transitions.Values.Count(item =>
-        item.Status is null or WalkthroughTransitionStatus.Failed);
+        item.Status is null or WalkthroughTransitionStatus.Failed || (!item.IsCurrent && !item.IsInProgress));
 
     private bool HasExteriorFront => stops.Count > 0 && stops[0].Items.Count > 0;
 
@@ -518,6 +519,8 @@
 
     private static string WalkthroughStatusText(WalkthroughTransitionItem item) => item.Status switch
     {
+        WalkthroughTransitionStatus.Completed when !item.IsCurrent =>
+            "ready, but made before its walking direction was set; create it again to follow the map",
         WalkthroughTransitionStatus.Completed => "ready, press play on the photo",
         WalkthroughTransitionStatus.Pending or WalkthroughTransitionStatus.Submitting => "queued",
         WalkthroughTransitionStatus.Generating => "generating…",

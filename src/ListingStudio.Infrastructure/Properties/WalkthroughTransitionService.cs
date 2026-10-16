@@ -29,9 +29,9 @@ public sealed class WalkthroughTransitionService(
         }
 
         var transitions = await LoadTransitionsAsync(organizationId, propertyId, tracking: false, cancellationToken);
-        var currentVersion = provider.GenerationVersion;
         return pairs.Select(pair =>
         {
+            var currentVersion = WalkthroughClipDirection.Version(provider.GenerationVersion, pair.Direction);
             var candidates = transitions
                 .Where(transition => transition.FromPropertyMediaId == pair.From
                     && transition.ToPropertyMediaId == pair.To)
@@ -50,7 +50,8 @@ public sealed class WalkthroughTransitionService(
                 pair.To,
                 chosen?.Id,
                 chosen?.Status,
-                chosen?.Status == WalkthroughTransitionStatus.Failed ? chosen.LastError : null);
+                chosen?.Status == WalkthroughTransitionStatus.Failed ? chosen.LastError : null,
+                chosen is null || chosen.GenerationVersion == currentVersion);
         }).ToArray();
     }
 
@@ -78,15 +79,17 @@ public sealed class WalkthroughTransitionService(
         }
 
         var pairs = await LoadPairsAsync(organizationId, propertyId, cancellationToken);
-        var version = provider.GenerationVersion;
         var existing = (await LoadTransitionsAsync(organizationId, propertyId, tracking: true, cancellationToken))
-            .Where(transition => transition.GenerationVersion == version)
-            .ToDictionary(transition => (transition.FromPropertyMediaId, transition.ToPropertyMediaId));
+            .ToDictionary(transition => (
+                transition.FromPropertyMediaId,
+                transition.ToPropertyMediaId,
+                transition.GenerationVersion));
         var queued = 0;
         var now = timeProvider.GetUtcNow();
-        foreach (var (from, to) in pairs)
+        foreach (var (from, to, direction) in pairs)
         {
-            if (!existing.TryGetValue((from, to), out var transition))
+            var version = WalkthroughClipDirection.Version(provider.GenerationVersion, direction);
+            if (!existing.TryGetValue((from, to, version), out var transition))
             {
                 dbContext.WalkthroughTransitions.Add(
                     WalkthroughTransition.Create(organizationId, propertyId, from, to, version, now));
@@ -124,7 +127,8 @@ public sealed class WalkthroughTransitionService(
         return content is null ? null : new WalkthroughTransitionContent(content, transition.ContentType);
     }
 
-    private async Task<IReadOnlyList<(Guid From, Guid To)>> LoadPairsAsync(
+    // Each consecutive shot pair with the walking direction its clip should follow, from the walkthrough map.
+    private async Task<IReadOnlyList<(Guid From, Guid To, WalkthroughDirection? Direction)>> LoadPairsAsync(
         Guid organizationId,
         Guid propertyId,
         CancellationToken cancellationToken)
@@ -133,8 +137,17 @@ public sealed class WalkthroughTransitionService(
             .Where(media => media.OrganizationId == organizationId && media.PropertyId == propertyId)
             .Select(media => new { media.Id, media.WalkthroughStop, media.DisplayOrder })
             .ToArrayAsync(cancellationToken);
+        var directions = (await dbContext.WalkthroughStopDirections.AsNoTracking()
+                .Where(note => note.OrganizationId == organizationId && note.PropertyId == propertyId)
+                .Select(note => new { note.Stop, note.Direction })
+                .ToArrayAsync(cancellationToken))
+            .GroupBy(note => note.Stop, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Direction, StringComparer.OrdinalIgnoreCase);
         return WalkthroughStoryboard.ShotPairs(shots, shot => shot.WalkthroughStop, shot => shot.DisplayOrder)
-            .Select(pair => (pair.From.Id, pair.To.Id))
+            .Select(pair => (
+                pair.From.Id,
+                pair.To.Id,
+                WalkthroughClipDirection.ForPair(pair.From.WalkthroughStop, pair.To.WalkthroughStop, directions)))
             .ToArray();
     }
 

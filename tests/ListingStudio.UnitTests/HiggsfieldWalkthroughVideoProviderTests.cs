@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Properties;
 using ListingStudio.Video.Configuration;
 using ListingStudio.Video.Generation;
 using Microsoft.Extensions.Options;
@@ -68,6 +69,49 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         var prompt = root.GetProperty("prompt").GetString()!;
         Assert.Contains("arrive exactly on the last frame", prompt, StringComparison.Ordinal);
         Assert.Contains("Do not add, remove or redesign anything", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SubmitSpellsOutTheMapDirectionSoTheClipTurnsTheRightWay()
+    {
+        var handler = new RoutingHandler(request => request.RequestUri!.ToString() switch
+        {
+            "https://api.higgsfield.test/files/generate-upload-url" => Json(new
+            {
+                upload_url = $"https://uploads.storage.test/{Guid.NewGuid():N}",
+                public_url = $"https://cdn.storage.test/{Guid.NewGuid():N}.jpg",
+            }),
+            "https://api.higgsfield.test/kling-video/v3.0/std/image-to-video" => Json(new { status = "queued", request_id = "req_456" }),
+            _ when request.RequestUri!.Host == "uploads.storage.test" => new HttpResponseMessage(HttpStatusCode.OK),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var client = new HttpClient(handler);
+        await using var start = new MemoryStream([1]);
+        await using var end = new MemoryStream([2]);
+
+        await CreateProvider(client).SubmitAsync(new WalkthroughVideoSubmission(
+            new WalkthroughVideoFrame(start, "image/jpeg"),
+            new WalkthroughVideoFrame(end, "image/jpeg"),
+            "transition-2",
+            WalkthroughDirection.Right));
+
+        using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
+        var prompt = generation.RootElement.GetProperty("prompt").GetString()!;
+        Assert.StartsWith(HiggsfieldWalkthroughVideoProvider.Prompt, prompt, StringComparison.Ordinal);
+        Assert.Contains("the next space is to the RIGHT", prompt, StringComparison.Ordinal);
+        Assert.Contains("it must not turn left", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EachDirectionNamesOnlyItsOwnTurn()
+    {
+        Assert.Equal(HiggsfieldWalkthroughVideoProvider.Prompt, HiggsfieldWalkthroughVideoProvider.PromptFor(null));
+        var left = HiggsfieldWalkthroughVideoProvider.PromptFor(WalkthroughDirection.Left);
+        Assert.Contains("to the LEFT", left, StringComparison.Ordinal);
+        Assert.DoesNotContain("to the RIGHT", left, StringComparison.Ordinal);
+        Assert.Contains("UPSTAIRS", HiggsfieldWalkthroughVideoProvider.PromptFor(WalkthroughDirection.Upstairs), StringComparison.Ordinal);
+        Assert.Contains("DOWNSTAIRS", HiggsfieldWalkthroughVideoProvider.PromptFor(WalkthroughDirection.Downstairs), StringComparison.Ordinal);
+        Assert.Contains("straight ahead", HiggsfieldWalkthroughVideoProvider.PromptFor(WalkthroughDirection.Ahead), StringComparison.Ordinal);
     }
 
     [Fact]
