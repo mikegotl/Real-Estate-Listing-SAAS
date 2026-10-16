@@ -49,6 +49,13 @@
                     last frames. Press play on a shot to watch the walk into the following shot. Finished clips also play
                     between those photos in the campaign video.
                 </p>
+                @if (transitionService?.IsEnabled == true && transitions.Values.Any(item => item.Status is not null))
+                {
+                    <p>
+                        When you add or replace a photo, reorder shots, or change a direction on the map, only the clips
+                        that change are made again, automatically.
+                    </p>
+                }
                 <span class="walkthrough-panel-count">@ReadyTransitionCount of @transitions.Count walk-throughs ready@(InProgressTransitionCount > 0 ? $" · {InProgressTransitionCount} generating" : "")</span>
             </div>
             @if (!IsReadOnly && transitionService?.IsEnabled == true)
@@ -129,6 +136,14 @@
                                     else if (stop.Name == WalkthroughStoryboard.EntryFoyer)
                                     {
                                         <span class="stop-badge">Recommended</span>
+                                    }
+                                    @if (stop.Items.Count > 0 && MapStops.Count >= 2)
+                                    {
+                                        var mapStop = stop.Name;
+                                        <button type="button" class="stop-map-link" @onclick="@(() => ShowOnMap(mapStop))"
+                                                aria-label="@($"Show {stop.Name} on the walkthrough map")">
+                                            <MudIcon Icon="@Icons.Material.Filled.Map" Size="Size.Small" />Show on map
+                                        </button>
                                     }
                                 </div>
                                 <p class="stop-hint">@Hint(stop, previous)</p>
@@ -230,9 +245,12 @@
 
         @if (MapStops.Count >= 2)
         {
-            <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
-                                    DirectionChanged="SetStopDirectionAsync" ShowShots="ShowStopShotsAsync"
-                                    SelectedStopChanged="HighlightStop" />
+            <div class="walkthrough-map-anchor" tabindex="-1" @ref="mapElement">
+                <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
+                                        DirectionChanged="SetStopDirectionAsync" ShowShots="ShowStopShotsAsync"
+                                        SelectedStopChanged="HighlightStop" FocusStop="mapFocusStop"
+                                        FocusRequest="mapFocusRequest" />
+            </div>
         }
     }
 </MudPaper>
@@ -258,6 +276,10 @@
     private readonly Dictionary<string, ElementReference> stopElements = new(StringComparer.OrdinalIgnoreCase);
     private string? highlightedStop;
     private string? focusStop;
+    private ElementReference mapElement;
+    private string? mapFocusStop;
+    private int mapFocusRequest;
+    private bool scrollToMap;
     private string? customStopName;
     private bool loaded;
     private string? message;
@@ -597,6 +619,15 @@
         focusStop = stop;
     }
 
+    // The reverse of the map's "Show its shots": selects the stop on the map and scrolls down to it.
+    private void ShowOnMap(string stop)
+    {
+        highlightedStop = stop;
+        mapFocusStop = stop;
+        mapFocusRequest++;
+        scrollToMap = true;
+    }
+
     // Focusing the highlighted stop scrolls the storyboard to its shots and moves keyboard users there too.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -604,6 +635,12 @@
         {
             focusStop = null;
             await element.FocusAsync(preventScroll: false);
+        }
+
+        if (scrollToMap)
+        {
+            scrollToMap = false;
+            await mapElement.FocusAsync(preventScroll: false);
         }
     }
 

@@ -4,6 +4,7 @@ using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
+using ListingStudio.Infrastructure.Properties;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -168,32 +169,100 @@ public sealed class WalkthroughTransitionTests(PostgreSqlWebApplicationFixture f
         fixture.Factory.WalkthroughVideoProvider.EnqueuePoll(intoKitchen, WalkthroughVideoState.Completed);
         Assert.Equal(WalkthroughTransitionStatus.Completed, (await ProcessUntilAsync(intoKitchen)).Status);
 
+        Guid turningLeft;
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
+            // Setting the kitchen's direction requeues only the clip into the kitchen, without pressing Create.
             Assert.True(await scope.ServiceProvider.GetRequiredService<IPropertyMediaService>()
                 .SetStopDirectionAsync(owner.UserId, owner.PropertyId, "kitchen", WalkthroughDirection.Left));
             var service = scope.ServiceProvider.GetRequiredService<IWalkthroughTransitionService>();
-            var stale = (await service.ListAsync(owner.UserId, owner.PropertyId))
-                .Single(item => item.FromPropertyMediaId == foyer);
-            // The clip made without a direction keeps playing, flagged so a clip that turns left can replace it.
-            Assert.True(stale.IsReady);
-            Assert.False(stale.IsCurrent);
-            Assert.All(
-                (await service.ListAsync(owner.UserId, owner.PropertyId)).Where(item => item.FromPropertyMediaId != foyer),
-                item => Assert.True(item.IsCurrent));
-
-            Assert.Equal(1, await service.QueueAsync(owner.UserId, owner.PropertyId));
-            Assert.Equal(0, await service.QueueAsync(owner.UserId, owner.PropertyId));
-            var remade = (await service.ListAsync(owner.UserId, owner.PropertyId))
-                .Single(item => item.FromPropertyMediaId == foyer);
+            var items = await service.ListAsync(owner.UserId, owner.PropertyId);
+            var remade = items.Single(item => item.FromPropertyMediaId == foyer);
             Assert.Equal(WalkthroughTransitionStatus.Pending, remade.Status);
             Assert.True(remade.IsCurrent);
             Assert.NotEqual(intoKitchen, remade.TransitionId);
+            Assert.Equal(intoFoyer, items.Single(item => item.FromPropertyMediaId == front).TransitionId);
+            Assert.Equal(withinKitchen, items.Single(item => item.FromPropertyMediaId == kitchen).TransitionId);
+            Assert.Equal(0, await service.QueueAsync(owner.UserId, owner.PropertyId));
+            turningLeft = remade.TransitionId!.Value;
         }
 
-        var turningLeft = await TransitionIdAsync(owner, foyer, kitchen);
+        // It waits for edits to settle before anything is generated.
+        Assert.DoesNotContain(turningLeft, (await ProcessAllAsync(turningLeft)).Keys);
+        fixture.Factory.TimeProvider.Advance(WalkthroughTransitionService.SettleDelay);
         await ProcessUntilAsync(turningLeft);
         Assert.Equal(WalkthroughDirection.Left, submitted[turningLeft]);
+    }
+
+    [Fact]
+    public async Task StoryboardEditsRequeueOnlyAffectedClipsAndDropOnesALaterEditReplaced()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("walkthrough-edits");
+        var front = await UploadAsync(owner, WalkthroughStoryboard.ExteriorFront);
+        var foyer = await UploadAsync(owner, WalkthroughStoryboard.EntryFoyer);
+        var kitchen = await UploadAsync(owner, "Kitchen");
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            // Nothing is queued automatically until the agent has asked for clips on this property.
+            Assert.All(
+                await scope.ServiceProvider.GetRequiredService<IWalkthroughTransitionService>()
+                    .ListAsync(owner.UserId, owner.PropertyId),
+                item => Assert.Null(item.Status));
+            Assert.Equal(2, await scope.ServiceProvider.GetRequiredService<IWalkthroughTransitionService>()
+                .QueueAsync(owner.UserId, owner.PropertyId));
+        }
+
+        var intoFoyer = await TransitionIdAsync(owner, front, foyer);
+        var intoKitchen = await TransitionIdAsync(owner, foyer, kitchen);
+
+        // A second foyer angle splits foyer to kitchen into two new pairs; the front to foyer clip is kept.
+        var secondFoyer = await UploadAsync(owner, WalkthroughStoryboard.EntryFoyer);
+        Guid intoSecondFoyer;
+        Guid secondFoyerToKitchen;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var items = await scope.ServiceProvider.GetRequiredService<IWalkthroughTransitionService>()
+                .ListAsync(owner.UserId, owner.PropertyId);
+            Assert.Equal(
+                [(front, foyer), (foyer, secondFoyer), (secondFoyer, kitchen)],
+                items.Select(item => (item.FromPropertyMediaId, item.ToPropertyMediaId)));
+            Assert.Equal(intoFoyer, items[0].TransitionId);
+            Assert.All(items, item => Assert.Equal(WalkthroughTransitionStatus.Pending, item.Status));
+            intoSecondFoyer = items[1].TransitionId!.Value;
+            secondFoyerToKitchen = items[2].TransitionId!.Value;
+        }
+
+        // Turning left, then right before anything was generated: only the right turn is ever submitted.
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            Assert.True(await media.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "Kitchen", WalkthroughDirection.Left));
+            Assert.True(await media.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "Kitchen", WalkthroughDirection.Right));
+        }
+
+        var turningRight = await TransitionIdAsync(owner, secondFoyer, kitchen);
+        fixture.Factory.TimeProvider.Advance(WalkthroughTransitionService.SettleDelay);
+        var results = await ProcessAllAsync(intoFoyer, intoKitchen, intoSecondFoyer, secondFoyerToKitchen, turningRight);
+        var submitted = fixture.Factory.WalkthroughVideoProvider.SubmittedDirections;
+        Assert.Equal(WalkthroughDirection.Right, submitted[turningRight]);
+        Assert.Null(submitted[intoSecondFoyer]);
+        Assert.False(submitted.ContainsKey(intoKitchen));
+        Assert.False(submitted.ContainsKey(secondFoyerToKitchen));
+        Assert.Equal(
+            "The storyboard changed, so this walk-through is no longer needed.",
+            results[intoKitchen].Error);
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var remaining = await dbContext.WalkthroughTransitions.AsNoTracking()
+                .Where(item => item.PropertyId == owner.PropertyId)
+                .Select(item => item.Id)
+                .ToListAsync();
+            Assert.Equal(
+                new[] { intoFoyer, intoSecondFoyer, turningRight }.Order(),
+                remaining.Order());
+        }
     }
 
     private async Task<Dictionary<Guid, WalkthroughTransitionRunResult>> ProcessAllAsync(params Guid[] transitionIds)

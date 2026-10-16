@@ -1,17 +1,21 @@
 using System.Data;
+using System.Data.Common;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ListingStudio.Infrastructure.Properties;
 
-public sealed class PropertyMediaService(
+public sealed partial class PropertyMediaService(
     ApplicationDbContext dbContext,
     IPropertyMediaStorage storage,
     ICampaignAssetStorage campaignAssetStorage,
-    TimeProvider timeProvider) : IPropertyMediaService
+    IWalkthroughTransitionService walkthroughTransitions,
+    TimeProvider timeProvider,
+    ILogger<PropertyMediaService> logger) : IPropertyMediaService
 {
     private static readonly Dictionary<string, string> AllowedContentTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -128,6 +132,7 @@ public sealed class PropertyMediaService(
             throw;
         }
 
+        await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
         return media.Id;
     }
 
@@ -179,6 +184,7 @@ public sealed class PropertyMediaService(
         dbContext.PropertyMedia.Remove(media);
         await dbContext.SaveChangesAsync(cancellationToken);
         await NormalizeDisplayOrderAsync(organizationId, propertyId, cancellationToken);
+        await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
         return true;
     }
 
@@ -213,6 +219,7 @@ public sealed class PropertyMediaService(
 
         ApplyStoryboardOrder(media);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
         return true;
     }
 
@@ -246,6 +253,7 @@ public sealed class PropertyMediaService(
             target.SetDisplayOrder(media.Count);
             ApplyStoryboardOrder(media);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
         }
 
         return true;
@@ -306,6 +314,7 @@ public sealed class PropertyMediaService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
         return true;
     }
 
@@ -355,6 +364,24 @@ public sealed class PropertyMediaService(
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
+
+    // The edit is already saved; a clip refresh that loses a race with another edit is logged rather than undoing
+    // it, and the next edit or the Create walk-through clips button queues what is still missing.
+    private async Task RequeueAffectedClipsAsync(string userId, Guid propertyId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await walkthroughTransitions.RequeueAffectedAsync(userId, propertyId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or DbException)
+        {
+            dbContext.ChangeTracker.Clear();
+            LogClipRefreshFailed(exception, propertyId);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Walk-through clips for property {PropertyId} were not requeued after a storyboard edit")]
+    private partial void LogClipRefreshFailed(Exception exception, Guid propertyId);
 
     private static void ApplyStoryboardOrder(IReadOnlyList<PropertyMedia> media)
     {

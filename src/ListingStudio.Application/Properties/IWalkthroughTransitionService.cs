@@ -22,6 +22,17 @@ public interface IWalkthroughTransitionService
         Guid propertyId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Called after a storyboard edit (a photo added or removed, shots reordered, a direction changed). For a property
+    /// whose clips the agent has requested, queues clips only for the pairs that no longer have a current one; other
+    /// clips are kept. The new clips wait briefly before generation, and any that a later edit makes obsolete are
+    /// dropped without being generated. Returns how many pairs were queued.
+    /// </summary>
+    Task<int> RequeueAffectedAsync(
+        string userId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default);
+
     Task<WalkthroughTransitionContent?> OpenReadAsync(
         string userId,
         Guid transitionId,
