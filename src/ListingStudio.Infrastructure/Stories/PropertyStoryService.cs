@@ -40,7 +40,7 @@ public sealed class PropertyStoryService(
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         var property = await dbContext.Properties
             .AsNoTracking()
-            .Include(candidate => candidate.Media)
+            .Include(candidate => candidate.Media.Where(media => !media.IsInGallery))
             .SingleOrDefaultAsync(
                 candidate => candidate.Id == propertyId && candidate.OrganizationId == organizationId,
                 cancellationToken);

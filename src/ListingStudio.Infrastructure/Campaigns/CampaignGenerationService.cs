@@ -50,7 +50,9 @@ public sealed class CampaignGenerationService(
 
         var media = await dbContext.PropertyMedia
             .AsNoTracking()
-            .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId)
+            .Where(candidate => candidate.OrganizationId == organizationId
+                && candidate.PropertyId == propertyId
+                && !candidate.IsInGallery)
             .OrderBy(candidate => candidate.DisplayOrder)
             .Select(candidate => new
             {

@@ -27,6 +27,7 @@ public sealed class PropertyMediaConfiguration : IEntityTypeConfiguration<Proper
             .IsRequired();
         builder.HasIndex(media => media.BlobPath).IsUnique();
         builder.HasIndex(media => new { media.OrganizationId, media.PropertyId, media.DisplayOrder });
+        builder.HasIndex(media => new { media.OrganizationId, media.PropertyId, media.SourceVideoId });
         builder.HasIndex(media => new
         {
             media.AnalysisStatus,

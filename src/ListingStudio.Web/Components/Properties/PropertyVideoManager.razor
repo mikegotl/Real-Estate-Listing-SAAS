@@ -1,5 +1,6 @@
 @inherits OwningComponentBase<IPropertyVideoService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IServiceScopeFactory ScopeFactory
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
@@ -95,6 +96,19 @@
                                     Attempt @video.ProcessingAttemptCount failed: @video.ProcessingLastError
                                 </MudText>
                             }
+                            @if (video.FrameExtraction is { } frames && frames.Status != PropertyVideoFrameExtractionStatus.NotRequested)
+                            {
+                                <div class="room-photos-status @RoomPhotosClass(frames)" role="status">
+                                    <MudIcon Icon="@Icons.Material.Filled.PhotoLibrary" Size="Size.Small" />
+                                    <span>@RoomPhotosText(frames)</span>
+                                </div>
+                                @if (frames.IsInProgress)
+                                {
+                                    <MudProgressLinear Color="Color.Primary" Class="mt-1"
+                                                       Indeterminate="@(frames.StepsTotal == 0)"
+                                                       Value="@(frames.StepsTotal == 0 ? 0 : frames.StepsDone * 100d / frames.StepsTotal)" />
+                                }
+                            }
                         </MudCardContent>
                         <MudCardActions>
                             @if (isCompleted)
@@ -108,6 +122,15 @@
                             {
                                 <MudButton OnClick="@(() => RetryAsync(video.Id))" Color="Color.Warning" Variant="Variant.Text">
                                     Retry enhancement
+                                </MudButton>
+                            }
+                            @if (!IsReadOnly)
+                            {
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoAwesome"
+                                           Disabled="@(video.FrameExtraction?.IsInProgress == true)"
+                                           title="Find the rooms in this video and add one or two photos of each to the photo gallery"
+                                           OnClick="@(() => FindRoomPhotosAsync(video.Id))">
+                                    @(video.FrameExtraction?.Status == PropertyVideoFrameExtractionStatus.Completed ? "Find room photos again" : "Find room photos")
                                 </MudButton>
                             }
                             <MudSpacer />
@@ -131,21 +154,162 @@
     [Parameter]
     public bool IsReadOnly { get; set; }
 
+    /// <summary>Raised when a video finishes adding room photos to the photo gallery.</summary>
+    [Parameter]
+    public EventCallback RoomPhotosAdded { get; set; }
+
+    private readonly CancellationTokenSource polling = new();
+    private bool pollingStarted;
+
+    // Polling uses its own scope so it never shares this component's DbContext with a click handler.
+    private AsyncServiceScope? pollingScope;
+
     private readonly List<UploadState> uploads = [];
     private List<PropertyVideoItem> videos = [];
     private bool loaded;
     private string? message;
     private Severity messageSeverity = Severity.Info;
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    private Guid? loadedPropertyId;
+
+    // Reload only when the property changes, so a parent re-render never overlaps a poll on this component's DbContext.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedPropertyId == PropertyId)
+        {
+            return;
+        }
+
+        loadedPropertyId = PropertyId;
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
         loaded = false;
-        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-        videos = [.. await Service.ListAsync(userId, PropertyId)];
+        await RefreshVideosAsync();
         loaded = true;
     }
+
+    private async Task RefreshVideosAsync(IPropertyVideoService? service = null)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        var finishedBefore = videos
+            .Where(video => video.FrameExtraction?.IsInProgress == true)
+            .Select(video => video.Id)
+            .ToHashSet();
+        videos = [.. await (service ?? Service).ListAsync(userId, PropertyId)];
+        var justFinished = videos.Where(video => finishedBefore.Contains(video.Id)
+            && video.FrameExtraction?.Status == PropertyVideoFrameExtractionStatus.Completed).ToArray();
+        if (justFinished.Length > 0)
+        {
+            var added = justFinished.Sum(video => video.FrameExtraction?.PhotoCount ?? 0);
+            ShowMessage(
+                added == 0
+                    ? "Room photos are done. No new photos were added to the gallery."
+                    : $"{added} room {(added == 1 ? "photo was" : "photos were")} added to the photo gallery above.",
+                Severity.Success);
+            await RoomPhotosAdded.InvokeAsync();
+        }
+
+        if (videos.Any(video => video.FrameExtraction?.IsInProgress == true))
+        {
+            StartPolling();
+        }
+    }
+
+    private async Task FindRoomPhotosAsync(Guid videoId)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await Service.RequestFrameExtractionAsync(userId, PropertyId, videoId))
+        {
+            await RefreshVideosAsync();
+            ShowMessage(
+                "Finding room photos. The video is split into its rooms and the sharpest one or two shots of each go to the photo gallery.",
+                Severity.Info);
+        }
+    }
+
+    private void StartPolling()
+    {
+        if (pollingStarted)
+        {
+            return;
+        }
+
+        pollingStarted = true;
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        pollingScope ??= ScopeFactory.CreateAsyncScope();
+        var service = pollingScope.Value.ServiceProvider.GetRequiredService<IPropertyVideoService>();
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(polling.Token))
+            {
+                if (!videos.Any(video => video.FrameExtraction?.IsInProgress == true))
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    await RefreshVideosAsync(service);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (polling.IsCancellationRequested)
+        {
+        }
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        polling.Cancel();
+        polling.Dispose();
+        if (pollingScope is { } scope)
+        {
+            await scope.DisposeAsync();
+        }
+
+        await base.DisposeAsyncCore();
+    }
+
+    private static string RoomPhotosText(PropertyVideoFrameExtractionItem frames) => frames.Status switch
+    {
+        PropertyVideoFrameExtractionStatus.Pending => "Room photos: queued",
+        PropertyVideoFrameExtractionStatus.Extracting => frames.Stage switch
+        {
+            PropertyVideoFrameExtractionStage.RecognizingRooms when frames.StepsTotal > 0 =>
+                $"Room photos: recognizing rooms in shot {Math.Min(frames.StepsDone + 1, frames.StepsTotal)} of {frames.StepsTotal}",
+            PropertyVideoFrameExtractionStage.AddingPhotos => "Room photos: adding the best shots to the gallery",
+            _ => "Room photos: finding the sharpest shot of each view",
+        },
+        PropertyVideoFrameExtractionStatus.Completed => CompletedText(frames),
+        PropertyVideoFrameExtractionStatus.Failed => $"Room photos attempt {frames.AttemptCount} failed: {frames.LastError}",
+        _ => string.Empty,
+    };
+
+    private static string CompletedText(PropertyVideoFrameExtractionItem frames)
+    {
+        var rooms = frames.RoomCount ?? 0;
+        var photos = frames.PhotoCount ?? 0;
+        var text = $"Room photos: {rooms} {(rooms == 1 ? "room" : "rooms")} found, {photos} new {(photos == 1 ? "photo" : "photos")} in the gallery";
+        return frames.SkippedPhotoCount is > 0 and var skipped
+            ? $"{text}. {skipped} more did not fit under the {IPropertyMediaService.MaximumMediaPerProperty}-photo limit."
+            : $"{text}.";
+    }
+
+    private static string RoomPhotosClass(PropertyVideoFrameExtractionItem frames) => frames.Status switch
+    {
+        PropertyVideoFrameExtractionStatus.Completed => "ready",
+        PropertyVideoFrameExtractionStatus.Failed => "error",
+        _ => string.Empty,
+    };
 
     private async Task FilesSelectedAsync(InputFileChangeEventArgs eventArgs)
     {
@@ -195,7 +359,7 @@
                 new PropertyVideoUpload(upload.File.Name, upload.File.ContentType, upload.File.Size, progressStream));
             upload.Progress = 100;
             uploads.Remove(upload);
-            await LoadAsync();
+            await RefreshVideosAsync();
             ShowMessage("Video uploaded. Enhancement is queued; use Refresh to check progress.", Severity.Success);
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)

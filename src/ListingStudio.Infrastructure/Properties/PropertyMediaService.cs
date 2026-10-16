@@ -63,6 +63,11 @@ public sealed partial class PropertyMediaService(
         ArgumentNullException.ThrowIfNull(upload);
         ArgumentNullException.ThrowIfNull(upload.Content);
         var walkthroughStop = WalkthroughStoryboard.Normalize(upload.WalkthroughStop);
+        if (upload.ToGallery && walkthroughStop is not null)
+        {
+            throw new ArgumentException("A photo goes either to a walkthrough stop or to the gallery.", nameof(upload));
+        }
+
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -97,6 +102,10 @@ public sealed partial class PropertyMediaService(
             validated.Height,
             existingCount);
         media.SetWalkthroughStop(walkthroughStop);
+        if (upload.ToGallery)
+        {
+            media.MoveToGallery();
+        }
 
         await storage.StoreAsync(blobPath, bufferedContent, validated.ContentType, cancellationToken);
         try
@@ -132,7 +141,11 @@ public sealed partial class PropertyMediaService(
             throw;
         }
 
-        await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
+        if (!upload.ToGallery)
+        {
+            await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
+        }
+
         return media.Id;
     }
 
@@ -204,14 +217,17 @@ public sealed partial class PropertyMediaService(
             return false;
         }
 
-        if (orderedMediaIds.Count != media.Count
-            || orderedMediaIds.Distinct().Count() != media.Count
-            || media.Any(candidate => !orderedMediaIds.Contains(candidate.Id)))
+        var storyboard = media.Where(candidate => !candidate.IsInGallery).ToList();
+        if (orderedMediaIds.Count != storyboard.Count
+            || orderedMediaIds.Distinct().Count() != storyboard.Count
+            || storyboard.Any(candidate => !orderedMediaIds.Contains(candidate.Id)))
         {
-            throw new ArgumentException("The order must include each property image exactly once.", nameof(orderedMediaIds));
+            throw new ArgumentException(
+                "The order must include each storyboard image exactly once.",
+                nameof(orderedMediaIds));
         }
 
-        var byId = media.ToDictionary(candidate => candidate.Id);
+        var byId = storyboard.ToDictionary(candidate => candidate.Id);
         for (var index = 0; index < orderedMediaIds.Count; index++)
         {
             byId[orderedMediaIds[index]].SetDisplayOrder(index);
@@ -250,6 +266,40 @@ public sealed partial class PropertyMediaService(
         {
             target.SetWalkthroughStop(normalizedStop);
             // Moving past every other photo places it last within its new stop once the storyboard is applied.
+            target.SetDisplayOrder(media.Count);
+            ApplyStoryboardOrder(media);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);
+        }
+
+        return true;
+    }
+
+    public async Task<bool> MoveToGalleryAsync(
+        string userId,
+        Guid propertyId,
+        Guid mediaId,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await PropertyExistsAsync(organizationId, propertyId, includeArchived: false, cancellationToken))
+        {
+            return false;
+        }
+
+        var media = await dbContext.PropertyMedia
+            .Where(candidate => candidate.PropertyId == propertyId && candidate.OrganizationId == organizationId)
+            .ToListAsync(cancellationToken);
+        var target = media.SingleOrDefault(candidate => candidate.Id == mediaId);
+        if (target is null)
+        {
+            return false;
+        }
+
+        if (!target.IsInGallery)
+        {
+            target.MoveToGallery();
+            // The newest gallery photo goes last in the gallery.
             target.SetDisplayOrder(media.Count);
             ApplyStoryboardOrder(media);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -383,10 +433,14 @@ public sealed partial class PropertyMediaService(
     [LoggerMessage(Level = LogLevel.Warning, Message = "Walk-through clips for property {PropertyId} were not requeued after a storyboard edit")]
     private partial void LogClipRefreshFailed(Exception exception, Guid propertyId);
 
+    // The storyboard comes first in display order; gallery photos follow it, outside the walkthrough.
     private static void ApplyStoryboardOrder(IReadOnlyList<PropertyMedia> media)
     {
-        var arranged = WalkthroughStoryboard.Arrange(media, item => item.WalkthroughStop, item => item.DisplayOrder);
-        for (var index = 0; index < arranged.Count; index++)
+        var arranged = WalkthroughStoryboard
+            .Arrange(media.Where(item => !item.IsInGallery), item => item.WalkthroughStop, item => item.DisplayOrder)
+            .Concat(media.Where(item => item.IsInGallery).OrderBy(item => item.DisplayOrder))
+            .ToArray();
+        for (var index = 0; index < arranged.Length; index++)
         {
             arranged[index].SetDisplayOrder(index);
         }
@@ -530,7 +584,10 @@ public sealed partial class PropertyMediaService(
         media.GetAnalysis(),
         media.AnalysisAttemptCount,
         media.AnalysisLastError,
-        media.WalkthroughStop);
+        media.WalkthroughStop,
+        media.IsInGallery,
+        media.SourceVideoId,
+        media.SourceVideoTimestampMs);
 
     private sealed record ValidatedUpload(
         string Filename,

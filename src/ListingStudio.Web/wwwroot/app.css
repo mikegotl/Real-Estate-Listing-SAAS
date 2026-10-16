@@ -275,6 +275,32 @@ h1:focus { outline: none; }
 .stop-map-link:focus-visible { outline: 2px solid var(--ls-primary); outline-offset: 2px; }
 .walkthrough-map-anchor { scroll-margin-top: 88px; }
 .walkthrough-map-anchor:focus { outline: none; }
+/* Photo gallery: unplaced photos as a left-to-right row of thumbnails that wraps onto new rows */
+.photo-gallery { border: 1px solid var(--ls-line); border-radius: 16px; margin-top: 18px; padding: 18px; }
+.photo-gallery-head { align-items: flex-start; display: flex; gap: 18px; justify-content: space-between; margin-bottom: 14px; }
+.photo-gallery-head h3 { align-items: center; display: flex; font-family: var(--ls-font-display); font-size: 1.1rem; font-weight: 600; gap: 8px; margin: 0 0 4px; }
+.photo-gallery-count { background: var(--ls-primary-soft); border-radius: 999px; color: var(--ls-primary); font-family: var(--ls-font-body); font-size: .75rem; font-weight: 750; padding: 1px 9px; }
+.photo-gallery-head .stop-hint { max-width: 640px; }
+.gallery-upload { flex: none; min-height: 0; padding: 12px 18px; width: 190px; }
+.gallery-upload::after { content: "Kept out of the walkthrough"; }
+.gallery-upload .mud-icon-root { font-size: 24px; }
+.photo-gallery-empty { color: var(--ls-muted); font-size: .88rem; margin: 0; }
+.photo-gallery-strip { display: flex; flex-flow: row wrap; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.gallery-thumb { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 12px; display: flex; flex: 0 0 160px; flex-direction: column; overflow: hidden; width: 160px; }
+.gallery-thumb img { aspect-ratio: 4 / 3; background: var(--ls-surface-muted); display: block; object-fit: cover; width: 100%; }
+.gallery-thumb-body { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px 0; }
+.gallery-thumb-room { font-size: .82rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gallery-thumb-source { align-items: center; color: var(--ls-muted); display: inline-flex; font-size: .72rem; gap: 3px; }
+.gallery-thumb-source .mud-icon-root { font-size: .9rem; }
+.gallery-thumb-actions { align-items: center; display: flex; gap: 2px; margin-top: auto; padding: 0 2px 2px 6px; }
+.gallery-place { align-items: center; align-self: flex-start; background: none; border: 1px solid var(--ls-line-strong); border-radius: 999px; color: var(--ls-primary); cursor: pointer; display: inline-flex; font: inherit; font-size: .72rem; font-weight: 650; gap: 2px; margin-top: 6px; max-width: 100%; padding: 2px 8px 2px 4px; }
+.gallery-place span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gallery-place .mud-icon-root { flex: none; }
+.gallery-place .mud-icon-root { color: var(--ls-accent); font-size: .95rem; }
+.gallery-place:hover, .gallery-place:focus-visible { background: var(--ls-primary-soft); border-color: var(--ls-primary); }
+.room-photos-status { align-items: center; color: var(--ls-muted); display: flex; font-size: .8rem; gap: 6px; margin-top: 8px; }
+.room-photos-status.ready { color: var(--ls-primary); }
+.room-photos-status.error { color: var(--ls-error); }
 .storyboard-stop:focus { outline: none; }
 .storyboard-stop:focus-visible .stop-marker { outline: 2px solid var(--ls-accent); outline-offset: 2px; }
 
@@ -399,6 +425,7 @@ h1:focus { outline: none; }
     .storyboard-header { flex-direction: column; gap: 12px; }.storyboard-count { text-align: left; }
     .storyboard-stop { gap: 0 12px; grid-template-columns: 28px minmax(0, 1fr); }.storyboard-stop::before { left: 13px; top: 32px; }.stop-marker { height: 28px; width: 28px; font-size: .8rem; }
     .stop-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .photo-gallery { padding: 14px; }.photo-gallery-head { flex-direction: column; }.gallery-upload { width: 100%; }.gallery-thumb { flex: 0 0 calc(50% - 6px); width: calc(50% - 6px); }
     .walkthrough-map-body { grid-template-columns: minmax(0, 1fr); }.walkthrough-map-canvas { padding: 8px; }.next-stop-custom { align-items: stretch; flex-direction: column; }.stop-upload::after { display: none; }
     .app-header .mud-toolbar { min-height: 64px; }.app-content { padding-top: 64px; }.page-container { padding-inline: 18px; }
     .nav-shell { padding: 0 16px; }.brand-copy small { display: none; }.brand-mark { height: 36px; width: 36px; }.guest-actions { gap: 2px; }.guest-actions .mud-button-root { min-width: auto; padding-inline: 10px; }

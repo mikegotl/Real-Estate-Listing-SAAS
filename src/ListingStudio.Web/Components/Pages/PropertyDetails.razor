@@ -104,8 +104,8 @@ else
             </MudPaper>
         </MudTabPanel>
         <MudTabPanel Text="Media" Icon="@Icons.Material.Filled.PhotoLibrary" BadgeData="@(photoCount > 0 ? photoCount : null)" BadgeColor="Color.Secondary">
-            <PropertyMediaManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" MediaChanged="RefreshSummaryAsync" />
-            <PropertyVideoManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+            <PropertyMediaManager @ref="mediaManager" PropertyId="PropertyId" IsReadOnly="property.IsArchived" MediaChanged="RefreshSummaryAsync" />
+            <PropertyVideoManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" RoomPhotosAdded="RoomPhotosAddedAsync" />
         </MudTabPanel>
         <MudTabPanel Text="Neighborhood" Icon="@Icons.Material.Filled.Map">
             <NeighborhoodInsightsManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
@@ -157,6 +157,8 @@ else
         loaded = true;
     }
 
+    private PropertyMediaManager? mediaManager;
+
     private async Task RefreshSummaryAsync()
     {
         if (property is null)
@@ -168,9 +170,22 @@ else
         await LoadSummaryAsync(userId);
     }
 
+    private async Task RoomPhotosAddedAsync()
+    {
+        if (mediaManager is not null)
+        {
+            await mediaManager.ReloadAsync();
+        }
+
+        await RefreshSummaryAsync();
+    }
+
     private async Task LoadSummaryAsync(string userId)
     {
-        var media = await ScopedServices.GetRequiredService<IPropertyMediaService>().ListAsync(userId, PropertyId);
+        // Gallery photos wait outside the walkthrough, so they do not count toward the listing or its cover.
+        var media = (await ScopedServices.GetRequiredService<IPropertyMediaService>().ListAsync(userId, PropertyId))
+            .Where(item => !item.IsInGallery)
+            .ToList();
         var campaign = await ScopedServices.GetRequiredService<ICampaignGenerationService>().GetLatestAsync(userId, PropertyId);
         photoCount = media.Count;
         coverMediaId = media.OrderBy(item => item.DisplayOrder).Select(item => (Guid?)item.Id).FirstOrDefault();

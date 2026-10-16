@@ -27,7 +27,7 @@ public interface IPropertyMediaService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Saves a new photo order. The order is then grouped by walkthrough stop, so moving a stop's photos moves the
+    /// Saves a new order for the storyboard's photos (gallery photos are not part of it). The order is then grouped by walkthrough stop, so moving a stop's photos moves the
     /// stop, while template stops stay first.
     /// </summary>
     Task<bool> ReorderAsync(
@@ -37,8 +37,8 @@ public interface IPropertyMediaService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Places a photo in a walkthrough storyboard stop (null removes it from the storyboard). The photo moves to the
-    /// end of that stop and the property's display order is rearranged to follow the storyboard.
+    /// Places a photo in a walkthrough storyboard stop (null removes it from the storyboard). A gallery photo placed in
+    /// a stop leaves the gallery and joins the walkthrough like a new upload there. The photo moves to the end of that stop and the property's display order is rearranged to follow the storyboard.
     /// </summary>
     Task<bool> SetWalkthroughStopAsync(
         string userId,
@@ -50,6 +50,16 @@ public interface IPropertyMediaService
     /// <summary>
     /// The agent's direction notes for the walkthrough map: how each stop sits relative to the stop before it.
     /// </summary>
+    /// <summary>
+    /// Takes a photo out of the walkthrough and holds it in the photo gallery, where it waits until it is placed in a
+    /// stop again with <see cref="SetWalkthroughStopAsync"/>.
+    /// </summary>
+    Task<bool> MoveToGalleryAsync(
+        string userId,
+        Guid propertyId,
+        Guid mediaId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<WalkthroughStopDirectionItem>> ListStopDirectionsAsync(
         string userId,
         Guid propertyId,
@@ -83,7 +93,8 @@ public sealed record PropertyMediaUpload(
     string ContentType,
     long FileSize,
     Stream Content,
-    string? WalkthroughStop = null);
+    string? WalkthroughStop = null,
+    bool ToGallery = false);
 
 public sealed record PropertyMediaItem(
     Guid Id,
@@ -98,7 +109,10 @@ public sealed record PropertyMediaItem(
     PropertyMediaAnalysis? Analysis,
     int AnalysisAttemptCount,
     string? AnalysisLastError,
-    string? WalkthroughStop = null);
+    string? WalkthroughStop = null,
+    bool IsInGallery = false,
+    Guid? SourceVideoId = null,
+    int? SourceVideoTimestampMs = null);
 
 public sealed record WalkthroughStopDirectionItem(string Stop, WalkthroughDirection Direction);
 
