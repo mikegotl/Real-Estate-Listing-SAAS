@@ -1,5 +1,8 @@
 name: Deploy production
 
+# Production releases are intentionally started manually and protected by the
+# GitHub production environment so every deployment has an auditable reason.
+
 on:
   workflow_dispatch:
     inputs:
