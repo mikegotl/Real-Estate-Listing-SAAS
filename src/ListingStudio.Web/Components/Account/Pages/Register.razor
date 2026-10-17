@@ -13,7 +13,7 @@
 <PageTitle>Register</PageTitle>
 
 <AccountPanel Title="Create your workspace" Eyebrow="GET STARTED"
-              Description="Your first account becomes the owner of a new organization."
+              Description="Your first account creates a private workspace for you or your team."
               Icon="@Icons.Material.Filled.RocketLaunch">
     <StatusMessage Message="@message" />
 
@@ -21,11 +21,14 @@
         <DataAnnotationsValidator />
         <ValidationSummary class="validation-summary" />
         <div class="ls-field">
-            <label for="register-organization">Organization name</label>
+            <label for="register-organization">Business or workspace name</label>
             <div class="ls-input-wrap">
                 <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Small" />
-                <InputText id="register-organization" class="ls-input" @bind-Value="Input.OrganizationName" autocomplete="organization" placeholder="Northstar Realty" />
+                <InputText id="register-organization" class="ls-input" @bind-Value="Input.OrganizationName"
+                           autocomplete="organization" placeholder="Your name or professional brand"
+                           aria-describedby="register-organization-help" />
             </div>
+            <span id="register-organization-help" class="field-help">Independent agent? Use your name or professional brand.</span>
             <ValidationMessage For="() => Input.OrganizationName" />
         </div>
         <div class="ls-field">

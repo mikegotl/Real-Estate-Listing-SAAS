@@ -14,7 +14,7 @@
 <PageTitle>Complete registration</PageTitle>
 
 <AccountPanel Title="Complete your workspace" Eyebrow="ONE LAST STEP"
-              Description="Choose the organization this owner account will create."
+              Description="Name the private workspace this account will use."
               Icon="@Icons.Material.Filled.Business">
     <StatusMessage Message="@message" />
 
@@ -28,12 +28,14 @@
             <DataAnnotationsValidator />
             <ValidationSummary class="validation-summary" />
             <div class="ls-field">
-                <label for="external-organization">Organization name</label>
+                <label for="external-organization">Business or workspace name</label>
                 <div class="ls-input-wrap">
                     <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Small" />
                     <InputText id="external-organization" class="ls-input" @bind-Value="Input.OrganizationName"
-                               autocomplete="organization" placeholder="Northstar Realty" />
+                               autocomplete="organization" placeholder="Your name or professional brand"
+                               aria-describedby="external-organization-help" />
                 </div>
+                <span id="external-organization-help" class="field-help">Independent agent? Use your name or professional brand.</span>
                 <ValidationMessage For="() => Input.OrganizationName" />
             </div>
             <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large">

@@ -182,6 +182,20 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
     }
 
     [Fact]
+    public async Task RegistrationExplainsWorkspaceNameForIndependentAgents()
+    {
+        using var client = fixture.Factory.CreateClient();
+
+        using var response = await client.GetAsync("/Account/Register");
+
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Business or workspace name", content, StringComparison.Ordinal);
+        Assert.Contains("Independent agent? Use your name or professional brand.", content, StringComparison.Ordinal);
+        Assert.Contains("aria-describedby=\"register-organization-help\"", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task HomePageIsAvailable()
     {
         using var client = fixture.Factory.CreateClient();

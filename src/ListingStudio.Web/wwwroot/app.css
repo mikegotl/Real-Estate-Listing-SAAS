@@ -177,6 +177,7 @@ h1:focus { outline: none; }
 .ls-input-wrap .mud-icon-root { color: var(--ls-subtle); font-size: 19px; }
 .ls-input { background: transparent; border: 0; color: var(--ls-ink); font: inherit; font-size: .9rem; outline: 0; padding: 13px 10px; width: 100%; }
 .ls-input::placeholder { color: var(--ls-subtle); }
+.field-help { color: var(--ls-muted); font-size: .74rem; line-height: 1.45; }
 .form-columns { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
 .checkbox-row { align-items: center; color: var(--ls-muted); display: flex; font-size: .8rem; gap: 8px; }.checkbox-row input { accent-color: var(--ls-primary); height: 16px; width: 16px; }
 .validation-message { color: var(--ls-error); font-size: .72rem; }.validation-summary { color: var(--ls-error); font-size: .78rem; }.validation-summary:empty { display: none; }
