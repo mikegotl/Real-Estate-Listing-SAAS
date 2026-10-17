@@ -58,6 +58,36 @@ public sealed class PropertyPhotoGalleryTests(PostgreSqlWebApplicationFixture fi
     }
 
     [Fact]
+    public async Task AGalleryPhotoPlacedInANewIndoorStopJoinsBeforeTheBackyard()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var (userId, propertyId) = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "new-stop");
+        var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+
+        var front = await UploadAsync(media, userId, propertyId, "front.png", WalkthroughStoryboard.ExteriorFront);
+        var kitchen = await UploadAsync(media, userId, propertyId, "kitchen.png", "Kitchen");
+        var backyard = await UploadAsync(media, userId, propertyId, "backyard.png", "Backyard");
+        var pool = await UploadAsync(media, userId, propertyId, "pool.png", "Pool");
+        var bedroom = await UploadAsync(media, userId, propertyId, "bedroom.png", null, toGallery: true);
+        var deck = await UploadAsync(media, userId, propertyId, "deck.png", null, toGallery: true);
+
+        // A bedroom found later belongs inside the house, not after the backyard and pool.
+        Assert.True(await media.SetWalkthroughStopAsync(userId, propertyId, bedroom, "Bedroom"));
+        Assert.Equal(
+            [front, kitchen, bedroom, backyard, pool, deck],
+            (await media.ListAsync(userId, propertyId)).Select(item => item.Id));
+
+        // An outdoor stop still goes last.
+        Assert.True(await media.SetWalkthroughStopAsync(userId, propertyId, deck, "Patio / deck"));
+        Assert.Equal(
+            [front, kitchen, bedroom, backyard, pool, deck],
+            (await media.ListAsync(userId, propertyId)).Select(item => item.Id));
+        Assert.Equal(
+            ["Exterior front", "Kitchen", "Bedroom", "Backyard", "Pool", "Patio / deck"],
+            (await media.ListAsync(userId, propertyId)).Select(item => item.WalkthroughStop));
+    }
+
+    [Fact]
     public async Task OtherOrganizationsCannotMovePhotosIntoOrOutOfTheGallery()
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();

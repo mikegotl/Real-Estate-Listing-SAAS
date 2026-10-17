@@ -264,9 +264,28 @@ public sealed partial class PropertyMediaService(
 
         if (!string.Equals(target.WalkthroughStop, normalizedStop, StringComparison.Ordinal))
         {
+            var others = media.Where(item => item.Id != mediaId && !item.IsInGallery).ToArray();
+            var newStopOrder = normalizedStop is null
+                || others.Any(item => string.Equals(item.WalkthroughStop, normalizedStop, StringComparison.OrdinalIgnoreCase))
+                    ? null
+                    : WalkthroughStoryboard.NewStopOrder(others, item => item.WalkthroughStop, item => item.DisplayOrder, normalizedStop);
             target.SetWalkthroughStop(normalizedStop);
-            // Moving past every other photo places it last within its new stop once the storyboard is applied.
-            target.SetDisplayOrder(media.Count);
+            if (newStopOrder is { } order)
+            {
+                // A new indoor stop opens just before the outdoor stops that end the walkthrough.
+                foreach (var item in media.Where(item => item.DisplayOrder >= order))
+                {
+                    item.SetDisplayOrder(item.DisplayOrder + 1);
+                }
+
+                target.SetDisplayOrder(order);
+            }
+            else
+            {
+                // Moving past every other photo places it last within its new stop once the storyboard is applied.
+                target.SetDisplayOrder(media.Count);
+            }
+
             ApplyStoryboardOrder(media);
             await dbContext.SaveChangesAsync(cancellationToken);
             await RequeueAffectedClipsAsync(userId, propertyId, cancellationToken);

@@ -89,6 +89,34 @@ public sealed class WalkthroughMapTests
         Assert.Equal([0, 1, -1], layout.Levels);
     }
 
+    [Fact]
+    public void OutdoorStopsWithoutANoteAreAssumedBackOnTheMainLevel()
+    {
+        var layout = WalkthroughMap.Build(
+        [
+            new("Exterior front", null),
+            new("Entry / foyer", null),
+            new("Primary bedroom", WalkthroughDirection.Upstairs),
+            new("Primary bathroom", null),
+            new("Backyard", null),
+            new("Pool", null),
+        ]);
+
+        var byName = layout.Spaces.ToDictionary(space => space.Name);
+        Assert.Equal(1, byName["Primary bathroom"].Level);
+        Assert.Equal((0, WalkthroughDirection.Downstairs, true), (byName["Backyard"].Level, byName["Backyard"].Direction, byName["Backyard"].IsAssumed));
+        Assert.Equal((0, WalkthroughDirection.Ahead, true), (byName["Pool"].Level, byName["Pool"].Direction, byName["Pool"].IsAssumed));
+
+        // A direction the agent sets still wins.
+        var upstairsDeck = WalkthroughMap.Build(
+        [
+            new("Exterior front", null),
+            new("Primary bedroom", WalkthroughDirection.Upstairs),
+            new("Patio / deck", WalkthroughDirection.Ahead),
+        ]);
+        Assert.Equal(1, upstairsDeck.Spaces[^1].Level);
+    }
+
     [Theory]
     [InlineData(0, "Main level")]
     [InlineData(1, "Upper level")]

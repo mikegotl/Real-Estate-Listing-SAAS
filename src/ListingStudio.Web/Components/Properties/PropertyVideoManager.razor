@@ -1,6 +1,8 @@
 @inherits OwningComponentBase<IPropertyVideoService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IServiceScopeFactory ScopeFactory
+@inject IDialogService DialogService
+@inject Microsoft.Extensions.Options.IOptions<MediaAnalysisOptions> MediaAnalysisOptions
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
@@ -124,7 +126,7 @@
                                     Retry enhancement
                                 </MudButton>
                             }
-                            @if (!IsReadOnly)
+                            @if (!IsReadOnly && MediaAnalysisOptions.Value.Enabled)
                             {
                                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoAwesome"
                                            Disabled="@(video.FrameExtraction?.IsInProgress == true)"
@@ -382,6 +384,16 @@
 
     private async Task DeleteAsync(Guid videoId)
     {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete this video?",
+            "The original and enhanced video are removed. Room photos already added to the gallery stay. This cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         if (await Service.DeleteAsync(userId, PropertyId, videoId))
         {

@@ -9,6 +9,7 @@ using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.DependencyInjection;
 using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Video.DependencyInjection;
+using ListingStudio.Web;
 using ListingStudio.Web.Components;
 using ListingStudio.Web.Components.Account;
 using ListingStudio.Web.Authentication;
@@ -56,6 +57,7 @@ builder.Services.AddSingleton<DevelopmentEmailStore>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 builder.Services.AddScoped<IEmailSender<ApplicationUser>, DevelopmentIdentityEmailSender>();
+builder.Services.Configure<MediaAnalysisOptions>(builder.Configuration.GetSection(MediaAnalysisOptions.SectionName));
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration)

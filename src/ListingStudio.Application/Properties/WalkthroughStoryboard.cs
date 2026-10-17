@@ -39,6 +39,12 @@ public static partial class WalkthroughStoryboard
     ];
 
     /// <summary>
+    /// Outdoor stops at ground level that usually end a walkthrough. A new indoor stop goes before them, and the map
+    /// assumes they are back on the main level.
+    /// </summary>
+    public static IReadOnlyList<string> GroundLevelOutdoorStops { get; } = ["Patio / deck", "Backyard", "Pool", "Rear exterior"];
+
+    /// <summary>
     /// Trims and collapses whitespace, matches template and suggested stops case-insensitively so "kitchen" and
     /// "Kitchen" share a stop, and returns null for a blank stop.
     /// </summary>
@@ -92,6 +98,38 @@ public static partial class WalkthroughStoryboard
             ? [.. labelled]
             : [.. labelled, new StoryboardStop<T>(null, unsorted)];
     }
+
+    /// <summary>
+    /// The display order for the first photo of a stop that is not in the storyboard yet, such as a gallery photo
+    /// placed in its suggested room. An indoor stop goes before the outdoor stops that end the walkthrough, so a
+    /// bedroom found later does not follow the backyard. Null means after every existing photo.
+    /// </summary>
+    public static int? NewStopOrder<T>(
+        IEnumerable<T> items,
+        Func<T, string?> stopSelector,
+        Func<T, int> orderSelector,
+        string newStop)
+    {
+        ArgumentNullException.ThrowIfNull(newStop);
+        if (IsGroundLevelOutdoor(newStop) || IsTemplateStop(newStop))
+        {
+            return null;
+        }
+
+        var stops = Group(items, stopSelector, orderSelector)
+            .Where(stop => stop.Stop is not null)
+            .ToArray();
+        var firstOutdoor = stops.Length;
+        while (firstOutdoor > 0 && IsGroundLevelOutdoor(stops[firstOutdoor - 1].Stop))
+        {
+            firstOutdoor--;
+        }
+
+        return firstOutdoor < stops.Length ? orderSelector(stops[firstOutdoor].Items[0]) : null;
+    }
+
+    public static bool IsGroundLevelOutdoor(string? stop) => GroundLevelOutdoorStops
+        .Any(outdoor => string.Equals(outdoor, stop, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Flattens <see cref="Group{T}"/> into the storyboard sequence.</summary>
     public static IReadOnlyList<T> Arrange<T>(

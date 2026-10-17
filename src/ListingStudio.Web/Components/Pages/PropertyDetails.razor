@@ -115,7 +115,7 @@ else
             <PropertyNarrationScriptManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
         </MudTabPanel>
         <MudTabPanel Text="Campaign" Icon="@Icons.Material.Filled.MovieCreation">
-            <CampaignGenerationManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
+            <CampaignGenerationManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" StatusChanged="RefreshSummaryAsync" />
         </MudTabPanel>
     </MudTabs>
 }
@@ -158,6 +158,7 @@ else
     }
 
     private PropertyMediaManager? mediaManager;
+    private readonly SemaphoreSlim summaryGate = new(1, 1);
 
     private async Task RefreshSummaryAsync()
     {
@@ -182,18 +183,27 @@ else
 
     private async Task LoadSummaryAsync(string userId)
     {
-        // Gallery photos wait outside the walkthrough, so they do not count toward the listing or its cover.
-        var media = (await ScopedServices.GetRequiredService<IPropertyMediaService>().ListAsync(userId, PropertyId))
-            .Where(item => !item.IsInGallery)
-            .ToList();
-        var campaign = await ScopedServices.GetRequiredService<ICampaignGenerationService>().GetLatestAsync(userId, PropertyId);
-        photoCount = media.Count;
-        coverMediaId = media.OrderBy(item => item.DisplayOrder).Select(item => (Guid?)item.Id).FirstOrDefault();
-        nextStep = PropertyNextSteps.Determine(
-            property!.IsArchived,
-            media.Count,
-            media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed),
-            campaign?.Status);
+        // Media and campaign changes can both ask for a refresh; one at a time keeps the page's DbContext unshared.
+        await summaryGate.WaitAsync();
+        try
+        {
+            // Gallery photos wait outside the walkthrough, so they do not count toward the listing or its cover.
+            var media = (await ScopedServices.GetRequiredService<IPropertyMediaService>().ListAsync(userId, PropertyId))
+                .Where(item => !item.IsInGallery)
+                .ToList();
+            var campaign = await ScopedServices.GetRequiredService<ICampaignGenerationService>().GetLatestAsync(userId, PropertyId);
+            photoCount = media.Count;
+            coverMediaId = media.OrderBy(item => item.DisplayOrder).Select(item => (Guid?)item.Id).FirstOrDefault();
+            nextStep = PropertyNextSteps.Determine(
+                property!.IsArchived,
+                media.Count,
+                media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed),
+                campaign?.Status);
+        }
+        finally
+        {
+            summaryGate.Release();
+        }
     }
 
     private async Task ShowTabAsync(PropertyDetailsTab tab)

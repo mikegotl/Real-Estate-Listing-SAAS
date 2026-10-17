@@ -20,7 +20,7 @@
                        Color="Color.Primary"
                        Disabled="@(busy || IsReadOnly)"
                        OnClick="GenerateAsync">
-                @(job is null ? "Generate campaign" : "Generate updated campaign")
+                @(job?.Status == CampaignGenerationStatus.Completed ? "Generate updated campaign" : "Generate campaign")
             </MudButton>
         }
     </MudStack>
@@ -155,6 +155,10 @@
     [Parameter]
     public bool IsReadOnly { get; set; }
 
+    /// <summary>Raised when the latest campaign's status changes, so the page can update its next step.</summary>
+    [Parameter]
+    public EventCallback StatusChanged { get; set; }
+
     private readonly CancellationTokenSource pollingCancellation = new();
     private CampaignGenerationResult? job;
     private bool busy;
@@ -163,6 +167,8 @@
     private string? refreshError;
     private int mediaCount;
     private int failedAnalysisCount;
+    private bool statusLoaded;
+    private CampaignGenerationStatus? reportedStatus;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -183,6 +189,7 @@
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             error = null;
             refreshError = null;
+            await ReportStatusAsync();
         }
         catch (OperationCanceledException) when (pollingCancellation.IsCancellationRequested)
         {
@@ -225,6 +232,8 @@
             {
                 error = "Property not found or unavailable to your organization.";
             }
+
+            await ReportStatusAsync();
         }
         catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
         {
@@ -233,6 +242,24 @@
         finally
         {
             busy = false;
+        }
+    }
+
+    // The first load only records the status; later changes tell the page.
+    private async Task ReportStatusAsync()
+    {
+        var status = job?.Status;
+        if (statusLoaded && status == reportedStatus)
+        {
+            return;
+        }
+
+        var notify = statusLoaded;
+        statusLoaded = true;
+        reportedStatus = status;
+        if (notify)
+        {
+            await StatusChanged.InvokeAsync();
         }
     }
 

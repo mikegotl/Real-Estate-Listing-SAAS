@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Domain.Organizations;
 using ListingStudio.Infrastructure.Identity;
@@ -156,6 +157,31 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
     }
 
     [Fact]
+    public async Task RegisteringLandsOnTheWorkspace()
+    {
+        using var client = fixture.Factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+        });
+        using var form = await client.GetAsync("/Account/Register");
+        form.EnsureSuccessStatusCode();
+        var html = await form.Content.ReadAsStringAsync();
+
+        using var response = await client.PostAsync("/Account/Register", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["_handler"] = "register",
+            ["__RequestVerificationToken"] = HiddenValue(html, "__RequestVerificationToken"),
+            ["Input.OrganizationName"] = "Landing Realty",
+            ["Input.Email"] = $"landing-{Guid.NewGuid():N}@example.com",
+            ["Input.Password"] = "Password123",
+            ["Input.ConfirmPassword"] = "Password123",
+        }));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/auth", response.Headers.Location?.AbsolutePath);
+    }
+
+    [Fact]
     public async Task HomePageIsAvailable()
     {
         using var client = fixture.Factory.CreateClient();
@@ -255,5 +281,14 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
 
         Assert.Equal(HttpStatusCode.OK, live.StatusCode);
         Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
+    }
+
+    private static string HiddenValue(string html, string name)
+    {
+        var match = Regex.Match(
+            html,
+            $"name=\"{Regex.Escape(name)}\"[^>]*value=\"([^\"]*)\"");
+        Assert.True(match.Success, $"The form has no {name} field.");
+        return System.Net.WebUtility.HtmlDecode(match.Groups[1].Value);
     }
 }

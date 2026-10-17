@@ -74,7 +74,7 @@
             bypassTwoFactor: false);
         if (signInResult.Succeeded)
         {
-            RedirectManager.RedirectTo(ReturnUrl);
+            RedirectManager.RedirectAfterSignIn(ReturnUrl);
             return;
         }
 
@@ -137,7 +137,7 @@
             user,
             isPersistent: false,
             authenticationMethod: info.LoginProvider);
-        RedirectManager.RedirectTo(ReturnUrl);
+        RedirectManager.RedirectAfterSignIn(ReturnUrl);
     }
 
     private sealed class InputModel
