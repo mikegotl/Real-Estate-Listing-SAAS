@@ -182,6 +182,7 @@ h1:focus { outline: none; }
 .checkbox-row { align-items: center; color: var(--ls-muted); display: flex; font-size: .8rem; gap: 8px; }.checkbox-row input { accent-color: var(--ls-primary); height: 16px; width: 16px; }
 .validation-message { color: var(--ls-error); font-size: .72rem; }.validation-summary { color: var(--ls-error); font-size: .78rem; }.validation-summary:empty { display: none; }
 .external-logins { display: grid; gap: 11px; margin-top: 22px; }.external-logins form { margin: 0; }
+.external-login-help { color: var(--ls-muted); font-size: .74rem; line-height: 1.45; margin: 2px 0 0; text-align: center; }
 .account-divider { align-items: center; color: var(--ls-subtle); display: flex; font-size: .68rem; font-weight: 700; gap: 13px; letter-spacing: .07em; margin: 4px 0; text-transform: uppercase; }
 .account-divider::before, .account-divider::after { border-top: 1px solid var(--ls-line); content: ""; flex: 1; }
 .account-footer { color: var(--ls-muted); font-size: .82rem; margin: 24px 0 0; text-align: center; }

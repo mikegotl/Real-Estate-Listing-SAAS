@@ -245,6 +245,14 @@ resource assetContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
   }
 }
 
+resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2025-06-01' = {
+  parent: blobService
+  name: 'listingstudio-data-protection'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${resourcePrefix}-logs'
   location: location
@@ -312,6 +320,22 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
+resource dataProtectionKey 'Microsoft.KeyVault/vaults/keys@2023-07-01' = {
+  parent: keyVault
+  name: 'data-protection'
+  properties: {
+    attributes: {
+      enabled: true
+    }
+    keyOps: [
+      'wrapKey'
+      'unwrapKey'
+    ]
+    keySize: 2048
+    kty: 'RSA'
+  }
+}
+
 resource postgresPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'postgresql-admin-password'
@@ -369,6 +393,9 @@ var blobContributorRole = subscriptionResourceId(
 var keyVaultSecretsUserRole = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '4633458b-17de-408a-b874-0445c86b69e6')
+var keyVaultCryptoUserRole = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '12338af0-0e69-4776-bea7-57ae8d297424')
 var monitoringMetricsPublisherRole = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '3913510d-42f4-4e42-8a64-420c390055eb')
@@ -400,6 +427,16 @@ resource keyVaultAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01'
     principalId: runtimeIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: keyVaultSecretsUserRole
+  }
+}
+
+resource keyVaultCryptoAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, runtimeIdentity.id, keyVaultCryptoUserRole)
+  scope: keyVault
+  properties: {
+    principalId: runtimeIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: keyVaultCryptoUserRole
   }
 }
 
@@ -534,6 +571,18 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
 ] : [])
 
 var webEnvironment = concat(providerSharedEnvironment, [
+  {
+    name: 'DataProtection__ApplicationName'
+    value: 'ListingStudio.Web'
+  }
+  {
+    name: 'DataProtection__BlobUri'
+    value: '${storageAccount.properties.primaryEndpoints.blob}${dataProtectionContainer.name}/keys.xml'
+  }
+  {
+    name: 'DataProtection__KeyVaultKeyIdentifier'
+    value: '${keyVault.properties.vaultUri}keys/${dataProtectionKey.name}'
+  }
   {
     name: 'Authentication__Google__Enabled'
     value: string(googleAuthenticationEnabled)
@@ -703,6 +752,7 @@ resource webApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplication
     acrPullAssignment
     blobAssignment
     keyVaultAssignment
+    keyVaultCryptoAssignment
     monitoringMetricsPublisherAssignment
     openAiApiKeySecret
     googleAuthenticationClientSecretResource

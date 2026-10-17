@@ -283,6 +283,14 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
         Assert.Contains("Continue with Apple", loginContent, StringComparison.Ordinal);
         Assert.Contains("Continue with Google", registrationContent, StringComparison.Ordinal);
         Assert.Contains("Continue with Apple", registrationContent, StringComparison.Ordinal);
+        Assert.Contains(
+            "Google may block sign-in inside an in-app browser.",
+            loginContent,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "open Listing Studio in Safari or Chrome and try again.",
+            registrationContent,
+            StringComparison.Ordinal);
     }
 
     [Fact]
