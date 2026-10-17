@@ -51,7 +51,7 @@ dotnet user-secrets set --project src/ListingStudio.Worker "OpenAI:Model" "gpt-6
 dotnet user-secrets set --project src/ListingStudio.Worker "MediaAnalysis:Enabled" "true"
 ```
 
-The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `AddressLookup`, `NeighborhoodInsights`, `OpenAI`, `AIVideo`, `Higgsfield`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`. The Web host also supports the `Authentication:Google` and `Authentication:Apple` sections described below.
+The same runtime configuration sections are available to both hosts: `PostgreSQL`, `AzureBlobStorage`, `AddressLookup`, `NeighborhoodInsights`, `OpenAI`, `AIVideo`, `Higgsfield`, `Voice`, `FFmpeg`, `VideoBranding`, `CampaignGeneration`, and `Stripe`. The Web host also supports the `Authentication:Google`, `Authentication:Apple`, and production `DataProtection` sections described below.
 
 ### Google and Apple sign-in
 
@@ -64,6 +64,8 @@ dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Google:C
 dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Google:ClientSecret" "your-client-secret"
 dotnet user-secrets set --project src/ListingStudio.Web "Authentication:Google:Enabled" "true"
 ```
+
+Google blocks OAuth inside some embedded and in-app browsers. On iPhone or iPad, open Listing Studio in Safari or Chrome before choosing **Continue with Google**.
 
 For Apple web sign-in, an Apple Developer membership and a Sign in with Apple-enabled App ID are required. Create a Services ID, register the exact HTTPS return URL `https://your-host/signin-apple`, and create a Sign in with Apple private key. Configure the Services ID as `ClientId`, along with the Apple Developer `TeamId`, key `KeyId`, and the complete PKCS #8 `.p8` contents:
 
@@ -82,6 +84,8 @@ Listing photos use the provider selected by `AzureBlobStorage:Provider`. The def
 Property details also accept up to 10 MP4, M4V, MOV, or WEBM clips, each up to 500 MB and five minutes. The upload is container-probed before persistence, remains private and organization-scoped, and is retained unchanged. A separate Worker queue creates a web-compatible H.264/AAC MP4 with two-pass motion stabilization, constant 30fps cadence, flicker reduction, gray-world white balance, luminance/color normalization, and conservative contrast/saturation correction. The page shows queued, processing, completed, and failed states; failed jobs can be explicitly retried, while completed clips can be previewed with range requests and downloaded. `VideoProcessing:Enabled` and `VideoProcessing:PollIntervalSeconds` control the Worker, and `FFmpeg:EnhancementTimeoutSeconds` bounds each FFmpeg pass.
 
 Production uses `AzureBlobStorage:ServiceUri` plus the Container App managed identity instead of a storage connection string. The identity receives only `Storage Blob Data Contributor`, shared-key access is disabled, and the container remains private.
+
+The production Web host stores its ASP.NET Core Data Protection key ring in the private `listingstudio-data-protection` Blob container and encrypts that ring with the versionless `data-protection` Key Vault key. The shared managed identity receives `Storage Blob Data Contributor` and `Key Vault Crypto User`; `DataProtection:BlobUri` and `DataProtection:KeyVaultKeyIdentifier` are injected by Bicep. This keeps authentication, OAuth correlation, and antiforgery cookies readable across revisions and replicas without adding a secret.
 
 Property-photo analysis runs only in the Worker and is disabled by default so local startup cannot accidentally spend API credits. To enable it, provide `OpenAI__ApiKey` and a vision-capable `OpenAI__Model`, then set `MediaAnalysis__Enabled=true`. Set the same switch on the Web host too: it shows Find room photos on listing videos only when room recognition is enabled. The Worker processes one photo at a time, waits the configured polling interval between requests, and retries transient failures up to three times. Automated tests always replace the provider with a fake and never call OpenAI.
 

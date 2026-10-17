@@ -20,6 +20,12 @@
                 </MudButton>
             </form>
         }
+        @if (schemes.Any(IsGoogle))
+        {
+            <p class="external-login-help">
+                Google may block sign-in inside an in-app browser. On iPhone or iPad, open Listing Studio in Safari or Chrome and try again.
+            </p>
+        }
     </section>
 }
 
@@ -40,4 +46,7 @@
     private static string ProviderIcon(string provider) => provider.Equals("Apple", StringComparison.OrdinalIgnoreCase)
         ? Icons.Material.Filled.PhoneIphone
         : Icons.Material.Filled.AccountCircle;
+
+    private static bool IsGoogle(AuthenticationScheme scheme) =>
+        scheme.Name.Equals("Google", StringComparison.OrdinalIgnoreCase);
 }
