@@ -71,6 +71,7 @@ jobs:
           docker run --rm --entrypoint ffprobe listingstudio-worker:${{ github.sha }} -version
           docker run --detach --name listingstudio-web-smoke --publish 18080:8080 \
             --env 'PostgreSQL__ConnectionString=Host=localhost;Database=listingstudio;Username=listingstudio;Password=smoke-only' \
+            --env 'DOTNET_ENVIRONMENT=Development' \
             listingstudio-web:${{ github.sha }}
           trap 'docker rm --force listingstudio-web-smoke listingstudio-worker-smoke >/dev/null 2>&1 || true' EXIT
           curl --fail --show-error --silent --retry 12 --retry-delay 2 --retry-all-errors \
