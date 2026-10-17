@@ -15,6 +15,51 @@ param postgresAdministratorLogin string = 'listingstudioadmin'
 @description('PostgreSQL administrator password. Supply from the protected GitHub environment; never commit it.')
 param postgresAdministratorPassword string
 
+@secure()
+@description('OpenAI API key used for grounded copy, media analysis, video planning, and OpenAI narration.')
+param openAiApiKey string = ''
+
+@description('OpenAI model used for grounded copy, media analysis, and video planning.')
+param openAiModel string = ''
+
+@description('Enable OpenAI-backed property media analysis in the Web and Worker hosts.')
+param mediaAnalysisEnabled bool = false
+
+@description('Enable Google sign-in in the Web host.')
+param googleAuthenticationEnabled bool = false
+
+@description('Google OAuth client ID. The matching client secret is stored in Key Vault.')
+param googleAuthenticationClientId string = ''
+
+@secure()
+@description('Google OAuth client secret used only by the Web host.')
+param googleAuthenticationClientSecret string = ''
+
+@description('Enable Google Places neighborhood insights in the Web host.')
+param neighborhoodInsightsEnabled bool = false
+
+@secure()
+@description('Google Places API key used for neighborhood insights.')
+param googlePlacesApiKey string = ''
+
+@description('Enable Higgsfield storyboard walk-through clips in the Web and Worker hosts.')
+param higgsfieldEnabled bool = false
+
+@secure()
+@description('Higgsfield API key ID.')
+param higgsfieldApiKey string = ''
+
+@secure()
+@description('Higgsfield API secret.')
+param higgsfieldApiSecret string = ''
+
+@description('Narration provider. Production defaults to OpenAI so no separate ElevenLabs credential is required.')
+@allowed([
+  'OpenAI'
+  'ElevenLabs'
+])
+param voiceProvider string = 'OpenAI'
+
 @description('Immutable Web image reference, normally the ACR image tagged with the Git commit SHA.')
 param webImage string = ''
 
@@ -275,6 +320,46 @@ resource postgresPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
   }
 }
 
+resource openAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(openAiApiKey)) {
+  parent: keyVault
+  name: 'openai-api-key'
+  properties: {
+    value: openAiApiKey
+  }
+}
+
+resource googleAuthenticationClientSecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(googleAuthenticationClientSecret)) {
+  parent: keyVault
+  name: 'google-authentication-client-secret'
+  properties: {
+    value: googleAuthenticationClientSecret
+  }
+}
+
+resource googlePlacesApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(googlePlacesApiKey)) {
+  parent: keyVault
+  name: 'google-places-api-key'
+  properties: {
+    value: googlePlacesApiKey
+  }
+}
+
+resource higgsfieldApiKeySecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(higgsfieldApiKey)) {
+  parent: keyVault
+  name: 'higgsfield-api-key'
+  properties: {
+    value: higgsfieldApiKey
+  }
+}
+
+resource higgsfieldApiSecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(higgsfieldApiSecret)) {
+  parent: keyVault
+  name: 'higgsfield-api-secret'
+  properties: {
+    value: higgsfieldApiSecret
+  }
+}
+
 var acrPullRole = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '7f951dda-4ed3-4680-a7ca-43fe172d538d')
@@ -406,13 +491,104 @@ var sharedEnvironment = concat(databaseEnvironment, [
   }
 ])
 
-var keyVaultSecrets = [
+var providerSharedEnvironment = concat(sharedEnvironment, [
+  {
+    name: 'MediaAnalysis__Enabled'
+    value: string(mediaAnalysisEnabled)
+  }
+  {
+    name: 'NeighborhoodInsights__Enabled'
+    value: string(neighborhoodInsightsEnabled)
+  }
+  {
+    name: 'Higgsfield__Enabled'
+    value: string(higgsfieldEnabled)
+  }
+  {
+    name: 'Voice__Provider'
+    value: voiceProvider
+  }
+], !empty(openAiApiKey) ? [
+  {
+    name: 'OpenAI__ApiKey'
+    secretRef: 'openai-api-key'
+  }
+  {
+    name: 'OpenAI__Model'
+    value: openAiModel
+  }
+] : [], !empty(googlePlacesApiKey) ? [
+  {
+    name: 'NeighborhoodInsights__ApiKey'
+    secretRef: 'google-places-api-key'
+  }
+] : [], !empty(higgsfieldApiKey) && !empty(higgsfieldApiSecret) ? [
+  {
+    name: 'Higgsfield__ApiKey'
+    secretRef: 'higgsfield-api-key'
+  }
+  {
+    name: 'Higgsfield__ApiSecret'
+    secretRef: 'higgsfield-api-secret'
+  }
+] : [])
+
+var webEnvironment = concat(providerSharedEnvironment, [
+  {
+    name: 'Authentication__Google__Enabled'
+    value: string(googleAuthenticationEnabled)
+  }
+], googleAuthenticationEnabled ? [
+  {
+    name: 'Authentication__Google__ClientId'
+    value: googleAuthenticationClientId
+  }
+  {
+    name: 'Authentication__Google__ClientSecret'
+    secretRef: 'google-authentication-client-secret'
+  }
+] : [])
+
+var databaseKeyVaultSecrets = [
   {
     name: 'postgres-password'
     keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${postgresPasswordSecret.name}'
     identity: runtimeIdentity.id
   }
 ]
+
+var providerKeyVaultSecrets = concat(databaseKeyVaultSecrets, !empty(openAiApiKey) ? [
+  {
+    name: 'openai-api-key'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/openai-api-key'
+    identity: runtimeIdentity.id
+  }
+] : [], !empty(googlePlacesApiKey) ? [
+  {
+    name: 'google-places-api-key'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/google-places-api-key'
+    identity: runtimeIdentity.id
+  }
+] : [], !empty(higgsfieldApiKey) && !empty(higgsfieldApiSecret) ? [
+  {
+    name: 'higgsfield-api-key'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/higgsfield-api-key'
+    identity: runtimeIdentity.id
+  }
+  {
+    name: 'higgsfield-api-secret'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/higgsfield-api-secret'
+    identity: runtimeIdentity.id
+  }
+] : [])
+
+var webKeyVaultSecrets = concat(providerKeyVaultSecrets, googleAuthenticationEnabled ? [
+  {
+    name: 'google-authentication-client-secret'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/google-authentication-client-secret'
+    identity: runtimeIdentity.id
+  }
+] : [])
 
 var registryConfiguration = [
   {
@@ -451,14 +627,14 @@ resource webApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplication
         transport: 'http'
       }
       registries: registryConfiguration
-      secrets: keyVaultSecrets
+      secrets: webKeyVaultSecrets
     }
     template: {
       containers: [
         {
           name: 'web'
           image: webImage
-          env: concat(sharedEnvironment, [
+          env: concat(webEnvironment, [
             {
               name: 'OTEL_SERVICE_NAME'
               value: 'listingstudio-web'
@@ -528,6 +704,11 @@ resource webApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplication
     blobAssignment
     keyVaultAssignment
     monitoringMetricsPublisherAssignment
+    openAiApiKeySecret
+    googleAuthenticationClientSecretResource
+    googlePlacesApiKeySecret
+    higgsfieldApiKeySecretResource
+    higgsfieldApiSecretResource
   ]
 }
 
@@ -546,14 +727,14 @@ resource workerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicat
     configuration: {
       activeRevisionsMode: 'Single'
       registries: registryConfiguration
-      secrets: keyVaultSecrets
+      secrets: providerKeyVaultSecrets
     }
     template: {
       containers: [
         {
           name: 'worker'
           image: workerImage
-          env: concat(sharedEnvironment, [
+          env: concat(providerSharedEnvironment, [
             {
               name: 'OTEL_SERVICE_NAME'
               value: 'listingstudio-worker'
@@ -609,6 +790,10 @@ resource workerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicat
     blobAssignment
     keyVaultAssignment
     monitoringMetricsPublisherAssignment
+    openAiApiKeySecret
+    googlePlacesApiKeySecret
+    higgsfieldApiKeySecretResource
+    higgsfieldApiSecretResource
   ]
 }
 
@@ -633,7 +818,7 @@ resource migrationJob 'Microsoft.App/jobs@2025-01-01' = if (deployApplications) 
         replicaCompletionCount: 1
       }
       registries: registryConfiguration
-      secrets: keyVaultSecrets
+      secrets: databaseKeyVaultSecrets
     }
     template: {
       containers: [

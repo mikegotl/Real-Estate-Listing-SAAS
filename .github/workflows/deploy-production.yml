@@ -76,6 +76,13 @@ jobs:
       AZURE_NAME_PREFIX: ${{ vars.AZURE_NAME_PREFIX }}
       POSTGRES_ADMIN_LOGIN: ${{ vars.POSTGRES_ADMIN_LOGIN }}
       POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+      GOOGLE_AUTH_CLIENT_ID: ${{ vars.GOOGLE_AUTH_CLIENT_ID }}
+      GOOGLE_AUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_AUTH_CLIENT_SECRET }}
+      GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+      HIGGSFIELD_API_KEY: ${{ secrets.HIGGSFIELD_API_KEY }}
+      HIGGSFIELD_API_SECRET: ${{ secrets.HIGGSFIELD_API_SECRET }}
 
     steps:
       - name: Check out repository
@@ -85,7 +92,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required=(AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_NAME_PREFIX POSTGRES_ADMIN_LOGIN POSTGRES_ADMIN_PASSWORD)
+          required=(
+            AZURE_RESOURCE_GROUP AZURE_LOCATION AZURE_NAME_PREFIX
+            POSTGRES_ADMIN_LOGIN POSTGRES_ADMIN_PASSWORD
+            OPENAI_API_KEY OPENAI_MODEL
+            GOOGLE_AUTH_CLIENT_ID GOOGLE_AUTH_CLIENT_SECRET GOOGLE_PLACES_API_KEY
+            HIGGSFIELD_API_KEY HIGGSFIELD_API_SECRET
+          )
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
               echo "Required production environment value is missing: ${name}" >&2
@@ -119,6 +132,18 @@ jobs:
               location="$AZURE_LOCATION" \
               postgresAdministratorLogin="$POSTGRES_ADMIN_LOGIN" \
               postgresAdministratorPassword="$POSTGRES_ADMIN_PASSWORD" \
+              openAiApiKey="$OPENAI_API_KEY" \
+              openAiModel="$OPENAI_MODEL" \
+              mediaAnalysisEnabled=true \
+              googleAuthenticationEnabled=true \
+              googleAuthenticationClientId="$GOOGLE_AUTH_CLIENT_ID" \
+              googleAuthenticationClientSecret="$GOOGLE_AUTH_CLIENT_SECRET" \
+              neighborhoodInsightsEnabled=true \
+              googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
+              higgsfieldEnabled=true \
+              higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
+              higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
+              voiceProvider=OpenAI \
               deployApplications=false \
             --query properties.outputs \
             --output json)
@@ -165,6 +190,18 @@ jobs:
               location="$AZURE_LOCATION" \
               postgresAdministratorLogin="$POSTGRES_ADMIN_LOGIN" \
               postgresAdministratorPassword="$POSTGRES_ADMIN_PASSWORD" \
+              openAiApiKey="$OPENAI_API_KEY" \
+              openAiModel="$OPENAI_MODEL" \
+              mediaAnalysisEnabled=true \
+              googleAuthenticationEnabled=true \
+              googleAuthenticationClientId="$GOOGLE_AUTH_CLIENT_ID" \
+              googleAuthenticationClientSecret="$GOOGLE_AUTH_CLIENT_SECRET" \
+              neighborhoodInsightsEnabled=true \
+              googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
+              higgsfieldEnabled=true \
+              higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
+              higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
+              voiceProvider=OpenAI \
               deployApplications=true \
               webImage="$ACR_LOGIN_SERVER/listingstudio-web:$GITHUB_SHA" \
               workerImage="$ACR_LOGIN_SERVER/listingstudio-worker:$GITHUB_SHA" \
