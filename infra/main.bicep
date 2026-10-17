@@ -434,7 +434,7 @@ resource webApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplication
   properties: {
     environmentId: containerAppsEnvironment.id
     configuration: {
-      activeRevisionsMode: 'Multiple'
+      activeRevisionsMode: 'Single'
       ingress: {
         allowInsecure: false
         external: true
