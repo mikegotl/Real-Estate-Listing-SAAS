@@ -190,6 +190,8 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         await UploadAsync(mediaService, userId, propertyId, "front.png", WalkthroughStoryboard.ExteriorFront);
         var oneStop = await (await client.GetAsync($"/properties/{propertyId}?tab=media")).Content.ReadAsStringAsync();
         Assert.DoesNotContain("walkthrough-map-heading", oneStop, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Media sections\"", oneStop, StringComparison.Ordinal);
+        Assert.DoesNotContain("getElementById('media-map')", oneStop, StringComparison.Ordinal);
 
         await UploadAsync(mediaService, userId, propertyId, "foyer.png", WalkthroughStoryboard.EntryFoyer);
         await UploadAsync(mediaService, userId, propertyId, "kitchen.png", "Kitchen");
@@ -208,6 +210,9 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
             content,
             StringComparison.Ordinal);
         Assert.Contains("Stop 3, Kitchen, turn left from the previous stop", content, StringComparison.Ordinal);
+        Assert.Contains("getElementById('media-map')", content, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"media-nav-count\">3</span>", content, StringComparison.Ordinal);
+        Assert.Contains("Extra photos", content, StringComparison.Ordinal);
     }
 
     [Theory]

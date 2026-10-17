@@ -27,6 +27,30 @@
         JPG, PNG, or WEBP images up to @(IPropertyMediaService.MaximumFileSize / 1024 / 1024) MB each.
     </MudText>
 
+    @if (loaded)
+    {
+        @* Plain DOM scrolling: the tab's URL carries ?tab=media, so fragment links would navigate away from it. *@
+        <nav class="media-nav" aria-label="Media sections">
+            <button type="button" onclick="document.getElementById('media-walkthrough')?.scrollIntoView({behavior: 'smooth'})">
+                Walkthrough <span class="media-nav-count">@WalkthroughPhotoCount</span>
+            </button>
+            @if (unsorted.Count > 0)
+            {
+                <button type="button" onclick="document.getElementById('media-unplaced')?.scrollIntoView({behavior: 'smooth'})">
+                    Unplaced <span class="media-nav-count attention">@unsorted.Count</span>
+                </button>
+            }
+            <button type="button" onclick="document.getElementById('media-extra')?.scrollIntoView({behavior: 'smooth'})">
+                Extra photos <span class="media-nav-count">@gallery.Count</span>
+            </button>
+            @if (MapStops.Count >= 2)
+            {
+                <button type="button" onclick="document.getElementById('media-map')?.scrollIntoView({behavior: 'smooth'})">Map</button>
+            }
+            <button type="button" onclick="document.getElementById('listing-videos')?.scrollIntoView({behavior: 'smooth'})">Videos</button>
+        </nav>
+    }
+
     @if (message is not null)
     {
         <MudAlert Severity="@messageSeverity" Class="my-4">@message</MudAlert>
@@ -74,7 +98,7 @@
     {
         <MudPaper Outlined="true" Class="pa-3 my-2">
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                <MudText>@upload.File.Name <span class="storyboard-upload-stop">→ @(upload.ToGallery ? "Photo gallery" : upload.Stop ?? "Storyboard")</span></MudText>
+                <MudText>@upload.File.Name <span class="storyboard-upload-stop">→ @(upload.ToGallery ? "Extra photos" : upload.Stop ?? "Storyboard")</span></MudText>
                 @if (upload.Failed)
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
@@ -100,7 +124,15 @@
             <MudAlert Severity="Severity.Info" Class="mt-4">No listing photos have been uploaded.</MudAlert>
         }
 
-        <ol class="storyboard-track">
+        @if (!IsReadOnly && media.Count > 0)
+        {
+            <p class="storyboard-tip">
+                <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" />
+                Shoot each space from the doorway you enter by, so the video flows from one room to the next.
+            </p>
+        }
+
+        <ol class="storyboard-track" id="media-walkthrough">
             @for (var stopIndex = 0; stopIndex < stops.Count; stopIndex++)
             {
                 var stop = stops[stopIndex];
@@ -148,7 +180,10 @@
                                         </button>
                                     }
                                 </div>
-                                <p class="stop-hint">@Hint(stop, previous)</p>
+                                @if (stop.Items.Count == 0)
+                                {
+                                    <p class="stop-hint">@Hint(stop, previous)</p>
+                                }
                             </div>
                             @if (!IsReadOnly && !stop.IsTemplate)
                             {
@@ -230,8 +265,8 @@
 
         @if (unsorted.Count > 0)
         {
-            <section class="storyboard-unsorted" aria-labelledby="unsorted-heading">
-                <h3 id="unsorted-heading">Not in the walkthrough yet</h3>
+            <section class="storyboard-unsorted" id="media-unplaced" aria-labelledby="unsorted-heading">
+                <h3 id="unsorted-heading">Unplaced photos</h3>
                 <p class="stop-hint">
                     These photos were added before the storyboard. They still play in the video after the walkthrough,
                     in this order. Place each one in a stop so it appears where a buyer would see it.
@@ -245,16 +280,16 @@
             </section>
         }
 
-        <section class="photo-gallery" aria-labelledby="gallery-heading">
+        <section class="photo-gallery" id="media-extra" aria-labelledby="gallery-heading">
             <div class="photo-gallery-head">
                 <div>
-                    <h3 id="gallery-heading">Photo gallery <span class="photo-gallery-count">@gallery.Count</span></h3>
+                    <h3 id="gallery-heading">Extra photos <span class="photo-gallery-count">@gallery.Count</span></h3>
                     <p class="stop-hint">
-                        Photos kept here are not part of the walkthrough, the map, the clips or the video yet. Place one in
-                        a stop when you want buyers to see it there.
+                        Photos kept here stay out of the walkthrough, the map, the clips and the video. Place one in a stop
+                        when you want buyers to see it there.
                         @if (MediaAnalysisOptions.Value.Enabled)
                         {
-                            @(" Use Find room photos on a listing video to fill the gallery with the best shots of each room.")
+                            @(" Use Find room photos on a listing video to add the best shots of each room here.")
                         }
                     </p>
                 </div>
@@ -262,16 +297,16 @@
                 {
                     <label class="media-upload-control gallery-upload">
                         <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
-                        <span>Add to gallery</span>
+                        <span>Add extra photos</span>
                         <InputFile OnChange="@(eventArgs => FilesSelectedAsync(eventArgs, null, toGallery: true))" multiple
-                                   aria-label="Add photos to the photo gallery"
+                                   aria-label="Add extra photos"
                                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
                     </label>
                 }
             </div>
             @if (gallery.Count == 0)
             {
-                <p class="photo-gallery-empty">No photos in the gallery yet.</p>
+                <p class="photo-gallery-empty">No extra photos yet.</p>
             }
             else
             {
@@ -286,7 +321,7 @@
 
         @if (MapStops.Count >= 2)
         {
-            <div class="walkthrough-map-anchor" tabindex="-1" @ref="mapElement">
+            <div class="walkthrough-map-anchor" id="media-map" tabindex="-1" @ref="mapElement">
                 <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
                                         DirectionChanged="SetStopDirectionAsync" ShowShots="ShowStopShotsAsync"
                                         SelectedStopChanged="HighlightStop" FocusStop="@mapFocusStop"
@@ -349,6 +384,8 @@
     private int MissingTransitionCount => transitions.Values.Count(item =>
         item.Status is null or WalkthroughTransitionStatus.Failed || (!item.IsCurrent && !item.IsInProgress));
 
+    private int WalkthroughPhotoCount => stops.Sum(stop => stop.Items.Count);
+
     private bool HasExteriorFront => stops.Count > 0 && stops[0].Items.Count > 0;
 
     private RenderFragment PhotoCard((IReadOnlyList<PropertyMediaItem> Group, int Index, string? Stop) context) => __builder =>
@@ -385,15 +422,20 @@
                 }
             </div>
             <div class="storyboard-photo-body">
-                <span class="storyboard-photo-name" title="@item.OriginalFilename">@item.OriginalFilename</span>
+                <div class="storyboard-photo-title">
+                    <span class="storyboard-photo-name" title="@item.OriginalFilename">@(item.Analysis?.RoomType ?? item.OriginalFilename)</span>
+                    @if (item.Analysis is not null)
+                    {
+                        var quality = PhotoQualityRating.Rate(item.Analysis.QualityScore);
+                        <span class="@($"quality-badge {quality.ToString().ToLowerInvariant()}")"
+                              title="@($"Photo quality {item.Analysis.QualityScore} out of 100")">@PhotoQualityRating.Describe(quality)</span>
+                    }
+                </div>
                 @if (item.Analysis is not null)
                 {
-                    <span class="storyboard-photo-meta">AI sees: @item.Analysis.RoomType · Quality @item.Analysis.QualityScore</span>
                     @if (item.Analysis.PotentialProblems.Count > 0)
                     {
-                        <span class="storyboard-photo-meta warning" title="@string.Join(", ", item.Analysis.PotentialProblems)">
-                            @item.Analysis.PotentialProblems.Count possible @(item.Analysis.PotentialProblems.Count == 1 ? "issue" : "issues"): @string.Join(", ", item.Analysis.PotentialProblems)
-                        </span>
+                        <span class="storyboard-photo-meta warning">@string.Join(", ", item.Analysis.PotentialProblems)</span>
                     }
                 }
                 else if (item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed)
@@ -407,15 +449,20 @@
                 }
                 else
                 {
-                    <span class="storyboard-photo-meta">Analysis: @item.AnalysisStatus</span>
+                    <span class="storyboard-photo-meta">Recognizing room…</span>
                 }
 
                 @if (transition is not null && (transition.Status is not null || transitionService?.IsEnabled == true))
                 {
-                    <span class="@($"storyboard-photo-meta walkthrough-status {WalkthroughStatusClass(transition)}")">
-                        <MudIcon Icon="@Icons.Material.Filled.DirectionsWalk" Size="Size.Small" />
-                        Walk-through to shot @(shotNumber + 1): @WalkthroughStatusText(transition)
+                    <span class="@($"walkthrough-status {WalkthroughStatusClass(transition)}")"
+                          title="@($"Walk-through into shot {shotNumber + 1}: {WalkthroughStatusDetail(transition)}")">
+                        <MudIcon Icon="@Icons.Material.Filled.DirectionsWalk" Size="Size.Small" />@WalkthroughStatusText(transition)
                     </span>
+                    @if (!IsReadOnly && transitionService?.IsEnabled == true && transition.Status == WalkthroughTransitionStatus.Failed)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="storyboard-suggest"
+                                   Disabled="queueing" OnClick="QueueTransitionsAsync">Try again</MudButton>
+                    }
                 }
 
                 @if (!IsReadOnly && context.Stop is null && suggestion is not null)
@@ -435,7 +482,8 @@
                                    Disabled="@(itemIndex == group.Count - 1)" aria-label="Move photo later"
                                    OnClick="@(() => MoveWithinGroupAsync(group, itemIndex, 1))" />
                     <MudSpacer />
-                    <MudMenu Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
+                    <MudMenu Label="Move" StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
+                             Variant="Variant.Text" Color="Color.Primary"
                              AriaLabel="@(context.Stop is null ? "Place photo in a stop" : "Move photo to another stop")">
                         <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">@(context.Stop is null ? "Place in stop" : "Move to stop")</MudText>
                         @foreach (var target in stops.Where(candidate => candidate.Name != context.Stop))
@@ -443,7 +491,7 @@
                             <MudMenuItem OnClick="@(() => AssignStopAsync(item.Id, target.Name))">@target.Name</MudMenuItem>
                         }
                         <MudDivider />
-                        <MudMenuItem Icon="@Icons.Material.Filled.PhotoLibrary" OnClick="@(() => MoveToGalleryAsync(item.Id))">Move to photo gallery</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.PhotoLibrary" OnClick="@(() => MoveToGalleryAsync(item.Id))">Move to extra photos</MudMenuItem>
                     </MudMenu>
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
                                    aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
@@ -478,7 +526,8 @@
             {
                 <div class="gallery-thumb-actions">
                     <MudSpacer />
-                    <MudMenu Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true" AriaLabel="Place photo in a stop">
+                    <MudMenu Label="Move" StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
+                             Variant="Variant.Text" Color="Color.Primary" AriaLabel="Place photo in a stop">
                         <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">Place in stop</MudText>
                         @foreach (var target in stops)
                         {
@@ -632,19 +681,31 @@
 
     private void StopWalkthrough() => playingFromId = null;
 
+    // A short badge on the photo card; the detail sits in its tooltip.
     private static string WalkthroughStatusText(WalkthroughTransitionItem item) => item.Status switch
+    {
+        WalkthroughTransitionStatus.Completed when !item.IsCurrent => "Clip out of date",
+        WalkthroughTransitionStatus.Completed => "Clip ready",
+        WalkthroughTransitionStatus.Pending or WalkthroughTransitionStatus.Submitting => "Clip queued",
+        WalkthroughTransitionStatus.Generating => "Clip generating…",
+        WalkthroughTransitionStatus.Failed => "Clip failed",
+        _ => "No clip yet",
+    };
+
+    private static string WalkthroughStatusDetail(WalkthroughTransitionItem item) => item.Status switch
     {
         WalkthroughTransitionStatus.Completed when !item.IsCurrent =>
             "ready, but made before its walking direction was set; create it again to follow the map",
         WalkthroughTransitionStatus.Completed => "ready, press play on the photo",
         WalkthroughTransitionStatus.Pending or WalkthroughTransitionStatus.Submitting => "queued",
-        WalkthroughTransitionStatus.Generating => "generating…",
+        WalkthroughTransitionStatus.Generating => "generating",
         WalkthroughTransitionStatus.Failed => item.Error ?? "failed",
         _ => "not created yet",
     };
 
     private static string WalkthroughStatusClass(WalkthroughTransitionItem item) => item.Status switch
     {
+        WalkthroughTransitionStatus.Completed when !item.IsCurrent => "stale",
         WalkthroughTransitionStatus.Completed => "ready",
         WalkthroughTransitionStatus.Failed => "error",
         _ => string.Empty,
@@ -805,7 +866,7 @@
             uploads.Remove(upload);
             await ReloadAfterChangeAsync();
             ShowMessage(
-                upload.ToGallery ? "Photo added to the gallery." : upload.Stop is null ? "Photo uploaded." : $"Photo added to {upload.Stop}.",
+                upload.ToGallery ? "Photo added to extra photos." :upload.Stop is null ? "Photo uploaded." : $"Photo added to {upload.Stop}.",
                 Severity.Success);
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or IOException)
@@ -823,7 +884,7 @@
             "Delete this photo?",
             inWalkthrough
                 ? "The photo is removed from the listing, along with any walk-through clips made from it. This cannot be undone."
-                : "The photo is removed from the gallery. This cannot be undone.",
+                : "The photo is removed from extra photos. This cannot be undone.",
             yesText: "Delete",
             cancelText: "Cancel");
         if (confirmed != true)
@@ -855,7 +916,7 @@
         if (await Service.MoveToGalleryAsync(userId, PropertyId, mediaId))
         {
             await ReloadAfterChangeAsync();
-            ShowMessage("Photo moved to the photo gallery. It is no longer part of the walkthrough.", Severity.Success);
+            ShowMessage("Photo moved to extra photos. It is no longer part of the walkthrough.", Severity.Success);
         }
     }
 

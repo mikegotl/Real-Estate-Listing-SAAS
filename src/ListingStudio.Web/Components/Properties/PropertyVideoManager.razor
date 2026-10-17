@@ -4,7 +4,7 @@
 @inject IDialogService DialogService
 @inject Microsoft.Extensions.Options.IOptions<MediaAnalysisOptions> MediaAnalysisOptions
 
-<MudPaper Class="pa-6 mt-6">
+<MudPaper Class="pa-6 mt-6 listing-videos" id="listing-videos">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
         <div>
             <MudText Typo="Typo.h5" HtmlTag="h2">Listing videos</MudText>
@@ -130,7 +130,7 @@
                             {
                                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoAwesome"
                                            Disabled="@(video.FrameExtraction?.IsInProgress == true)"
-                                           title="Find the rooms in this video and add one or two photos of each to the photo gallery"
+                                           title="Find the rooms in this video and add one or two photos of each to extra photos"
                                            OnClick="@(() => FindRoomPhotosAsync(video.Id))">
                                     @(video.FrameExtraction?.Status == PropertyVideoFrameExtractionStatus.Completed ? "Find room photos again" : "Find room photos")
                                 </MudButton>
@@ -156,7 +156,7 @@
     [Parameter]
     public bool IsReadOnly { get; set; }
 
-    /// <summary>Raised when a video finishes adding room photos to the photo gallery.</summary>
+    /// <summary>Raised when a video finishes adding room photos to extra photos.</summary>
     [Parameter]
     public EventCallback RoomPhotosAdded { get; set; }
 
@@ -208,8 +208,8 @@
             var added = justFinished.Sum(video => video.FrameExtraction?.PhotoCount ?? 0);
             ShowMessage(
                 added == 0
-                    ? "Room photos are done. No new photos were added to the gallery."
-                    : $"{added} room {(added == 1 ? "photo was" : "photos were")} added to the photo gallery above.",
+                    ? "Room photos are done. No new photos were added to extra photos."
+                    : $"{added} room {(added == 1 ? "photo was" : "photos were")} added to extra photos above.",
                 Severity.Success);
             await RoomPhotosAdded.InvokeAsync();
         }
@@ -227,7 +227,7 @@
         {
             await RefreshVideosAsync();
             ShowMessage(
-                "Finding room photos. The video is split into its rooms and the sharpest one or two shots of each go to the photo gallery.",
+                "Finding room photos. The video is split into its rooms and the sharpest one or two shots of each go to extra photos.",
                 Severity.Info);
         }
     }
@@ -288,7 +288,7 @@
         {
             PropertyVideoFrameExtractionStage.RecognizingRooms when frames.StepsTotal > 0 =>
                 $"Room photos: recognizing rooms in shot {Math.Min(frames.StepsDone + 1, frames.StepsTotal)} of {frames.StepsTotal}",
-            PropertyVideoFrameExtractionStage.AddingPhotos => "Room photos: adding the best shots to the gallery",
+            PropertyVideoFrameExtractionStage.AddingPhotos => "Room photos: adding the best shots to extra photos",
             _ => "Room photos: finding the sharpest shot of each view",
         },
         PropertyVideoFrameExtractionStatus.Completed => CompletedText(frames),
@@ -300,7 +300,7 @@
     {
         var rooms = frames.RoomCount ?? 0;
         var photos = frames.PhotoCount ?? 0;
-        var text = $"Room photos: {rooms} {(rooms == 1 ? "room" : "rooms")} found, {photos} new {(photos == 1 ? "photo" : "photos")} in the gallery";
+        var text = $"Room photos: {rooms} {(rooms == 1 ? "room" : "rooms")} found, {photos} new {(photos == 1 ? "photo" : "photos")} in extra photos";
         return frames.SkippedPhotoCount is > 0 and var skipped
             ? $"{text}. {skipped} more did not fit under the {IPropertyMediaService.MaximumMediaPerProperty}-photo limit."
             : $"{text}.";
@@ -386,7 +386,7 @@
     {
         var confirmed = await DialogService.ShowMessageBoxAsync(
             "Delete this video?",
-            "The original and enhanced video are removed. Room photos already added to the gallery stay. This cannot be undone.",
+            "The original and enhanced video are removed. Room photos already added to extra photos stay. This cannot be undone.",
             yesText: "Delete",
             cancelText: "Cancel");
         if (confirmed != true)
