@@ -110,5 +110,21 @@ public sealed class WalkthroughStoryboardTests
             photo => photo.Order));
     }
 
+    [Fact]
+    public void NewIndoorStopsGoBeforeTheOutdoorStopsThatEndTheWalkthrough()
+    {
+        Photo[] photos =
+        [
+            new("front", WalkthroughStoryboard.ExteriorFront, 0),
+            new("kitchen", "Kitchen", 1),
+            new("yard", "Backyard", 2),
+            new("pool", "pool", 3),
+        ];
+
+        Assert.Equal(2, WalkthroughStoryboard.NewStopOrder(photos, photo => photo.Stop, photo => photo.Order, "Bedroom"));
+        Assert.Null(WalkthroughStoryboard.NewStopOrder(photos, photo => photo.Stop, photo => photo.Order, "Patio / deck"));
+        Assert.Null(WalkthroughStoryboard.NewStopOrder(photos[..2], photo => photo.Stop, photo => photo.Order, "Bedroom"));
+    }
+
     private sealed record Photo(string Name, string? Stop, int Order);
 }

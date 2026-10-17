@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -207,6 +208,65 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
             content,
             StringComparison.Ordinal);
         Assert.Contains("Stop 3, Kitchen, turn left from the previous stop", content, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FindRoomPhotosIsOfferedOnlyWhenRoomRecognitionIsEnabled(bool enabled)
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = HeaderAuthenticationHandler.SchemeName;
+                    options.DefaultChallengeScheme = HeaderAuthenticationHandler.SchemeName;
+                })
+                .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
+                    HeaderAuthenticationHandler.SchemeName,
+                    _ => { });
+            services.AddSingleton(Options.Create(new MediaAnalysisOptions { Enabled = enabled }));
+        });
+        await using var scope = factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        var videos = scope.ServiceProvider.GetRequiredService<IPropertyVideoService>();
+        var registered = await registration.RegisterAsync(new RegisterAccountCommand(
+            $"room-photos-owner-{Guid.NewGuid():N}@example.com",
+            "Password123",
+            $"Room Photo Realty {Guid.NewGuid():N}"));
+        Assert.True(registered.Succeeded, string.Join(", ", registered.Errors));
+        var userId = registered.UserId!;
+        var propertyId = await properties.CreateAsync(userId, new PropertyInput(
+            "14 Quay Street",
+            null,
+            "Portland",
+            "ME",
+            "04101",
+            640_000m,
+            3,
+            2m,
+            1_900,
+            0.1m,
+            1999,
+            PropertyType.SingleFamily,
+            "Room photo regression property.",
+            ListingStatus.Draft));
+        await using (var upload = new MemoryStream([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 0, 0]))
+        {
+            await videos.UploadAsync(userId, propertyId, new PropertyVideoUpload("Walkthrough.mp4", "video/mp4", upload.Length, upload));
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            HeaderAuthenticationHandler.SchemeName,
+            userId);
+        using var response = await client.GetAsync($"/properties/{propertyId}?tab=media");
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("Walkthrough.mp4", content, StringComparison.Ordinal);
+        Assert.Equal(enabled, content.Contains("Find room photos", StringComparison.Ordinal));
     }
 
     private static async Task UploadAsync(

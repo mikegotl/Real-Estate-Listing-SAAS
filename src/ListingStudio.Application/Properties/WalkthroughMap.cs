@@ -15,7 +15,7 @@ public static class WalkthroughMap
     /// <summary>
     /// Lays out stops in storyboard order. The first stop is where the buyer arrives; every later stop moves from
     /// the previous one in its noted direction, relative to the way the buyer is walking. A stop without a note is
-    /// assumed to be straight ahead. When the neighbouring cell is taken, the space moves further the same way.
+    /// assumed to be straight ahead, or back on the main level for an outdoor stop. When the neighbouring cell is taken, the space moves further the same way.
     /// </summary>
     public static WalkthroughMapLayout Build(IReadOnlyList<WalkthroughMapStop> stops)
     {
@@ -34,8 +34,9 @@ public static class WalkthroughMap
             }
 
             var previous = spaces[^1];
-            var direction = stop.Direction ?? WalkthroughDirection.Ahead;
+            var direction = stop.Direction ?? AssumedDirection(stop.Name, previous.Level);
             var level = previous.Level;
+            var returnsToMainLevel = stop.Direction is null && direction != WalkthroughDirection.Ahead;
             switch (direction)
             {
                 case WalkthroughDirection.Left:
@@ -45,10 +46,10 @@ public static class WalkthroughMap
                     heading = (heading + 1) % 4;
                     break;
                 case WalkthroughDirection.Upstairs:
-                    level++;
+                    level = returnsToMainLevel ? 0 : level + 1;
                     break;
                 case WalkthroughDirection.Downstairs:
-                    level--;
+                    level = returnsToMainLevel ? 0 : level - 1;
                     break;
             }
 
@@ -68,6 +69,13 @@ public static class WalkthroughMap
 
         return new WalkthroughMapLayout(spaces);
     }
+
+    // Without a note a stop is straight ahead, except an outdoor stop such as the backyard after an upper or lower
+    // level, which is assumed to be back down (or up) on the main level.
+    private static WalkthroughDirection AssumedDirection(string stop, int previousLevel) =>
+        previousLevel == 0 || !WalkthroughStoryboard.IsGroundLevelOutdoor(stop)
+            ? WalkthroughDirection.Ahead
+            : previousLevel > 0 ? WalkthroughDirection.Downstairs : WalkthroughDirection.Upstairs;
 
     /// <summary>How a step reads to the agent, such as "turn left" or "up the stairs".</summary>
     public static string Describe(WalkthroughDirection direction) => direction switch

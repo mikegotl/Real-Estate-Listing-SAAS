@@ -70,7 +70,7 @@
 
         if (result.Succeeded)
         {
-            RedirectManager.RedirectTo(ReturnUrl);
+            RedirectManager.RedirectAfterSignIn(ReturnUrl);
             return;
         }
 

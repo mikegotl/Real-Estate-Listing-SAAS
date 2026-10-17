@@ -93,7 +93,7 @@
         }
 
         await SignInManager.SignInAsync(user, isPersistent: false);
-        RedirectManager.RedirectTo(ReturnUrl);
+        RedirectManager.RedirectAfterSignIn(ReturnUrl);
     }
 
     private sealed class InputModel

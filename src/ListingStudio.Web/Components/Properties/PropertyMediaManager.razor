@@ -1,6 +1,8 @@
 @inherits OwningComponentBase<IPropertyMediaService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IServiceScopeFactory ScopeFactory
+@inject IDialogService DialogService
+@inject Microsoft.Extensions.Options.IOptions<MediaAnalysisOptions> MediaAnalysisOptions
 
 <MudPaper Class="pa-6 mt-6 storyboard">
     <div class="storyboard-header">
@@ -249,8 +251,11 @@
                     <h3 id="gallery-heading">Photo gallery <span class="photo-gallery-count">@gallery.Count</span></h3>
                     <p class="stop-hint">
                         Photos kept here are not part of the walkthrough, the map, the clips or the video yet. Place one in
-                        a stop when you want buyers to see it there. Use Find room photos on a listing video to fill the
-                        gallery with the best shots of each room.
+                        a stop when you want buyers to see it there.
+                        @if (MediaAnalysisOptions.Value.Enabled)
+                        {
+                            @(" Use Find room photos on a listing video to fill the gallery with the best shots of each room.")
+                        }
                     </p>
                 </div>
                 @if (!IsReadOnly)
@@ -284,7 +289,7 @@
             <div class="walkthrough-map-anchor" tabindex="-1" @ref="mapElement">
                 <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
                                         DirectionChanged="SetStopDirectionAsync" ShowShots="ShowStopShotsAsync"
-                                        SelectedStopChanged="HighlightStop" FocusStop="mapFocusStop"
+                                        SelectedStopChanged="HighlightStop" FocusStop="@mapFocusStop"
                                         FocusRequest="mapFocusRequest" />
             </div>
         }
@@ -813,6 +818,19 @@
 
     private async Task DeleteAsync(Guid mediaId)
     {
+        var inWalkthrough = media.Any(item => item.Id == mediaId && !item.IsInGallery);
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete this photo?",
+            inWalkthrough
+                ? "The photo is removed from the listing, along with any walk-through clips made from it. This cannot be undone."
+                : "The photo is removed from the gallery. This cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         if (await Service.DeleteAsync(userId, PropertyId, mediaId))
         {
