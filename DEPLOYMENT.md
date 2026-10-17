@@ -106,6 +106,13 @@ For Stripe, set `Stripe__PublicBaseUrl` to the deployed Web origin and register 
 
 Google and Apple sign-in are Web-only integrations. Store `Authentication__Google__ClientSecret` and `Authentication__Apple__PrivateKey` as Key Vault-backed Container Apps secrets. Set the non-secret Google client ID and Apple Services ID, Team ID and Key ID as ordinary environment values, then enable each provider with `Authentication__Google__Enabled=true` or `Authentication__Apple__Enabled=true`. Register the exact public callbacks `https://<web-host>/signin-google` and `https://<web-host>/signin-apple` before enabling them. The Web container processes Azure Container Apps' forwarded HTTPS scheme so those provider redirects use the public HTTPS origin.
 
+The protected `production` GitHub environment also supplies the approved external integrations. The deployment stores provider credentials in Key Vault and exposes them to Container Apps only through managed-identity-backed secret references. Configure these environment values before dispatching production deployment:
+
+- Secrets: `OPENAI_API_KEY`, `GOOGLE_AUTH_CLIENT_SECRET`, `GOOGLE_PLACES_API_KEY`, `HIGGSFIELD_API_KEY`, and `HIGGSFIELD_API_SECRET`.
+- Variables: `OPENAI_MODEL` and `GOOGLE_AUTH_CLIENT_ID`.
+
+The production workflow enables media analysis, Google sign-in, Google Places neighborhood insights, and Higgsfield walk-through clips after verifying that every required value is present. Narration remains on OpenAI by default, reusing `OPENAI_API_KEY`; ElevenLabs is not activated unless its own approved credentials and voice ID are added in a future deployment change. Register the production Google OAuth callback `https://<web-host>/signin-google` before deployment.
+
 ## Health, logs and routine operations
 
 - `GET /health/live` checks that the host process can answer. Container Apps uses it for startup and liveness probes.
