@@ -141,6 +141,7 @@ jobs:
               neighborhoodInsightsEnabled=true \
               googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
               higgsfieldEnabled=true \
+              photoClutterRemovalEnabled=true \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
               voiceProvider=OpenAI \
@@ -199,6 +200,7 @@ jobs:
               neighborhoodInsightsEnabled=true \
               googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
               higgsfieldEnabled=true \
+              photoClutterRemovalEnabled=true \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
               voiceProvider=OpenAI \
