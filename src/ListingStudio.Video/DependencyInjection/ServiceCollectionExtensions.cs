@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IVideoRenderer, FfmpegVideoRenderer>();
         services.AddSingleton<IPropertyVideoTranscoder, FfmpegPropertyVideoTranscoder>();
         services.AddSingleton<IPropertyVideoFrameExtractor, FfmpegPropertyVideoFrameExtractor>();
+        services.AddSingleton<IPhotoImageCodec, FfmpegPhotoImageCodec>();
         services.AddHealthChecks()
             .AddCheck<FfmpegHealthCheck>("ffmpeg", tags: ["ready"]);
         services.AddHttpClient<IAiVideoProvider, HttpAiVideoProvider>(client =>

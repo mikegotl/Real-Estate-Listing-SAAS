@@ -31,6 +31,7 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNEC
 }
 
 var mediaAnalysisEnabled = builder.Configuration.GetValue<bool>($"{MediaAnalysisWorkerOptions.SectionName}:Enabled");
+var clutterRemovalEnabled = builder.Configuration.GetValue<bool>($"{PhotoFixOptions.SectionName}:RemoveClutterEnabled");
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration)
@@ -51,6 +52,19 @@ builder.Services
         "VideoProcessing:PollIntervalSeconds must be between 1 and 300.")
     .ValidateOnStart();
 builder.Services
+    .AddOptions<PhotoFixWorkerOptions>()
+    .Bind(builder.Configuration.GetSection(PhotoFixWorkerOptions.SectionName))
+    .Validate(
+        options => options.PollIntervalSeconds is >= 1 and <= 300,
+        "PhotoFixes:PollIntervalSeconds must be between 1 and 300.")
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<OpenAIOptions>()
+    .Validate(
+        options => !clutterRemovalEnabled || !string.IsNullOrWhiteSpace(options.ApiKey),
+        "PhotoFixes:RemoveClutterEnabled requires OpenAI:ApiKey.")
+    .ValidateOnStart();
+builder.Services
     .AddOptions<OpenAIOptions>()
     .Validate(
         options => !mediaAnalysisEnabled
@@ -65,6 +79,7 @@ builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
 builder.Services.AddHostedService<PropertyVideoFrameExtractionWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
+builder.Services.AddHostedService<PhotoFixWorker>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 

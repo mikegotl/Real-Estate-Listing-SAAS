@@ -1,0 +1,57 @@
+@* The original upload beside the fixed photo, so the agent can check a fix before it goes into the listing. *@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Compare with the original</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="photo-compare">
+            <figure>
+                <img src="@($"/property-media/{MediaId}/original")" alt="Original upload of @Filename" />
+                <figcaption>Original upload</figcaption>
+            </figure>
+            <figure>
+                <img src="@FixedUrl" alt="Fixed version of @Filename" />
+                <figcaption>Fixed: @PhotoFixText.Describe(Fixes)</figcaption>
+            </figure>
+        </div>
+        <p class="photo-compare-note">
+            The fixed photo is the one used in the walkthrough, the map, the walk-through clips and the campaign.
+            @if (Fixes.HasFlag(PhotoFix.RemoveClutter))
+            {
+                @(" Clutter was removed with AI, so check that the home itself looks exactly the same before you publish it.")
+            }
+        </p>
+    </DialogContent>
+    <DialogActions>
+        @if (CanRevert)
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Restore"
+                       OnClick="Revert">Revert to original</MudButton>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Keep">@(CanRevert ? "Keep fixed photo" : "Close")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public Guid MediaId { get; set; }
+
+    [Parameter, EditorRequired]
+    public string FixedUrl { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Filename { get; set; } = string.Empty;
+
+    [Parameter]
+    public PhotoFix Fixes { get; set; }
+
+    [Parameter]
+    public bool CanRevert { get; set; } = true;
+
+    private void Keep() => Dialog.Close(DialogResult.Ok(false));
+
+    private void Revert() => Dialog.Close(DialogResult.Ok(true));
+}

@@ -148,6 +148,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGeneratedVideoClipService, GeneratedVideoClipService>();
         services.AddScoped<IWalkthroughTransitionService, WalkthroughTransitionService>();
         services.AddScoped<IWalkthroughTransitionProcessor, WalkthroughTransitionProcessor>();
+        services.AddScoped<IPropertyPhotoFixService, PropertyPhotoFixService>();
+        services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
         services.AddScoped<IUserNotificationService, UserNotificationService>();

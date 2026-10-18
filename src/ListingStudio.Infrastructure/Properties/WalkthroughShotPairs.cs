@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Properties;
@@ -24,7 +26,7 @@ internal static class WalkthroughShotPairs
     {
         var shots = await dbContext.PropertyMedia.AsNoTracking()
             .Where(media => media.OrganizationId == organizationId && media.PropertyId == propertyId && !media.IsInGallery)
-            .Select(media => new { media.Id, media.WalkthroughStop, media.DisplayOrder })
+            .Select(media => new { media.Id, media.WalkthroughStop, media.DisplayOrder, media.BlobPath, media.OriginalBlobPath })
             .ToArrayAsync(cancellationToken);
         var directions = (await dbContext.WalkthroughStopDirections.AsNoTracking()
                 .Where(note => note.OrganizationId == organizationId && note.PropertyId == propertyId)
@@ -39,12 +41,26 @@ internal static class WalkthroughShotPairs
                     pair.From.WalkthroughStop,
                     pair.To.WalkthroughStop,
                     directions);
+                var photos = pair.From.OriginalBlobPath is null && pair.To.OriginalBlobPath is null
+                    ? string.Empty
+                    : PhotoVersion(pair.From.BlobPath, pair.To.BlobPath);
                 return new WalkthroughShotPair(
                     pair.From.Id,
                     pair.To.Id,
                     direction,
-                    WalkthroughClipDirection.Version(provider.GenerationVersion, direction));
+                    WalkthroughClipDirection.Version(provider.GenerationVersion + photos, direction));
             })
             .ToArray();
+    }
+
+    /// <summary>
+    /// A clip between fixed photos is tied to the photo files it was made from, so fixing or reverting either photo
+    /// makes it out of date. Pairs of unfixed photos keep their plain version, and reverting both photos brings back
+    /// the clip made from the originals.
+    /// </summary>
+    internal static string PhotoVersion(string fromBlobPath, string toBlobPath)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{fromBlobPath}\n{toBlobPath}"));
+        return $"/img-{Convert.ToHexStringLower(hash.AsSpan(0, 4))}";
     }
 }

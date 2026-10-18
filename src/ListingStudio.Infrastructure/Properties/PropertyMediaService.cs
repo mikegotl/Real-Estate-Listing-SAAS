@@ -192,6 +192,11 @@ public sealed partial class PropertyMediaService(
         }
 
         await storage.DeleteAsync(media.BlobPath, cancellationToken);
+        if (media.OriginalBlobPath is not null)
+        {
+            await storage.DeleteAsync(media.OriginalBlobPath, cancellationToken);
+        }
+
         dbContext.GeneratedVideoClips.RemoveRange(generatedClips);
         dbContext.WalkthroughTransitions.RemoveRange(transitions);
         dbContext.PropertyMedia.Remove(media);
@@ -606,7 +611,10 @@ public sealed partial class PropertyMediaService(
         media.WalkthroughStop,
         media.IsInGallery,
         media.SourceVideoId,
-        media.SourceVideoTimestampMs);
+        media.SourceVideoTimestampMs,
+        media.AppliedFixes,
+        media.OriginalBlobPath != null,
+        media.EditedAtUtc);
 
     private sealed record ValidatedUpload(
         string Filename,
