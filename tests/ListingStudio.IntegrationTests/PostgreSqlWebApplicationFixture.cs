@@ -88,6 +88,10 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeBillingProviderGateway BillingProvider { get; } = new();
 
+    public FakePhotoImageCodec PhotoImageCodec { get; } = new();
+
+    public FakePhotoClutterRemover PhotoClutterRemover { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -131,6 +135,10 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IWalkthroughVideoProvider>(WalkthroughVideoProvider);
             services.RemoveAll<IBillingProviderGateway>();
             services.AddSingleton<IBillingProviderGateway>(BillingProvider);
+            services.RemoveAll<IPhotoImageCodec>();
+            services.AddSingleton<IPhotoImageCodec>(PhotoImageCodec);
+            services.RemoveAll<IPhotoClutterRemover>();
+            services.AddSingleton<IPhotoClutterRemover>(PhotoClutterRemover);
             additionalServices?.Invoke(services);
         });
     }
@@ -539,5 +547,79 @@ public sealed class FakePropertyMediaAnalyzer : IPropertyMediaAnalyzer
             Exception exception => Task.FromException<PropertyMediaAnalysis>(exception),
             _ => throw new InvalidOperationException("Unsupported fake media-analysis outcome."),
         };
+    }
+}
+
+/// <summary>
+/// Stands in for FFmpeg: every photo decodes as a dim 400 by 300 landscape, scaled the way the request asks, and
+/// encodes to a fixed small JPEG or PNG.
+/// </summary>
+public sealed class FakePhotoImageCodec : IPhotoImageCodec
+{
+    public const int SourceWidth = 400;
+    public const int SourceHeight = 300;
+    public const byte SourceLevel = 60;
+
+    public static readonly byte[] Png = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z+VAAAAAASUVORK5CYII=");
+
+    public static byte[] Jpeg => FakePropertyVideoFrameExtractor.Still;
+
+    public Task<PhotoPixels> DecodeAsync(
+        byte[] image,
+        string mimeType,
+        int boxWidth,
+        int boxHeight,
+        PhotoScaling scaling,
+        CancellationToken cancellationToken = default)
+    {
+        var (width, height) = scaling switch
+        {
+            PhotoScaling.Exact => (boxWidth, boxHeight),
+            PhotoScaling.Fit => FitInside(boxWidth, boxHeight),
+            _ => boxWidth >= SourceWidth && boxHeight >= SourceHeight ? (SourceWidth, SourceHeight) : FitInside(boxWidth, boxHeight),
+        };
+        var pixels = new byte[width * height * 3];
+        pixels.AsSpan().Fill(SourceLevel);
+        return Task.FromResult(new PhotoPixels(width, height, pixels));
+    }
+
+    public Task<byte[]> EncodeJpegAsync(PhotoPixels photo, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Jpeg.ToArray());
+
+    public Task<byte[]> EncodePngAsync(PhotoPixels photo, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Png.ToArray());
+
+    public Task<byte[]> EncodeMaskPngAsync(
+        int width,
+        int height,
+        PhotoRegion editable,
+        CancellationToken cancellationToken = default) => Task.FromResult(Png.ToArray());
+
+    private static (int Width, int Height) FitInside(int boxWidth, int boxHeight)
+    {
+        var scale = Math.Min(boxWidth / (double)SourceWidth, boxHeight / (double)SourceHeight);
+        return (Math.Max(1, (int)Math.Round(SourceWidth * scale)), Math.Max(1, (int)Math.Round(SourceHeight * scale)));
+    }
+}
+
+public sealed class FakePhotoClutterRemover : IPhotoClutterRemover
+{
+    private readonly ConcurrentQueue<Exception> failures = new();
+
+    public bool IsEnabled { get; set; } = true;
+
+    public ConcurrentQueue<PhotoClutterRemovalRequest> Requests { get; } = new();
+
+    public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
+    public Task<byte[]> RemoveClutterAsync(
+        PhotoClutterRemovalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Requests.Enqueue(request);
+        return failures.TryDequeue(out var failure)
+            ? Task.FromException<byte[]>(failure)
+            : Task.FromResult(FakePhotoImageCodec.Png.ToArray());
     }
 }

@@ -25,3 +25,25 @@ public sealed class VoiceOptions
     public int MaxRetryAttempts { get; init; } = 3;
     public int RetryBaseDelayMilliseconds { get; init; } = 250;
 }
+
+/// <summary>Photo fixes on the Media tab. Brightness and color always runs locally; Remove clutter is a paid AI edit.</summary>
+public sealed class PhotoFixOptions
+{
+    public const string SectionName = "PhotoFixes";
+
+    /// <summary>Off until switched on; it also needs OpenAI:ApiKey.</summary>
+    public bool RemoveClutterEnabled { get; init; }
+
+    public string ImageModel { get; init; } = "gpt-image-1";
+
+    public string ImageEditsEndpoint { get; init; } = "https://api.openai.com/v1/images/edits";
+
+    public string Quality { get; init; } = "high";
+
+    /// <summary>Asks the model to keep the input's details; leave empty for a model that does not take it.</summary>
+    public string InputFidelity { get; init; } = "high";
+
+    public int RequestTimeoutSeconds { get; init; } = 240;
+
+    public int MaxOutputMegabytes { get; init; } = 40;
+}

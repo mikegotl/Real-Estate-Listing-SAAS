@@ -20,6 +20,10 @@ public sealed class PropertyMediaConfiguration : IEntityTypeConfiguration<Proper
         builder.Property(media => media.WalkthroughStop).HasMaxLength(PropertyMedia.MaximumWalkthroughStopLength);
         builder.Property(media => media.AnalysisDescription).HasMaxLength(2_000);
         builder.Property(media => media.AnalysisLastError).HasMaxLength(1_000);
+        builder.Property(media => media.OriginalBlobPath).HasMaxLength(1_024);
+        builder.Property(media => media.OriginalMimeType).HasMaxLength(100);
+        builder.Property(media => media.AppliedFixes).IsRequired();
+        builder.Ignore(media => media.IsEdited);
         builder.Ignore(media => media.PotentialProblems);
         builder.Property<string[]>("potentialProblems")
             .HasColumnName("PotentialProblems")

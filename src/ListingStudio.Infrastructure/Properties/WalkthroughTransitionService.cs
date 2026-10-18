@@ -87,6 +87,21 @@ public sealed class WalkthroughTransitionService(
         return await QueueMissingAsync(organizationId, propertyId, automatic: true, cancellationToken) ?? 0;
     }
 
+    public async Task<int> RequeueAffectedForOrganizationAsync(
+        Guid organizationId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || propertyId == Guid.Empty)
+        {
+            throw new ArgumentException("Organization and property identities are required.");
+        }
+
+        return IsEnabled
+            ? await QueueMissingAsync(organizationId, propertyId, automatic: true, cancellationToken) ?? 0
+            : 0;
+    }
+
     // Queues a clip for each current pair without one. An automatic run only acts for a property whose clips the
     // agent has already requested, waits SettleDelay before submitting, and leaves clips that failed for good alone.
     // Returns null when the property is unavailable.

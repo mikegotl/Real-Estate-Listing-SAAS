@@ -89,6 +89,24 @@ public sealed class PropertyMedia
 
     public int? SourceVideoTimestampMs { get; private set; }
 
+    // Set once a photo fix replaces the photo: the upload as the agent first added it, kept so the agent can compare
+    // the fixed photo with it and revert. Everything else (storyboard, map, clips, story, video) uses BlobPath.
+    public string? OriginalBlobPath { get; private set; }
+
+    public string? OriginalMimeType { get; private set; }
+
+    public long? OriginalFileSize { get; private set; }
+
+    public int? OriginalWidth { get; private set; }
+
+    public int? OriginalHeight { get; private set; }
+
+    public PhotoFix AppliedFixes { get; private set; }
+
+    public DateTimeOffset? EditedAtUtc { get; private set; }
+
+    public bool IsEdited => OriginalBlobPath is not null;
+
     public DateTimeOffset UploadedAt { get; private set; }
 
     public PropertyMediaAnalysisStatus AnalysisStatus { get; private set; }
@@ -201,6 +219,109 @@ public sealed class PropertyMedia
 
         SourceVideoId = videoId;
         SourceVideoTimestampMs = timestampMs;
+    }
+
+    /// <summary>
+    /// Replaces the photo with a fixed version. The first fix keeps the upload as the original; a later fix builds on
+    /// the current photo. Returns the blob of the previous fixed version, which is no longer needed, or null.
+    /// The photo is analyzed again because its content changed.
+    /// </summary>
+    public string? ApplyFix(
+        PhotoFix fix,
+        string blobPath,
+        string mimeType,
+        long fileSize,
+        int width,
+        int height,
+        DateTimeOffset editedAtUtc)
+    {
+        if (fix is not (PhotoFix.BrightnessAndColor or PhotoFix.RemoveClutter))
+        {
+            throw new ArgumentOutOfRangeException(nameof(fix), "Exactly one photo fix is applied at a time.");
+        }
+
+        var normalizedBlobPath = Required(blobPath, 1_024, nameof(blobPath));
+        if (normalizedBlobPath == BlobPath || normalizedBlobPath == OriginalBlobPath)
+        {
+            throw new ArgumentException("A fixed photo needs its own stored file.", nameof(blobPath));
+        }
+
+        var normalizedMimeType = Required(mimeType, 100, nameof(mimeType));
+        if (fileSize <= 0 || width <= 0 || height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fileSize), "A fixed photo needs a size and dimensions.");
+        }
+
+        string? superseded = null;
+        if (OriginalBlobPath is null)
+        {
+            OriginalBlobPath = BlobPath;
+            OriginalMimeType = MimeType;
+            OriginalFileSize = FileSize;
+            OriginalWidth = Width;
+            OriginalHeight = Height;
+        }
+        else
+        {
+            superseded = BlobPath;
+        }
+
+        BlobPath = normalizedBlobPath;
+        MimeType = normalizedMimeType;
+        FileSize = fileSize;
+        Width = width;
+        Height = height;
+        AppliedFixes |= fix;
+        EditedAtUtc = editedAtUtc;
+        RestartAnalysisForNewContent();
+        return superseded;
+    }
+
+    /// <summary>
+    /// Puts the original upload back. Returns the blob of the fixed version, which is no longer needed.
+    /// </summary>
+    public string RevertToOriginal(DateTimeOffset revertedAtUtc)
+    {
+        if (OriginalBlobPath is null)
+        {
+            throw new InvalidOperationException("The photo has not been fixed, so there is nothing to revert.");
+        }
+
+        var fixedBlobPath = BlobPath;
+        BlobPath = OriginalBlobPath;
+        MimeType = OriginalMimeType!;
+        FileSize = OriginalFileSize!.Value;
+        Width = OriginalWidth!.Value;
+        Height = OriginalHeight!.Value;
+        OriginalBlobPath = null;
+        OriginalMimeType = null;
+        OriginalFileSize = null;
+        OriginalWidth = null;
+        OriginalHeight = null;
+        AppliedFixes = PhotoFix.None;
+        EditedAtUtc = revertedAtUtc;
+        RestartAnalysisForNewContent();
+        return fixedBlobPath;
+    }
+
+    private void RestartAnalysisForNewContent()
+    {
+        potentialProblems = [];
+        Category = null;
+        RoomType = null;
+        QualityScore = null;
+        HeroScore = null;
+        IsExterior = null;
+        IsInterior = null;
+        ContainsPeople = null;
+        AnalysisDescription = null;
+        SuggestedDisplayOrder = null;
+        AnalysisCompletedAtUtc = null;
+        AnalysisAttemptCount = 0;
+        AnalysisLastAttemptedAtUtc = null;
+        AnalysisNextAttemptAtUtc = null;
+        AnalysisLastError = null;
+        AnalysisStatus = PropertyMediaAnalysisStatus.Pending;
     }
 
     public void BeginAnalysis(DateTimeOffset attemptedAtUtc)

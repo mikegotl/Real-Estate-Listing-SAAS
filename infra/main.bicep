@@ -45,6 +45,9 @@ param googlePlacesApiKey string = ''
 @description('Enable Higgsfield storyboard walk-through clips in the Web and Worker hosts.')
 param higgsfieldEnabled bool = false
 
+@description('Enable the paid OpenAI Remove clutter photo fix on the Media tab. Requires openAiApiKey.')
+param photoClutterRemovalEnabled bool = false
+
 @secure()
 @description('Higgsfield API key ID.')
 param higgsfieldApiKey string = ''
@@ -540,6 +543,10 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
   {
     name: 'Higgsfield__Enabled'
     value: string(higgsfieldEnabled)
+  }
+  {
+    name: 'PhotoFixes__RemoveClutterEnabled'
+    value: string(photoClutterRemovalEnabled && !empty(openAiApiKey))
   }
   {
     name: 'Voice__Provider'
