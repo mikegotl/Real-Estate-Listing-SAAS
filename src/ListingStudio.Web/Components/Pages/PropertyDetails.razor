@@ -131,22 +131,25 @@ else
     private PropertyDetailsResult? property;
     private bool loaded;
     private int activeTab;
+    private string? appliedTab;
     private int photoCount;
     private Guid? coverMediaId;
     private PropertyNextStep? nextStep;
 
     private IPropertyService PropertyService => ScopedServices.GetRequiredService<IPropertyService>();
 
-    protected override void OnInitialized()
-    {
-        if (Enum.TryParse<PropertyDetailsTab>(Tab, ignoreCase: true, out var tab) && Enum.IsDefined(tab))
-        {
-            activeTab = (int)tab;
-        }
-    }
-
     protected override async Task OnParametersSetAsync()
     {
+        // Applied whenever the query changes too, so a notification for the open property still switches tabs.
+        if (Tab != appliedTab)
+        {
+            appliedTab = Tab;
+            if (Enum.TryParse<PropertyDetailsTab>(Tab, ignoreCase: true, out var tab) && Enum.IsDefined(tab))
+            {
+                activeTab = (int)tab;
+            }
+        }
+
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         property = await PropertyService.GetAsync(userId, PropertyId);
         if (property is not null)

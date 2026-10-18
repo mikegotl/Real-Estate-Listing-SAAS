@@ -1,5 +1,6 @@
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +28,10 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
 
         var brightened = await ProcessNextAsync();
         Assert.True(brightened.Succeeded, brightened.Error);
+        var fixedNote = Assert.Single((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
+        Assert.Equal((UserNotificationKind.PhotoFixes, UserNotificationOutcome.Succeeded), (fixedNote.Kind, fixedNote.Outcome));
+        Assert.Equal("The fixed photo for 123 Main Street is in place on the Media tab.", fixedNote.Message);
+        Assert.Equal($"/properties/{owner.PropertyId}?tab=media", fixedNote.Link);
         var afterBrightness = await GetMediaAsync(owner, kitchen);
         Assert.Equal(PhotoFix.BrightnessAndColor, afterBrightness.AppliedFixes);
         Assert.True(afterBrightness.HasOriginal);
@@ -45,6 +50,11 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         await RequestAsync(owner, kitchen, PhotoFix.RemoveClutter);
         var decluttered = await ProcessNextAsync();
         Assert.True(decluttered.Succeeded, decluttered.Error);
+        // The second fix gets its own note; the first is not counted again.
+        Assert.All(
+            (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items,
+            note => Assert.Equal("The fixed photo for 123 Main Street is in place on the Media tab.", note.Message));
+        Assert.Equal(2, (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items.Count);
         var sent = fixture.Factory.PhotoClutterRemover.Requests.Skip(requestsBefore).Single();
         Assert.Equal((1_536, 1_024), (sent.Width, sent.Height));
         var afterClutter = await GetMediaAsync(owner, kitchen);
@@ -141,6 +151,9 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         }
 
         Assert.Equal(PhotoFix.None, (await GetMediaAsync(owner, photo)).AppliedFixes);
+        var failedNote = Assert.Single((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
+        Assert.Equal((UserNotificationKind.PhotoFixes, UserNotificationOutcome.Failed), (failedNote.Kind, failedNote.Outcome));
+        Assert.Equal("A photo for 123 Main Street could not be fixed. OpenAI declined to edit this photo.", failedNote.Message);
 
         fixture.Factory.PhotoClutterRemover.EnqueueFailure(new HttpRequestException("connection reset"));
         await RequestAsync(owner, photo, PhotoFix.RemoveClutter);
@@ -148,10 +161,14 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         Assert.False(dropped.Succeeded);
         Assert.True(dropped.WillRetry);
         Assert.Equal("The photo editing service could not be reached.", dropped.Error);
+        Assert.Single((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
         fixture.Factory.TimeProvider.Advance(TimeSpan.FromMinutes(2));
         var retried = await ProcessNextAsync();
         Assert.Equal((dropped.FixId, true, 2), (retried.FixId, retried.Succeeded, retried.AttemptNumber));
         Assert.Equal(PhotoFix.RemoveClutter, (await GetMediaAsync(owner, photo)).AppliedFixes);
+        Assert.Contains(
+            (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items,
+            note => note.Message == "The fixed photo for 123 Main Street is in place on the Media tab.");
     }
 
     [Fact]

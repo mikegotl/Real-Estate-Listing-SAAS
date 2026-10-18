@@ -1,5 +1,6 @@
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Properties;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -152,6 +153,10 @@ public sealed class PropertyPhotoGalleryTests(PostgreSqlWebApplicationFixture fi
         var finished = Assert.Single(await videos.ListAsync(owner.UserId, owner.PropertyId)).FrameExtraction!;
         Assert.Equal(PropertyVideoFrameExtractionStatus.Completed, finished.Status);
         Assert.Equal((3, 4, 0), (finished.RoomCount, finished.PhotoCount, finished.SkippedPhotoCount));
+        var found = Assert.Single((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
+        Assert.Equal((UserNotificationKind.RoomPhotos, UserNotificationOutcome.Succeeded), (found.Kind, found.Outcome));
+        Assert.Equal("4 room photos from \"Walkthrough.mp4\" are in Extra photos for 123 Main Street.", found.Message);
+        Assert.Empty((await NotificationInbox.ForAsync(fixture, outsider.UserId)).Items);
 
         var gallery = await media.ListAsync(owner.UserId, owner.PropertyId);
         Assert.All(gallery, item =>
@@ -177,6 +182,10 @@ public sealed class PropertyPhotoGalleryTests(PostgreSqlWebApplicationFixture fi
         var again = await processor.ProcessNextAsync();
         Assert.True(again!.Succeeded, again.Error);
         Assert.Equal(1, again.PhotoCount);
+        // The test clock does not move between the two runs, so both notes share a timestamp; look for the second by text.
+        Assert.Contains(
+            "1 room photo from \"Walkthrough.mp4\" is in Extra photos for 123 Main Street.",
+            (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items.Select(item => item.Message));
         Assert.Equal(5, (await media.ListAsync(owner.UserId, owner.PropertyId)).Count);
 
         // Placed room photos join the walkthrough like any upload.
@@ -205,6 +214,7 @@ public sealed class PropertyPhotoGalleryTests(PostgreSqlWebApplicationFixture fi
         Assert.NotNull(failed);
         Assert.False(failed.Succeeded);
         Assert.True(failed.WillRetry);
+        Assert.Empty((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
         var state = Assert.Single(await videos.ListAsync(owner.UserId, owner.PropertyId)).FrameExtraction!;
         Assert.Equal(PropertyVideoFrameExtractionStatus.Failed, state.Status);
         Assert.Equal("Finding room photos took longer than the processing time limit.", state.LastError);

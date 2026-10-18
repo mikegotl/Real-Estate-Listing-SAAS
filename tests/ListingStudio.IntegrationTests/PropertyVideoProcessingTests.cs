@@ -1,5 +1,7 @@
 using ListingStudio.Application.Authentication;
+using ListingStudio.Application.Notifications;
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Properties;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -45,6 +47,22 @@ public sealed class PropertyVideoProcessingTests(PostgreSqlWebApplicationFixture
         Assert.Equal(PropertyVideoProcessingStatus.Completed, completed.ProcessingStatus);
         Assert.Equal(30m, completed.EnhancedFrameRate);
         Assert.Equal("fake-stabilize-color-v1", completed.EnhancementVersion);
+        var inbox = await NotificationInbox.ForAsync(fixture, owner.UserId);
+        var ready = Assert.Single(inbox.Items);
+        Assert.Equal(1, inbox.UnreadCount);
+        Assert.Equal((UserNotificationKind.VideoEnhancement, UserNotificationOutcome.Succeeded), (ready.Kind, ready.Outcome));
+        Assert.Equal("Video ready", ready.Title);
+        Assert.Equal("\"walkthrough.mp4\" for 123 Main Street is stabilized and color corrected.", ready.Message);
+        Assert.Equal($"/properties/{owner.PropertyId}?tab=media", ready.Link);
+        Assert.Empty((await NotificationInbox.ForAsync(fixture, outsider.UserId)).Items);
+        var notifications = scope.ServiceProvider.GetRequiredService<IUserNotificationService>();
+        Assert.False(await notifications.MarkReadAsync(outsider.UserId, ready.Id));
+        Assert.Equal(0, await notifications.MarkAllReadAsync(outsider.UserId));
+        Assert.Equal(1, (await NotificationInbox.ForAsync(fixture, owner.UserId)).UnreadCount);
+        Assert.True(await notifications.MarkReadAsync(owner.UserId, ready.Id));
+        var read = await NotificationInbox.ForAsync(fixture, owner.UserId);
+        Assert.Equal(0, read.UnreadCount);
+        Assert.True(Assert.Single(read.Items).IsRead);
         var enhanced = await service.OpenReadAsync(owner.UserId, videoId, enhanced: true);
         Assert.NotNull(enhanced);
         await using (enhanced.Content)
@@ -78,6 +96,7 @@ public sealed class PropertyVideoProcessingTests(PostgreSqlWebApplicationFixture
         Assert.NotNull(failed);
         Assert.False(failed.Succeeded);
         Assert.True(failed.WillRetry);
+        Assert.Empty((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
         var item = Assert.Single(await service.ListAsync(owner.UserId, owner.PropertyId));
         Assert.Equal(PropertyVideoProcessingStatus.Failed, item.ProcessingStatus);
         Assert.True(await service.RetryProcessingAsync(owner.UserId, owner.PropertyId, videoId));

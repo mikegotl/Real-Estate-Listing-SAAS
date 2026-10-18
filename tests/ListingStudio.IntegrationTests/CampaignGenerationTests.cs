@@ -5,6 +5,7 @@ using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Domain.Videos;
@@ -260,6 +261,14 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
 
         Assert.Equal(CampaignGenerationStage.RenderHero, failed.CurrentStage);
         Assert.Contains("rendered", failed.LastError, StringComparison.OrdinalIgnoreCase);
+        // Retried attempts stay quiet; only the failure that stops the campaign tells the member who started it.
+        var stopped = Assert.Single((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
+        Assert.Equal((UserNotificationKind.Campaign, UserNotificationOutcome.Failed), (stopped.Kind, stopped.Outcome));
+        Assert.StartsWith(
+            "The campaign for 123 Main Street stopped while rendering videos. You can resume it on the Campaign tab.",
+            stopped.Message,
+            StringComparison.Ordinal);
+        Assert.Equal($"/properties/{owner.PropertyId}?tab=campaign", stopped.Link);
         Assert.Equal(storyCallsBefore + 1, fixture.Factory.StoryGenerator.CallCount);
         Assert.Equal(directorCallsBefore + 1, fixture.Factory.VideoDirector.CallCount);
         Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);
@@ -273,6 +282,11 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
 
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
         Assert.Equal(CampaignGenerationStatus.Completed, completed.Status);
+        var inbox = await NotificationInbox.ForAsync(fixture, owner.UserId);
+        Assert.Equal(2, inbox.UnreadCount);
+        var ready = Assert.Single(inbox.Items, item => item.Outcome == UserNotificationOutcome.Succeeded);
+        Assert.Equal("Campaign ready", ready.Title);
+        Assert.Equal("The marketing videos for 123 Main Street are ready to review and download.", ready.Message);
         Assert.Equal(storyCallsBefore + 1, fixture.Factory.StoryGenerator.CallCount);
         Assert.Equal(directorCallsBefore + 1, fixture.Factory.VideoDirector.CallCount);
         Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);

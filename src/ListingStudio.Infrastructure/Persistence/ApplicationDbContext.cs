@@ -5,6 +5,7 @@ using ListingStudio.Domain.Videos;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Billing;
 using ListingStudio.Domain.Neighborhoods;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -51,6 +52,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<BillingWebhookReceipt> BillingWebhookReceipts => Set<BillingWebhookReceipt>();
 
     public DbSet<NeighborhoodInsight> NeighborhoodInsights => Set<NeighborhoodInsight>();
+
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

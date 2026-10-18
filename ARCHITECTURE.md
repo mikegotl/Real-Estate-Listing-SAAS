@@ -117,6 +117,12 @@ Infrastructure locks the tenant-scoped source-media row, fingerprints the stable
 
 Only scenes marked `GenerativeMotionRequest` are resolved during the existing campaign checkpoint. Successfully resolved specifications reference the cached clip and retain their property-photo fallback. The renderer consumes typed generated-clip assets directly; an unresolved request or unavailable optional clip continues through the existing still-image animation path. Automated tests use a fake provider and never activate a paid service.
 
+## Job notifications slice
+
+The Domain owns the tenant-scoped `UserNotification`: one row per member per finished background operation, with the property, the tab it opens, a short title and message, and a read time. Infrastructure processors add these rows in the same `SaveChanges` that records the operation's final state, so a finish is announced exactly once and a retried attempt is never announced. Video enhancement and room-photo extraction announce success and their final failure; campaigns announce completion and a stop that needs a manual resume to the member who started them; walk-through clips and photo fixes are each announced once per property when the last one in progress is done, with completed and failed counts, under a property row lock so concurrent workers cannot both report it. Media analysis is not announced because it runs per photo and inside campaigns.
+
+Application exposes `IUserNotificationService` for the signed-in member's own inbox, unread count and read state; every query is scoped to the member and their organization. The Blazor header hosts an interactive bell that checks every 15 seconds, shows the unread count and recent notes, and pops up a short notice for anything new while the member is on the site. Notifications are stored, so they wait across sign-outs. Email delivery is not implemented.
+
 ## Subscription billing slice
 
 The Domain owns one `OrganizationBillingAccount` per tenant, subscription plan and status, current billing period, included campaign allowance, total campaign usage, and additional usage. Each newly enqueued campaign also creates an append-only `CampaignUsageRecord` in the same PostgreSQL transaction; idempotent campaign reuse does not consume the allowance twice. Billing accounts and usage records have required organization foreign keys, and all user-facing operations derive their organization from authenticated membership.

@@ -2,6 +2,7 @@ using ListingStudio.Application.Audio;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
 using ListingStudio.Infrastructure.Properties;
@@ -54,10 +55,17 @@ public sealed class WalkthroughTransitionTests(PostgreSqlWebApplicationFixture f
         var checkedOnce = await ProcessAllAsync(first, second);
         Assert.Equal(WalkthroughTransitionStatus.Generating, checkedOnce[first].Status);
         Assert.Equal(WalkthroughTransitionStatus.Completed, checkedOnce[second].Status);
+        // One clip of the batch is still generating, so nobody is told yet.
+        Assert.Empty((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
         fixture.Factory.TimeProvider.Advance(TimeSpan.FromSeconds(11));
         fixture.Factory.WalkthroughVideoProvider.EnqueuePoll(first, WalkthroughVideoState.Completed);
         var checkedTwice = await ProcessAllAsync(first, second);
         Assert.Equal(WalkthroughTransitionStatus.Completed, Assert.Single(checkedTwice.Values).Status);
+        var ready = Assert.Single((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
+        Assert.Equal((UserNotificationKind.WalkthroughClips, UserNotificationOutcome.Succeeded), (ready.Kind, ready.Outcome));
+        Assert.Equal("All 2 walk-through clips for 123 Main Street are ready.", ready.Message);
+        Assert.Equal($"/properties/{owner.PropertyId}?tab=media", ready.Link);
+        Assert.Empty((await NotificationInbox.ForAsync(fixture, outsider.UserId)).Items);
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -120,8 +128,18 @@ public sealed class WalkthroughTransitionTests(PostgreSqlWebApplicationFixture f
             Assert.Equal(WalkthroughTransitionStatus.Failed, failed.Status);
             Assert.Equal(attempt, failed.AttemptNumber);
             Assert.Equal("The walk-through provider rejected or could not complete the request.", failed.Error);
+            // A failure that will be retried is not the end of the clip, so it is not announced.
+            Assert.Equal(
+                attempt == WalkthroughTransition.MaximumAttempts ? 1 : 0,
+                (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items.Count);
             fixture.Factory.TimeProvider.Advance(TimeSpan.FromMinutes(5));
         }
+
+        var gaveUp = Assert.Single((await NotificationInbox.ForAsync(fixture, owner.UserId)).Items);
+        Assert.Equal((UserNotificationKind.WalkthroughClips, UserNotificationOutcome.Failed), (gaveUp.Kind, gaveUp.Outcome));
+        Assert.Equal(
+            "The walk-through clip for 123 Main Street could not be made. You can try again on the Media tab.",
+            gaveUp.Message);
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {

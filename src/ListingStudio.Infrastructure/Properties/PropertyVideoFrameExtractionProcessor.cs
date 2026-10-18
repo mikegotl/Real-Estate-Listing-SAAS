@@ -1,6 +1,7 @@
 using System.Data;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Infrastructure.Notifications;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -121,6 +122,20 @@ public sealed partial class PropertyVideoFrameExtractionProcessor(
                 : (DateTimeOffset?)null;
             var claimed = await LoadClaimAsync(claim, cancellationToken);
             claimed.FailFrameExtraction(error, retryAt);
+            if (!willRetry)
+            {
+                var property = await JobNotifications.GetPropertyLabelAsync(
+                    dbContext, claim.OrganizationId, claim.PropertyId, cancellationToken);
+                await JobNotifications.AddAsync(
+                    dbContext,
+                    claim.OrganizationId,
+                    claim.PropertyId,
+                    null,
+                    JobNotificationText.RoomPhotosFailed(property, claim.Filename, error),
+                    timeProvider.GetUtcNow(),
+                    cancellationToken);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
             return new PropertyVideoFrameExtractionRunResult(claim.VideoId, false, willRetry, claim.Attempt, 0, error);
         }
@@ -216,6 +231,16 @@ public sealed partial class PropertyVideoFrameExtractionProcessor(
 
         var skipped = picks.Length - accepted.Length;
         claimed.CompleteFrameExtraction(rooms.Count, accepted.Length, skipped, now);
+        var property = await JobNotifications.GetPropertyLabelAsync(
+            dbContext, claim.OrganizationId, claim.PropertyId, cancellationToken);
+        await JobNotifications.AddAsync(
+            dbContext,
+            claim.OrganizationId,
+            claim.PropertyId,
+            null,
+            JobNotificationText.RoomPhotosFound(property, claim.Filename, accepted.Length),
+            now,
+            cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         storedPaths.Clear();
