@@ -284,8 +284,9 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Equal(CampaignGenerationStatus.Completed, completed.Status);
         var inbox = await NotificationInbox.ForAsync(fixture, owner.UserId);
         Assert.Equal(2, inbox.UnreadCount);
-        Assert.Equal("Campaign ready", inbox.Items[0].Title);
-        Assert.Equal("The marketing videos for 123 Main Street are ready to review and download.", inbox.Items[0].Message);
+        var ready = Assert.Single(inbox.Items, item => item.Outcome == UserNotificationOutcome.Succeeded);
+        Assert.Equal("Campaign ready", ready.Title);
+        Assert.Equal("The marketing videos for 123 Main Street are ready to review and download.", ready.Message);
         Assert.Equal(storyCallsBefore + 1, fixture.Factory.StoryGenerator.CallCount);
         Assert.Equal(directorCallsBefore + 1, fixture.Factory.VideoDirector.CallCount);
         Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);

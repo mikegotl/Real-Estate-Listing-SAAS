@@ -182,9 +182,10 @@ public sealed class PropertyPhotoGalleryTests(PostgreSqlWebApplicationFixture fi
         var again = await processor.ProcessNextAsync();
         Assert.True(again!.Succeeded, again.Error);
         Assert.Equal(1, again.PhotoCount);
-        Assert.Equal(
+        // The test clock does not move between the two runs, so both notes share a timestamp; look for the second by text.
+        Assert.Contains(
             "1 room photo from \"Walkthrough.mp4\" is in Extra photos for 123 Main Street.",
-            (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items[0].Message);
+            (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items.Select(item => item.Message));
         Assert.Equal(5, (await media.ListAsync(owner.UserId, owner.PropertyId)).Count);
 
         // Placed room photos join the walkthrough like any upload.
