@@ -2,6 +2,8 @@ using System.Data;
 using System.Data.Common;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Domain.Notifications;
+using ListingStudio.Infrastructure.Notifications;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -124,6 +126,9 @@ public sealed partial class PropertyPhotoFixProcessor(
                 ? timeProvider.GetUtcNow().AddMinutes(Math.Pow(2, claim.Attempt - 1))
                 : (DateTimeOffset?)null;
             var error = SanitizeError(exception);
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
             var claimed = await dbContext.PropertyPhotoFixes.SingleOrDefaultAsync(
                 candidate => candidate.Id == claim.FixId
                     && candidate.OrganizationId == claim.OrganizationId
@@ -137,7 +142,13 @@ public sealed partial class PropertyPhotoFixProcessor(
             }
 
             claimed.Fail(error, retryAt);
+            if (claimed.NextAttemptAtUtc is null)
+            {
+                await NotifyIfPropertyFinishedAsync(claimed, cancellationToken);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return new PropertyPhotoFixRunResult(
                 claim.FixId,
                 claim.MediaId,
@@ -220,9 +231,55 @@ public sealed partial class PropertyPhotoFixProcessor(
             fixedPhoto.Height,
             now);
         fix.Complete(now);
+        await NotifyIfPropertyFinishedAsync(fix, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return superseded;
+    }
+
+    /// <summary>
+    /// When this was the property's last fix in progress, tells the members how the fixes requested since the last
+    /// photo-fix note went, so fixing several photos in a row gives one note rather than one per photo.
+    /// </summary>
+    private async Task NotifyIfPropertyFinishedAsync(PropertyPhotoFix finished, CancellationToken cancellationToken)
+    {
+        // Fixes finishing at the same moment take turns, so exactly one of them sees that none are left.
+        await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            SELECT 1 FROM "Properties"
+            WHERE "Id" = {finished.PropertyId} AND "OrganizationId" = {finished.OrganizationId}
+            FOR UPDATE
+            """, cancellationToken);
+        var others = await dbContext.PropertyPhotoFixes.AsNoTracking()
+            .Where(fix => fix.OrganizationId == finished.OrganizationId
+                && fix.PropertyId == finished.PropertyId
+                && fix.Id != finished.Id)
+            .ToListAsync(cancellationToken);
+        if (others.Any(fix => fix.Status is PropertyPhotoFixStatus.Pending or PropertyPhotoFixStatus.Processing
+            || (fix.Status == PropertyPhotoFixStatus.Failed && fix.NextAttemptAtUtc is not null)))
+        {
+            return;
+        }
+
+        var lastNote = await dbContext.UserNotifications.AsNoTracking()
+            .Where(notification => notification.OrganizationId == finished.OrganizationId
+                && notification.PropertyId == finished.PropertyId
+                && notification.Kind == UserNotificationKind.PhotoFixes)
+            .MaxAsync(notification => (DateTimeOffset?)notification.CreatedAtUtc, cancellationToken);
+        var batch = others.Append(finished)
+            .Where(fix => fix.Id == finished.Id || lastNote is null || fix.RequestedAtUtc > lastNote)
+            .ToArray();
+        var completed = batch.Count(fix => fix.Status == PropertyPhotoFixStatus.Completed);
+        var failed = batch.Count(fix => fix.Status == PropertyPhotoFixStatus.Failed);
+        var property = await JobNotifications.GetPropertyLabelAsync(
+            dbContext, finished.OrganizationId, finished.PropertyId, cancellationToken);
+        await JobNotifications.AddAsync(
+            dbContext,
+            finished.OrganizationId,
+            finished.PropertyId,
+            null,
+            JobNotificationText.PhotoFixesFinished(property, completed, failed, finished.LastError),
+            timeProvider.GetUtcNow(),
+            cancellationToken);
     }
 
     // The fixed photo is already saved; a clip refresh that loses a race is logged, and the next storyboard edit or

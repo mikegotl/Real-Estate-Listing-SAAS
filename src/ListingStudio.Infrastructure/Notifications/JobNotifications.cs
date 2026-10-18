@@ -130,6 +130,35 @@ public static class JobNotificationText
             JobNotifications.MediaTab);
     }
 
+    public static JobNotificationContent PhotoFixesFinished(string property, int completed, int failed, string? lastError)
+    {
+        var total = completed + failed;
+        if (failed == 0)
+        {
+            return new(
+                UserNotificationKind.PhotoFixes,
+                UserNotificationOutcome.Succeeded,
+                "Photo fixes ready",
+                completed == 1
+                    ? $"The fixed photo for {property} is in place on the Media tab."
+                    : $"All {completed} fixed photos for {property} are in place on the Media tab.",
+                JobNotifications.MediaTab);
+        }
+
+        return new(
+            UserNotificationKind.PhotoFixes,
+            completed == 0 ? UserNotificationOutcome.Failed : UserNotificationOutcome.Succeeded,
+            completed == 0 ? "Photo fix failed" : "Photo fixes finished",
+            completed == 0
+                ? WithReason(
+                    failed == 1
+                        ? $"A photo for {property} could not be fixed."
+                        : $"{failed} photos for {property} could not be fixed.",
+                    lastError)
+                : $"{completed} of {total} fixed photos for {property} are in place; {failed} could not be fixed.",
+            JobNotifications.MediaTab);
+    }
+
     public static JobNotificationContent CampaignCompleted(string property) => new(
         UserNotificationKind.Campaign,
         UserNotificationOutcome.Succeeded,

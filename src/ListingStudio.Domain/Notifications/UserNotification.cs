@@ -10,6 +10,7 @@ public enum UserNotificationKind
     RoomPhotos,
     WalkthroughClips,
     Campaign,
+    PhotoFixes,
 }
 
 public enum UserNotificationOutcome

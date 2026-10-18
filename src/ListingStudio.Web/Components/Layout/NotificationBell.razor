@@ -30,7 +30,7 @@
             @if (items.Count == 0)
             {
                 <p class="notification-empty">
-                    You'll get a note here when a video, room photos, walk-through clips or a campaign finishes.
+                    You'll get a note here when a video, room photos, photo fixes, walk-through clips or a campaign finishes.
                 </p>
             }
             else
@@ -245,6 +245,7 @@
             UserNotificationKind.RoomPhotos => Icons.Material.Filled.PhotoLibrary,
             UserNotificationKind.WalkthroughClips => Icons.Material.Filled.DirectionsWalk,
             UserNotificationKind.Campaign => Icons.Material.Filled.MovieCreation,
+            UserNotificationKind.PhotoFixes => Icons.Material.Filled.AutoFixHigh,
             _ => Icons.Material.Filled.CheckCircle,
         };
 

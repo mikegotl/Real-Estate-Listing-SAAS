@@ -60,6 +60,15 @@ public sealed class UserNotificationTests
         Assert.Equal(JobNotifications.MediaTab, content.Tab);
     }
 
+    [Theory]
+    [InlineData(3, 0, "All 3 fixed photos for 12 Oak St are in place on the Media tab.")]
+    [InlineData(2, 1, "2 of 3 fixed photos for 12 Oak St are in place; 1 could not be fixed.")]
+    [InlineData(0, 2, "2 photos for 12 Oak St could not be fixed. The photo editing service could not be reached.")]
+    public void PhotoFixBatchesAreSummarizedInOneNote(int completed, int failed, string message) =>
+        Assert.Equal(
+            message,
+            JobNotificationText.PhotoFixesFinished("12 Oak St", completed, failed, "The photo editing service could not be reached.").Message);
+
     [Fact]
     public void FailuresSayWhereTheWorkStoppedAndWhy()
     {
