@@ -24,6 +24,8 @@ using ListingStudio.Infrastructure.Billing;
 using ListingStudio.Infrastructure.Health;
 using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Infrastructure.Neighborhoods;
+using ListingStudio.Application.Notifications;
+using ListingStudio.Infrastructure.Notifications;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -148,6 +150,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWalkthroughTransitionProcessor, WalkthroughTransitionProcessor>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
+        services.AddScoped<IUserNotificationService, UserNotificationService>();
         services.AddScoped<BillingService>();
         services.AddScoped<IBillingService>(provider => provider.GetRequiredService<BillingService>());
         services.AddScoped<IBillingUsageRecorder>(provider => provider.GetRequiredService<BillingService>());

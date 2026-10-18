@@ -9,6 +9,7 @@ using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Infrastructure.Configuration;
+using ListingStudio.Infrastructure.Notifications;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -65,6 +66,7 @@ public sealed partial class CampaignGenerationProcessor(
             else if (stage == CampaignGenerationStage.FinalizeCampaign)
             {
                 job.Complete(now);
+                await NotifyAsync(job, JobNotificationText.CampaignCompleted, now, cancellationToken);
             }
             else
             {
@@ -101,6 +103,11 @@ public sealed partial class CampaignGenerationProcessor(
             else
             {
                 job.Fail(error, now);
+                await NotifyAsync(
+                    job,
+                    property => JobNotificationText.CampaignFailed(property, stage, error),
+                    now,
+                    CancellationToken.None);
             }
 
             await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -897,6 +904,24 @@ public sealed partial class CampaignGenerationProcessor(
         }
 
         return true;
+    }
+
+    private async Task NotifyAsync(
+        CampaignGenerationJob job,
+        Func<string, JobNotificationContent> content,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var property = await JobNotifications.GetPropertyLabelAsync(
+            dbContext, job.OrganizationId, job.PropertyId, cancellationToken);
+        await JobNotifications.AddAsync(
+            dbContext,
+            job.OrganizationId,
+            job.PropertyId,
+            job.RequestedByUserId,
+            content(property),
+            now,
+            cancellationToken);
     }
 
     private Task<CampaignGenerationJob> GetJobAsync(Guid jobId, CancellationToken cancellationToken) =>

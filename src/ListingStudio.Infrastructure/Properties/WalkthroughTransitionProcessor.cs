@@ -3,6 +3,7 @@ using ListingStudio.Application.Audio;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Infrastructure.Notifications;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -70,6 +71,8 @@ public sealed partial class WalkthroughTransitionProcessor(
             && transition.AttemptCount >= WalkthroughTransition.MaximumAttempts)
         {
             transition.Fail("The walk-through clip submission did not finish.", null);
+            await LockPropertyAsync(transition, cancellationToken);
+            await NotifyIfPropertyFinishedAsync(transition, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return Result(transition);
@@ -219,17 +222,19 @@ public sealed partial class WalkthroughTransitionProcessor(
             var fileSize = content.CanSeek ? content.Length : 0;
             await campaignAssetStorage.StoreAsync(assetPath, content, "video/mp4", cancellationToken);
             stored = true;
-            var current = await LoadClaimAsync(transitionId, organizationId, attempt, cancellationToken);
-            current.Complete(
-                poll.Provider,
-                poll.Model,
-                assetPath,
-                "video/mp4",
-                fileSize,
-                provider.ClipDurationMs,
-                timeProvider.GetUtcNow());
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return Result(current);
+            return await FinishAsync(
+                transitionId,
+                organizationId,
+                attempt,
+                current => current.Complete(
+                    poll.Provider,
+                    poll.Model,
+                    assetPath,
+                    "video/mp4",
+                    fileSize,
+                    provider.ClipDurationMs,
+                    timeProvider.GetUtcNow()),
+                cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException
             || !cancellationToken.IsCancellationRequested)
@@ -265,10 +270,92 @@ public sealed partial class WalkthroughTransitionProcessor(
         CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
+        return await FinishAsync(
+            transitionId,
+            organizationId,
+            attempt,
+            current => current.Fail(error, timeProvider.GetUtcNow().AddMinutes(Math.Pow(2, attempt - 1))),
+            cancellationToken);
+    }
+
+    /// <summary>Records a clip's result and, when it was the property's last clip in progress, notifies the members.</summary>
+    private async Task<WalkthroughTransitionRunResult> FinishAsync(
+        Guid transitionId,
+        Guid organizationId,
+        int attempt,
+        Action<WalkthroughTransition> finish,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
         var current = await LoadClaimAsync(transitionId, organizationId, attempt, cancellationToken);
-        current.Fail(error, timeProvider.GetUtcNow().AddMinutes(Math.Pow(2, attempt - 1)));
+        await LockPropertyAsync(current, cancellationToken);
+        finish(current);
+        await NotifyIfPropertyFinishedAsync(current, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Result(current);
+    }
+
+    // Clips of one property finishing at the same moment take turns, so exactly one of them sees that none are left.
+    private Task<int> LockPropertyAsync(WalkthroughTransition transition, CancellationToken cancellationToken) =>
+        dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            SELECT 1 FROM "Properties"
+            WHERE "Id" = {transition.PropertyId} AND "OrganizationId" = {transition.OrganizationId}
+            FOR UPDATE
+            """, cancellationToken);
+
+    private async Task NotifyIfPropertyFinishedAsync(WalkthroughTransition finished, CancellationToken cancellationToken)
+    {
+        if (finished.Status is not WalkthroughTransitionStatus.Completed
+            && !(finished.Status == WalkthroughTransitionStatus.Failed && !finished.CanRetry))
+        {
+            return;
+        }
+
+        var pairs = await WalkthroughShotPairs.LoadAsync(
+            dbContext,
+            provider,
+            finished.OrganizationId,
+            finished.PropertyId,
+            cancellationToken);
+        var others = await dbContext.WalkthroughTransitions.AsNoTracking()
+            .Where(transition => transition.OrganizationId == finished.OrganizationId
+                && transition.PropertyId == finished.PropertyId
+                && transition.Id != finished.Id)
+            .ToListAsync(cancellationToken);
+        // Only the clips the current storyboard still uses count; a replaced pair is dropped before it is generated.
+        var current = others.Append(finished)
+            .Where(transition => pairs.Any(pair => pair.From == transition.FromPropertyMediaId
+                && pair.To == transition.ToPropertyMediaId
+                && pair.Version == transition.GenerationVersion))
+            .ToArray();
+        if (current.Any(transition => transition.Status is WalkthroughTransitionStatus.Pending
+                or WalkthroughTransitionStatus.Submitting
+                or WalkthroughTransitionStatus.Generating
+            || transition.CanRetry))
+        {
+            return;
+        }
+
+        var completed = current.Count(transition => transition.Status == WalkthroughTransitionStatus.Completed);
+        var failed = current.Count(transition => transition.Status == WalkthroughTransitionStatus.Failed);
+        if (completed + failed == 0)
+        {
+            return;
+        }
+
+        var property = await JobNotifications.GetPropertyLabelAsync(
+            dbContext, finished.OrganizationId, finished.PropertyId, cancellationToken);
+        await JobNotifications.AddAsync(
+            dbContext,
+            finished.OrganizationId,
+            finished.PropertyId,
+            null,
+            JobNotificationText.WalkthroughClipsFinished(property, completed, failed),
+            timeProvider.GetUtcNow(),
+            cancellationToken);
     }
 
     private async Task<WalkthroughTransition> LoadClaimAsync(

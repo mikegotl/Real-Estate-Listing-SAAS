@@ -18,6 +18,7 @@
                            StartIcon="@Icons.Material.Filled.CreditCard">Billing</MudButton>
             </div>
             <div class="account-actions">
+                <NotificationBell @rendermode="InteractiveServer" />
                 <span class="user-pill">
                     <MudIcon Icon="@Icons.Material.Filled.AccountCircle" Size="Size.Small" />
                     <span>@auth.User.Identity?.Name</span>

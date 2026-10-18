@@ -1,0 +1,257 @@
+@using ListingStudio.Application.Notifications
+@using ListingStudio.Domain.Notifications
+@implements IAsyncDisposable
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject TimeProvider TimeProvider
+@inject ILogger<NotificationBell> Logger
+
+<div class="notification-bell">
+    <button type="button" class="notification-trigger" aria-label="@TriggerLabel" aria-expanded="@(open ? "true" : "false")"
+            @onclick="ToggleAsync">
+        <MudIcon Icon="@Icons.Material.Filled.Notifications" />
+        @if (unread > 0)
+        {
+            <span class="notification-count" aria-hidden="true">@(unread > 9 ? "9+" : unread.ToString())</span>
+        }
+    </button>
+
+    @if (open)
+    {
+        <div class="notification-panel" role="dialog" aria-label="Notifications">
+            <div class="notification-panel-header">
+                <strong>Notifications</strong>
+                @if (unread > 0)
+                {
+                    <button type="button" class="notification-text-button" @onclick="MarkAllReadAsync">Mark all as read</button>
+                }
+            </div>
+            @if (items.Count == 0)
+            {
+                <p class="notification-empty">
+                    You'll get a note here when a video, room photos, walk-through clips or a campaign finishes.
+                </p>
+            }
+            else
+            {
+                <ul class="notification-list">
+                    @foreach (var item in items)
+                    {
+                        <li>
+                            <a href="@item.Link" class="notification-item @(item.IsRead ? null : "unread")"
+                               @onclick="() => OpenAsync(item)" @onclick:preventDefault="true">
+                                <span class="notification-icon @OutcomeClass(item)"><MudIcon Icon="@Icon(item)" Size="Size.Small" /></span>
+                                <span class="notification-copy">
+                                    <strong>@item.Title</strong>
+                                    <span>@item.Message</span>
+                                    <small>@NotificationTime.Describe(item.CreatedAtUtc, TimeProvider.GetUtcNow())</small>
+                                </span>
+                            </a>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    <div class="notification-toast-region" role="status" aria-live="polite">
+        @if (toast is not null)
+        {
+            <div class="notification-toast">
+                <span class="notification-icon @OutcomeClass(toast)"><MudIcon Icon="@Icon(toast)" Size="Size.Small" /></span>
+                <span class="notification-copy">
+                    <strong>@toast.Title</strong>
+                    <span>@toast.Message</span>
+                </span>
+                <span class="notification-toast-actions">
+                    <a href="@toast.Link" @onclick="() => OpenAsync(toast)" @onclick:preventDefault="true">View</a>
+                    <button type="button" aria-label="Dismiss notification" @onclick="DismissToast">
+                        <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                    </button>
+                </span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    // How often an open page checks for work the Worker finished; one small indexed query per tab.
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ToastDuration = TimeSpan.FromSeconds(10);
+
+    private readonly CancellationTokenSource disposal = new();
+    private IReadOnlyList<UserNotificationItem> items = [];
+    private int unread;
+    private bool open;
+    private UserNotificationItem? toast;
+    private CancellationTokenSource? toastTimer;
+    private DateTimeOffset? newestSeen;
+    private string? userId;
+
+    private string TriggerLabel => unread == 0 ? "Notifications" : $"Notifications, {unread} unread";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (userId is null)
+        {
+            return;
+        }
+
+        await RefreshAsync(announce: false);
+        _ = PollAsync(disposal.Token);
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(PollInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                try
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        await RefreshAsync(announce: true);
+                        StateHasChanged();
+                    });
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    // A missed check is caught up by the next one, so the bell keeps polling.
+                    Logger.LogWarning(exception, "Checking for new notifications failed");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The circuit closed.
+        }
+    }
+
+    private async Task RefreshAsync(bool announce)
+    {
+        if (userId is null)
+        {
+            return;
+        }
+
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var inbox = await scope.ServiceProvider.GetRequiredService<IUserNotificationService>()
+            .GetInboxAsync(userId, disposal.Token);
+        items = inbox.Items;
+        unread = inbox.UnreadCount;
+        var newest = items.Count == 0 ? null : (DateTimeOffset?)items.Max(item => item.CreatedAtUtc);
+        if (announce && newest is not null && (newestSeen is null || newest > newestSeen))
+        {
+            var arrived = items.FirstOrDefault(item => !item.IsRead && (newestSeen is null || item.CreatedAtUtc > newestSeen));
+            if (arrived is not null)
+            {
+                ShowToast(arrived);
+            }
+        }
+
+        newestSeen = newest ?? newestSeen;
+    }
+
+    private async Task ToggleAsync()
+    {
+        open = !open;
+        if (open)
+        {
+            await RefreshAsync(announce: false);
+        }
+    }
+
+    private async Task OpenAsync(UserNotificationItem item)
+    {
+        open = false;
+        DismissToast();
+        if (!item.IsRead && userId is not null)
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IUserNotificationService>()
+                .MarkReadAsync(userId, item.Id, disposal.Token);
+            await RefreshAsync(announce: false);
+        }
+
+        Navigation.NavigateTo(item.Link);
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        if (userId is null)
+        {
+            return;
+        }
+
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<IUserNotificationService>().MarkAllReadAsync(userId, disposal.Token);
+        await RefreshAsync(announce: false);
+    }
+
+    private void ShowToast(UserNotificationItem item)
+    {
+        toastTimer?.Cancel();
+        toastTimer?.Dispose();
+        toast = item;
+        toastTimer = CancellationTokenSource.CreateLinkedTokenSource(disposal.Token);
+        _ = HideToastLaterAsync(item, toastTimer.Token);
+    }
+
+    private async Task HideToastLaterAsync(UserNotificationItem item, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(ToastDuration, TimeProvider, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            if (ReferenceEquals(toast, item))
+            {
+                toast = null;
+                StateHasChanged();
+            }
+        });
+    }
+
+    private void DismissToast()
+    {
+        toastTimer?.Cancel();
+        toast = null;
+    }
+
+    private static string OutcomeClass(UserNotificationItem item) =>
+        item.Outcome == UserNotificationOutcome.Failed ? "failed" : "succeeded";
+
+    private static string Icon(UserNotificationItem item) => item.Outcome == UserNotificationOutcome.Failed
+        ? Icons.Material.Filled.ErrorOutline
+        : item.Kind switch
+        {
+            UserNotificationKind.VideoEnhancement => Icons.Material.Filled.Videocam,
+            UserNotificationKind.RoomPhotos => Icons.Material.Filled.PhotoLibrary,
+            UserNotificationKind.WalkthroughClips => Icons.Material.Filled.DirectionsWalk,
+            UserNotificationKind.Campaign => Icons.Material.Filled.MovieCreation,
+            _ => Icons.Material.Filled.CheckCircle,
+        };
+
+    public async ValueTask DisposeAsync()
+    {
+        await disposal.CancelAsync();
+        disposal.Dispose();
+        toastTimer?.Dispose();
+    }
+}

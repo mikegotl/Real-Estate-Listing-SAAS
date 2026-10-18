@@ -1,6 +1,7 @@
 using System.Data;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Infrastructure.Notifications;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -86,6 +87,15 @@ public sealed partial class PropertyVideoProcessingProcessor(
                 result.Metadata.FrameRate,
                 transcoder.EnhancementVersion,
                 timeProvider.GetUtcNow());
+            var property = await JobNotifications.GetPropertyLabelAsync(dbContext, organizationId, propertyId, cancellationToken);
+            await JobNotifications.AddAsync(
+                dbContext,
+                organizationId,
+                propertyId,
+                null,
+                JobNotificationText.VideoEnhanced(property, originalFilename),
+                timeProvider.GetUtcNow(),
+                cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return new PropertyVideoProcessingRunResult(videoId, true, false, attemptNumber, null);
         }
@@ -109,6 +119,19 @@ public sealed partial class PropertyVideoProcessingProcessor(
                 : (DateTimeOffset?)null;
             var claimed = await LoadClaimAsync(organizationId, videoId, attemptNumber, cancellationToken);
             claimed.FailProcessing(error, retryAt);
+            if (!willRetry)
+            {
+                var property = await JobNotifications.GetPropertyLabelAsync(dbContext, organizationId, propertyId, cancellationToken);
+                await JobNotifications.AddAsync(
+                    dbContext,
+                    organizationId,
+                    propertyId,
+                    null,
+                    JobNotificationText.VideoEnhancementFailed(property, originalFilename, error),
+                    timeProvider.GetUtcNow(),
+                    cancellationToken);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
             return new PropertyVideoProcessingRunResult(videoId, false, willRetry, attemptNumber, error);
         }
