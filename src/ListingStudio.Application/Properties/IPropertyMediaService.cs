@@ -112,7 +112,10 @@ public sealed record PropertyMediaItem(
     string? WalkthroughStop = null,
     bool IsInGallery = false,
     Guid? SourceVideoId = null,
-    int? SourceVideoTimestampMs = null);
+    int? SourceVideoTimestampMs = null,
+    PhotoFix AppliedFixes = PhotoFix.None,
+    bool HasOriginal = false,
+    DateTimeOffset? EditedAtUtc = null);
 
 public sealed record WalkthroughStopDirectionItem(string Stop, WalkthroughDirection Direction);
 

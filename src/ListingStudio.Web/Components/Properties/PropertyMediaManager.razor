@@ -373,6 +373,14 @@
     private bool queueing;
     private bool transitionPollingStarted;
 
+    private readonly SemaphoreSlim photoFixGate = new(1, 1);
+    private AsyncServiceScope? photoFixScope;
+    private IPropertyPhotoFixService? photoFixService;
+    private Dictionary<Guid, PropertyPhotoFixItem> photoFixes = [];
+    private bool photoFixPollingStarted;
+
+    private bool AnyPhotoFixRunning => photoFixes.Values.Any(fix => fix.IsInProgress);
+
     private bool ShowWalkthroughPanel => transitions.Count > 0
         && (transitionService?.IsEnabled == true || ReadyTransitionCount > 0);
 
@@ -396,10 +404,15 @@
         var suggestion = item.Analysis is null ? null : WalkthroughStoryboard.SuggestStop(item.Analysis.Category);
         var transition = transitions.GetValueOrDefault(item.Id);
         var shotNumber = sequence.GetValueOrDefault(item.Id) + 1;
+        var photoFix = photoFixes.GetValueOrDefault(item.Id);
         <article class="storyboard-photo">
-            <div class="storyboard-photo-image" style="@($"background-image: url('/property-media/{item.Id}')")"
+            <div class="storyboard-photo-image" style="@($"background-image: url('{PhotoUrl(item)}')")"
                  role="img" aria-label="@item.OriginalFilename">
                 <span class="scene-number" title="Position in the walkthrough video">@(sequence.GetValueOrDefault(item.Id) + 1)</span>
+                @if (playingFromId != item.Id)
+                {
+                    @PhotoFixControls((item, photoFix))
+                }
                 @if (transition?.IsReady == true)
                 {
                     @if (playingFromId == item.Id)
@@ -451,6 +464,8 @@
                 {
                     <span class="storyboard-photo-meta">Recognizing room…</span>
                 }
+
+                @PhotoFixStatus(photoFix)
 
                 @if (transition is not null && (transition.Status is not null || transitionService?.IsEnabled == true))
                 {
@@ -504,10 +519,15 @@
     {
         var suggestion = item.Analysis is null ? null : WalkthroughStoryboard.SuggestStop(item.Analysis.Category);
         var label = item.Analysis?.RoomType ?? (item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed ? "Not recognized" : "Recognizing room…");
+        var photoFix = photoFixes.GetValueOrDefault(item.Id);
         <li class="gallery-thumb">
-            <img src="@($"/property-media/{item.Id}")" alt="@item.OriginalFilename" loading="lazy" title="@item.OriginalFilename" />
+            <div class="gallery-thumb-image">
+                <img src="@PhotoUrl(item)" alt="@item.OriginalFilename" loading="lazy" title="@item.OriginalFilename" />
+                @PhotoFixControls((item, photoFix))
+            </div>
             <div class="gallery-thumb-body">
                 <span class="gallery-thumb-room">@label</span>
+                @PhotoFixStatus(photoFix)
                 @if (item.SourceVideoTimestampMs is { } at)
                 {
                     <span class="gallery-thumb-source">
@@ -541,6 +561,72 @@
         </li>
     };
 
+    // The Fix button sits on the photo itself; a fixed photo also carries an Edited badge, and a running fix covers
+    // the photo with its progress.
+    private RenderFragment PhotoFixControls((PropertyMediaItem Item, PropertyPhotoFixItem? Fix) photo) => __builder =>
+    {
+        var item = photo.Item;
+        var running = photo.Fix?.IsInProgress == true;
+        @if (running)
+        {
+            <div class="photo-fix-progress" role="status">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="Color.Inherit" />
+                <span>@PhotoFixText.InProgress(photo.Fix!.Kind)</span>
+            </div>
+        }
+        else if (item.HasOriginal)
+        {
+            <button type="button" class="photo-fix-edited" title="@($"Fixed: {PhotoFixText.Describe(item.AppliedFixes)}. Compare with the original.")"
+                    aria-label="@($"Compare {item.OriginalFilename} with the original")" @onclick="@(() => CompareAsync(item))">
+                <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Size="Size.Small" />Edited
+            </button>
+        }
+
+        @if (!IsReadOnly && !running)
+        {
+            <div class="photo-fix-menu">
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
+                    <ActivatorContent Context="menu">
+                        <button type="button" class="photo-fix-button" title="Fix this photo" @onclick="menu.ToggleAsync"
+                                aria-label="@($"Fix {item.OriginalFilename}")">
+                            <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Size="Size.Small" />Fix
+                        </button>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <MudMenuItem Icon="@Icons.Material.Filled.WbSunny" OnClick="@(() => RequestFixAsync(item, PhotoFix.BrightnessAndColor))">
+                            Fix brightness and color
+                        </MudMenuItem>
+                        @if (photoFixService?.IsClutterRemovalEnabled == true)
+                        {
+                            <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices" OnClick="@(() => RequestFixAsync(item, PhotoFix.RemoveClutter))">
+                                Remove clutter with AI
+                            </MudMenuItem>
+                        }
+                        @if (item.HasOriginal)
+                        {
+                            <MudDivider />
+                            <MudMenuItem Icon="@Icons.Material.Filled.Compare" OnClick="@(() => CompareAsync(item))">Compare with original</MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.Restore" OnClick="@(() => RevertAsync(item))">Revert to original</MudMenuItem>
+                        }
+                    </ChildContent>
+                </MudMenu>
+            </div>
+        }
+    };
+
+    private RenderFragment PhotoFixStatus(PropertyPhotoFixItem? fix) => __builder =>
+    {
+        @if (fix is { IsInProgress: false, Status: PropertyPhotoFixStatus.Failed })
+        {
+            <span class="storyboard-photo-meta error">Photo fix failed: @fix.Error</span>
+        }
+    };
+
+    // A fixed photo keeps its address, so the version makes the browser fetch the new picture.
+    private static string PhotoUrl(PropertyMediaItem item) => item.EditedAtUtc is { } edited
+        ? $"/property-media/{item.Id}?v={edited.ToUnixTimeMilliseconds()}"
+        : $"/property-media/{item.Id}";
+
     private static string FormatTimestamp(int milliseconds) => TimeSpan.FromMilliseconds(milliseconds).ToString(@"m\:ss");
 
     /// <summary>Reloads photos changed elsewhere, such as room photos a video added to the gallery.</summary>
@@ -572,6 +658,7 @@
         directions = await Service.ListStopDirectionsAsync(userId, PropertyId);
         BuildStoryboard();
         await LoadTransitionsAsync(userId);
+        await LoadPhotoFixesAsync(userId);
         loaded = true;
     }
 
@@ -681,6 +768,170 @@
 
     private void StopWalkthrough() => playingFromId = null;
 
+    // Photo fixes use their own scope too, so their polling never shares a DbContext with the other services.
+    private async Task LoadPhotoFixesAsync(string userId)
+    {
+        photoFixScope ??= ScopeFactory.CreateAsyncScope();
+        photoFixService ??= photoFixScope.Value.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>();
+        await photoFixGate.WaitAsync();
+        try
+        {
+            photoFixes = (await photoFixService.ListAsync(userId, PropertyId))
+                .ToDictionary(item => item.PropertyMediaId);
+        }
+        finally
+        {
+            photoFixGate.Release();
+        }
+
+        if (AnyPhotoFixRunning)
+        {
+            StartPhotoFixPolling();
+        }
+    }
+
+    private void StartPhotoFixPolling()
+    {
+        if (photoFixPollingStarted)
+        {
+            return;
+        }
+
+        photoFixPollingStarted = true;
+        _ = PollPhotoFixesAsync();
+    }
+
+    // When a running fix finishes, the photos reload so the fixed picture and its new analysis show up.
+    private async Task PollPhotoFixesAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(transitionPolling.Token))
+            {
+                if (!AnyPhotoFixRunning)
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+                    var running = photoFixes.Values.Where(fix => fix.IsInProgress).Select(fix => fix.PropertyMediaId).ToHashSet();
+                    await LoadPhotoFixesAsync(userId);
+                    if (running.Any(mediaId => photoFixes.GetValueOrDefault(mediaId)?.IsInProgress != true))
+                    {
+                        await ReloadAfterChangeAsync();
+                    }
+
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (transitionPolling.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task RequestFixAsync(PropertyMediaItem item, PhotoFix fix)
+    {
+        if (photoFixService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            bool requested;
+            await photoFixGate.WaitAsync();
+            try
+            {
+                requested = await photoFixService.RequestAsync(userId, PropertyId, item.Id, fix);
+            }
+            finally
+            {
+                photoFixGate.Release();
+            }
+
+            if (requested)
+            {
+                await LoadPhotoFixesAsync(userId);
+                ShowMessage(
+                    fix == PhotoFix.RemoveClutter
+                        ? "Removing clutter with AI. This can take a minute; the original stays saved so you can compare and revert."
+                        : "Fixing brightness and color. The original stays saved so you can compare and revert.",
+                    Severity.Success);
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task CompareAsync(PropertyMediaItem item)
+    {
+        var dialog = await DialogService.ShowAsync<PhotoFixCompareDialog>(
+            "Compare with the original",
+            new DialogParameters<PhotoFixCompareDialog>
+            {
+                { dialog => dialog.MediaId, item.Id },
+                { dialog => dialog.FixedUrl, PhotoUrl(item) },
+                { dialog => dialog.Filename, item.OriginalFilename },
+                { dialog => dialog.Fixes, item.AppliedFixes },
+                { dialog => dialog.CanRevert, !IsReadOnly },
+            },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (!IsReadOnly && result is { Canceled: false, Data: true })
+        {
+            await RevertAsync(item, confirmed: true);
+        }
+    }
+
+    private async Task RevertAsync(PropertyMediaItem item, bool confirmed = false)
+    {
+        if (photoFixService is null)
+        {
+            return;
+        }
+
+        if (!confirmed && await DialogService.ShowMessageBoxAsync(
+                "Revert to the original photo?",
+                "The fixed version is deleted and the photo you uploaded is used again everywhere.",
+                yesText: "Revert",
+                cancelText: "Cancel") != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            bool reverted;
+            await photoFixGate.WaitAsync();
+            try
+            {
+                reverted = await photoFixService.RevertAsync(userId, PropertyId, item.Id);
+            }
+            finally
+            {
+                photoFixGate.Release();
+            }
+
+            if (reverted)
+            {
+                await ReloadAfterChangeAsync();
+                ShowMessage("The original photo is back in place.", Severity.Success);
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+    }
+
     // A short badge on the photo card; the detail sits in its tooltip.
     private static string WalkthroughStatusText(WalkthroughTransitionItem item) => item.Status switch
     {
@@ -695,7 +946,7 @@
     private static string WalkthroughStatusDetail(WalkthroughTransitionItem item) => item.Status switch
     {
         WalkthroughTransitionStatus.Completed when !item.IsCurrent =>
-            "ready, but made before its walking direction was set; create it again to follow the map",
+            "ready, but made before a photo or its walking direction changed; create it again to match",
         WalkthroughTransitionStatus.Completed => "ready, press play on the photo",
         WalkthroughTransitionStatus.Pending or WalkthroughTransitionStatus.Submitting => "queued",
         WalkthroughTransitionStatus.Generating => "generating",
@@ -718,6 +969,11 @@
         if (transitionScope is { } scope)
         {
             await scope.DisposeAsync();
+        }
+
+        if (photoFixScope is { } fixScope)
+        {
+            await fixScope.DisposeAsync();
         }
 
         await base.DisposeAsyncCore();

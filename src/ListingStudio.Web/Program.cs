@@ -143,6 +143,24 @@ app.MapGet("/property-media/{mediaId:guid}", async (
         : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);
 }).RequireAuthorization();
 
+app.MapGet("/property-media/{mediaId:guid}/original", async (
+    Guid mediaId,
+    HttpContext context,
+    IPropertyPhotoFixService photoFixService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var media = await photoFixService.OpenOriginalReadAsync(userId, mediaId, cancellationToken);
+    return media is null
+        ? Results.NotFound()
+        : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
 app.MapGet("/walkthrough-transitions/{transitionId:guid}", async (
     Guid transitionId,
     HttpContext context,

@@ -19,7 +19,15 @@ public static class ServiceCollectionExtensions
     {
         services.AddOptions<OpenAIOptions>().Bind(configuration.GetSection(OpenAIOptions.SectionName));
         services.AddOptions<VoiceOptions>().Bind(configuration.GetSection(VoiceOptions.SectionName));
+        services.AddOptions<PhotoFixOptions>()
+            .Bind(configuration.GetSection(PhotoFixOptions.SectionName))
+            .Validate(options => options.RequestTimeoutSeconds is >= 30 and <= 900,
+                "PhotoFixes:RequestTimeoutSeconds must be between 30 and 900 seconds.")
+            .Validate(options => options.MaxOutputMegabytes is >= 1 and <= 100,
+                "PhotoFixes:MaxOutputMegabytes must be between 1 and 100.");
         services.AddHttpClient<IPropertyMediaAnalyzer, OpenAIPropertyMediaAnalyzer>();
+        services.AddHttpClient<IPhotoClutterRemover, OpenAIPhotoClutterRemover>(client =>
+            client.Timeout = Timeout.InfiniteTimeSpan);
         services.AddHttpClient<IPropertyStoryGenerator, OpenAIPropertyStoryGenerator>();
         services.AddHttpClient<IVideoDirector, OpenAIVideoDirector>();
         services.AddHttpClient<ElevenLabsVoiceProvider>();

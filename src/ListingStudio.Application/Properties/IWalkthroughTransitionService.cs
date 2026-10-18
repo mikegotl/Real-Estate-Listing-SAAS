@@ -33,6 +33,15 @@ public interface IWalkthroughTransitionService
         Guid propertyId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// <see cref="RequeueAffectedAsync(string, Guid, CancellationToken)"/> for a background job that changed a photo
+    /// on the organization's behalf, such as a photo fix finishing in the Worker.
+    /// </summary>
+    Task<int> RequeueAffectedForOrganizationAsync(
+        Guid organizationId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default);
+
     Task<WalkthroughTransitionContent?> OpenReadAsync(
         string userId,
         Guid transitionId,
@@ -41,7 +50,7 @@ public interface IWalkthroughTransitionService
 
 /// <summary>
 /// A consecutive shot pair and its clip. <see cref="IsCurrent"/> is false when the clip shown was made before the
-/// latest generation settings or walking direction, so a new clip can be requested to replace it.
+/// latest generation settings, walking direction or photo fix, so a new clip can be requested to replace it.
 /// </summary>
 public sealed record WalkthroughTransitionItem(
     Guid FromPropertyMediaId,
