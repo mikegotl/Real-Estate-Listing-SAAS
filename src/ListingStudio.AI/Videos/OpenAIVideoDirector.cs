@@ -23,10 +23,12 @@ public sealed class OpenAIVideoDirector(
 
         When accepted_narration_script is present, narration must use only its segment keys and exact text. Include
         every accepted script segment exactly once, in the supplied order; never paraphrase, omit, duplicate, or add
-        narration. Match each script segment to the most relevant supplied photo analysis. Property walkthrough video
-        may be selected for script passages about layout, flow, movement through the home, or a general tour; choose a
-        valid start point whose scene window fits inside the supplied video duration. Property-video scenes must not
-        request still-image motion. When no accepted script is present, direct narration from other grounded bindings.
+        narration. Match each script segment to the most relevant supplied photo analysis or verified walkthrough
+        tourStop. Property walkthrough videos are listed in the agent's tourOrder. Use them in that order when they
+        are relevant, beginning with FrontExterior when supplied, and do not jump backward in the route without a
+        narration reason. Choose a valid start point whose scene window fits inside the supplied video duration.
+        Property-video scenes must not request still-image motion. When no accepted script is present, direct
+        narration from other grounded bindings.
 
         Media is listed in the agent's walkthrough storyboard order. When media items carry a walkthroughStop, sequence
         the photo scenes in that order so the tour moves continuously through the home: open on the exterior front,
@@ -47,7 +49,7 @@ public sealed class OpenAIVideoDirector(
 
     private static readonly JsonElement OutputSchema = VideoSchemaContract.EditorialSchema;
 
-    public string DirectorVersion => "openai-video-director-v1.5";
+    public string DirectorVersion => "openai-video-director-v1.6";
 
     public async Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,

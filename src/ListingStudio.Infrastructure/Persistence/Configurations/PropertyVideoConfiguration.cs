@@ -15,6 +15,7 @@ public sealed class PropertyVideoConfiguration : IEntityTypeConfiguration<Proper
         builder.Property(video => video.OriginalFilename).HasMaxLength(255).IsRequired();
         builder.Property(video => video.OriginalMimeType).HasMaxLength(100).IsRequired();
         builder.Property(video => video.FrameRate).HasPrecision(8, 3);
+        builder.Property(video => video.TourStop).HasConversion<string>().HasMaxLength(32);
         builder.Property(video => video.ProcessingStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(video => video.ProcessingLastError).HasMaxLength(1_000);
         builder.Property(video => video.EnhancedBlobPath).HasMaxLength(1_024);
@@ -31,6 +32,7 @@ public sealed class PropertyVideoConfiguration : IEntityTypeConfiguration<Proper
         builder.HasIndex(video => video.OriginalBlobPath).IsUnique();
         builder.HasIndex(video => video.EnhancedBlobPath).IsUnique();
         builder.HasIndex(video => new { video.OrganizationId, video.PropertyId, video.UploadedAtUtc });
+        builder.HasIndex(video => new { video.OrganizationId, video.PropertyId, video.TourOrder });
         builder.HasIndex(video => new
         {
             video.ProcessingStatus,

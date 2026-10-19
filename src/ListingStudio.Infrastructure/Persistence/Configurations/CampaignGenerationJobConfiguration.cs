@@ -15,6 +15,12 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
         builder.HasAlternateKey(job => new { job.Id, job.OrganizationId });
         builder.Property(job => job.RequestedByUserId).HasMaxLength(450).IsRequired();
         builder.Property(job => job.SourceFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(job => job.RequestedOutputs)
+            .HasConversion<string>()
+            .HasMaxLength(128)
+            .HasDefaultValue(CampaignOutputSelection.LegacyStandard)
+            .HasSentinel(CampaignOutputSelection.None)
+            .IsRequired();
         builder.Property(job => job.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(job => job.CurrentStage).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(job => job.LastError).HasMaxLength(1_000);

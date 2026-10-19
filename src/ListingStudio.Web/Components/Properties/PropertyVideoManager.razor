@@ -19,7 +19,8 @@
     <MudAlert Severity="Severity.Info" Dense="true" Class="my-4">
         Uploaded clips are processed in the background. The enhanced MP4 uses two-pass motion stabilization,
         smoother frame cadence, flicker reduction, white-balance correction, and brightness/color normalization.
-        Your original remains unchanged.
+        Your original remains unchanged. Arrange the clips in walkthrough order and label each stop so campaign
+        narration can follow the home from the exterior through the interior and outdoor spaces.
     </MudAlert>
 
     @if (!IsReadOnly)
@@ -67,8 +68,10 @@
     else
     {
         <MudGrid Class="mt-2">
-            @foreach (var video in videos)
+            @for (var videoIndex = 0; videoIndex < videos.Count; videoIndex++)
             {
+                var index = videoIndex;
+                var video = videos[index];
                 var isCompleted = video.ProcessingStatus == PropertyVideoProcessingStatus.Completed;
                 <MudItem xs="12" md="6">
                     <MudCard>
@@ -85,6 +88,21 @@
                                 @video.Width × @video.Height · @FormatDuration(video.DurationMs) · @video.FrameRate.ToString("0.###") fps
                                 · @FormatSize(video.OriginalFileSize) · Audio: @(video.HasAudio ? "Yes" : "No")
                             </MudText>
+                            <MudSelect T="PropertyMediaCategory?"
+                                       Label="Walkthrough stop"
+                                       Value="video.TourStop"
+                                       ValueChanged="@(value => SetTourStopAsync(video.Id, value))"
+                                       Disabled="@IsReadOnly"
+                                       Dense="true"
+                                       Class="mt-3">
+                                <MudSelectItem T="PropertyMediaCategory?" Value="@(null)">Not labeled</MudSelectItem>
+                                @foreach (var stop in TourStops)
+                                {
+                                    <MudSelectItem T="PropertyMediaCategory?" Value="@((PropertyMediaCategory?)stop)">
+                                        @Display(stop)
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
                             @if (isCompleted)
                             {
                                 <MudText Typo="Typo.caption" Color="Color.Success">
@@ -113,6 +131,17 @@
                             }
                         </MudCardContent>
                         <MudCardActions>
+                            @if (!IsReadOnly)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward"
+                                               Disabled="@(index == 0)"
+                                               aria-label="Move video earlier in walkthrough"
+                                               OnClick="@(() => MoveAsync(index, -1))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward"
+                                               Disabled="@(index == videos.Count - 1)"
+                                               aria-label="Move video later in walkthrough"
+                                               OnClick="@(() => MoveAsync(index, 1))" />
+                            }
                             @if (isCompleted)
                             {
                                 <MudButton Href="@($"/property-videos/{video.Id}?enhanced=true&download=true")"
@@ -173,6 +202,28 @@
     private Severity messageSeverity = Severity.Info;
 
     private Guid? loadedPropertyId;
+
+    private static readonly PropertyMediaCategory[] TourStops =
+    [
+        PropertyMediaCategory.FrontExterior,
+        PropertyMediaCategory.Entry,
+        PropertyMediaCategory.LivingRoom,
+        PropertyMediaCategory.Kitchen,
+        PropertyMediaCategory.DiningRoom,
+        PropertyMediaCategory.PrimaryBedroom,
+        PropertyMediaCategory.Bedroom,
+        PropertyMediaCategory.PrimaryBathroom,
+        PropertyMediaCategory.Bathroom,
+        PropertyMediaCategory.Office,
+        PropertyMediaCategory.Laundry,
+        PropertyMediaCategory.Garage,
+        PropertyMediaCategory.Patio,
+        PropertyMediaCategory.Pool,
+        PropertyMediaCategory.Backyard,
+        PropertyMediaCategory.RearExterior,
+        PropertyMediaCategory.Community,
+        PropertyMediaCategory.Other,
+    ];
 
     // Reload only when the property changes, so a parent re-render never overlaps a poll on this component's DbContext.
     protected override async Task OnParametersSetAsync()
@@ -382,6 +433,34 @@
         }
     }
 
+    private async Task SetTourStopAsync(Guid videoId, PropertyMediaCategory? tourStop)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await Service.SetTourStopAsync(userId, PropertyId, videoId, tourStop))
+        {
+            await RefreshVideosAsync();
+            ShowMessage("Walkthrough stop updated. New campaigns will use this verified label.", Severity.Success);
+        }
+    }
+
+    private async Task MoveAsync(int index, int offset)
+    {
+        var destination = index + offset;
+        if (index < 0 || index >= videos.Count || destination < 0 || destination >= videos.Count)
+        {
+            return;
+        }
+
+        var reordered = videos.ToList();
+        (reordered[index], reordered[destination]) = (reordered[destination], reordered[index]);
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        if (await Service.ReorderTourAsync(userId, PropertyId, reordered.Select(video => video.Id).ToArray()))
+        {
+            videos = reordered;
+            ShowMessage("Walkthrough order updated. New campaigns will follow this route.", Severity.Success);
+        }
+    }
+
     private async Task DeleteAsync(Guid videoId)
     {
         var confirmed = await DialogService.ShowMessageBoxAsync(
@@ -420,6 +499,9 @@
         PropertyVideoProcessingStatus.Failed => "Enhancement failed",
         _ => "Queued",
     };
+
+    private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
+        index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
 
     private void ShowMessage(string text, Severity severity)
     {

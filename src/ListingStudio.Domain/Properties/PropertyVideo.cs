@@ -17,7 +17,8 @@ public sealed class PropertyVideo
         int height,
         int durationMs,
         decimal frameRate,
-        bool hasAudio)
+        bool hasAudio,
+        int tourOrder)
     {
         Id = Guid.NewGuid();
         OrganizationId = RequiredId(organizationId, nameof(organizationId));
@@ -31,6 +32,7 @@ public sealed class PropertyVideo
         DurationMs = Positive(durationMs, nameof(durationMs));
         FrameRate = Positive(frameRate, nameof(frameRate));
         HasAudio = hasAudio;
+        SetTourOrder(tourOrder);
         ProcessingStatus = PropertyVideoProcessingStatus.Pending;
         UploadedAtUtc = DateTimeOffset.UtcNow;
     }
@@ -47,6 +49,8 @@ public sealed class PropertyVideo
     public int DurationMs { get; private set; }
     public decimal FrameRate { get; private set; }
     public bool HasAudio { get; private set; }
+    public int TourOrder { get; private set; }
+    public PropertyMediaCategory? TourStop { get; private set; }
     public DateTimeOffset UploadedAtUtc { get; private set; }
     public PropertyVideoProcessingStatus ProcessingStatus { get; private set; }
     public int ProcessingAttemptCount { get; private set; }
@@ -90,7 +94,8 @@ public sealed class PropertyVideo
         int height,
         int durationMs,
         decimal frameRate,
-        bool hasAudio) => new(
+        bool hasAudio,
+        int tourOrder = 0) => new(
             organizationId,
             propertyId,
             originalBlobPath,
@@ -101,7 +106,28 @@ public sealed class PropertyVideo
             height,
             durationMs,
             frameRate,
-            hasAudio);
+            hasAudio,
+            tourOrder);
+
+    public void SetTourOrder(int tourOrder)
+    {
+        if (tourOrder is < 0 or >= 10)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tourOrder));
+        }
+
+        TourOrder = tourOrder;
+    }
+
+    public void SetTourStop(PropertyMediaCategory? tourStop)
+    {
+        if (tourStop is not null && !Enum.IsDefined(tourStop.Value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(tourStop));
+        }
+
+        TourStop = tourStop;
+    }
 
     public void BeginProcessing(DateTimeOffset attemptedAtUtc)
     {

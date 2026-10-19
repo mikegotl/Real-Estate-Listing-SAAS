@@ -8,6 +8,49 @@ public enum CampaignOutputKind
     Feature,
     Teaser,
     LongForm,
+    TikTok,
+    InstagramReel,
+    YouTubeShort,
+    YouTubeTour,
+    FullNarratedTour,
+}
+
+[Flags]
+public enum CampaignOutputSelection
+{
+    None = 0,
+    LegacyStandard = 1 << 0,
+    TikTok = 1 << 1,
+    InstagramReel = 1 << 2,
+    YouTubeShort = 1 << 3,
+    YouTubeTour = 1 << 4,
+    FullNarratedTour = 1 << 5,
+}
+
+public static class CampaignOutputSelectionPolicy
+{
+    public const CampaignOutputSelection Recommended = CampaignOutputSelection.TikTok
+        | CampaignOutputSelection.InstagramReel
+        | CampaignOutputSelection.YouTubeShort
+        | CampaignOutputSelection.YouTubeTour;
+
+    public const CampaignOutputSelection All = CampaignOutputSelection.LegacyStandard
+        | Recommended
+        | CampaignOutputSelection.FullNarratedTour;
+
+    public static void Validate(CampaignOutputSelection selection)
+    {
+        if (selection == CampaignOutputSelection.None || (selection & ~All) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(selection), "Choose at least one supported campaign output.");
+        }
+
+        if (selection.HasFlag(CampaignOutputSelection.LegacyStandard)
+            && selection != CampaignOutputSelection.LegacyStandard)
+        {
+            throw new ArgumentException("Legacy campaign outputs cannot be combined with platform outputs.", nameof(selection));
+        }
+    }
 }
 
 public enum CampaignDeliverableStatus

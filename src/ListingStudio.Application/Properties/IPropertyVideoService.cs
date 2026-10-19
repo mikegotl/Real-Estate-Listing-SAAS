@@ -32,6 +32,19 @@ public interface IPropertyVideoService
         Guid videoId,
         CancellationToken cancellationToken = default);
 
+    Task<bool> SetTourStopAsync(
+        string userId,
+        Guid propertyId,
+        Guid videoId,
+        PropertyMediaCategory? tourStop,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> ReorderTourAsync(
+        string userId,
+        Guid propertyId,
+        IReadOnlyList<Guid> orderedVideoIds,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Queues the video to be broken down into one or two photos per room it shows. They are added to the property's
     /// photo gallery, ready to place in the storyboard.
@@ -65,6 +78,8 @@ public sealed record PropertyVideoItem(
     int DurationMs,
     decimal FrameRate,
     bool HasAudio,
+    int TourOrder,
+    PropertyMediaCategory? TourStop,
     DateTimeOffset UploadedAtUtc,
     PropertyVideoProcessingStatus ProcessingStatus,
     int ProcessingAttemptCount,
