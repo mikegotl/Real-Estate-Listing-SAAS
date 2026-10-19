@@ -40,7 +40,28 @@ public sealed class OpenAIPropertyStoryGenerator(
         such as "family-friendly", "great for families", "safe", or "best schools". Preserve every number exactly.
 
         The voiceover should sound conversational and cinematic rather than like an MLS field list. Avoid excessive
-        adjectives and cliches. Return only the requested structured JSON.
+        adjectives and cliches.
+
+        When WALKTHROUGH has stops, the voiceoverScript is narration for the property tour video and must walk the
+        listener through the home in exactly that stop order, starting at the first stop. Give each stop a short
+        passage of one or two sentences, one paragraph per stop. You may fold a minor stop into the next one or pass
+        over a stop that has nothing worth saying, but never reorder stops or describe a space that is not a stop.
+        When a stop has wayFromPreviousStop, use it for a natural transition, such as "to the left", "turn right
+        into" or "head upstairs to". When it is null, use a neutral transition such as "next" or "from here" and never
+        state or imply where the space sits.
+
+        Describe each room by its overall impression, using at most three broad qualities drawn from: how spacious it
+        feels, its natural light, its overall feel or style, and its one standout feature. For example: "a large,
+        bright kitchen with a big island for prep." Use a quality only when that stop's photo descriptions clearly
+        support it; when they do not, leave it out rather than guess. Never count things (cabinets, windows, chairs,
+        lights, outlets, shelves), never list appliances, fixtures or furnishings one by one, and never state room
+        dimensions, brands or materials. Do not pick a fireplace, pool, garage, view, upgrade or material as a
+        standout feature unless the verified description or the stop name mentions it. The stop name is the agent's label for the space and confirms only which
+        room it is. Keep the voiceoverScript to about 110 to 140 words so it fits a 60-second tour; when that is
+        tight, place approved neighborhood facts in the highlights instead of the voiceover. The opening hook,
+        narrative and highlights may follow the same walk.
+
+        Return only the requested structured JSON.
         """;
 
     private static readonly JsonElement OutputSchema = JsonDocument.Parse("""
@@ -69,7 +90,7 @@ public sealed class OpenAIPropertyStoryGenerator(
         Converters = { new JsonStringEnumConverter() },
     };
 
-    public string GenerationVersion => "property-story-v4";
+    public string GenerationVersion => "property-story-v5";
 
     public async Task<PropertyStoryContent> GenerateAsync(
         PropertyStoryGenerationRequest request,
@@ -106,6 +127,7 @@ public sealed class OpenAIPropertyStoryGenerator(
                         fact.Address,
                         ApproximateDistance = NeighborhoodDistancePhrasing.Describe(fact.DistanceMiles),
                     }),
+                walkthrough = request.Walkthrough ?? [],
                 branding = request.Branding,
             },
             SerializerOptions);

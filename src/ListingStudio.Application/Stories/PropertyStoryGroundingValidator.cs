@@ -139,6 +139,12 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
             AddNumbersFromText(allowed, fact.Address);
         }
 
+        foreach (var stop in request.Walkthrough ?? [])
+        {
+            // Agents name stops such as "Bedroom 2", so the voiceover can say the stop's name.
+            AddNumbersFromText(allowed, stop.Stop);
+        }
+
         foreach (Match match in NumericTokenRegex().Matches(generatedText))
         {
             if (TryParseNumber(match.Value, out var value) && !allowed.Contains(value))
@@ -166,7 +172,8 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
         {
             if (generatedText.Contains(claim, StringComparison.OrdinalIgnoreCase)
                 && !(request.VerifiedProperty.Description?.Contains(claim, StringComparison.OrdinalIgnoreCase) ?? false)
-                && !IsPresentInApprovedNeighborhoodFacts(request.ApprovedNeighborhoodFacts, claim))
+                && !IsPresentInApprovedNeighborhoodFacts(request.ApprovedNeighborhoodFacts, claim)
+                && !IsWalkthroughStopName(request.Walkthrough, claim))
             {
                 var displayClaim = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(claim);
                 var source = IsPresentInMediaAnalysis(request.MediaObservations, claim)
@@ -186,6 +193,11 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
             fact.Category.Contains(claim, StringComparison.OrdinalIgnoreCase)
             || fact.Name.Contains(claim, StringComparison.OrdinalIgnoreCase)
             || fact.Address.Contains(claim, StringComparison.OrdinalIgnoreCase));
+
+    // The agent names each walkthrough stop and places photos of that space in it, so a stop such as "Garage" or
+    // "Pool" confirms the space exists. It does not confirm anything about the space beyond that.
+    private static bool IsWalkthroughStopName(IReadOnlyList<WalkthroughStoryStop>? walkthrough, string claim) =>
+        (walkthrough ?? []).Any(stop => stop.Stop.Contains(claim, StringComparison.OrdinalIgnoreCase));
 
     private static void ValidateFairHousingLanguage(string generatedText, List<string> errors)
     {

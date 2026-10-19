@@ -20,7 +20,9 @@ public sealed class OpenAIPropertyMediaAnalyzer(
 
         Determine:
         - room/property category
-        - brief factual visual description
+        - brief factual visual description: the space's overall impression (how spacious it looks, how much
+          natural light it has, its overall feel) and its most notable visible feature, without counting or listing
+          individual items
         - image quality from 0-100
         - hero-image suitability from 0-100
         - whether the image is interior or exterior

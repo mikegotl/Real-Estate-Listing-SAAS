@@ -63,7 +63,7 @@ public sealed class OpenAIPropertyStoryGeneratorTests
         var result = await generator.GenerateAsync(request);
 
         Assert.Equal("Main Street Welcome", result.CampaignTitle);
-        Assert.Equal("property-story-v4", generator.GenerationVersion);
+        Assert.Equal("property-story-v5", generator.GenerationVersion);
         Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-api-key"), handler.Authorization);
         using var sent = JsonDocument.Parse(handler.RequestBody!);
         Assert.False(sent.RootElement.GetProperty("store").GetBoolean());
@@ -187,6 +187,66 @@ public sealed class OpenAIPropertyStoryGeneratorTests
         Assert.DoesNotContain("distanceMiles", input, StringComparison.Ordinal);
         var instructions = sent.RootElement.GetProperty("instructions").GetString();
         Assert.Contains("Never state a neighborhood distance as a decimal", instructions, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GenerateSendsTheWalkthroughAndAsksForBroadRoomImpressionsInStopOrder()
+    {
+        const string responseJson = """
+            {
+              "output": [
+                {
+                  "type": "message",
+                  "content": [
+                    {
+                      "type": "output_text",
+                      "text": "{\"campaignTitle\":\"Walk\",\"openingHook\":\"Welcome.\",\"propertyNarrative\":\"A home.\",\"highlights\":[\"Bright kitchen\"],\"voiceoverScript\":\"Step inside.\",\"closingCta\":\"Contact Example Realty.\",\"socialCaptionLong\":\"A home.\",\"socialCaptionShort\":\"Home.\"}"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+        var handler = new RecordingHandler(responseJson);
+        using var httpClient = new HttpClient(handler);
+        var generator = new OpenAIPropertyStoryGenerator(
+            httpClient,
+            Options.Create(new OpenAIOptions
+            {
+                ApiKey = "test-api-key",
+                Model = "test-text-model",
+                ResponsesEndpoint = "https://api.openai.test/v1/responses",
+            }));
+        var request = new PropertyStoryGenerationRequest(
+            new VerifiedPropertyData(
+                "123 Main Street", null, "Raleigh", "NC", "27601", 450_000m, 3, 2.5m, 2_100,
+                null, 1998, PropertyType.SingleFamily, "A comfortable home.", ListingStatus.Active),
+            [],
+            new PropertyStoryBranding("Example Realty", null),
+            Walkthrough:
+            [
+                new WalkthroughStoryStop(1, "Entry / foyer", "Main level", null, []),
+                new WalkthroughStoryStop(
+                    2,
+                    "Kitchen",
+                    "Main level",
+                    "turn left",
+                    [new WalkthroughStoryShot(Guid.NewGuid(), "Kitchen", "Large, bright kitchen with a big island.")]),
+            ]);
+
+        await generator.GenerateAsync(request);
+
+        using var sent = JsonDocument.Parse(handler.RequestBody!);
+        var input = sent.RootElement.GetProperty("input")[0].GetProperty("content")[0].GetProperty("text").GetString()!;
+        Assert.Contains("\"walkthrough\":[", input, StringComparison.Ordinal);
+        Assert.True(
+            input.IndexOf("Entry / foyer", StringComparison.Ordinal) < input.IndexOf("\"stop\":\"Kitchen\"", StringComparison.Ordinal));
+        Assert.Contains("\"wayFromPreviousStop\":\"turn left\"", input, StringComparison.Ordinal);
+        Assert.Contains("Large, bright kitchen with a big island.", input, StringComparison.Ordinal);
+        var instructions = sent.RootElement.GetProperty("instructions").GetString();
+        Assert.Contains("exactly that stop order", instructions, StringComparison.Ordinal);
+        Assert.Contains("Never count things", instructions, StringComparison.Ordinal);
+        Assert.Contains("leave it out rather than guess", instructions, StringComparison.Ordinal);
     }
 
     private sealed class RecordingHandler(string responseJson) : HttpMessageHandler

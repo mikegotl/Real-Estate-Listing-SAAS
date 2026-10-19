@@ -153,7 +153,26 @@ public sealed class PropertyStoryService(
                 insight.SourceUrl,
                 insight.CheckedAtUtc))
             .ToArrayAsync(cancellationToken);
-        return new PropertyStoryGenerationRequest(verified, observations, branding, neighborhoodFacts);
+        var stopDirections = (await dbContext.WalkthroughStopDirections
+                .AsNoTracking()
+                .Where(note => note.OrganizationId == organizationId && note.PropertyId == property.Id)
+                .Select(note => new { note.Stop, note.Direction })
+                .ToArrayAsync(cancellationToken))
+            .GroupBy(note => note.Stop, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Direction, StringComparer.OrdinalIgnoreCase);
+        var walkthrough = WalkthroughStoryOutline.Build(
+            property.Media.Select(media =>
+            {
+                var analysis = media.GetAnalysis()!;
+                return new WalkthroughStoryPhoto(
+                    media.Id,
+                    media.WalkthroughStop,
+                    media.DisplayOrder,
+                    analysis.RoomType,
+                    analysis.Description);
+            }),
+            stopDirections);
+        return new PropertyStoryGenerationRequest(verified, observations, branding, neighborhoodFacts, walkthrough);
     }
 
     private static PropertyMediaObservation ToObservation(
