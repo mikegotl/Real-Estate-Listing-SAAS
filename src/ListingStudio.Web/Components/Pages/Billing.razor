@@ -42,9 +42,9 @@ else
         <MudItem xs="12" md="4">
             <MudPaper Elevation="0" Class="metric-card">
                 <span class="metric-icon indigo"><MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" /></span>
-                <div><small>CURRENT PLAN</small><MudText Typo="Typo.h4">@Display(overview.Plan)</MudText></div>
+                <div><small>CURRENT PLAN</small><MudText Typo="Typo.h4">@(overview.IsFreeTrial ? "Free trial" : Display(overview.Plan))</MudText></div>
                 <MudChip T="string" Size="Size.Small" Color="@StatusColor(overview.SubscriptionStatus)">
-                    @Display(overview.SubscriptionStatus)
+                    @(overview.IsFreeTrial ? "Active" : Display(overview.SubscriptionStatus))
                 </MudChip>
             </MudPaper>
         </MudItem>
@@ -52,7 +52,7 @@ else
             <MudPaper Elevation="0" Class="metric-card">
                 <span class="metric-icon sky"><MudIcon Icon="@Icons.Material.Filled.CalendarMonth" /></span>
                 <div>
-                    <small>CURRENT PERIOD</small>
+                    <small>@(overview.IsFreeTrial ? "TRIAL PERIOD" : "CURRENT PERIOD")</small>
                     <MudText Typo="Typo.h6">@overview.CurrentPeriodStartUtc.ToString("MMM d") – @overview.CurrentPeriodEndUtc.ToString("MMM d")</MudText>
                 </div>
             </MudPaper>
@@ -60,7 +60,7 @@ else
         <MudItem xs="12" md="4">
             <MudPaper Elevation="0" Class="metric-card">
                 <span class="metric-icon amber"><MudIcon Icon="@Icons.Material.Filled.Campaign" /></span>
-                <div><small>CAMPAIGNS USED</small><MudText Typo="Typo.h4">@overview.CampaignUsage <span class="metric-total">/ @overview.MonthlyCampaignAllowance</span></MudText></div>
+                <div><small>CAMPAIGNS COMPLETED</small><MudText Typo="Typo.h4">@overview.CampaignUsage <span class="metric-total">/ @overview.MonthlyCampaignAllowance</span></MudText></div>
             </MudPaper>
         </MudItem>
     </MudGrid>
@@ -68,12 +68,20 @@ else
     <MudPaper Elevation="0" Class="content-card usage-card">
         <div class="usage-heading">
             <div>
-                <MudText Typo="Typo.h5" HtmlTag="h2">Monthly campaign allowance</MudText>
-                <MudText Typo="Typo.body2">Your included campaign usage resets with the billing period.</MudText>
+                <MudText Typo="Typo.h5" HtmlTag="h2">@(overview.IsFreeTrial ? "Free campaign trial" : "Monthly campaign allowance")</MudText>
+                <MudText Typo="Typo.body2">
+                    Completed campaigns use your allowance. Failed provider attempts and retries do not.
+                </MudText>
             </div>
-            <strong>@overview.CampaignUsage of @overview.MonthlyCampaignAllowance</strong>
+            <strong>@overview.RemainingCampaignUsage remaining</strong>
         </div>
         <MudProgressLinear Value="@UsagePercent" Color="Color.Primary" Rounded="true" Size="Size.Large" />
+        @if (overview.ReservedCampaignUsage > 0)
+        {
+            <MudText Typo="Typo.caption" Class="mt-2">
+                @overview.ReservedCampaignUsage campaign(s) currently processing. The reservation is released if processing fails.
+            </MudText>
+        }
         @if (overview.AdditionalCampaignUsage > 0)
         {
             <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-2">
@@ -85,28 +93,29 @@ else
     @if (!StripeOptions.Value.Enabled)
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-5">
-            Stripe test-mode billing is not enabled for this environment. Your current plan remains available for local testing.
+            Checkout is not enabled in this environment. You can review plans, but no payment will be collected.
         </MudAlert>
     }
-    else
-    {
-        <div class="section-heading left billing-plan-heading">
-            <span class="eyebrow">PLANS</span>
-            <MudText Typo="Typo.h4" HtmlTag="h2">Choose the capacity that fits your team</MudText>
-        </div>
-        <MudGrid Spacing="3">
+
+    <div class="section-heading left billing-plan-heading">
+        <span class="eyebrow">PLANS</span>
+        <MudText Typo="Typo.h4" HtmlTag="h2">Choose the capacity that fits your business</MudText>
+    </div>
+    <MudGrid Spacing="3">
             <MudItem xs="12" md="6">
                 <MudPaper Elevation="0" Class="plan-card">
                     <MudText Typo="Typo.h5">Starter</MudText>
-                    <MudText Typo="Typo.body2">A focused foundation for individual agents and small teams.</MudText>
+                    <MudText Typo="Typo.h4">$@StripeOptions.Value.StarterMonthlyPriceUsd <span class="metric-total">/ month</span></MudText>
+                    <MudText Typo="Typo.body2">A focused foundation for independent agents.</MudText>
                     <MudList T="string" Dense="true" Class="plan-features">
-                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Structured property workspace</MudListItem>
-                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Media and story workflow</MudListItem>
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">@StripeOptions.Value.StarterMonthlyCampaignAllowance completed campaigns per month</MudListItem>
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Failed attempts and retries are free</MudListItem>
                     </MudList>
                     <form action="/billing/checkout" method="post">
                         <AntiforgeryToken />
                         <input type="hidden" name="plan" value="Starter" />
-                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Outlined" Color="Color.Primary">Choose Starter</MudButton>
+                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Outlined" Color="Color.Primary"
+                                   Disabled="@(!StripeOptions.Value.Enabled)">Choose Starter</MudButton>
                     </form>
                 </MudPaper>
             </MudItem>
@@ -114,20 +123,21 @@ else
                 <MudPaper Elevation="0" Class="plan-card featured">
                     <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="plan-badge">FOR GROWING TEAMS</MudChip>
                     <MudText Typo="Typo.h5">Professional</MudText>
+                    <MudText Typo="Typo.h4">$@StripeOptions.Value.ProfessionalMonthlyPriceUsd <span class="metric-total">/ month</span></MudText>
                     <MudText Typo="Typo.body2">More campaign capacity for active listing operations.</MudText>
                     <MudList T="string" Dense="true" Class="plan-features">
                         <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Everything in Starter</MudListItem>
-                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Expanded campaign allowance</MudListItem>
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">@StripeOptions.Value.ProfessionalMonthlyCampaignAllowance completed campaigns per month</MudListItem>
                     </MudList>
                     <form action="/billing/checkout" method="post">
                         <AntiforgeryToken />
                         <input type="hidden" name="plan" value="Professional" />
-                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary">Choose Professional</MudButton>
+                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary"
+                                   Disabled="@(!StripeOptions.Value.Enabled)">Choose Professional</MudButton>
                     </form>
                 </MudPaper>
             </MudItem>
-        </MudGrid>
-    }
+    </MudGrid>
 }
 
 @code {
@@ -138,7 +148,7 @@ else
 
     private double UsagePercent => overview is null || overview.MonthlyCampaignAllowance <= 0
         ? 0
-        : Math.Min(100, overview.CampaignUsage * 100d / overview.MonthlyCampaignAllowance);
+        : Math.Min(100, (overview.CampaignUsage + overview.ReservedCampaignUsage) * 100d / overview.MonthlyCampaignAllowance);
 
     protected override async Task OnInitializedAsync()
     {

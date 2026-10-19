@@ -24,10 +24,16 @@ public interface IBillingService
         CancellationToken cancellationToken = default);
 }
 
-public interface IBillingUsageRecorder
+public interface ICampaignBillingGate
 {
-    Task RecordCampaignAsync(
+    Task EnsureCampaignCapacityAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken = default);
+
+    Task RecordCompletedCampaignAsync(
         Guid organizationId,
         Guid campaignGenerationJobId,
         CancellationToken cancellationToken = default);
 }
+
+public sealed class CampaignAllowanceExceededException(string message) : InvalidOperationException(message);

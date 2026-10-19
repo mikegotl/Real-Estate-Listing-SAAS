@@ -1,5 +1,6 @@
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Authentication;
+using ListingStudio.Application.Billing;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
@@ -42,6 +43,20 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         var enqueues = await Task.WhenAll(EnqueueAsync(owner), EnqueueAsync(owner));
         var queued = enqueues[0];
         Assert.Equal(queued.Id, enqueues[1].Id);
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var billing = scope.ServiceProvider.GetRequiredService<IBillingService>();
+            var overview = await billing.GetOverviewAsync(owner.UserId);
+            Assert.Equal(0, overview.CampaignUsage);
+            Assert.Equal(1, overview.ReservedCampaignUsage);
+            Assert.Equal(0, overview.RemainingCampaignUsage);
+        }
+
+        var secondProperty = await CreateAdditionalPropertyAsync(owner);
+        await UploadAsync(secondProperty);
+        var reservationError = await Assert.ThrowsAsync<CampaignAllowanceExceededException>(
+            () => EnqueueAsync(secondProperty));
+        Assert.Contains("still processing", reservationError.Message, StringComparison.OrdinalIgnoreCase);
         string[] generatedAssetPaths;
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -123,7 +138,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                 .AsNoTracking()
                 .SingleAsync(account => account.OrganizationId == owner.OrganizationId);
             Assert.Equal(1, billing.CampaignUsage);
-            Assert.Equal(1, billing.AdditionalCampaignUsage);
+            Assert.Equal(0, billing.AdditionalCampaignUsage);
             Assert.Single(await dbContext.CampaignUsageRecords
                 .AsNoTracking()
                 .Where(record => record.OrganizationId == owner.OrganizationId)
@@ -146,6 +161,10 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.Equal(0.375m, clips.Sum(clip => clip.EstimatedCostUsd));
             generatedAssetPaths = clips.Select(clip => clip.AssetPath).ToArray();
         }
+
+        var usedError = await Assert.ThrowsAsync<CampaignAllowanceExceededException>(
+            () => EnqueueAsync(secondProperty));
+        Assert.Contains("already been used", usedError.Message, StringComparison.OrdinalIgnoreCase);
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -273,6 +292,14 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Equal(directorCallsBefore + 1, fixture.Factory.VideoDirector.CallCount);
         Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);
         Assert.Equal(aiVideoCallsBefore + 3, fixture.Factory.AiVideoProvider.CallCount);
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var billing = scope.ServiceProvider.GetRequiredService<IBillingService>();
+            var overview = await billing.GetOverviewAsync(owner.UserId);
+            Assert.Equal(0, overview.CampaignUsage);
+            Assert.Equal(0, overview.ReservedCampaignUsage);
+        }
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -644,6 +671,17 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.True(result.Succeeded, string.Join(", ", result.Errors));
         var propertyId = await properties.CreateAsync(result.UserId!, ValidProperty);
         return new OwnerProperty(result.UserId!, result.OrganizationId!.Value, propertyId);
+    }
+
+    private async Task<OwnerProperty> CreateAdditionalPropertyAsync(OwnerProperty owner)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        var propertyId = await properties.CreateAsync(owner.UserId, ValidProperty with
+        {
+            Address1 = $"{Random.Shared.Next(200, 999)} Second Street",
+        });
+        return owner with { PropertyId = propertyId };
     }
 
     private static PropertyInput ValidProperty => new(

@@ -13,7 +13,14 @@ public sealed record BillingOverview(
     DateTimeOffset CurrentPeriodEndUtc,
     int MonthlyCampaignAllowance,
     int CampaignUsage,
-    int AdditionalCampaignUsage);
+    int AdditionalCampaignUsage,
+    int ReservedCampaignUsage,
+    bool IsFreeTrial)
+{
+    public int RemainingCampaignUsage => Math.Max(
+        0,
+        MonthlyCampaignAllowance - CampaignUsage - ReservedCampaignUsage);
+}
 
 public sealed record BillingRedirect(string Url);
 

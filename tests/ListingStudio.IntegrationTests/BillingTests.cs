@@ -44,6 +44,9 @@ public sealed class BillingTests(PostgreSqlWebApplicationFixture fixture)
             var initial = await billing.GetOverviewAsync(registration.UserId!);
             Assert.Equal(SubscriptionPlan.Free, initial.Plan);
             Assert.Equal(BillingSubscriptionStatus.None, initial.SubscriptionStatus);
+            Assert.True(initial.IsFreeTrial);
+            Assert.Equal(1, initial.MonthlyCampaignAllowance);
+            Assert.Equal(1, initial.RemainingCampaignUsage);
             Assert.Null(initial.StripeCustomerId);
 
             var checkout = await billing.CreateCheckoutSessionAsync(

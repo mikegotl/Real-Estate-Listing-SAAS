@@ -6,6 +6,22 @@ using Xunit;
 public sealed class OrganizationBillingAccountTests
 {
     [Fact]
+    public void NewAccountReceivesOneTimeThirtyDayCampaignTrial()
+    {
+        var now = new DateTimeOffset(2026, 10, 5, 12, 0, 0, TimeSpan.Zero);
+        var account = OrganizationBillingAccount.Create(Guid.NewGuid(), now);
+
+        Assert.Equal(SubscriptionPlan.Free, account.Plan);
+        Assert.Equal(1, account.MonthlyCampaignAllowance);
+        Assert.Equal(now, account.CurrentPeriodStartUtc);
+        Assert.Equal(now.AddDays(30), account.CurrentPeriodEndUtc);
+        Assert.False(account.ExpireFreeTrial(now.AddDays(29)));
+        Assert.True(account.ExpireFreeTrial(now.AddDays(30)));
+        Assert.Equal(0, account.MonthlyCampaignAllowance);
+        Assert.False(account.ExpireFreeTrial(now.AddDays(60)));
+    }
+
+    [Fact]
     public void TracksIncludedAndAdditionalCampaignUsageAndResetsForANewPeriod()
     {
         var organizationId = Guid.NewGuid();

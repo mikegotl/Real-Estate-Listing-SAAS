@@ -15,7 +15,7 @@ public sealed class CampaignGenerationService(
     ApplicationDbContext dbContext,
     ICampaignAssetStorage assetStorage,
     TimeProvider timeProvider,
-    IBillingUsageRecorder billingUsageRecorder) : ICampaignGenerationService
+    ICampaignBillingGate campaignBillingGate) : ICampaignGenerationService
 {
     private const string WorkflowVersion = "campaign-accepted-script-walkthrough-v6";
 
@@ -134,6 +134,7 @@ public sealed class CampaignGenerationService(
             return ToResult(existing);
         }
 
+        await campaignBillingGate.EnsureCampaignCapacityAsync(organizationId, cancellationToken);
         var job = CampaignGenerationJob.Create(
             organizationId,
             propertyId,
@@ -141,7 +142,6 @@ public sealed class CampaignGenerationService(
             fingerprint,
             timeProvider.GetUtcNow());
         dbContext.CampaignGenerationJobs.Add(job);
-        await billingUsageRecorder.RecordCampaignAsync(organizationId, job.Id, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ToResult(job);
