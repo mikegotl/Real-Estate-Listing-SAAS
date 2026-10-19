@@ -10,6 +10,8 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
 @inject IdentityRedirectManager RedirectManager
+@inject IOperationalEventRecorder OperationalEvents
+@inject TimeProvider TimeProvider
 
 <PageTitle>Complete registration</PageTitle>
 
@@ -76,6 +78,14 @@
             bypassTwoFactor: false);
         if (signInResult.Succeeded)
         {
+            var existingUser = await UserManager.FindByLoginAsync(info.LoginProvider, info.ProviderKey);
+            if (existingUser is not null)
+            {
+                await OperationalEvents.RecordSuccessfulSignInAsync(
+                    existingUser.Id,
+                    info.LoginProvider,
+                    TimeProvider.GetUtcNow());
+            }
             RedirectManager.RedirectAfterSignIn(ReturnUrl);
             return;
         }
@@ -139,6 +149,10 @@
             user,
             isPersistent: false,
             authenticationMethod: info.LoginProvider);
+        await OperationalEvents.RecordSuccessfulSignInAsync(
+            user.Id,
+            info.LoginProvider,
+            TimeProvider.GetUtcNow());
         RedirectManager.RedirectAfterSignIn(ReturnUrl);
     }
 

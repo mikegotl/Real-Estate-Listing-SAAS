@@ -22,4 +22,5 @@ public sealed class HiggsfieldOptions
     public string GenerationVersion { get; init; } = "walkthrough-v1";
     public int RequestTimeoutSeconds { get; init; } = 120;
     public int MaxOutputMegabytes { get; init; } = 100;
+    public decimal EstimatedCostPerCallUsd { get; init; }
 }

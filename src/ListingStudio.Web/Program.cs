@@ -27,6 +27,8 @@ using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ListingStudio.Application.Neighborhoods;
+using ListingStudio.Application.Administration;
+using ListingStudio.Web.Administration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +70,11 @@ builder.Services.AddExternalLoginProviders(builder.Configuration);
 
 var app = builder.Build();
 
+if (await PlatformAdminCommand.TryExecuteAsync(args, app.Services))
+{
+    return;
+}
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -82,8 +89,10 @@ app.UseRequestLocalization(new RequestLocalizationOptions()
     .SetDefaultCulture("en-US")
     .AddSupportedCultures("en-US")
     .AddSupportedUICultures("en-US"));
+app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<OperationalTelemetryMiddleware>();
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapHealthChecks("/health/live", new HealthCheckOptions
@@ -95,6 +104,18 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     Predicate = registration => registration.Tags.Contains("ready"),
 });
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+
+app.MapGet("/api/admin/dashboard", async (
+    int? days,
+    IPlatformAdminDashboardService dashboardService,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken) =>
+{
+    var selectedDays = days is 1 or 7 or 30 or 90 ? days.Value : 7;
+    return Results.Ok(await dashboardService.GetAsync(
+        AdminDateRange.LastDays(selectedDays, timeProvider),
+        cancellationToken));
+}).RequireAuthorization(PlatformAdministration.Policy);
 
 app.MapPost("/Account/ExternalLogin", async (
     HttpContext context,

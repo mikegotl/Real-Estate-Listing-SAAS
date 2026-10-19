@@ -1,0 +1,82 @@
+@page "/admin"
+@attribute [Authorize(Policy = PlatformAdministration.Policy)]
+@attribute [StreamRendering]
+@inject IPlatformAdminDashboardService DashboardService
+@inject HealthCheckService HealthChecks
+@inject TimeProvider TimeProvider
+
+<PageTitle>Platform administration</PageTitle>
+
+<section class="admin-hero">
+    <div>
+        <span class="eyebrow light">PLATFORM OPERATIONS</span>
+        <MudText Typo="Typo.h2" HtmlTag="h1">System overview</MudText>
+        <MudText Typo="Typo.body1">Aggregate operational signals only. Customer content and secrets are never shown here.</MudText>
+    </div>
+    <MudButton Href="/admin/audit" Variant="Variant.Outlined" Color="Color.Inherit">Audit log</MudButton>
+</section>
+
+<nav class="admin-range" aria-label="Dashboard date range">
+    @foreach (var option in RangeOptions)
+    {
+        <MudButton Href="@($"/admin?days={option}")" Variant="@(Days == option ? Variant.Filled : Variant.Text)"
+                   Color="Color.Primary">@(option == 1 ? "24 hours" : $"{option} days")</MudButton>
+    }
+</nav>
+
+@if (dashboard is null || health is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <p class="admin-range-copy">@dashboard.Range.FromUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt") – @dashboard.Range.ToUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</p>
+    <dl class="admin-metrics">
+        <div><dt>Requests</dt><dd>@dashboard.RequestCount.ToString("N0")</dd></div>
+        <div><dt>Active users</dt><dd>@dashboard.ActiveUserCount.ToString("N0")</dd></div>
+        <div><dt>Successful sign-ins</dt><dd>@dashboard.SignInCount.ToString("N0")</dd></div>
+        <div><dt>Campaigns</dt><dd>@dashboard.CampaignCount.ToString("N0")</dd><small>@dashboard.FailedCampaignCount failed</small></div>
+        <div><dt>AI calls</dt><dd>@dashboard.AiCallCount.ToString("N0")</dd><small>@dashboard.FailedAiCallCount failed</small></div>
+        <div><dt>Estimated AI cost</dt><dd>@dashboard.EstimatedAiCostUsd.ToString("C")</dd><small>configured estimates</small></div>
+    </dl>
+
+    <div class="admin-grid">
+        <AdminMetricTable Title="AI usage by provider, model and operation" Rows="dashboard.AiUsage" ShowCost="true" />
+        <AdminMetricTable Title="Campaign outcomes" Rows="dashboard.CampaignOutcomes" />
+        <AdminMetricTable Title="Background-job failures by stage" Rows="dashboard.BackgroundJobFailures" />
+        <AdminMetricTable Title="Traffic by route group" Rows="dashboard.Traffic" />
+        <AdminMetricTable Title="Sign-ins by method" Rows="dashboard.SignIns" />
+        <MudPaper Elevation="0" Class="admin-panel">
+            <MudText Typo="Typo.h5" HtmlTag="h2">Current system health</MudText>
+            <ul class="admin-health">
+                @foreach (var entry in health.Entries.OrderBy(item => item.Key, StringComparer.Ordinal))
+                {
+                    <li><span>@entry.Key</span><strong class="@entry.Value.Status.ToString().ToLowerInvariant()">@entry.Value.Status</strong></li>
+                }
+            </ul>
+        </MudPaper>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-6">
+        Operational telemetry uses coarse route groups and status classes. It does not store URLs, query strings,
+        IP addresses, user agents, prompts, provider payloads, customer media, or credentials. Active users are based
+        on the account's latest successful sign-in. Optional product analytics must remain off until a consent and
+        retention policy is approved.
+    </MudAlert>
+}
+
+@code {
+    private static readonly int[] RangeOptions = [1, 7, 30, 90];
+    private PlatformAdminDashboard? dashboard;
+    private HealthReport? health;
+
+    [SupplyParameterFromQuery]
+    public int Days { get; set; } = 7;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Days = RangeOptions.Contains(Days) ? Days : 7;
+        dashboard = await DashboardService.GetAsync(AdminDateRange.LastDays(Days, TimeProvider));
+        health = await HealthChecks.CheckHealthAsync();
+    }
+}

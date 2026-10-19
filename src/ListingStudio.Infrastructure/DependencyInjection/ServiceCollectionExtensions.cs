@@ -26,6 +26,8 @@ using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Infrastructure.Neighborhoods;
 using ListingStudio.Application.Notifications;
 using ListingStudio.Infrastructure.Notifications;
+using ListingStudio.Application.Administration;
+using ListingStudio.Infrastructure.Administration;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -125,6 +127,7 @@ public static class ServiceCollectionExtensions
                 options.Password.RequireNonAlphanumeric = false;
                 options.SignIn.RequireConfirmedAccount = false;
             })
+            .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddSignInManager()
             .AddDefaultTokenProviders();
@@ -137,7 +140,16 @@ public static class ServiceCollectionExtensions
                 options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
             })
             .AddIdentityCookies();
-        services.AddAuthorization();
+        services.AddAuthorization(options => options.AddPolicy(
+            PlatformAdministration.Policy,
+            policy => policy.RequireAuthenticatedUser().RequireRole(PlatformAdministration.Role)));
+        services.AddScoped<IPlatformAdminDashboardService, PlatformAdminDashboardService>();
+        services.AddScoped<PlatformAdminRoleBootstrapper>();
+        services.AddSingleton<OperationalEventRecorder>();
+        services.AddSingleton<IOperationalEventRecorder>(provider =>
+            provider.GetRequiredService<OperationalEventRecorder>());
+        services.AddSingleton<IAiUsageRecorder>(provider =>
+            provider.GetRequiredService<OperationalEventRecorder>());
         services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
         services.AddScoped<IPropertyService, PropertyService>();
         services.AddScoped<IPropertyMediaService, PropertyMediaService>();

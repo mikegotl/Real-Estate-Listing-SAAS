@@ -6,6 +6,7 @@ using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Billing;
 using ListingStudio.Domain.Neighborhoods;
 using ListingStudio.Domain.Notifications;
+using ListingStudio.Domain.Administration;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -55,9 +56,38 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
+    public DbSet<PlatformAdminAuditEvent> PlatformAdminAuditEvents => Set<PlatformAdminAuditEvent>();
+
+    public DbSet<OperationalEvent> OperationalEvents => Set<OperationalEvent>();
+
+    public DbSet<AiUsageEvent> AiUsageEvents => Set<AiUsageEvent>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        RejectAuditMutation();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        RejectAuditMutation();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void RejectAuditMutation()
+    {
+        if (ChangeTracker.Entries<PlatformAdminAuditEvent>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Platform administrator audit events are append-only.");
+        }
     }
 }

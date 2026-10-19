@@ -16,6 +16,10 @@
                            StartIcon="@Icons.Material.Filled.HomeWork">Properties</MudButton>
                 <MudButton Href="/billing" Variant="Variant.Text" Color="Color.Inherit"
                            StartIcon="@Icons.Material.Filled.CreditCard">Billing</MudButton>
+                <AuthorizeView Policy="@PlatformAdministration.Policy">
+                    <MudButton Href="/admin" Variant="Variant.Text" Color="Color.Inherit"
+                               StartIcon="@Icons.Material.Filled.AdminPanelSettings">Admin</MudButton>
+                </AuthorizeView>
             </div>
             <div class="account-actions">
                 <NotificationBell @rendermode="InteractiveServer" />
@@ -36,6 +40,9 @@
                         <a href="/auth"><MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Small" /> Workspace</a>
                         <a href="/properties"><MudIcon Icon="@Icons.Material.Filled.HomeWork" Size="Size.Small" /> Properties</a>
                         <a href="/billing"><MudIcon Icon="@Icons.Material.Filled.CreditCard" Size="Size.Small" /> Billing</a>
+                        <AuthorizeView Policy="@PlatformAdministration.Policy">
+                            <a href="/admin"><MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" /> Admin</a>
+                        </AuthorizeView>
                     </div>
                 </details>
             </div>
