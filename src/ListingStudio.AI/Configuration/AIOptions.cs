@@ -7,6 +7,10 @@ public sealed class OpenAIOptions
     public string Model { get; init; } = string.Empty;
     public string ResponsesEndpoint { get; init; } = "https://api.openai.com/v1/responses";
     public string SpeechEndpoint { get; init; } = "https://api.openai.com/v1/audio/speech";
+    public decimal MediaAnalysisEstimatedCostUsd { get; init; }
+    public decimal StoryEstimatedCostUsd { get; init; }
+    public decimal VideoDirectionEstimatedCostUsd { get; init; }
+    public decimal SpeechEstimatedCostUsd { get; init; }
 }
 
 public sealed class VoiceOptions
@@ -24,6 +28,7 @@ public sealed class VoiceOptions
         "Speak with a warm, polished, trustworthy real-estate narration style at a natural pace.";
     public int MaxRetryAttempts { get; init; } = 3;
     public int RetryBaseDelayMilliseconds { get; init; } = 250;
+    public decimal EstimatedCostUsd { get; init; }
 }
 
 /// <summary>Photo fixes on the Media tab. Brightness and color always runs locally; Remove clutter is a paid AI edit.</summary>
@@ -46,4 +51,5 @@ public sealed class PhotoFixOptions
     public int RequestTimeoutSeconds { get; init; } = 240;
 
     public int MaxOutputMegabytes { get; init; } = 40;
+    public decimal EstimatedCostUsd { get; init; }
 }

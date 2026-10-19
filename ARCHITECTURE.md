@@ -131,6 +131,26 @@ Application exposes provider-neutral billing and usage ports. Infrastructure imp
 
 Stripe is disabled by default. Secret keys, webhook signing secrets and test/live price identifiers are runtime configuration only; Listing Studio stores provider identifiers and billing state, never payment-card data. Automated tests use fake checkout/portal URLs and signed test webhook payloads, so they do not create Stripe customers or charges.
 
+## Platform administration and operational observability slice
+
+Platform administration is a cross-tenant operational capability guarded by a dedicated ASP.NET Identity
+`PlatformAdmin` role and the `PlatformAdministration` authorization policy. It is deliberately independent of
+organization membership: a workspace owner is not a platform administrator, and granting the platform role creates
+no organization membership or shortcut around tenant-scoped property, media, campaign, or billing services. Blazor
+admin routes and the supporting API enforce the same policy.
+
+Application owns the aggregate dashboard contracts and privacy-minimized recording ports. Infrastructure stores
+coarse request, sign-in, AI-provider, campaign-outcome, failure, duration, and configured cost-estimate dimensions in
+PostgreSQL. These events never contain tenant IDs, property IDs, full URLs, query strings, IP addresses, user agents,
+prompts, provider payloads, credentials, or customer media. Existing OpenTelemetry/Application Insights remains the
+source for correlated infrastructure diagnostics; the in-product dashboard does not expose raw traces.
+
+Platform-role grants and revocations run through an idempotent controlled command for an existing account. Identity
+mutation and its pseudonymous audit event share one database transaction, and the application DbContext rejects
+updates or deletes of platform-admin audit rows. The dashboard offers bounded date windows and aggregate-only views;
+optional behavioral product analytics remain out of scope until consent, retention, deletion, and regional privacy
+requirements are approved.
+
 ## Production deployment slice
 
 Web and Worker publish as separate non-root .NET 10 containers with FFmpeg/ffprobe installed from the runtime distribution. The Worker hosts an internal HTTP health surface alongside its background services. Both hosts expose process liveness and dependency readiness; readiness verifies PostgreSQL connectivity and executes the configured FFmpeg binary with a bounded timeout. Production console logs use structured JSON, while the Azure Monitor OpenTelemetry distro exports correlated telemetry to workspace-backed Application Insights when its runtime connection string is present.

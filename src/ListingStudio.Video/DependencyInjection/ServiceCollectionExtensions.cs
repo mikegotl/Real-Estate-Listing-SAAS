@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using ListingStudio.Video.Health;
 using ListingStudio.Application.Properties;
 using ListingStudio.Video.Processing;
+using ListingStudio.Application.Administration;
+using Microsoft.Extensions.Options;
 
 namespace ListingStudio.Video.DependencyInjection;
 
@@ -29,9 +31,29 @@ public static class ServiceCollectionExtensions
         services.AddHealthChecks()
             .AddCheck<FfmpegHealthCheck>("ffmpeg", tags: ["ready"]);
         services.AddHttpClient<IAiVideoProvider, HttpAiVideoProvider>(client =>
-            client.Timeout = Timeout.InfiniteTimeSpan);
+            client.Timeout = Timeout.InfiniteTimeSpan)
+            .AddHttpMessageHandler(provider =>
+            {
+                var video = provider.GetRequiredService<IOptions<AIVideoOptions>>().Value;
+                return new AiUsageHttpMessageHandler(
+                    provider.GetRequiredService<IAiUsageRecorder>(),
+                    string.IsNullOrWhiteSpace(video.Provider) ? "AI video" : video.Provider,
+                    string.IsNullOrWhiteSpace(video.Model) ? "unconfigured" : video.Model,
+                    "generated-video",
+                    video.EstimatedCostUsd);
+            });
         services.AddHttpClient<IWalkthroughVideoProvider, HiggsfieldWalkthroughVideoProvider>(client =>
-            client.Timeout = Timeout.InfiniteTimeSpan);
+            client.Timeout = Timeout.InfiniteTimeSpan)
+            .AddHttpMessageHandler(provider =>
+            {
+                var video = provider.GetRequiredService<IOptions<HiggsfieldOptions>>().Value;
+                return new AiUsageHttpMessageHandler(
+                    provider.GetRequiredService<IAiUsageRecorder>(),
+                    "Higgsfield",
+                    video.Model,
+                    "walkthrough-video",
+                    video.EstimatedCostPerCallUsd);
+            });
         return services;
     }
 }

@@ -1,0 +1,33 @@
+<MudPaper Elevation="0" Class="admin-panel">
+    <MudText Typo="Typo.h5" HtmlTag="h2">@Title</MudText>
+    @if (Rows.Count == 0)
+    {
+        <p class="admin-empty">No events in this period.</p>
+    }
+    else
+    {
+        <div class="admin-table-wrap">
+            <table class="admin-table">
+                <thead><tr><th>Group</th><th>Detail</th><th>Count</th>@if (ShowCost) { <th>Failures</th><th>Est. cost</th> }</tr></thead>
+                <tbody>
+                    @foreach (var row in Rows)
+                    {
+                        <tr>
+                            <td>@row.Primary</td><td>@row.Secondary</td><td>@row.Count.ToString("N0")</td>
+                            @if (ShowCost)
+                            {
+                                <td>@row.FailureCount.ToString("N0")</td><td>@row.EstimatedCostUsd.ToString("C")</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<AdminMetricRow> Rows { get; set; } = [];
+    [Parameter] public bool ShowCost { get; set; }
+}

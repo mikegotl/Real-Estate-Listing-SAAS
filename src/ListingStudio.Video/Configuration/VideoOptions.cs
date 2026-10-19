@@ -11,4 +11,5 @@ public sealed class AIVideoOptions
     public string GenerationVersion { get; init; } = "ai-video-v1";
     public int RequestTimeoutSeconds { get; init; } = 600;
     public int MaxOutputMegabytes { get; init; } = 100;
+    public decimal EstimatedCostUsd { get; init; }
 }

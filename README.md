@@ -194,6 +194,45 @@ The brand palette and typography live in the `MudTheme` in `src/ListingStudio.We
 
 ## Production deployment
 
+### Platform administration and operational telemetry
+
+Platform administration uses the dedicated ASP.NET Identity `PlatformAdmin` role. It is intentionally separate from
+`OrganizationMemberRole`: owning a customer workspace does not grant platform access, and a platform administrator
+does not bypass the existing organization-scoped property and media services. `/admin`, `/admin/audit`, and
+`/api/admin/dashboard` all require the `PlatformAdministration` policy.
+
+After applying migrations, grant the first role only to an existing account with the controlled command:
+
+```bash
+dotnet run --project src/ListingStudio.Web -- --grant-platform-admin admin@example.com
+```
+
+To remove it, use `--revoke-platform-admin admin@example.com`. Run either command in a protected operator session with
+normal production database configuration, then remove the email from shell history if your environment records
+arguments. The command is idempotent, exits without starting the Web host, and writes an append-only audit event with
+a one-way user reference rather than an email address. The affected user must sign out and back in so the new role
+claim is issued. Do not seed the role from a committed email list or create a default administrator password.
+
+Because production PostgreSQL is private, execute the same command inside the Web container from an authenticated
+Azure operator session rather than opening database access. Use Azure Container Apps' console/exec facility, run
+`dotnet ListingStudio.Web.dll --grant-platform-admin <existing-email>` in the application directory, verify the
+success message, and close the session. Do not put the administrator email into source control, Bicep, image layers,
+or persistent application configuration.
+
+The dashboard reads privacy-minimized database aggregates for background-job outcomes, provider failures, sign-ins,
+active users, coarse route-group traffic, campaign outcomes, and AI call counts/cost estimates. Configure the
+per-call estimates on both Web and Worker with the `*EstimatedCostUsd` settings under `OpenAI`, `Voice`, `PhotoFixes`,
+`AIVideo`, and `Higgsfield`; zero means no estimate has been configured. Update these runtime values when provider
+pricing or the typical request shape changes. Existing Application Insights/OpenTelemetry remains the source for
+correlated infrastructure diagnostics; the in-product dashboard deliberately does not query or display raw traces.
+
+Operational records never include credentials, full URLs, query strings, IP addresses, user agents, prompts,
+provider payloads, property IDs, organization IDs, emails, or customer media. Active users are derived from the
+account's latest successful sign-in timestamp. This operational collection is for security, reliability, and cost
+control. Any future optional product analytics (funnels, behavior tracking, replay, advertising attribution, or
+cross-session profiling) must be disabled by default until a documented consent, retention, deletion, and regional
+privacy review is approved. Access to the admin dashboard does not waive those requirements.
+
 The repository contains separate production containers for Web, Worker and the EF migration bundle, plus Bicep for Azure Container Apps, PostgreSQL Flexible Server, Blob Storage, ACR, Application Insights, Log Analytics, Key Vault, managed identity and private database networking. Production hosts expose `/health/live` and `/health/ready`; readiness checks PostgreSQL and the container-installed FFmpeg binary. Production logging is structured JSON and is exported through Azure Monitor OpenTelemetry when `APPLICATIONINSIGHTS_CONNECTION_STRING` is configured.
 
 Deployment is intentionally manual and approval-gated through the GitHub `production` environment. It uses OIDC rather than a stored Azure client secret, pushes only immutable commit-SHA images, runs migrations as a one-off Container Apps Job, and enables the Worker only after migration succeeds. No Azure resources are created by normal CI or by merging a pull request. See [DEPLOYMENT.md](DEPLOYMENT.md) for setup, deployment, secret configuration, verification and rollback.
