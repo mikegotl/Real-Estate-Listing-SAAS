@@ -52,7 +52,12 @@ public static class ServiceCollectionExtensions
                     "Higgsfield",
                     video.Model,
                     "walkthrough-video",
-                    video.EstimatedCostPerCallUsd);
+                    video.EstimatedCostPerCallUsd,
+                    request => request.Method == HttpMethod.Post
+                        && string.Equals(
+                            request.RequestUri?.AbsolutePath.Trim('/'),
+                            video.Model.Trim('/'),
+                            StringComparison.OrdinalIgnoreCase));
             });
         return services;
     }

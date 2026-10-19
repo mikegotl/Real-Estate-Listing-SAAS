@@ -113,6 +113,32 @@ The protected `production` GitHub environment also supplies the approved externa
 
 The production workflow enables media analysis, Google sign-in, Google Places neighborhood insights, and Higgsfield walk-through clips after verifying that every required value is present. Narration remains on OpenAI by default, reusing `OPENAI_API_KEY`; ElevenLabs is not activated unless its own approved credentials and voice ID are added in a future deployment change. Register the production Google OAuth callback `https://<web-host>/signin-google` before deployment.
 
+## AI cost estimates
+
+The admin dashboard uses fixed per-request estimates rather than provider billing data. Configure the following
+non-secret variables on the protected GitHub `production` environment:
+
+| Variable | Recorded operation |
+| --- | --- |
+| `OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD` | Property media analysis |
+| `OPENAI_STORY_ESTIMATED_COST_USD` | Property story generation |
+| `OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD` | Video direction generation |
+| `OPENAI_SPEECH_ESTIMATED_COST_USD` | OpenAI narration |
+| `VOICE_ESTIMATED_COST_USD` | Alternate configured voice provider |
+| `PHOTO_FIX_ESTIMATED_COST_USD` | OpenAI photo fix |
+| `AI_VIDEO_ESTIMATED_COST_USD` | Generic AI video generation |
+| `HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD` | Higgsfield walk-through generation |
+
+Each value must be a nonnegative decimal in US dollars, such as `0.0125`. Missing values safely default to `0`, which
+means unconfigured. The deployment validates the values before touching Azure and Bicep sends the same settings to
+both Web and Worker. The Higgsfield estimate is recorded once for the generation submission, not for upload, polling,
+or download requests.
+
+Choose estimates from the current provider price and the application's typical request size, review them against
+actual invoices, and update them whenever either changes. These settings are forward-looking: existing observations
+are not recalculated after a value changes. Run the protected production deployment after updating a variable so the
+new values reach the Container Apps.
+
 ## Health, logs and routine operations
 
 - `GET /health/live` checks that the host process can answer. Container Apps uses it for startup and liveness probes.

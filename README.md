@@ -221,10 +221,11 @@ or persistent application configuration.
 
 The dashboard reads privacy-minimized database aggregates for background-job outcomes, provider failures, sign-ins,
 active users, coarse route-group traffic, campaign outcomes, and AI call counts/cost estimates. Configure the
-per-call estimates on both Web and Worker with the `*EstimatedCostUsd` settings under `OpenAI`, `Voice`, `PhotoFixes`,
-`AIVideo`, and `Higgsfield`; zero means no estimate has been configured. Update these runtime values when provider
-pricing or the typical request shape changes. Existing Application Insights/OpenTelemetry remains the source for
-correlated infrastructure diagnostics; the in-product dashboard deliberately does not query or display raw traces.
+per-call estimates through the protected GitHub `production` environment variables documented in
+[DEPLOYMENT.md](DEPLOYMENT.md#ai-cost-estimates). Bicep applies them consistently to Web and Worker. A zero value means
+no estimate has been configured, and changes affect only future calls. Update the estimates when provider pricing or
+the typical request shape changes. Existing Application Insights/OpenTelemetry remains the source for correlated
+infrastructure diagnostics; the in-product dashboard deliberately does not query or display raw traces.
 
 Operational records never include credentials, full URLs, query strings, IP addresses, user agents, prompts,
 provider payloads, property IDs, organization IDs, emails, or customer media. Active users are derived from the
