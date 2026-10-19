@@ -193,7 +193,17 @@ public sealed partial class PropertyPhotoFixProcessor(
                 canvasHeight),
             cancellationToken);
         var result = await codec.DecodeAsync(edited, "image/png", canvasWidth, canvasHeight, PhotoScaling.Exact, cancellationToken);
-        return PhotoEditCanvas.Crop(result, region);
+
+        // The model redraws the whole frame, so only the areas it actually tidied are taken from it; the rest of
+        // the photo stays the original, at its full resolution.
+        var photo = await codec.DecodeAsync(
+            original,
+            mimeType,
+            MaximumFixedDimension,
+            MaximumFixedDimension,
+            PhotoScaling.ShrinkToFit,
+            cancellationToken);
+        return PhotoEditMerger.Merge(photo, PhotoEditCanvas.Crop(result, region)).Photo;
     }
 
     private async Task<string?> ApplyAsync(

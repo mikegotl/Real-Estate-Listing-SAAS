@@ -155,7 +155,11 @@ public sealed class FakePropertyVideoTranscoder : IPropertyVideoTranscoder
     public int EnhancementCallCount => enhancementCallCount;
     public PropertyVideoMetadata Metadata { get; set; } = new("mov,mp4,m4a,3gp,3g2,mj2", 1_920, 1_080, 12_000, 29.97m, true);
 
+    private readonly ConcurrentQueue<byte[]> results = new();
+
     public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
+    public void EnqueueResult(byte[] edited) => results.Enqueue(edited);
 
     public Task<PropertyVideoMetadata> ProbeAsync(
         Stream content,
@@ -299,7 +303,11 @@ public sealed class FakeVideoRenderer : IVideoRenderer
 
     public int WalkthroughInputCount => walkthroughInputCount;
 
+    private readonly ConcurrentQueue<byte[]> results = new();
+
     public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
+    public void EnqueueResult(byte[] edited) => results.Enqueue(edited);
 
     public async Task<VideoRenderResult> RenderAsync(
         VideoRenderRequest request,
@@ -391,7 +399,11 @@ public sealed class FakeAiVideoProvider : IAiVideoProvider
 
     public int CallCount => callCount;
 
+    private readonly ConcurrentQueue<byte[]> results = new();
+
     public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
+    public void EnqueueResult(byte[] edited) => results.Enqueue(edited);
 
     public Task<AiVideoProviderResult> GenerateAsync(
         AiVideoProviderRequest request,
@@ -559,9 +571,16 @@ public sealed class FakePhotoImageCodec : IPhotoImageCodec
     public const int SourceWidth = 400;
     public const int SourceHeight = 300;
     public const byte SourceLevel = 60;
+    public const byte EditedLevel = 200;
 
     public static readonly byte[] Png = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z+VAAAAAASUVORK5CYII=");
+
+    // What the fake clutter remover returns; it decodes like the source photo with one small item removed.
+    public static readonly byte[] EditedPng = [.. Png, 0];
+
+    // A clutter remover result that redrew the room: it decodes to a different scene altogether.
+    public static readonly byte[] RedrawnPng = [.. Png, 1];
 
     public static byte[] Jpeg => FakePropertyVideoFrameExtractor.Still;
 
@@ -581,6 +600,22 @@ public sealed class FakePhotoImageCodec : IPhotoImageCodec
         };
         var pixels = new byte[width * height * 3];
         pixels.AsSpan().Fill(SourceLevel);
+        if (image.AsSpan().SequenceEqual(RedrawnPng))
+        {
+            for (var pixel = 0; pixel < width * height; pixel++)
+            {
+                pixels.AsSpan(pixel * 3, 3).Fill((pixel % width / 20 + pixel / width / 20) % 2 == 0 ? (byte)230 : (byte)30);
+            }
+        }
+        else if (image.AsSpan().SequenceEqual(EditedPng))
+        {
+            // An edited photo from the clutter remover: one small item, a tenth of each side, is gone.
+            for (var y = height * 2 / 5; y < height / 2; y++)
+            {
+                pixels.AsSpan((y * width + width * 2 / 5) * 3, width / 10 * 3).Fill(EditedLevel);
+            }
+        }
+
         return Task.FromResult(new PhotoPixels(width, height, pixels));
     }
 
@@ -611,7 +646,11 @@ public sealed class FakePhotoClutterRemover : IPhotoClutterRemover
 
     public ConcurrentQueue<PhotoClutterRemovalRequest> Requests { get; } = new();
 
+    private readonly ConcurrentQueue<byte[]> results = new();
+
     public void EnqueueFailure(Exception exception) => failures.Enqueue(exception);
+
+    public void EnqueueResult(byte[] edited) => results.Enqueue(edited);
 
     public Task<byte[]> RemoveClutterAsync(
         PhotoClutterRemovalRequest request,
@@ -620,6 +659,6 @@ public sealed class FakePhotoClutterRemover : IPhotoClutterRemover
         Requests.Enqueue(request);
         return failures.TryDequeue(out var failure)
             ? Task.FromException<byte[]>(failure)
-            : Task.FromResult(FakePhotoImageCodec.Png.ToArray());
+            : Task.FromResult(results.TryDequeue(out var result) ? result : FakePhotoImageCodec.EditedPng.ToArray());
     }
 }
