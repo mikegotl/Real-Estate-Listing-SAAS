@@ -164,7 +164,8 @@ public sealed partial class CampaignGenerationProcessor(
         var requestedDurationSeconds = job.CurrentStage == CampaignGenerationStage.RenderLongForm
             ? await dbContext.CampaignDeliverables.AsNoTracking()
                 .Where(candidate => candidate.CampaignGenerationJobId == job.Id
-                    && candidate.Kind == CampaignOutputKind.LongForm)
+                    && (candidate.Kind == CampaignOutputKind.LongForm
+                        || candidate.Kind == CampaignOutputKind.FullNarratedTour))
                 .Select(candidate => (int?)candidate.RequestedDuration)
                 .SingleOrDefaultAsync(cancellationToken)
             : null;
@@ -218,9 +219,19 @@ public sealed partial class CampaignGenerationProcessor(
             CampaignGenerationStage.GenerateNarration => GenerateNarrationAsync(jobId, cancellationToken),
             CampaignGenerationStage.GenerateDerivativePlans => GenerateDerivativePlansAsync(jobId, cancellationToken),
             CampaignGenerationStage.GenerateRequiredAiVideo => GenerateRequiredAiVideoAsync(jobId, cancellationToken),
-            CampaignGenerationStage.RenderHero => RenderAsync(jobId, CampaignOutputKind.Hero, cancellationToken),
-            CampaignGenerationStage.RenderFeature => RenderAsync(jobId, CampaignOutputKind.Feature, cancellationToken),
-            CampaignGenerationStage.RenderTeaser => RenderAsync(jobId, CampaignOutputKind.Teaser, cancellationToken),
+            CampaignGenerationStage.RenderHero => RenderSelectedAsync(
+                jobId,
+                [CampaignOutputKind.Hero, CampaignOutputKind.YouTubeTour],
+                cancellationToken),
+            CampaignGenerationStage.RenderFeature => RenderSelectedAsync(
+                jobId,
+                [CampaignOutputKind.Feature, CampaignOutputKind.TikTok, CampaignOutputKind.InstagramReel,
+                    CampaignOutputKind.YouTubeShort],
+                cancellationToken),
+            CampaignGenerationStage.RenderTeaser => RenderSelectedAsync(
+                jobId,
+                [CampaignOutputKind.Teaser],
+                cancellationToken),
             CampaignGenerationStage.RenderLongForm => RenderLongFormAsync(jobId, cancellationToken),
             CampaignGenerationStage.GenerateSocialCopy => GenerateSocialCopyAsync(jobId, cancellationToken),
             CampaignGenerationStage.FinalizeCampaign => FinalizeAsync(jobId, cancellationToken),
@@ -373,7 +384,11 @@ public sealed partial class CampaignGenerationProcessor(
                 cancellationToken);
         VideoProductionPlanResult? longFormPlan = null;
         VideoNarrationResult? longFormNarration = null;
-        if (acceptedScript is not null && NarrationScriptPolicy.RequiresLongForm(acceptedScript.ExtractedText))
+        var needsLongForm = job.RequestedOutputs == CampaignOutputSelection.LegacyStandard
+            || job.RequestedOutputs.HasFlag(CampaignOutputSelection.FullNarratedTour);
+        if (needsLongForm
+            && acceptedScript is not null
+            && NarrationScriptPolicy.RequiresLongForm(acceptedScript.ExtractedText))
         {
             var durationSeconds = NarrationScriptPolicy.EstimateLongFormDurationSeconds(acceptedScript.ExtractedText);
             longFormPlan = await productionPlanService.GenerateAsync(
@@ -390,20 +405,45 @@ public sealed partial class CampaignGenerationProcessor(
                 ?? throw new InvalidOperationException("The long-form narration could not be created.");
         }
 
-        foreach (var derivative in derivatives.Derivatives.Where(candidate =>
-            candidate.AspectRatio == VideoAspectRatio.Landscape16By9))
+        if (job.RequestedOutputs == CampaignOutputSelection.LegacyStandard)
         {
-            dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
-                job.Id,
-                job.OrganizationId,
-                job.PropertyId,
-                shortFormNarrationId,
-                ToOutputKind(derivative.Kind),
-                derivative.Specification.RequestedDuration,
-                derivative.AspectRatio,
-                JsonSerializer.Serialize(derivative.Specification, SerializerOptions),
-                timeProvider.GetUtcNow()));
+            foreach (var derivative in derivatives.Derivatives.Where(candidate =>
+                candidate.AspectRatio == VideoAspectRatio.Landscape16By9))
+            {
+                AddDeliverable(job, shortFormNarrationId, ToOutputKind(derivative.Kind), derivative);
+            }
         }
+        else
+        {
+            AddSelectedDeliverable(
+                job,
+                shortFormNarrationId,
+                CampaignOutputSelection.YouTubeTour,
+                CampaignOutputKind.YouTubeTour,
+                derivatives.Get(CampaignDeliverableKind.Hero, VideoAspectRatio.Landscape16By9));
+            var verticalFeature = derivatives.Get(
+                CampaignDeliverableKind.Feature,
+                VideoAspectRatio.Vertical9By16);
+            AddSelectedDeliverable(
+                job,
+                shortFormNarrationId,
+                CampaignOutputSelection.TikTok,
+                CampaignOutputKind.TikTok,
+                verticalFeature);
+            AddSelectedDeliverable(
+                job,
+                shortFormNarrationId,
+                CampaignOutputSelection.InstagramReel,
+                CampaignOutputKind.InstagramReel,
+                verticalFeature);
+            AddSelectedDeliverable(
+                job,
+                shortFormNarrationId,
+                CampaignOutputSelection.YouTubeShort,
+                CampaignOutputKind.YouTubeShort,
+                verticalFeature);
+        }
+
         if (longFormPlan is not null && longFormNarration is not null)
         {
             dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
@@ -411,7 +451,9 @@ public sealed partial class CampaignGenerationProcessor(
                 job.OrganizationId,
                 job.PropertyId,
                 longFormNarration.Id,
-                CampaignOutputKind.LongForm,
+                job.RequestedOutputs == CampaignOutputSelection.LegacyStandard
+                    ? CampaignOutputKind.LongForm
+                    : CampaignOutputKind.FullNarratedTour,
                 longFormPlan.Specification.RequestedDuration,
                 longFormPlan.Specification.AspectRatio,
                 JsonSerializer.Serialize(longFormPlan.Specification, SerializerOptions),
@@ -419,6 +461,54 @@ public sealed partial class CampaignGenerationProcessor(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    private void AddSelectedDeliverable(
+        CampaignGenerationJob job,
+        Guid narrationId,
+        CampaignOutputSelection selection,
+        CampaignOutputKind kind,
+        CampaignDerivative derivative)
+    {
+        if (job.RequestedOutputs.HasFlag(selection))
+        {
+            AddDeliverable(job, narrationId, kind, derivative);
+        }
+    }
+
+    private void AddDeliverable(
+        CampaignGenerationJob job,
+        Guid narrationId,
+        CampaignOutputKind kind,
+        CampaignDerivative derivative) =>
+        dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
+            job.Id,
+            job.OrganizationId,
+            job.PropertyId,
+            narrationId,
+            kind,
+            derivative.Specification.RequestedDuration,
+            derivative.AspectRatio,
+            JsonSerializer.Serialize(derivative.Specification, SerializerOptions),
+            timeProvider.GetUtcNow()));
+
+    private async Task<bool> RenderSelectedAsync(
+        Guid jobId,
+        IReadOnlyList<CampaignOutputKind> kinds,
+        CancellationToken cancellationToken)
+    {
+        var selected = await dbContext.CampaignDeliverables.AsNoTracking()
+            .Where(deliverable => deliverable.CampaignGenerationJobId == jobId
+                && kinds.Contains(deliverable.Kind))
+            .OrderBy(deliverable => deliverable.Kind)
+            .Select(deliverable => deliverable.Kind)
+            .ToArrayAsync(cancellationToken);
+        foreach (var kind in selected)
+        {
+            await RenderAsync(jobId, kind, cancellationToken);
+        }
+
         return true;
     }
 
@@ -433,6 +523,47 @@ public sealed partial class CampaignGenerationProcessor(
             cancellationToken);
         if (deliverable.Status == CampaignDeliverableStatus.Rendered)
         {
+            return true;
+        }
+
+        var reusable = await dbContext.CampaignDeliverables.AsNoTracking()
+            .Where(candidate => candidate.CampaignGenerationJobId == jobId
+                && candidate.Id != deliverable.Id
+                && candidate.VideoNarrationId == deliverable.VideoNarrationId
+                && candidate.SpecificationJson == deliverable.SpecificationJson
+                && candidate.Status == CampaignDeliverableStatus.Rendered
+                && candidate.AssetPath != null
+                && candidate.ContentType != null
+                && candidate.FileSize != null)
+            .OrderBy(candidate => candidate.RenderedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (reusable is not null)
+        {
+            var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{kind.ToString().ToLowerInvariant()}.mp4";
+            await using var source = await campaignAssetStorage.OpenReadAsync(reusable.AssetPath!, cancellationToken)
+                ?? throw new FileNotFoundException("The reusable campaign asset is unavailable.");
+            var stored = false;
+            try
+            {
+                await campaignAssetStorage.StoreAsync(assetPath, source, reusable.ContentType!, cancellationToken);
+                stored = true;
+                deliverable.MarkRendered(
+                    assetPath,
+                    reusable.ContentType!,
+                    reusable.FileSize!.Value,
+                    timeProvider.GetUtcNow());
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                if (stored)
+                {
+                    await campaignAssetStorage.DeleteAsync(assetPath, CancellationToken.None);
+                }
+
+                throw;
+            }
+
             return true;
         }
 
@@ -533,14 +664,11 @@ public sealed partial class CampaignGenerationProcessor(
         return true;
     }
 
-    private async Task<bool> RenderLongFormAsync(Guid jobId, CancellationToken cancellationToken)
-    {
-        var exists = await dbContext.CampaignDeliverables.AsNoTracking().AnyAsync(candidate =>
-            candidate.CampaignGenerationJobId == jobId
-                && candidate.Kind == CampaignOutputKind.LongForm,
+    private Task<bool> RenderLongFormAsync(Guid jobId, CancellationToken cancellationToken) =>
+        RenderSelectedAsync(
+            jobId,
+            [CampaignOutputKind.LongForm, CampaignOutputKind.FullNarratedTour],
             cancellationToken);
-        return !exists || await RenderAsync(jobId, CampaignOutputKind.LongForm, cancellationToken);
-    }
 
     private async Task<bool> GenerateRequiredAiVideoAsync(
         Guid jobId,
@@ -899,16 +1027,14 @@ public sealed partial class CampaignGenerationProcessor(
         var job = await dbContext.CampaignGenerationJobs.AsNoTracking()
             .Include(candidate => candidate.Deliverables)
             .SingleAsync(candidate => candidate.Id == jobId, cancellationToken);
-        var requiredKinds = new[]
-        {
-            CampaignOutputKind.Hero,
-            CampaignOutputKind.Feature,
-            CampaignOutputKind.Teaser,
-        };
-        if (job.Deliverables.Count is < 3 or > 4
+        var requiredKinds = RequiredKinds(job.RequestedOutputs);
+        var deliverableCountIsValid = job.RequestedOutputs == CampaignOutputSelection.LegacyStandard
+            ? job.Deliverables.Count == requiredKinds.Count
+                || (job.Deliverables.Count == requiredKinds.Count + 1
+                    && job.Deliverables.Any(candidate => candidate.Kind == CampaignOutputKind.LongForm))
+            : job.Deliverables.Count == requiredKinds.Count;
+        if (!deliverableCountIsValid
             || requiredKinds.Any(kind => job.Deliverables.All(candidate => candidate.Kind != kind))
-            || (job.Deliverables.Count == 4
-                && job.Deliverables.All(candidate => candidate.Kind != CampaignOutputKind.LongForm))
             || job.Deliverables.Any(candidate => candidate.Status != CampaignDeliverableStatus.Rendered)
             || string.IsNullOrWhiteSpace(job.SocialCaptionLong)
             || string.IsNullOrWhiteSpace(job.SocialCaptionShort))
@@ -917,6 +1043,36 @@ public sealed partial class CampaignGenerationProcessor(
         }
 
         return true;
+    }
+
+    private static HashSet<CampaignOutputKind> RequiredKinds(CampaignOutputSelection selection)
+    {
+        CampaignOutputSelectionPolicy.Validate(selection);
+        if (selection == CampaignOutputSelection.LegacyStandard)
+        {
+            return new HashSet<CampaignOutputKind>
+            {
+                CampaignOutputKind.Hero,
+                CampaignOutputKind.Feature,
+                CampaignOutputKind.Teaser,
+            };
+        }
+
+        var result = new HashSet<CampaignOutputKind>();
+        AddIfSelected(CampaignOutputSelection.TikTok, CampaignOutputKind.TikTok);
+        AddIfSelected(CampaignOutputSelection.InstagramReel, CampaignOutputKind.InstagramReel);
+        AddIfSelected(CampaignOutputSelection.YouTubeShort, CampaignOutputKind.YouTubeShort);
+        AddIfSelected(CampaignOutputSelection.YouTubeTour, CampaignOutputKind.YouTubeTour);
+        AddIfSelected(CampaignOutputSelection.FullNarratedTour, CampaignOutputKind.FullNarratedTour);
+        return result;
+
+        void AddIfSelected(CampaignOutputSelection option, CampaignOutputKind kind)
+        {
+            if (selection.HasFlag(option))
+            {
+                result.Add(kind);
+            }
+        }
     }
 
     private async Task NotifyAsync(

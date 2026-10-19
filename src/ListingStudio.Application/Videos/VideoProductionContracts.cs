@@ -1,4 +1,5 @@
 using ListingStudio.Application.Stories;
+using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
 
 namespace ListingStudio.Application.Videos;
@@ -15,7 +16,9 @@ public sealed record VideoWalkthroughInput(
     string Filename,
     int Width,
     int Height,
-    int DurationMs);
+    int DurationMs,
+    int TourOrder,
+    PropertyMediaCategory? TourStop);
 
 public sealed record AcceptedNarrationScriptSegment(string Key, string Text);
 

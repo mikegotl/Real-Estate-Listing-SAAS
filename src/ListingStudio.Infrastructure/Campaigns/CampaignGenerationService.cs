@@ -5,6 +5,7 @@ using System.Text.Json;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Billing;
+using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,13 +18,21 @@ public sealed class CampaignGenerationService(
     TimeProvider timeProvider,
     ICampaignBillingGate campaignBillingGate) : ICampaignGenerationService
 {
-    private const string WorkflowVersion = "campaign-accepted-script-walkthrough-v6";
+    private const string WorkflowVersion = "campaign-platform-cuts-v7";
+
+    public Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CancellationToken cancellationToken = default) =>
+        EnqueueAsync(userId, propertyId, CampaignOutputSelection.LegacyStandard, cancellationToken);
 
     public async Task<CampaignGenerationResult?> EnqueueAsync(
         string userId,
         Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
         CancellationToken cancellationToken = default)
     {
+        CampaignOutputSelectionPolicy.Validate(requestedOutputs);
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.ReadCommitted,
@@ -98,15 +107,24 @@ public sealed class CampaignGenerationService(
                 script.MarketingUseAcceptedAtUtc,
             })
             .SingleOrDefaultAsync(cancellationToken);
+        if (requestedOutputs.HasFlag(CampaignOutputSelection.FullNarratedTour)
+            && (acceptedScript is null || !NarrationScriptPolicy.RequiresLongForm(acceptedScript.ExtractedText)))
+        {
+            throw new InvalidOperationException(
+                "A full narrated tour requires an accepted narration script longer than 145 words.");
+        }
         var walkthroughVideos = await dbContext.PropertyVideos
             .AsNoTracking()
             .Where(video => video.OrganizationId == organizationId
                 && video.PropertyId == propertyId
                 && video.ProcessingStatus == Domain.Properties.PropertyVideoProcessingStatus.Completed)
-            .OrderBy(video => video.Id)
+            .OrderBy(video => video.TourOrder)
+            .ThenBy(video => video.Id)
             .Select(video => new
             {
                 video.Id,
+                video.TourOrder,
+                video.TourStop,
                 video.EnhancedBlobPath,
                 video.EnhancedDurationMs,
                 video.EnhancementVersion,
@@ -118,7 +136,8 @@ public sealed class CampaignGenerationService(
             media,
             neighborhoodFacts,
             acceptedScript,
-            walkthroughVideos);
+            walkthroughVideos,
+            requestedOutputs);
         var existing = await dbContext.CampaignGenerationJobs
             .Include(candidate => candidate.Deliverables)
             .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId
@@ -140,6 +159,7 @@ public sealed class CampaignGenerationService(
             propertyId,
             userId,
             fingerprint,
+            requestedOutputs,
             timeProvider.GetUtcNow());
         dbContext.CampaignGenerationJobs.Add(job);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -257,7 +277,8 @@ public sealed class CampaignGenerationService(
         object media,
         object neighborhoodFacts,
         object? acceptedScript,
-        object walkthroughVideos)
+        object walkthroughVideos,
+        CampaignOutputSelection requestedOutputs)
     {
         var source = JsonSerializer.Serialize(new
         {
@@ -267,6 +288,7 @@ public sealed class CampaignGenerationService(
             neighborhoodFacts,
             acceptedScript,
             walkthroughVideos,
+            requestedOutputs,
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
     }
@@ -297,6 +319,7 @@ public sealed class CampaignGenerationService(
         return new CampaignGenerationResult(
             job.Id,
             job.PropertyId,
+            job.RequestedOutputs,
             job.Status,
             job.CurrentStage,
             progress,

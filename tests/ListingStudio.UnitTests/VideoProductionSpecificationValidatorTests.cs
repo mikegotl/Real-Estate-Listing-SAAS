@@ -253,7 +253,14 @@ public sealed class VideoProductionSpecificationValidatorTests
         {
             FactBindings = [.. original.FactBindings, .. scriptBindings],
             AcceptedNarrationScript = script,
-            WalkthroughVideos = [new VideoWalkthroughInput(videoId, "walkthrough.mp4", 1_920, 1_080, 90_000)],
+            WalkthroughVideos = [new VideoWalkthroughInput(
+                videoId,
+                "walkthrough.mp4",
+                1_920,
+                1_080,
+                90_000,
+                0,
+                PropertyMediaCategory.FrontExterior)],
         };
         var specification = CreateSpecification(input);
         var acceptedNarration = new[]

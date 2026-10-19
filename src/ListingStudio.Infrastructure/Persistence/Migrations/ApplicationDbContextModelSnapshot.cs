@@ -371,6 +371,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("character varying(450)");
 
+                    b.Property<string>("RequestedOutputs")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasDefaultValue("LegacyStandard");
+
                     b.Property<string>("SocialCaptionLong")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
@@ -1133,6 +1140,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("PropertyId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("TourOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TourStop")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<DateTimeOffset>("UploadedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1153,6 +1167,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("FrameExtractionStatus", "FrameExtractionNextAttemptAtUtc", "FrameExtractionAttemptCount")
                         .HasDatabaseName("IX_PropertyVideos_FrameExtractionQueue");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "TourOrder");
 
                     b.HasIndex("OrganizationId", "PropertyId", "UploadedAtUtc");
 

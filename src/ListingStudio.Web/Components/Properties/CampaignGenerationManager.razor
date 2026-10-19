@@ -1,6 +1,7 @@
 @inherits OwningComponentBase<ICampaignGenerationService>
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IPropertyMediaService MediaService
+@inject IPropertyNarrationScriptService NarrationScriptService
 @inject ILogger<CampaignGenerationManager> Logger
 
 <MudPaper Class="pa-6 mt-6">
@@ -18,12 +19,60 @@
         {
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
-                       Disabled="@(busy || IsReadOnly)"
+                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None)"
                        OnClick="GenerateAsync">
                 @(job?.Status == CampaignGenerationStatus.Completed ? "Generate updated campaign" : "Generate campaign")
             </MudButton>
         }
     </MudStack>
+
+    @if (job is null || job.Status is CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
+    {
+        <MudPaper Outlined="true" Class="pa-4 mb-4">
+            <MudText Typo="Typo.subtitle1">Choose your deliverables</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Listing Studio creates one verified story and narration, then produces only the formats you select.
+                Standard formats count as one successful property campaign.
+            </MudText>
+            <MudGrid Spacing="2">
+                @foreach (var option in OutputOptions)
+                {
+                    var unavailable = option.Selection == CampaignOutputSelection.FullNarratedTour && !longFormAvailable;
+                    <MudItem xs="12" sm="6">
+                        <MudPaper Outlined="true" Class="pa-3 h-100">
+                            <MudCheckBox T="bool"
+                                         Value="@IsSelected(option.Selection)"
+                                         ValueChanged="@(value => SetSelected(option.Selection, value))"
+                                         Disabled="@(busy || IsReadOnly || unavailable)"
+                                         Label="@option.Name"
+                                         Color="Color.Primary" />
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                @option.Details
+                            </MudText>
+                            @if (unavailable)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Info">
+                                    Accept a narration script longer than @IPropertyNarrationScriptService.ShortFormWordLimit words to enable this format.
+                                </MudText>
+                            }
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+            @if (selectedOutputs == CampaignOutputSelection.None)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-2">
+                    Choose at least one output before generating the campaign.
+                </MudText>
+            }
+        </MudPaper>
+    }
+    else if (job.RequestedOutputs != CampaignOutputSelection.LegacyStandard)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">
+            Creating: @SelectedOutputNames(job.RequestedOutputs)
+        </MudText>
+    }
 
     @if (!string.IsNullOrWhiteSpace(error))
     {
@@ -92,9 +141,9 @@
                 {
                     <MudItem xs="12" md="4">
                         <MudPaper Outlined="true" Class="pa-4">
-                            <MudText Typo="Typo.h6">@deliverable.Kind</MudText>
+                            <MudText Typo="Typo.h6">@OutputName(deliverable.Kind)</MudText>
                             <MudText Class="mud-text-secondary" Typo="Typo.body2">
-                                @deliverable.DurationSeconds seconds · @deliverable.AspectRatio
+                                @deliverable.DurationSeconds seconds · @deliverable.AspectRatio · @Dimensions(deliverable.AspectRatio)
                             </MudText>
                             @if (deliverable.Status == CampaignDeliverableStatus.Rendered)
                             {
@@ -167,11 +216,25 @@
     private string? refreshError;
     private int mediaCount;
     private int failedAnalysisCount;
+    private bool longFormAvailable;
+    private bool selectionInitialized;
+    private Guid? loadedPropertyId;
+    private CampaignOutputSelection selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
     private bool statusLoaded;
     private CampaignGenerationStatus? reportedStatus;
 
     protected override async Task OnParametersSetAsync()
     {
+        if (loadedPropertyId != PropertyId)
+        {
+            loadedPropertyId = PropertyId;
+            selectionInitialized = false;
+            selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
+            job = null;
+            statusLoaded = false;
+            reportedStatus = null;
+        }
+
         await LoadAsync();
         StartPolling();
     }
@@ -182,6 +245,22 @@
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
+            var script = await NarrationScriptService.GetAsync(userId, PropertyId, pollingCancellation.Token);
+            longFormAvailable = script is { MarketingUseAccepted: true }
+                && NarrationScriptPolicy.RequiresLongForm(script.ExtractedText);
+            if (!selectionInitialized)
+            {
+                if (job is not null && job.RequestedOutputs != CampaignOutputSelection.LegacyStandard)
+                {
+                    selectedOutputs = job.RequestedOutputs;
+                }
+
+                selectionInitialized = true;
+            }
+            if (!longFormAvailable)
+            {
+                selectedOutputs &= ~CampaignOutputSelection.FullNarratedTour;
+            }
             var media = (await MediaService.ListAsync(userId, PropertyId, pollingCancellation.Token))
                 .Where(item => !item.IsInGallery)
                 .ToArray();
@@ -202,7 +281,7 @@
     }
 
     private async Task GenerateAsync() => await MutateAsync(async userId =>
-        job = await Service.EnqueueAsync(userId, PropertyId));
+        job = await Service.EnqueueAsync(userId, PropertyId, selectedOutputs));
 
     private async Task RetryAsync() => await MutateAsync(async userId =>
     {
@@ -311,6 +390,46 @@
 
     private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
         index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
+
+    private static readonly OutputOption[] OutputOptions =
+    [
+        new(CampaignOutputSelection.TikTok, "TikTok", "Vertical 1080 × 1920 · approximately 30 seconds · quick hook, captions, and CTA."),
+        new(CampaignOutputSelection.InstagramReel, "Instagram Reel", "Vertical 1080 × 1920 · approximately 30 seconds · Reel-safe framing and captions."),
+        new(CampaignOutputSelection.YouTubeShort, "YouTube Short", "Vertical 1080 × 1920 · approximately 30 seconds · concise highlight edit."),
+        new(CampaignOutputSelection.YouTubeTour, "YouTube property tour", "Horizontal 1920 × 1080 · approximately 60 seconds · logical walkthrough order."),
+        new(CampaignOutputSelection.FullNarratedTour, "Full narrated tour", "Horizontal 1920 × 1080 · duration follows the complete accepted script."),
+    ];
+
+    private bool IsSelected(CampaignOutputSelection selection) => selectedOutputs.HasFlag(selection);
+
+    private void SetSelected(CampaignOutputSelection selection, bool selected)
+    {
+        selectedOutputs = selected
+            ? selectedOutputs | selection
+            : selectedOutputs & ~selection;
+    }
+
+    private static string SelectedOutputNames(CampaignOutputSelection selection) => string.Join(", ",
+        OutputOptions.Where(option => selection.HasFlag(option.Selection)).Select(option => option.Name));
+
+    private static string OutputName(CampaignOutputKind kind) => kind switch
+    {
+        CampaignOutputKind.TikTok => "TikTok",
+        CampaignOutputKind.InstagramReel => "Instagram Reel",
+        CampaignOutputKind.YouTubeShort => "YouTube Short",
+        CampaignOutputKind.YouTubeTour => "YouTube property tour",
+        CampaignOutputKind.FullNarratedTour => "Full narrated tour",
+        CampaignOutputKind.Hero => "HERO",
+        CampaignOutputKind.Feature => "FEATURE",
+        CampaignOutputKind.Teaser => "TEASER",
+        CampaignOutputKind.LongForm => "LONG FORM",
+        _ => Display(kind),
+    };
+
+    private static string Dimensions(string aspectRatio) =>
+        aspectRatio == "16:9" ? "1920 × 1080" : "1080 × 1920";
+
+    private sealed record OutputOption(CampaignOutputSelection Selection, string Name, string Details);
 
     private static string DisplayError(CampaignGenerationResult campaign) =>
         campaign.CurrentStage == CampaignGenerationStage.GenerateMasterVideoPlan

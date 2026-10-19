@@ -15,8 +15,8 @@
     <MudAlert Severity="Severity.Info" Dense="true" Class="my-4">
         The file is stored privately but is not used until you accept it for marketing. Acceptance applies only to
         campaigns created or refreshed afterward. Scripts up to @IPropertyNarrationScriptService.ShortFormWordLimit words
-        become the HERO narration. Longer accepted scripts automatically add a landscape long-form video timed for the
-        complete script; HERO, FEATURE, and TEASER remain available as concise edits.
+        become the short campaign narration. Longer accepted scripts enable a full narrated tour timed for the complete
+        script; select that deliverable when generating or refreshing the campaign.
     </MudAlert>
 
     @if (!IsReadOnly)
@@ -161,7 +161,7 @@
                 ShowMessage(
                     accepted
                         ? script.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
-                            ? $"Script accepted. Generate or refresh the campaign to add an approximately {FormatDuration(NarrationScriptPolicy.EstimateLongFormDurationSeconds(script.ExtractedText))} long-form video."
+                            ? $"Script accepted. Select Full narrated tour when generating or refreshing the campaign to create an approximately {FormatDuration(NarrationScriptPolicy.EstimateLongFormDurationSeconds(script.ExtractedText))} video."
                             : "Script accepted. Generate or refresh the campaign to use it as the HERO narration source."
                         : "Marketing acceptance removed. Existing videos are unchanged; refreshed videos will return to generated narration.",
                     Severity.Success);

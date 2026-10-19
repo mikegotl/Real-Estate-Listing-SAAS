@@ -72,6 +72,22 @@ public sealed class CampaignGenerationJobTests
         Assert.Null(finalizing.NextAttemptAtUtc);
     }
 
+    [Fact]
+    public void RequestedPlatformOutputsArePersistedAndValidated()
+    {
+        var selected = CampaignOutputSelection.TikTok | CampaignOutputSelection.YouTubeTour;
+
+        var job = CampaignGenerationJob.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "owner-id", new string('a', 64), selected, Now);
+
+        Assert.Equal(selected, job.RequestedOutputs);
+        Assert.Throws<ArgumentOutOfRangeException>(() => CampaignGenerationJob.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "owner-id", new string('a', 64), CampaignOutputSelection.None, Now));
+        Assert.Throws<ArgumentException>(() => CampaignGenerationJob.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "owner-id", new string('a', 64),
+            CampaignOutputSelection.LegacyStandard | CampaignOutputSelection.TikTok, Now));
+    }
+
     private static CampaignGenerationJob CreateJob()
     {
         return CampaignGenerationJob.Create(
@@ -79,6 +95,7 @@ public sealed class CampaignGenerationJobTests
             Guid.NewGuid(),
             "owner-id",
             new string('a', 64),
+            CampaignOutputSelection.LegacyStandard,
             Now);
     }
 

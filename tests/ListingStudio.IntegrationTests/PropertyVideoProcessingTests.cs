@@ -106,6 +106,64 @@ public sealed class PropertyVideoProcessingTests(PostgreSqlWebApplicationFixture
         Assert.True(await service.DeleteAsync(owner.UserId, owner.PropertyId, videoId));
     }
 
+    [Fact]
+    public async Task OwnerCanLabelAndReorderWalkthroughWhileOtherTenantsCannot()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var owner = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "video-tour-owner");
+        var outsider = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "video-tour-outsider");
+        var service = scope.ServiceProvider.GetRequiredService<IPropertyVideoService>();
+        await using var firstUpload = new MemoryStream(SampleUpload);
+        await using var secondUpload = new MemoryStream(SampleUpload);
+        var exteriorId = await service.UploadAsync(
+            owner.UserId,
+            owner.PropertyId,
+            new PropertyVideoUpload("exterior.mp4", "video/mp4", firstUpload.Length, firstUpload));
+        var kitchenId = await service.UploadAsync(
+            owner.UserId,
+            owner.PropertyId,
+            new PropertyVideoUpload("kitchen.mp4", "video/mp4", secondUpload.Length, secondUpload));
+
+        Assert.False(await service.SetTourStopAsync(
+            outsider.UserId, owner.PropertyId, exteriorId, PropertyMediaCategory.FrontExterior));
+        Assert.False(await service.ReorderTourAsync(
+            outsider.UserId, owner.PropertyId, [kitchenId, exteriorId]));
+        Assert.True(await service.SetTourStopAsync(
+            owner.UserId, owner.PropertyId, exteriorId, PropertyMediaCategory.FrontExterior));
+        Assert.True(await service.SetTourStopAsync(
+            owner.UserId, owner.PropertyId, kitchenId, PropertyMediaCategory.Kitchen));
+        Assert.True(await service.ReorderTourAsync(
+            owner.UserId, owner.PropertyId, [kitchenId, exteriorId]));
+
+        var ordered = await service.ListAsync(owner.UserId, owner.PropertyId);
+        Assert.Collection(
+            ordered,
+            item =>
+            {
+                Assert.Equal(kitchenId, item.Id);
+                Assert.Equal(0, item.TourOrder);
+                Assert.Equal(PropertyMediaCategory.Kitchen, item.TourStop);
+            },
+            item =>
+            {
+                Assert.Equal(exteriorId, item.Id);
+                Assert.Equal(1, item.TourOrder);
+                Assert.Equal(PropertyMediaCategory.FrontExterior, item.TourStop);
+            });
+
+        Assert.True(await service.DeleteAsync(owner.UserId, owner.PropertyId, kitchenId));
+        await using var replacementUpload = new MemoryStream(SampleUpload);
+        var bedroomId = await service.UploadAsync(
+            owner.UserId,
+            owner.PropertyId,
+            new PropertyVideoUpload("bedroom.mp4", "video/mp4", replacementUpload.Length, replacementUpload));
+        var compacted = await service.ListAsync(owner.UserId, owner.PropertyId);
+        Assert.Equal([0, 1], compacted.Select(item => item.TourOrder));
+        Assert.Equal([exteriorId, bedroomId], compacted.Select(item => item.Id));
+        Assert.True(await service.DeleteAsync(owner.UserId, owner.PropertyId, exteriorId));
+        Assert.True(await service.DeleteAsync(owner.UserId, owner.PropertyId, bedroomId));
+    }
+
     private static async Task<(string UserId, Guid PropertyId)> CreateOwnerAndPropertyAsync(
         IServiceProvider services,
         string prefix)

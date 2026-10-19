@@ -41,6 +41,7 @@ public sealed class CampaignGenerationJob
         Guid propertyId,
         string requestedByUserId,
         string sourceFingerprint,
+        CampaignOutputSelection requestedOutputs,
         DateTimeOffset now)
     {
         Id = Guid.NewGuid();
@@ -48,6 +49,8 @@ public sealed class CampaignGenerationJob
         PropertyId = propertyId;
         RequestedByUserId = Required(requestedByUserId, 450, nameof(requestedByUserId));
         SourceFingerprint = Required(sourceFingerprint, 64, nameof(sourceFingerprint));
+        CampaignOutputSelectionPolicy.Validate(requestedOutputs);
+        RequestedOutputs = requestedOutputs;
         Status = CampaignGenerationStatus.Queued;
         CurrentStage = CampaignGenerationStage.ValidateProperty;
         NextAttemptAtUtc = now;
@@ -64,6 +67,8 @@ public sealed class CampaignGenerationJob
     public string RequestedByUserId { get; private set; } = string.Empty;
 
     public string SourceFingerprint { get; private set; } = string.Empty;
+
+    public CampaignOutputSelection RequestedOutputs { get; private set; }
 
     public CampaignGenerationStatus Status { get; private set; }
 
@@ -112,6 +117,7 @@ public sealed class CampaignGenerationJob
         Guid propertyId,
         string requestedByUserId,
         string sourceFingerprint,
+        CampaignOutputSelection requestedOutputs,
         DateTimeOffset now)
     {
         if (organizationId == Guid.Empty || propertyId == Guid.Empty)
@@ -124,6 +130,7 @@ public sealed class CampaignGenerationJob
             propertyId,
             requestedByUserId,
             sourceFingerprint,
+            requestedOutputs,
             now);
     }
 

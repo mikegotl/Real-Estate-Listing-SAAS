@@ -124,7 +124,8 @@ public sealed partial class VideoProductionPlanService(
                 && video.PropertyId == propertyId
                 && video.ProcessingStatus == PropertyVideoProcessingStatus.Completed
                 && video.EnhancedBlobPath != null)
-            .OrderBy(video => video.UploadedAtUtc)
+            .OrderBy(video => video.TourOrder)
+            .ThenBy(video => video.UploadedAtUtc)
             .ToArrayAsync(cancellationToken);
         var request = CreateRequest(
             property,
@@ -518,7 +519,9 @@ public sealed partial class VideoProductionPlanService(
             video.OriginalFilename,
             video.EnhancedWidth!.Value,
             video.EnhancedHeight!.Value,
-            video.EnhancedDurationMs!.Value)).ToArray();
+            video.EnhancedDurationMs!.Value,
+            video.TourOrder,
+            video.TourStop)).ToArray();
         return new VideoDirectionRequest(
             property.Id,
             storyInput,
@@ -727,7 +730,10 @@ public sealed partial class VideoProductionPlanService(
             request.Brand,
             request.CallToAction,
             request.AcceptedNarrationScript,
-            WalkthroughVideos = (request.WalkthroughVideos ?? []).OrderBy(video => video.PropertyVideoId).ToArray(),
+            WalkthroughVideos = (request.WalkthroughVideos ?? [])
+                .OrderBy(video => video.TourOrder)
+                .ThenBy(video => video.PropertyVideoId)
+                .ToArray(),
             ApprovedGeneratedClipIds = request.ApprovedGeneratedClipIds.Order().ToArray(),
             ApprovedBrandAssetIds = request.ApprovedBrandAssetIds.Order(StringComparer.Ordinal).ToArray(),
             ApprovedMusicAssetIds = request.ApprovedMusicAssetIds.Order(StringComparer.Ordinal).ToArray(),

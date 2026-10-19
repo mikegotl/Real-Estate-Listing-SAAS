@@ -42,7 +42,8 @@ public sealed class PropertyVideoService(
         return await dbContext.PropertyVideos
             .AsNoTracking()
             .Where(video => video.OrganizationId == organizationId && video.PropertyId == propertyId)
-            .OrderByDescending(video => video.UploadedAtUtc)
+            .OrderBy(video => video.TourOrder)
+            .ThenBy(video => video.UploadedAtUtc)
             .Select(video => ToItem(video))
             .ToListAsync(cancellationToken);
     }
@@ -74,13 +75,21 @@ public sealed class PropertyVideoService(
                 throw new InvalidOperationException("The property is unavailable for video uploads.");
             }
 
-            var existingCount = await dbContext.PropertyVideos.CountAsync(
-                video => video.OrganizationId == organizationId && video.PropertyId == propertyId,
-                cancellationToken);
-            if (existingCount >= IPropertyVideoService.MaximumVideosPerProperty)
+            var existingVideos = await dbContext.PropertyVideos
+                .Where(video => video.OrganizationId == organizationId && video.PropertyId == propertyId)
+                .OrderBy(video => video.TourOrder)
+                .ThenBy(video => video.UploadedAtUtc)
+                .ThenBy(video => video.Id)
+                .ToArrayAsync(cancellationToken);
+            if (existingVideos.Length >= IPropertyVideoService.MaximumVideosPerProperty)
             {
                 throw new InvalidOperationException(
                     $"A property can have at most {IPropertyVideoService.MaximumVideosPerProperty} videos.");
+            }
+
+            for (var index = 0; index < existingVideos.Length; index++)
+            {
+                existingVideos[index].SetTourOrder(index);
             }
 
             var videoId = Guid.NewGuid();
@@ -96,7 +105,8 @@ public sealed class PropertyVideoService(
                 metadata.Height,
                 metadata.DurationMs,
                 metadata.FrameRate,
-                metadata.HasAudio);
+                metadata.HasAudio,
+                existingVideos.Length);
 
             await storage.StoreAsync(blobPath, validated.Content, validated.ContentType, cancellationToken);
             try
@@ -184,6 +194,67 @@ public sealed class PropertyVideoService(
         }
 
         video.QueueRetry();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> SetTourStopAsync(
+        string userId,
+        Guid propertyId,
+        Guid videoId,
+        PropertyMediaCategory? tourStop,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await PropertyExistsAsync(organizationId, propertyId, includeArchived: false, cancellationToken))
+        {
+            return false;
+        }
+
+        var video = await dbContext.PropertyVideos.SingleOrDefaultAsync(
+            candidate => candidate.Id == videoId
+                && candidate.PropertyId == propertyId
+                && candidate.OrganizationId == organizationId,
+            cancellationToken);
+        if (video is null)
+        {
+            return false;
+        }
+
+        video.SetTourStop(tourStop);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> ReorderTourAsync(
+        string userId,
+        Guid propertyId,
+        IReadOnlyList<Guid> orderedVideoIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(orderedVideoIds);
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await PropertyExistsAsync(organizationId, propertyId, includeArchived: false, cancellationToken))
+        {
+            return false;
+        }
+
+        var videos = await dbContext.PropertyVideos
+            .Where(video => video.OrganizationId == organizationId && video.PropertyId == propertyId)
+            .ToArrayAsync(cancellationToken);
+        if (orderedVideoIds.Count != videos.Length
+            || orderedVideoIds.Count != orderedVideoIds.Distinct().Count()
+            || videos.Any(video => !orderedVideoIds.Contains(video.Id)))
+        {
+            throw new InvalidOperationException("The walkthrough order must include every listing video exactly once.");
+        }
+
+        var byId = videos.ToDictionary(video => video.Id);
+        for (var index = 0; index < orderedVideoIds.Count; index++)
+        {
+            byId[orderedVideoIds[index]].SetTourOrder(index);
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -395,6 +466,8 @@ public sealed class PropertyVideoService(
         video.DurationMs,
         video.FrameRate,
         video.HasAudio,
+        video.TourOrder,
+        video.TourStop,
         video.UploadedAtUtc,
         video.ProcessingStatus,
         video.ProcessingAttemptCount,

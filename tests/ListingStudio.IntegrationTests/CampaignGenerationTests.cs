@@ -219,6 +219,39 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     }
 
     [Fact]
+    public async Task SelectedPlatformOutputsProduceOnlyTheRequestedCuts()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-platform-outputs");
+        await UploadAsync(owner);
+        QueueSuccessfulProviders();
+
+        var queued = await EnqueueAsync(owner, CampaignOutputSelectionPolicy.Recommended);
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        Assert.Equal(CampaignOutputSelectionPolicy.Recommended, completed.RequestedOutputs);
+        Assert.Equal(4, completed.Deliverables.Count);
+        Assert.Collection(
+            completed.Deliverables.OrderBy(item => item.Kind),
+            item => AssertPlatformCut(item, CampaignOutputKind.TikTok, 30, "9:16"),
+            item => AssertPlatformCut(item, CampaignOutputKind.InstagramReel, 30, "9:16"),
+            item => AssertPlatformCut(item, CampaignOutputKind.YouTubeShort, 30, "9:16"),
+            item => AssertPlatformCut(item, CampaignOutputKind.YouTubeTour, 60, "16:9"));
+    }
+
+    [Fact]
+    public async Task FullNarratedTourRequiresAnAcceptedLongScript()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-full-tour-validation");
+        await UploadAsync(owner);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            EnqueueAsync(owner, CampaignOutputSelection.FullNarratedTour));
+
+        Assert.Contains("accepted narration script", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("145 words", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AcceptedLongScriptAddsNarrationLengthDeliverable()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-long-form");
@@ -479,6 +512,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Guid jobId,
         CampaignGenerationStatus expected)
     {
+        CampaignGenerationResult? latest = null;
         for (var index = 0; index < 60; index++)
         {
             await using (var scope = fixture.Factory.Services.CreateAsyncScope())
@@ -492,13 +526,15 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             var result = await readScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
                 .GetAsync(owner.UserId, jobId);
             Assert.NotNull(result);
+            latest = result;
             if (result.Status == expected)
             {
                 return result;
             }
         }
 
-        throw new Xunit.Sdk.XunitException($"Campaign {jobId} did not reach {expected}.");
+        throw new Xunit.Sdk.XunitException(
+            $"Campaign {jobId} did not reach {expected}; latest state was {latest?.Status} at {latest?.CurrentStage}: {latest?.LastError}");
     }
 
     private async Task<CampaignGenerationResult> EnqueueAsync(OwnerProperty owner)
@@ -506,6 +542,27 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         return (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
             .EnqueueAsync(owner.UserId, owner.PropertyId))!;
+    }
+
+    private async Task<CampaignGenerationResult> EnqueueAsync(
+        OwnerProperty owner,
+        CampaignOutputSelection requestedOutputs)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        return (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
+            .EnqueueAsync(owner.UserId, owner.PropertyId, requestedOutputs))!;
+    }
+
+    private static void AssertPlatformCut(
+        CampaignDeliverableResult item,
+        CampaignOutputKind kind,
+        int durationSeconds,
+        string aspectRatio)
+    {
+        Assert.Equal(kind, item.Kind);
+        Assert.Equal(CampaignDeliverableStatus.Rendered, item.Status);
+        Assert.Equal(durationSeconds, item.DurationSeconds);
+        Assert.Equal(aspectRatio, item.AspectRatio);
     }
 
     private void QueueSuccessfulProviders()

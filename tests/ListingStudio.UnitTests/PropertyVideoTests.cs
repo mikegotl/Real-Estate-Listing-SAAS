@@ -43,6 +43,23 @@ public sealed class PropertyVideoTests
         Assert.Null(video.ProcessingLastError);
     }
 
+    [Fact]
+    public void TourOrderAndVerifiedStopCanBeEdited()
+    {
+        var video = CreateVideo();
+
+        video.SetTourOrder(3);
+        video.SetTourStop(PropertyMediaCategory.Kitchen);
+
+        Assert.Equal(3, video.TourOrder);
+        Assert.Equal(PropertyMediaCategory.Kitchen, video.TourStop);
+
+        video.SetTourStop(null);
+        Assert.Null(video.TourStop);
+        Assert.Throws<ArgumentOutOfRangeException>(() => video.SetTourOrder(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => video.SetTourOrder(10));
+    }
+
     private static PropertyVideo CreateVideo() => PropertyVideo.Create(
         Guid.NewGuid(),
         Guid.NewGuid(),

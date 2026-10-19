@@ -69,7 +69,7 @@ public sealed class OpenAIVideoDirectorTests
             request,
             ["scenes must end at the exact requested duration."]);
 
-        Assert.Equal("openai-video-director-v1.5", director.DirectorVersion);
+        Assert.Equal("openai-video-director-v1.6", director.DirectorVersion);
         Assert.Single(result.Scenes);
         Assert.Equal(request.Media[0].MediaId, result.Scenes[0].VisualSource.PropertyMediaId);
         Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-api-key"), handler.Authorization);

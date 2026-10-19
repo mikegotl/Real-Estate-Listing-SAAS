@@ -90,7 +90,12 @@ public sealed class PropertyMediaManagementTests(PostgreSqlWebApplicationFixture
         failed.FailAnalysis("Vision request failed.", nextAttemptAtUtc: null);
         var property = await dbContext.Properties.SingleAsync(candidate => candidate.Id == propertyId);
         dbContext.CampaignGenerationJobs.Add(CampaignGenerationJob.Create(
-            property.OrganizationId, propertyId, userId, "fingerprint-summary", DateTimeOffset.UtcNow));
+            property.OrganizationId,
+            propertyId,
+            userId,
+            "fingerprint-summary",
+            CampaignOutputSelection.LegacyStandard,
+            DateTimeOffset.UtcNow));
         await dbContext.SaveChangesAsync();
 
         var summary = Assert.Single(await properties.ListAsync(userId), item => item.Id == propertyId);
