@@ -158,6 +158,34 @@ public sealed class PropertyStoryGroundingValidatorTests
         Assert.Contains(exact.Errors, error => error.Contains("6.5", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void WalkthroughStopNamesConfirmTheSpaceButNothingMore()
+    {
+        var request = Request with
+        {
+            Walkthrough =
+            [
+                new WalkthroughStoryStop(1, "Exterior front", "Main level", null, []),
+                new WalkthroughStoryStop(2, "Bedroom 2", "Upper level", "up the stairs", []),
+                new WalkthroughStoryStop(3, "Garage", "Main level", null, []),
+            ],
+        };
+
+        var named = validator.Validate(request, SafeStory with
+        {
+            VoiceoverScript = "Head up the stairs to bedroom 2, bright and calm. Then finish in the garage.",
+        });
+        Assert.True(named.IsValid, string.Join(", ", named.Errors));
+
+        var embellished = validator.Validate(request, SafeStory with
+        {
+            VoiceoverScript = "Bedroom 2 has hardwood floors and the garage fits 4 cars.",
+        });
+        Assert.False(embellished.IsValid);
+        Assert.Contains(embellished.Errors, error => error.Contains("Hardwood", StringComparison.Ordinal));
+        Assert.Contains(embellished.Errors, error => error.Contains('4'));
+    }
+
     private static PropertyStoryGenerationRequest Request => new(
         new VerifiedPropertyData(
             "123 Main Street",

@@ -19,6 +19,7 @@ public sealed class PropertyStoryGenerationTests(PostgreSqlWebApplicationFixture
     [Fact]
     public async Task GeneratesGroundedVersionedStoryCachesIdenticalInputAndEnforcesTenantScope()
     {
+        var callsBefore = fixture.Factory.StoryGenerator.CallCount;
         var owner = await CreateOwnerAndPropertyAsync("story-owner");
         var outsider = await CreateOwnerAndPropertyAsync("story-outsider");
         await UploadAndAnalyzeAsync(owner);
@@ -43,7 +44,7 @@ public sealed class PropertyStoryGenerationTests(PostgreSqlWebApplicationFixture
             Assert.Null(await stories.GenerateAsync(outsider.UserId, owner.PropertyId));
         }
 
-        Assert.Equal(1, fixture.Factory.StoryGenerator.CallCount);
+        Assert.Equal(callsBefore + 1, fixture.Factory.StoryGenerator.CallCount);
         var request = Assert.IsType<PropertyStoryGenerationRequest>(fixture.Factory.StoryGenerator.LastRequest);
         Assert.Equal("123 Main Street", request.VerifiedProperty.Address1);
         Assert.Equal(3, request.VerifiedProperty.Bedrooms);
@@ -54,7 +55,8 @@ public sealed class PropertyStoryGenerationTests(PostgreSqlWebApplicationFixture
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var persisted = await dbContext.PropertyStories.AsNoTracking().SingleAsync();
+            var persisted = await dbContext.PropertyStories.AsNoTracking()
+                .SingleAsync(story => story.PropertyId == owner.PropertyId);
             Assert.Equal(owner.OrganizationId, persisted.OrganizationId);
             Assert.Equal(owner.PropertyId, persisted.PropertyId);
             Assert.Equal(SafeStory.Highlights, persisted.Highlights);
@@ -91,7 +93,7 @@ public sealed class PropertyStoryGenerationTests(PostgreSqlWebApplicationFixture
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            Assert.Equal(2, await dbContext.PropertyStories.CountAsync());
+            Assert.Equal(2, await dbContext.PropertyStories.CountAsync(story => story.PropertyId == owner.PropertyId));
         }
     }
 
@@ -111,34 +113,108 @@ public sealed class PropertyStoryGenerationTests(PostgreSqlWebApplicationFixture
         Assert.Equal(callsBefore, fixture.Factory.StoryGenerator.CallCount);
     }
 
-    private async Task UploadAndAnalyzeAsync(OwnerProperty owner)
+    [Fact]
+    public async Task SendsTheWalkthroughInStopOrderWithMapDirectionsAndRegeneratesWhenADirectionChanges()
     {
-        await UploadAsync(owner);
-        fixture.Factory.MediaAnalyzer.Enqueue(new PropertyMediaAnalysis(
-            PropertyMediaCategory.FrontExterior,
-            "Exterior",
-            91,
-            96,
+        var owner = await CreateOwnerAndPropertyAsync("walkthrough-story-owner");
+        var front = await UploadAndAnalyzeAsync(owner);
+        var kitchen = await UploadAndAnalyzeAsync(owner, new PropertyMediaAnalysis(
+            PropertyMediaCategory.Kitchen,
+            "Kitchen",
+            88,
+            70,
+            false,
             true,
             false,
+            [],
+            "Large, bright kitchen with a big island for prep.",
+            3));
+        var foyer = await UploadAndAnalyzeAsync(owner, new PropertyMediaAnalysis(
+            PropertyMediaCategory.Entry,
+            "Entry",
+            85,
+            60,
+            false,
+            true,
             false,
             [],
-            "Front exterior of a detached home.",
-            0));
+            "Open entry with natural light.",
+            1));
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            Assert.True(await media.SetWalkthroughStopAsync(owner.UserId, owner.PropertyId, front, "Exterior front"));
+            Assert.True(await media.SetWalkthroughStopAsync(owner.UserId, owner.PropertyId, kitchen, "Kitchen"));
+            Assert.True(await media.SetWalkthroughStopAsync(owner.UserId, owner.PropertyId, foyer, "Entry / foyer"));
+            Assert.True(await media.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "Kitchen", WalkthroughDirection.Left));
+        }
+
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var stories = scope.ServiceProvider.GetRequiredService<IPropertyStoryService>();
+            Assert.False((await stories.GenerateAsync(owner.UserId, owner.PropertyId))!.Reused);
+        }
+
+        var request = Assert.IsType<PropertyStoryGenerationRequest>(fixture.Factory.StoryGenerator.LastRequest);
+        Assert.NotNull(request.Walkthrough);
+        Assert.Equal(["Exterior front", "Entry / foyer", "Kitchen"], request.Walkthrough.Select(stop => stop.Stop));
+        Assert.Equal([null, null, "turn left"], request.Walkthrough.Select(stop => stop.WayFromPreviousStop));
+        var kitchenShot = Assert.Single(request.Walkthrough[2].Photos);
+        Assert.Equal(kitchen, kitchenShot.MediaId);
+        Assert.Equal("Large, bright kitchen with a big island for prep.", kitchenShot.Description);
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            Assert.True(await media.SetStopDirectionAsync(owner.UserId, owner.PropertyId, "Kitchen", WalkthroughDirection.Right));
+        }
+
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var stories = scope.ServiceProvider.GetRequiredService<IPropertyStoryService>();
+            var regenerated = (await stories.GenerateAsync(owner.UserId, owner.PropertyId))!;
+            Assert.False(regenerated.Reused);
+            Assert.Equal(2, regenerated.Version);
+        }
+
+        request = Assert.IsType<PropertyStoryGenerationRequest>(fixture.Factory.StoryGenerator.LastRequest);
+        Assert.Equal("turn right", request.Walkthrough![2].WayFromPreviousStop);
+    }
+
+    private Task<Guid> UploadAndAnalyzeAsync(OwnerProperty owner) => UploadAndAnalyzeAsync(owner, new PropertyMediaAnalysis(
+        PropertyMediaCategory.FrontExterior,
+        "Exterior",
+        91,
+        96,
+        true,
+        false,
+        false,
+        [],
+        "Front exterior of a detached home.",
+        0));
+
+    private async Task<Guid> UploadAndAnalyzeAsync(OwnerProperty owner, PropertyMediaAnalysis analysis)
+    {
+        var mediaId = await UploadAsync(owner);
+        fixture.Factory.MediaAnalyzer.Enqueue(analysis);
 
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var result = await scope.ServiceProvider
             .GetRequiredService<IPropertyMediaAnalysisProcessor>()
-            .AnalyzeNextAsync();
+            .AnalyzeNextForPropertyAsync(owner.OrganizationId, owner.PropertyId);
         Assert.True(result!.Succeeded);
+        Assert.Equal(mediaId, result.MediaId);
+        return mediaId;
     }
 
-    private async Task UploadAsync(OwnerProperty owner)
+    private async Task<Guid> UploadAsync(OwnerProperty owner)
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
         await using var content = new MemoryStream(OnePixelPng);
-        await media.UploadAsync(
+        return await media.UploadAsync(
             owner.UserId,
             owner.PropertyId,
             new PropertyMediaUpload("front.png", "image/png", content.Length, content));

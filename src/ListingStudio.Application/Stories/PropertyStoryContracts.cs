@@ -48,7 +48,8 @@ public sealed record PropertyStoryGenerationRequest(
     VerifiedPropertyData VerifiedProperty,
     IReadOnlyList<PropertyMediaObservation> MediaObservations,
     PropertyStoryBranding Branding,
-    IReadOnlyList<ApprovedNeighborhoodFact>? ApprovedNeighborhoodFacts = null);
+    IReadOnlyList<ApprovedNeighborhoodFact>? ApprovedNeighborhoodFacts = null,
+    IReadOnlyList<WalkthroughStoryStop>? Walkthrough = null);
 
 public sealed record PropertyStoryResult(
     Guid Id,
