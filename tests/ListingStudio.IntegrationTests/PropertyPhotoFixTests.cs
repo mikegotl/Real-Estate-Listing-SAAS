@@ -59,8 +59,8 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         Assert.Equal((1_536, 1_024), (sent.Width, sent.Height));
         var afterClutter = await GetMediaAsync(owner, kitchen);
         Assert.Equal(PhotoFix.BrightnessAndColor | PhotoFix.RemoveClutter, afterClutter.AppliedFixes);
-        // The 4:3 photo was padded onto the 3:2 canvas and cut back out at 4:3.
-        Assert.Equal((1_365, 1_024), (afterClutter.Width, afterClutter.Height));
+        // The edit is merged into the original, so the photo keeps its own size instead of the editor canvas's.
+        Assert.Equal((FakePhotoImageCodec.SourceWidth, FakePhotoImageCodec.SourceHeight), (afterClutter.Width, afterClutter.Height));
         Assert.Null(await OpenStoredAsync(brightenedPath));
         Assert.Equal(FakePhotoImageCodec.Png, await ReadOriginalAsync(owner, kitchen));
 
@@ -169,6 +169,27 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         Assert.Contains(
             (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items,
             note => note.Message == "The fixed photo for 123 Main Street is in place on the Media tab.");
+    }
+
+    [Fact]
+    public async Task AClutterEditThatRedrewTheRoomIsRejectedAndThePhotoKept()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("photo-fix-redrawn");
+        var photo = await UploadAsync(owner, "Entry / foyer");
+        fixture.Factory.PhotoClutterRemover.EnqueueResult(FakePhotoImageCodec.RedrawnPng);
+        await RequestAsync(owner, photo, PhotoFix.RemoveClutter);
+
+        var result = await ProcessNextAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.WillRetry);
+        Assert.Equal(
+            "The AI edit changed the room itself instead of only removing clutter, so the original photo was kept.",
+            result.Error);
+        var media = await GetMediaAsync(owner, photo);
+        Assert.Equal(PhotoFix.None, media.AppliedFixes);
+        Assert.False(media.HasOriginal);
+        Assert.Equal(FakePhotoImageCodec.Png, await ReadPhotoAsync(owner, photo));
     }
 
     [Fact]
