@@ -83,6 +83,14 @@ jobs:
       GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
       HIGGSFIELD_API_KEY: ${{ secrets.HIGGSFIELD_API_KEY }}
       HIGGSFIELD_API_SECRET: ${{ secrets.HIGGSFIELD_API_SECRET }}
+      OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD: ${{ vars.OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD || '0' }}
+      OPENAI_STORY_ESTIMATED_COST_USD: ${{ vars.OPENAI_STORY_ESTIMATED_COST_USD || '0' }}
+      OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD: ${{ vars.OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD || '0' }}
+      OPENAI_SPEECH_ESTIMATED_COST_USD: ${{ vars.OPENAI_SPEECH_ESTIMATED_COST_USD || '0' }}
+      VOICE_ESTIMATED_COST_USD: ${{ vars.VOICE_ESTIMATED_COST_USD || '0' }}
+      PHOTO_FIX_ESTIMATED_COST_USD: ${{ vars.PHOTO_FIX_ESTIMATED_COST_USD || '0' }}
+      AI_VIDEO_ESTIMATED_COST_USD: ${{ vars.AI_VIDEO_ESTIMATED_COST_USD || '0' }}
+      HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD: ${{ vars.HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD || '0' }}
 
     steps:
       - name: Check out repository
@@ -102,6 +110,22 @@ jobs:
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
               echo "Required production environment value is missing: ${name}" >&2
+              exit 1
+            fi
+          done
+          pricing_values=(
+            OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD
+            OPENAI_STORY_ESTIMATED_COST_USD
+            OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD
+            OPENAI_SPEECH_ESTIMATED_COST_USD
+            VOICE_ESTIMATED_COST_USD
+            PHOTO_FIX_ESTIMATED_COST_USD
+            AI_VIDEO_ESTIMATED_COST_USD
+            HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD
+          )
+          for name in "${pricing_values[@]}"; do
+            if [[ ! "${!name}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+              echo "Production pricing value must be a nonnegative decimal: ${name}" >&2
               exit 1
             fi
           done
@@ -134,6 +158,14 @@ jobs:
               postgresAdministratorPassword="$POSTGRES_ADMIN_PASSWORD" \
               openAiApiKey="$OPENAI_API_KEY" \
               openAiModel="$OPENAI_MODEL" \
+              openAiMediaAnalysisEstimatedCostUsd="$OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD" \
+              openAiStoryEstimatedCostUsd="$OPENAI_STORY_ESTIMATED_COST_USD" \
+              openAiVideoDirectionEstimatedCostUsd="$OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD" \
+              openAiSpeechEstimatedCostUsd="$OPENAI_SPEECH_ESTIMATED_COST_USD" \
+              voiceEstimatedCostUsd="$VOICE_ESTIMATED_COST_USD" \
+              photoFixEstimatedCostUsd="$PHOTO_FIX_ESTIMATED_COST_USD" \
+              aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \
+              higgsfieldEstimatedCostPerCallUsd="$HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD" \
               mediaAnalysisEnabled=true \
               googleAuthenticationEnabled=true \
               googleAuthenticationClientId="$GOOGLE_AUTH_CLIENT_ID" \
@@ -193,6 +225,14 @@ jobs:
               postgresAdministratorPassword="$POSTGRES_ADMIN_PASSWORD" \
               openAiApiKey="$OPENAI_API_KEY" \
               openAiModel="$OPENAI_MODEL" \
+              openAiMediaAnalysisEstimatedCostUsd="$OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD" \
+              openAiStoryEstimatedCostUsd="$OPENAI_STORY_ESTIMATED_COST_USD" \
+              openAiVideoDirectionEstimatedCostUsd="$OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD" \
+              openAiSpeechEstimatedCostUsd="$OPENAI_SPEECH_ESTIMATED_COST_USD" \
+              voiceEstimatedCostUsd="$VOICE_ESTIMATED_COST_USD" \
+              photoFixEstimatedCostUsd="$PHOTO_FIX_ESTIMATED_COST_USD" \
+              aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \
+              higgsfieldEstimatedCostPerCallUsd="$HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD" \
               mediaAnalysisEnabled=true \
               googleAuthenticationEnabled=true \
               googleAuthenticationClientId="$GOOGLE_AUTH_CLIENT_ID" \

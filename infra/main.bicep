@@ -22,6 +22,30 @@ param openAiApiKey string = ''
 @description('OpenAI model used for grounded copy, media analysis, and video planning.')
 param openAiModel string = ''
 
+@description('Estimated USD cost for one OpenAI property media analysis request.')
+param openAiMediaAnalysisEstimatedCostUsd string = '0'
+
+@description('Estimated USD cost for one OpenAI property story request.')
+param openAiStoryEstimatedCostUsd string = '0'
+
+@description('Estimated USD cost for one OpenAI video direction request.')
+param openAiVideoDirectionEstimatedCostUsd string = '0'
+
+@description('Estimated USD cost for one OpenAI speech request.')
+param openAiSpeechEstimatedCostUsd string = '0'
+
+@description('Estimated USD cost for one request to the configured voice provider.')
+param voiceEstimatedCostUsd string = '0'
+
+@description('Estimated USD cost for one OpenAI photo-fix request.')
+param photoFixEstimatedCostUsd string = '0'
+
+@description('Estimated USD cost for one request to the generic AI video provider.')
+param aiVideoEstimatedCostUsd string = '0'
+
+@description('Estimated USD cost for one Higgsfield video generation request.')
+param higgsfieldEstimatedCostPerCallUsd string = '0'
+
 @description('Enable OpenAI-backed property media analysis in the Web and Worker hosts.')
 param mediaAnalysisEnabled bool = false
 
@@ -532,6 +556,38 @@ var sharedEnvironment = concat(databaseEnvironment, [
 ])
 
 var providerSharedEnvironment = concat(sharedEnvironment, [
+  {
+    name: 'OpenAI__MediaAnalysisEstimatedCostUsd'
+    value: openAiMediaAnalysisEstimatedCostUsd
+  }
+  {
+    name: 'OpenAI__StoryEstimatedCostUsd'
+    value: openAiStoryEstimatedCostUsd
+  }
+  {
+    name: 'OpenAI__VideoDirectionEstimatedCostUsd'
+    value: openAiVideoDirectionEstimatedCostUsd
+  }
+  {
+    name: 'OpenAI__SpeechEstimatedCostUsd'
+    value: openAiSpeechEstimatedCostUsd
+  }
+  {
+    name: 'Voice__EstimatedCostUsd'
+    value: voiceEstimatedCostUsd
+  }
+  {
+    name: 'PhotoFixes__EstimatedCostUsd'
+    value: photoFixEstimatedCostUsd
+  }
+  {
+    name: 'AIVideo__EstimatedCostUsd'
+    value: aiVideoEstimatedCostUsd
+  }
+  {
+    name: 'Higgsfield__EstimatedCostPerCallUsd'
+    value: higgsfieldEstimatedCostPerCallUsd
+  }
   {
     name: 'MediaAnalysis__Enabled'
     value: string(mediaAnalysisEnabled)

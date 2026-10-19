@@ -36,6 +36,35 @@ public sealed class AiUsageHttpMessageHandlerTests
         Assert.DoesNotContain("secret", observation.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task RecordsOnlyRequestsAcceptedByTheUsagePredicate()
+    {
+        var recorder = new CapturingRecorder();
+        var handler = new AiUsageHttpMessageHandler(
+            recorder,
+            "Higgsfield",
+            "models/video",
+            "walkthrough-video",
+            0.63m,
+            request => request.Method == HttpMethod.Post
+                && request.RequestUri?.AbsolutePath == "/models/video")
+        {
+            InnerHandler = new StubHandler(HttpStatusCode.OK),
+        };
+        using var client = new HttpClient(handler);
+
+        using var pollResponse = await client.GetAsync("https://provider.example/models/video/status");
+        using var generationResponse = await client.PostAsync(
+            "https://provider.example/models/video",
+            new StringContent("generation request"));
+
+        pollResponse.EnsureSuccessStatusCode();
+        generationResponse.EnsureSuccessStatusCode();
+        var observation = Assert.Single(recorder.Observations);
+        Assert.Equal("walkthrough-video", observation.Operation);
+        Assert.Equal(0.63m, observation.EstimatedCostUsd);
+    }
+
     private sealed class CapturingRecorder : IAiUsageRecorder
     {
         public List<AiCallObservation> Observations { get; } = [];
