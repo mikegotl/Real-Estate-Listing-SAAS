@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using ListingStudio.Application.Audio;
+using ListingStudio.Application.Billing;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
@@ -28,6 +29,7 @@ public sealed partial class CampaignGenerationProcessor(
     IVideoRenderer videoRenderer,
     IPropertyMediaStorage propertyMediaStorage,
     ICampaignAssetStorage campaignAssetStorage,
+    ICampaignBillingGate campaignBillingGate,
     IOptions<CampaignGenerationOptions> options,
     TimeProvider timeProvider,
     ILogger<CampaignGenerationProcessor> logger) : ICampaignGenerationProcessor
@@ -51,6 +53,9 @@ public sealed partial class CampaignGenerationProcessor(
         {
             var completed = await ExecuteStageAsync(jobId, stage, stageTimeout.Token);
             dbContext.ChangeTracker.Clear();
+            await using var completionTransaction = stage == CampaignGenerationStage.FinalizeCampaign
+                ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                : null;
             var job = await dbContext.CampaignGenerationJobs
                 .Include(candidate => candidate.Deliverables)
                 .SingleAsync(candidate => candidate.Id == jobId, cancellationToken);
@@ -66,6 +71,10 @@ public sealed partial class CampaignGenerationProcessor(
             else if (stage == CampaignGenerationStage.FinalizeCampaign)
             {
                 job.Complete(now);
+                await campaignBillingGate.RecordCompletedCampaignAsync(
+                    job.OrganizationId,
+                    job.Id,
+                    cancellationToken);
                 await NotifyAsync(job, JobNotificationText.CampaignCompleted, now, cancellationToken);
             }
             else
@@ -74,6 +83,10 @@ public sealed partial class CampaignGenerationProcessor(
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (completionTransaction is not null)
+            {
+                await completionTransaction.CommitAsync(cancellationToken);
+            }
             return new CampaignStageRunResult(jobId, stage, true, completed, false, attemptNumber, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

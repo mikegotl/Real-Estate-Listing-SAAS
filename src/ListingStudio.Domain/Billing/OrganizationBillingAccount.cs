@@ -28,13 +28,18 @@ public sealed class OrganizationBillingAccount
     {
     }
 
-    private OrganizationBillingAccount(Guid organizationId, DateTimeOffset now)
+    private OrganizationBillingAccount(
+        Guid organizationId,
+        DateTimeOffset now,
+        int freeTrialCampaignAllowance,
+        int freeTrialDays)
     {
         OrganizationId = organizationId;
         Plan = SubscriptionPlan.Free;
         SubscriptionStatus = BillingSubscriptionStatus.None;
-        CurrentPeriodStartUtc = StartOfMonth(now);
-        CurrentPeriodEndUtc = StartOfMonth(now).AddMonths(1);
+        CurrentPeriodStartUtc = now;
+        CurrentPeriodEndUtc = now.AddDays(freeTrialDays);
+        MonthlyCampaignAllowance = freeTrialCampaignAllowance;
         CreatedAtUtc = now;
         UpdatedAtUtc = now;
     }
@@ -67,14 +72,28 @@ public sealed class OrganizationBillingAccount
 
     public Organization Organization { get; private set; } = null!;
 
-    public static OrganizationBillingAccount Create(Guid organizationId, DateTimeOffset now)
+    public static OrganizationBillingAccount Create(
+        Guid organizationId,
+        DateTimeOffset now,
+        int freeTrialCampaignAllowance = 1,
+        int freeTrialDays = 30)
     {
         if (organizationId == Guid.Empty)
         {
             throw new ArgumentException("An organization is required.", nameof(organizationId));
         }
 
-        return new OrganizationBillingAccount(organizationId, now);
+        ArgumentOutOfRangeException.ThrowIfNegative(freeTrialCampaignAllowance);
+        if (freeTrialDays is < 1 or > 90)
+        {
+            throw new ArgumentOutOfRangeException(nameof(freeTrialDays));
+        }
+
+        return new OrganizationBillingAccount(
+            organizationId,
+            now,
+            freeTrialCampaignAllowance,
+            freeTrialDays);
     }
 
     public void LinkCustomer(string stripeCustomerId, DateTimeOffset now)
@@ -138,21 +157,22 @@ public sealed class OrganizationBillingAccount
 
     public void RecordCampaignUsage(DateTimeOffset now)
     {
-        if (now >= CurrentPeriodEndUtc)
-        {
-            CurrentPeriodStartUtc = StartOfMonth(now);
-            CurrentPeriodEndUtc = CurrentPeriodStartUtc.AddMonths(1);
-            CampaignUsage = 0;
-            AdditionalCampaignUsage = 0;
-        }
-
         CampaignUsage++;
         AdditionalCampaignUsage = Math.Max(0, CampaignUsage - MonthlyCampaignAllowance);
         UpdatedAtUtc = now;
     }
 
-    private static DateTimeOffset StartOfMonth(DateTimeOffset value) =>
-        new(value.Year, value.Month, 1, 0, 0, 0, TimeSpan.Zero);
+    public bool ExpireFreeTrial(DateTimeOffset now)
+    {
+        if (Plan != SubscriptionPlan.Free || now < CurrentPeriodEndUtc || MonthlyCampaignAllowance == 0)
+        {
+            return false;
+        }
+
+        MonthlyCampaignAllowance = 0;
+        UpdatedAtUtc = now;
+        return true;
+    }
 
     private static string RequiredStripeId(string value, string prefix, string parameterName)
     {

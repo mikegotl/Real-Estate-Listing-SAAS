@@ -3,6 +3,7 @@ namespace ListingStudio.Infrastructure.Billing;
 using System.Data;
 using ListingStudio.Application.Billing;
 using ListingStudio.Domain.Billing;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Configuration;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,7 @@ public sealed class BillingService(
     ApplicationDbContext dbContext,
     IBillingProviderGateway provider,
     IOptions<StripeOptions> options,
-    TimeProvider timeProvider) : IBillingService, IBillingUsageRecorder
+    TimeProvider timeProvider) : IBillingService, ICampaignBillingGate
 {
     public async Task<BillingOverview> GetOverviewAsync(
         string userId,
@@ -20,8 +21,10 @@ public sealed class BillingService(
     {
         var identity = await GetIdentityAsync(userId, cancellationToken);
         var account = await GetOrCreateAccountAsync(identity.OrganizationId, cancellationToken);
+        account.ExpireFreeTrial(timeProvider.GetUtcNow());
+        var reservedCampaignUsage = await ReservedCampaignUsageAsync(account, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return ToOverview(account, identity.OrganizationName);
+        return ToOverview(account, identity.OrganizationName, reservedCampaignUsage, timeProvider.GetUtcNow());
     }
 
     public async Task<BillingRedirect> CreateCheckoutSessionAsync(
@@ -131,7 +134,38 @@ public sealed class BillingService(
         return outcome;
     }
 
-    public async Task RecordCampaignAsync(
+    public async Task EnsureCampaignCapacityAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken = default)
+    {
+        var now = timeProvider.GetUtcNow();
+        var account = await GetLockedAccountAsync(organizationId, cancellationToken);
+        account.ExpireFreeTrial(now);
+
+        var isTrial = account.Plan == SubscriptionPlan.Free;
+        var activeSubscription = account.Plan is SubscriptionPlan.Starter or SubscriptionPlan.Professional
+            && account.SubscriptionStatus is BillingSubscriptionStatus.Active or BillingSubscriptionStatus.Trialing
+            && now < account.CurrentPeriodEndUtc;
+        var activeFreeTrial = isTrial
+            && account.MonthlyCampaignAllowance > 0
+            && now < account.CurrentPeriodEndUtc;
+        if (!activeFreeTrial && !activeSubscription)
+        {
+            throw new CampaignAllowanceExceededException(isTrial
+                ? "Your free campaign trial has ended. Choose a plan on Billing to create another campaign."
+                : "Your subscription is not currently active. Review it on Billing before creating another campaign.");
+        }
+
+        var reservedCampaignUsage = await ReservedCampaignUsageAsync(account, cancellationToken);
+        if (account.CampaignUsage + reservedCampaignUsage >= account.MonthlyCampaignAllowance)
+        {
+            throw new CampaignAllowanceExceededException(isTrial
+                ? "Your free campaign has already been used or is still processing. Choose a plan on Billing to create another campaign."
+                : $"Your {account.Plan} plan's campaign allowance is fully used or reserved for this period. Upgrade on Billing to continue.");
+        }
+    }
+
+    public async Task RecordCompletedCampaignAsync(
         Guid organizationId,
         Guid campaignGenerationJobId,
         CancellationToken cancellationToken = default)
@@ -143,18 +177,7 @@ public sealed class BillingService(
             return;
         }
 
-        var account = await dbContext.OrganizationBillingAccounts
-            .FromSqlInterpolated($"""
-                SELECT * FROM "OrganizationBillingAccounts"
-                WHERE "OrganizationId" = {organizationId}
-                FOR UPDATE
-                """)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (account is null)
-        {
-            account = OrganizationBillingAccount.Create(organizationId, timeProvider.GetUtcNow());
-            dbContext.OrganizationBillingAccounts.Add(account);
-        }
+        var account = await GetLockedAccountAsync(organizationId, cancellationToken);
 
         account.RecordCampaignUsage(timeProvider.GetUtcNow());
         dbContext.CampaignUsageRecords.Add(CampaignUsageRecord.Create(
@@ -243,10 +266,51 @@ public sealed class BillingService(
             return account;
         }
 
-        account = OrganizationBillingAccount.Create(organizationId, timeProvider.GetUtcNow());
+        account = CreateTrialAccount(organizationId);
         dbContext.OrganizationBillingAccounts.Add(account);
         return account;
     }
+
+    private async Task<OrganizationBillingAccount> GetLockedAccountAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var account = await dbContext.OrganizationBillingAccounts
+            .FromSqlInterpolated($"""
+                SELECT * FROM "OrganizationBillingAccounts"
+                WHERE "OrganizationId" = {organizationId}
+                FOR UPDATE
+                """)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (account is not null)
+        {
+            return account;
+        }
+
+        account = CreateTrialAccount(organizationId);
+        dbContext.OrganizationBillingAccounts.Add(account);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return account;
+    }
+
+    private OrganizationBillingAccount CreateTrialAccount(Guid organizationId) =>
+        OrganizationBillingAccount.Create(
+            organizationId,
+            timeProvider.GetUtcNow(),
+            options.Value.FreeTrialCampaignAllowance,
+            options.Value.FreeTrialDays);
+
+    private async Task<int> ReservedCampaignUsageAsync(
+        OrganizationBillingAccount account,
+        CancellationToken cancellationToken) =>
+        await dbContext.CampaignGenerationJobs.AsNoTracking().CountAsync(job =>
+            job.OrganizationId == account.OrganizationId
+            && job.CreatedAtUtc >= account.CurrentPeriodStartUtc
+            && (job.Status == CampaignGenerationStatus.Queued
+                || job.Status == CampaignGenerationStatus.Running)
+            && !dbContext.CampaignUsageRecords.Any(record =>
+                record.CampaignGenerationJobId == job.Id),
+            cancellationToken);
 
     private string PriceId(SubscriptionPlan plan)
     {
@@ -296,7 +360,11 @@ public sealed class BillingService(
         _ => throw new InvalidOperationException($"Unsupported Stripe subscription status '{value}'."),
     };
 
-    private static BillingOverview ToOverview(OrganizationBillingAccount account, string organizationName) => new(
+    private static BillingOverview ToOverview(
+        OrganizationBillingAccount account,
+        string organizationName,
+        int reservedCampaignUsage,
+        DateTimeOffset now) => new(
         account.OrganizationId,
         organizationName,
         account.StripeCustomerId,
@@ -307,7 +375,11 @@ public sealed class BillingService(
         account.CurrentPeriodEndUtc,
         account.MonthlyCampaignAllowance,
         account.CampaignUsage,
-        account.AdditionalCampaignUsage);
+        account.AdditionalCampaignUsage,
+        reservedCampaignUsage,
+        account.Plan == SubscriptionPlan.Free
+            && account.MonthlyCampaignAllowance > 0
+            && now < account.CurrentPeriodEndUtc);
 
     private static void EnsureAbsoluteUrl(string value, string parameterName)
     {

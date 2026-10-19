@@ -44,6 +44,8 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
             account => account.OrganizationId == organization.Id);
         Assert.Equal(SubscriptionPlan.Free, billing.Plan);
         Assert.Equal(BillingSubscriptionStatus.None, billing.SubscriptionStatus);
+        Assert.Equal(1, billing.MonthlyCampaignAllowance);
+        Assert.Equal(fixture.Factory.TimeProvider.GetUtcNow().AddDays(30), billing.CurrentPeriodEndUtc);
     }
 
     [Fact]

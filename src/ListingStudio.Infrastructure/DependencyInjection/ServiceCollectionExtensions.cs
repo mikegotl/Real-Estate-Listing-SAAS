@@ -63,9 +63,14 @@ public static class ServiceCollectionExtensions
                     && !string.IsNullOrWhiteSpace(options.StarterPriceId)
                     && !string.IsNullOrWhiteSpace(options.ProfessionalPriceId)),
                 "Enabled Stripe billing requires an HTTPS API URL, an HTTPS public base URL (HTTP is allowed only for loopback), secret key, webhook secret, and both price identifiers.")
-            .Validate(options => options.StarterMonthlyCampaignAllowance >= 0
+            .Validate(options => options.FreeTrialCampaignAllowance >= 0
+                    && options.FreeTrialDays is >= 1 and <= 90
+                    && options.StarterMonthlyCampaignAllowance >= 0
                     && options.ProfessionalMonthlyCampaignAllowance >= 0,
                 "Stripe campaign allowances cannot be negative.")
+            .Validate(options => options.StarterMonthlyPriceUsd > 0
+                    && options.ProfessionalMonthlyPriceUsd > options.StarterMonthlyPriceUsd,
+                "Stripe display prices must be positive and Professional must cost more than Starter.")
             .Validate(options => options.WebhookToleranceSeconds is >= 60 and <= 900,
                 "Stripe webhook tolerance must be between 60 and 900 seconds.");
         services.AddOptions<CampaignGenerationOptions>()
@@ -155,7 +160,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserNotificationService, UserNotificationService>();
         services.AddScoped<BillingService>();
         services.AddScoped<IBillingService>(provider => provider.GetRequiredService<BillingService>());
-        services.AddScoped<IBillingUsageRecorder>(provider => provider.GetRequiredService<BillingService>());
+        services.AddScoped<ICampaignBillingGate>(provider => provider.GetRequiredService<BillingService>());
         services.AddHealthChecks()
             .AddCheck<PostgreSqlHealthCheck>("postgresql", tags: ["ready"]);
         services.AddHttpClient<IBillingProviderGateway, StripeBillingGateway>((provider, client) =>
