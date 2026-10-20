@@ -20,6 +20,10 @@
             {
                 @(" Clutter was removed with AI, so check that the home itself looks exactly the same before you publish it.")
             }
+            @if (Fixes.HasFlag(PhotoFix.LevelAndCrop))
+            {
+                @(" Straightening uses existing pixels only and trims the rotated edges; check the framing before you publish it.")
+            }
         </p>
     </DialogContent>
     <DialogActions>

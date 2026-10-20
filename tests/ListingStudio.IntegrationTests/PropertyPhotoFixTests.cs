@@ -86,6 +86,46 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
     }
 
     [Fact]
+    public async Task StraightenAndAutoCropRunsLocallyAndKeepsTheOriginal()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("photo-fix-level");
+        var photo = await UploadAsync(owner, "Living room", FakePhotoImageCodec.TiltedPng);
+        var clutterRequestsBefore = fixture.Factory.PhotoClutterRemover.Requests.Count;
+
+        await RequestAsync(owner, photo, PhotoFix.LevelAndCrop);
+        var result = await ProcessNextAsync();
+
+        Assert.True(result.Succeeded, result.Error);
+        var fixedPhoto = await GetMediaAsync(owner, photo);
+        Assert.Equal(PhotoFix.LevelAndCrop, fixedPhoto.AppliedFixes);
+        Assert.True(fixedPhoto.HasOriginal);
+        Assert.True(fixedPhoto.Width < FakePhotoImageCodec.SourceWidth);
+        Assert.True(fixedPhoto.Height < FakePhotoImageCodec.SourceHeight);
+        Assert.Equal(FakePhotoImageCodec.TiltedPng, await ReadOriginalAsync(owner, photo));
+        Assert.Equal(clutterRequestsBefore, fixture.Factory.PhotoClutterRemover.Requests.Count);
+    }
+
+    [Fact]
+    public async Task StraightenLeavesAnAmbiguousPhotoUnchangedWithGuidance()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("photo-fix-level-ambiguous");
+        var photo = await UploadAsync(owner, "Office");
+
+        await RequestAsync(owner, photo, PhotoFix.LevelAndCrop);
+        var result = await ProcessNextAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.WillRetry);
+        Assert.Equal(
+            "This photo already appears level, or it does not contain enough clear horizontal or vertical lines to straighten safely.",
+            result.Error);
+        var unchanged = await GetMediaAsync(owner, photo);
+        Assert.Equal(PhotoFix.None, unchanged.AppliedFixes);
+        Assert.False(unchanged.HasOriginal);
+        Assert.Equal(FakePhotoImageCodec.Png, await ReadPhotoAsync(owner, photo));
+    }
+
+    [Fact]
     public async Task AnotherOrganizationCannotFixRevertOrSeeTheOriginal()
     {
         var owner = await CreateOwnerAndPropertyAsync("photo-fix-scope-owner");
@@ -337,10 +377,13 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         return buffer.ToArray();
     }
 
-    private async Task<Guid> UploadAsync(OwnerProperty owner, string stop)
+    private Task<Guid> UploadAsync(OwnerProperty owner, string stop) =>
+        UploadAsync(owner, stop, FakePhotoImageCodec.Png);
+
+    private async Task<Guid> UploadAsync(OwnerProperty owner, string stop, byte[] photo)
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
-        await using var content = new MemoryStream(FakePhotoImageCodec.Png);
+        await using var content = new MemoryStream(photo);
         return await scope.ServiceProvider.GetRequiredService<IPropertyMediaService>().UploadAsync(
             owner.UserId,
             owner.PropertyId,

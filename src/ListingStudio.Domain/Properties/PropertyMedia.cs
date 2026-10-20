@@ -235,7 +235,7 @@ public sealed class PropertyMedia
         int height,
         DateTimeOffset editedAtUtc)
     {
-        if (fix is not (PhotoFix.BrightnessAndColor or PhotoFix.RemoveClutter))
+        if (fix is not (PhotoFix.BrightnessAndColor or PhotoFix.RemoveClutter or PhotoFix.LevelAndCrop))
         {
             throw new ArgumentOutOfRangeException(nameof(fix), "Exactly one photo fix is applied at a time.");
         }

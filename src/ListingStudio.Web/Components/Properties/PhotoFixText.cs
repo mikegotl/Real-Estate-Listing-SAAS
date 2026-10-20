@@ -7,7 +7,7 @@ public static class PhotoFixText
 {
     public static string Describe(PhotoFix fixes)
     {
-        var names = new List<string>(2);
+        var names = new List<string>(3);
         if (fixes.HasFlag(PhotoFix.BrightnessAndColor))
         {
             names.Add("brightness and color");
@@ -18,10 +18,18 @@ public static class PhotoFixText
             names.Add("clutter removed");
         }
 
+        if (fixes.HasFlag(PhotoFix.LevelAndCrop))
+        {
+            names.Add("straightened and cropped");
+        }
+
         return names.Count == 0 ? "no fixes" : string.Join(", ", names);
     }
 
-    public static string InProgress(PhotoFix fix) => fix == PhotoFix.RemoveClutter
-        ? "Removing clutter…"
-        : "Fixing brightness and color…";
+    public static string InProgress(PhotoFix fix) => fix switch
+    {
+        PhotoFix.RemoveClutter => "Removing clutter…",
+        PhotoFix.LevelAndCrop => "Straightening and cropping…",
+        _ => "Fixing brightness and color…",
+    };
 }

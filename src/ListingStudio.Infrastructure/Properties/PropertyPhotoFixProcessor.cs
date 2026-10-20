@@ -11,8 +11,8 @@ using Microsoft.Extensions.Logging;
 namespace ListingStudio.Infrastructure.Properties;
 
 /// <summary>
-/// Makes fixed photos. Brightness and color is measured and applied locally; Remove clutter sends the photo, padded
-/// onto the editor's canvas, to the AI clutter remover and cuts the result back to the photo's own proportions.
+/// Makes fixed photos. Brightness/color and leveling/cropping are measured and applied locally; Remove clutter sends
+/// the photo, padded onto the editor's canvas, to the AI clutter remover and cuts the result back to the photo's own proportions.
 /// The fixed photo replaces the photo it was made from, keeping the upload as the original.
 /// </summary>
 public sealed partial class PropertyPhotoFixProcessor(
@@ -24,7 +24,7 @@ public sealed partial class PropertyPhotoFixProcessor(
     TimeProvider timeProvider,
     ILogger<PropertyPhotoFixProcessor> logger) : IPropertyPhotoFixProcessor
 {
-    /// <summary>The longest side of a Brightness and color result; larger photos are scaled down to it.</summary>
+    /// <summary>The longest side of a locally fixed result; larger photos are scaled down to it.</summary>
     public const int MaximumFixedDimension = 6_000;
 
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(10);
@@ -90,6 +90,7 @@ public sealed partial class PropertyPhotoFixProcessor(
             {
                 PhotoFix.BrightnessAndColor => await NormalizeAsync(original, source.MimeType, cancellationToken),
                 PhotoFix.RemoveClutter => await RemoveClutterAsync(original, source.MimeType, cancellationToken),
+                PhotoFix.LevelAndCrop => await LevelAndCropAsync(original, source.MimeType, cancellationToken),
                 _ => throw new InvalidOperationException("The photo fix is not supported."),
             };
             var jpeg = await codec.EncodeJpegAsync(fixedPhoto, cancellationToken);
@@ -171,6 +172,21 @@ public sealed partial class PropertyPhotoFixProcessor(
             cancellationToken);
         PhotoToneNormalizer.Normalize(photo);
         return photo;
+    }
+
+    private async Task<PhotoPixels> LevelAndCropAsync(byte[] original, string mimeType, CancellationToken cancellationToken)
+    {
+        var photo = await codec.DecodeAsync(
+            original,
+            mimeType,
+            MaximumFixedDimension,
+            MaximumFixedDimension,
+            PhotoScaling.ShrinkToFit,
+            cancellationToken);
+        var result = PhotoStraightener.TryStraightenAndCrop(photo, cancellationToken);
+        return result?.Photo
+            ?? throw new PhotoFixRejectedException(
+                "This photo already appears level, or it does not contain enough clear horizontal or vertical lines to straighten safely.");
     }
 
     private async Task<PhotoPixels> RemoveClutterAsync(byte[] original, string mimeType, CancellationToken cancellationToken)
