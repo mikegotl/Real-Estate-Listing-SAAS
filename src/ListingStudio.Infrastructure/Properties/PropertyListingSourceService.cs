@@ -78,6 +78,9 @@ public sealed class PropertyListingSourceService(ApplicationDbContext dbContext)
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        // PostgreSQL stores timestamps at microsecond precision. Reload so the write response and a later read expose
+        // the same persisted values on every platform instead of leaking higher-precision process clock ticks.
+        await dbContext.Entry(source).ReloadAsync(cancellationToken);
         return ToItem(source);
     }
 
