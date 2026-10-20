@@ -70,6 +70,8 @@ public sealed class ListingProperty
 
     public ICollection<NeighborhoodInsight> NeighborhoodInsights { get; } = [];
 
+    public ICollection<PropertyListingSource> ListingSources { get; } = [];
+
     public static ListingProperty Create(Guid organizationId, PropertyDetails details)
     {
         if (organizationId == Guid.Empty)

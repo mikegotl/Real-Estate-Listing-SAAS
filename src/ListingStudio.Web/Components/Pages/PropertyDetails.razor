@@ -102,6 +102,9 @@ else
                     <MudItem xs="6" md="3"><Detail Label="Address line 2" Value="@(property.Address2 ?? "—")" /></MudItem>
                 </MudGrid>
             </MudPaper>
+            <PropertyListingSourceManager PropertyId="PropertyId"
+                                          PropertyAddress="@($"{property.Address1}, {property.City}, {property.State} {property.ZipCode}")"
+                                          IsReadOnly="property.IsArchived" />
         </MudTabPanel>
         <MudTabPanel Text="Media" Icon="@Icons.Material.Filled.PhotoLibrary" BadgeData="@(photoCount > 0 ? photoCount : null)" BadgeColor="Color.Secondary">
             <PropertyMediaManager @ref="mediaManager" PropertyId="PropertyId" IsReadOnly="property.IsArchived" MediaChanged="RefreshSummaryAsync" />

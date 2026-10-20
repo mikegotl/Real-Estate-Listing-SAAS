@@ -747,6 +747,59 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("Properties", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyListingSource", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AddressConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AddressConfirmedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalListingId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("Provider", "ExternalListingId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "Provider")
+                        .IsUnique();
+
+                    b.ToTable("PropertyListingSources", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyMedia", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1989,6 +2042,18 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyListingSource", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany("ListingSources")
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyMedia", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
@@ -2263,6 +2328,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("ListingStudio.Domain.Properties.ListingProperty", b =>
                 {
+                    b.Navigation("ListingSources");
+
                     b.Navigation("Media");
 
                     b.Navigation("NarrationScript");
