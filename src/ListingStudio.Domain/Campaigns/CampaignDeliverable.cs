@@ -13,6 +13,7 @@ public enum CampaignOutputKind
     YouTubeShort,
     YouTubeTour,
     FullNarratedTour,
+    FacebookFeed,
 }
 
 [Flags]
@@ -25,6 +26,7 @@ public enum CampaignOutputSelection
     YouTubeShort = 1 << 3,
     YouTubeTour = 1 << 4,
     FullNarratedTour = 1 << 5,
+    FacebookFeed = 1 << 6,
 }
 
 public static class CampaignOutputSelectionPolicy
@@ -32,7 +34,8 @@ public static class CampaignOutputSelectionPolicy
     public const CampaignOutputSelection Recommended = CampaignOutputSelection.TikTok
         | CampaignOutputSelection.InstagramReel
         | CampaignOutputSelection.YouTubeShort
-        | CampaignOutputSelection.YouTubeTour;
+        | CampaignOutputSelection.YouTubeTour
+        | CampaignOutputSelection.FacebookFeed;
 
     public const CampaignOutputSelection All = CampaignOutputSelection.LegacyStandard
         | Recommended

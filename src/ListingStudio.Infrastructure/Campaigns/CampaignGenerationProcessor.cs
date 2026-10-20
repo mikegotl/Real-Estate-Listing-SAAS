@@ -226,7 +226,7 @@ public sealed partial class CampaignGenerationProcessor(
             CampaignGenerationStage.RenderFeature => RenderSelectedAsync(
                 jobId,
                 [CampaignOutputKind.Feature, CampaignOutputKind.TikTok, CampaignOutputKind.InstagramReel,
-                    CampaignOutputKind.YouTubeShort],
+                    CampaignOutputKind.YouTubeShort, CampaignOutputKind.FacebookFeed],
                 cancellationToken),
             CampaignGenerationStage.RenderTeaser => RenderSelectedAsync(
                 jobId,
@@ -442,6 +442,12 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputSelection.YouTubeShort,
                 CampaignOutputKind.YouTubeShort,
                 verticalFeature);
+            AddSelectedDeliverable(
+                job,
+                shortFormNarrationId,
+                CampaignOutputSelection.FacebookFeed,
+                CampaignOutputKind.FacebookFeed,
+                derivatives.Get(CampaignDeliverableKind.Feature, VideoAspectRatio.Landscape16By9));
         }
 
         if (longFormPlan is not null && longFormNarration is not null)
@@ -1064,6 +1070,7 @@ public sealed partial class CampaignGenerationProcessor(
         AddIfSelected(CampaignOutputSelection.YouTubeShort, CampaignOutputKind.YouTubeShort);
         AddIfSelected(CampaignOutputSelection.YouTubeTour, CampaignOutputKind.YouTubeTour);
         AddIfSelected(CampaignOutputSelection.FullNarratedTour, CampaignOutputKind.FullNarratedTour);
+        AddIfSelected(CampaignOutputSelection.FacebookFeed, CampaignOutputKind.FacebookFeed);
         return result;
 
         void AddIfSelected(CampaignOutputSelection option, CampaignOutputKind kind)
