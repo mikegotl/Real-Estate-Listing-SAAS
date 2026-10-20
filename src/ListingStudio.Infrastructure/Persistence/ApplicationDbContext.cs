@@ -22,6 +22,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<ListingProperty> Properties => Set<ListingProperty>();
 
+    public DbSet<PropertyListingSource> PropertyListingSources => Set<PropertyListingSource>();
+
     public DbSet<PropertyMedia> PropertyMedia => Set<PropertyMedia>();
 
     public DbSet<PropertyVideo> PropertyVideos => Set<PropertyVideo>();

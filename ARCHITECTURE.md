@@ -37,6 +37,21 @@ The Domain owns the `ListingProperty` aggregate, its value-bearing details, prop
 
 Every property has a required `OrganizationId` foreign key and tenant-aware indexes. Property services receive the server-validated Identity user ID, resolve its organization membership, and include that organization in every read and mutation predicate. A property ID is never sufficient authorization. Cross-organization requests therefore return no property and cannot update or archive it. Archiving is a timestamped, read-only state rather than physical deletion, preserving the listing for audit and future workflow history.
 
+### External listing research links
+
+A property may keep one tenant-scoped external listing reference per provider. The first supported provider is Zillow.
+The Web workflow accepts only a secure canonical Zillow home-details URL, removes query strings and fragments, records
+the Zillow property identifier, and requires the signed-in agent to confirm that the page represents the same address.
+The database enforces a composite property/organization foreign key and a unique
+`(OrganizationId, PropertyId, Provider)` index; every read, link, replace, and remove operation independently derives
+the organization from the authenticated membership.
+
+The link is a research reference, not a scraping mechanism. Listing Studio does not fetch or republish Zillow page
+content. Future property-fact or valuation imports must use an approved Zillow/Bridge, MLS, or public-record adapter
+behind an Application interface, preserve required provider attribution, and present changes for agent review before
+they become verified property facts. Photos or videos may enter campaign storage only when the data agreement grants
+the necessary reuse rights or the agent uploads originals they own or are licensed to use.
+
 ## Property media slice
 
 The Domain owns `PropertyMedia` metadata and display-order rules. Application exposes media workflows through `IPropertyMediaService` and the replaceable `IPropertyMediaStorage` port. Infrastructure persists metadata in PostgreSQL and supplies both an Azure Blob Storage adapter and an ignored filesystem adapter for local development. Web streams originals through an authenticated, organization-scoped endpoint instead of exposing provider paths or public containers.

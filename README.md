@@ -138,6 +138,14 @@ Open the Web URL printed by `dotnet run`. Registering creates an Identity user, 
 
 After signing in, open `/properties` to create, list, inspect, edit, and archive properties. The new-property form queries the server-side ArcGIS World Geocoding adapter after four typed characters; selecting a U.S. address fills street, city, state, and ZIP while manual entry remains available. Configure this through `AddressLookup`, or set `AddressLookup__Enabled=false` to disable outbound suggestions. No geocoding credential is sent to the browser.
 
+On a property's Overview tab, **External listing research** accepts a pasted or dragged canonical Zillow home-details
+link. The agent must confirm that the link is for the displayed property address. Listing Studio stores only the
+normalized URL, Zillow property ID, confirmation audit fields, and tenant ownership; tracking query values are removed
+and Zillow page content is not scraped. The saved link opens Zillow for market research. Automated facts, Zestimate,
+photo, or video imports remain off until an approved Zillow/Bridge or MLS agreement is configured. Continue uploading
+original photos and videos that the agent owns or is licensed to use; a public listing page does not by itself grant
+reuse rights for downloadable marketing videos.
+
 Neighborhood Insights is optional and disabled by default to prevent accidental Google Places charges. Enable Places API (New) in a billing-enabled Google Cloud project, restrict the key to that API and the Web host's server addresses, then store it outside source control with `NeighborhoodInsights__ApiKey` and set `NeighborhoodInsights__Enabled=true`. The property page can then retrieve nearby schools, parks, libraries, groceries, healthcare, dining, shopping and transit. Results show straight-line distance, source links, current provider photos and attribution. A signed-in owner must approve each fact before it enters the next generated story or campaign. School proximity never asserts attendance assignment or quality, and generated copy rejects family-suitability, safety, demographic, rating and school-boundary claims. Stored place facts are tenant-scoped; Google photo references are fetched on demand for in-app review and are never cached or exported.
 
 To include neighborhood imagery in downloadable campaign videos, approve the place and upload a separate JPG, PNG, or WEBP image that you own or are licensed to use. Enter the required photo credit before upload. The private, tenant-scoped asset is timed to the matching grounded neighborhood fact and its credit is burned into every generated MP4 that uses it. Refreshing Google place results preserves the uploaded asset when the provider place ID remains present. If an approved place has no licensed video photo, the campaign still uses its factual words but keeps the property photo as the visual background.

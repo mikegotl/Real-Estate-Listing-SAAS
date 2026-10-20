@@ -153,6 +153,7 @@ public static class ServiceCollectionExtensions
             provider.GetRequiredService<OperationalEventRecorder>());
         services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
         services.AddScoped<IPropertyService, PropertyService>();
+        services.AddScoped<IPropertyListingSourceService, PropertyListingSourceService>();
         services.AddScoped<IPropertyMediaService, PropertyMediaService>();
         services.AddScoped<IPropertyMediaAnalysisProcessor, PropertyMediaAnalysisProcessor>();
         services.AddScoped<IPropertyVideoService, PropertyVideoService>();

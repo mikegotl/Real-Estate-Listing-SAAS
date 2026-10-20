@@ -1,0 +1,223 @@
+@inherits OwningComponentBase<IPropertyListingSourceService>
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDialogService DialogService
+
+<MudPaper Class="pa-6 mt-6">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h2">External listing research</MudText>
+            <MudText Typo="Typo.body2">
+                Keep the matching Zillow home page with this property for quick research.
+            </MudText>
+        </div>
+        @if (source is not null)
+        {
+            <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Link">
+                Zillow linked
+            </MudChip>
+        }
+    </MudStack>
+
+    @if (!loaded)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mt-4" />
+    }
+    else
+    {
+        @if (message is not null)
+        {
+            <MudAlert Severity="@messageSeverity" Class="mt-4">@message</MudAlert>
+        }
+
+        @if (source is null)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="my-4">
+                Paste or drag the full Zillow <strong>Home details</strong> link into the field. Listing Studio saves
+                the link only—it does not scrape or republish Zillow data.
+            </MudAlert>
+        }
+        else
+        {
+            <MudCard Outlined="true" Class="my-4">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline">Linked source</MudText>
+                    <a href="@source.SourceUrl" target="_blank" rel="noopener noreferrer nofollow" class="mud-link mud-primary-text">
+                        View this home on Zillow
+                        <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Class="ml-1" />
+                    </a>
+                    <MudText Typo="Typo.caption" Class="d-block mt-2">
+                        Zillow property ID @source.ExternalListingId · address confirmed @source.AddressConfirmedAtUtc.LocalDateTime.ToString("g")
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        }
+
+        @if (!IsReadOnly)
+        {
+            <MudTextField T="string"
+                          @bind-Value="sourceUrl"
+                          Label="Zillow home link"
+                          Placeholder="https://www.zillow.com/homedetails/.../123456_zpid/"
+                          HelperText="Paste the link, or drag it from another browser tab and drop it here."
+                          InputType="InputType.Url"
+                          Variant="Variant.Outlined"
+                          Immediate="true"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.AddLink"
+                          Disabled="@saving"
+                          Class="mt-3" />
+            <MudCheckBox T="bool"
+                         @bind-Value="addressConfirmed"
+                         Label="@($"I confirmed this Zillow page is for {PropertyAddress}")"
+                         Color="Color.Primary"
+                         Disabled="@saving"
+                         Class="mt-2" />
+            <MudStack Row="true" Spacing="2" Class="mt-3">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Link"
+                           Disabled="@(saving || string.IsNullOrWhiteSpace(sourceUrl) || !addressConfirmed)"
+                           OnClick="SaveAsync">
+                    @(source is null ? "Link Zillow page" : "Replace linked page")
+                </MudButton>
+                @if (source is not null)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.LinkOff"
+                               Disabled="@saving" OnClick="RemoveAsync">
+                        Remove link
+                    </MudButton>
+                }
+            </MudStack>
+        }
+
+        <MudDivider Class="my-6" />
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3">What can be brought into Listing Studio?</MudText>
+        <MudGrid Spacing="3" Class="mt-1">
+            <MudItem xs="12" md="4">
+                <MudPaper Outlined="true" Class="pa-4 h-100">
+                    <MudIcon Icon="@Icons.Material.Filled.Description" Color="Color.Primary" />
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">Property facts</MudText>
+                    <MudText Typo="Typo.body2">
+                        An approved MLS, public-record, or Zillow/Bridge data connection can supply reviewable facts.
+                        Nothing changes the listing until the agent approves it.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Outlined="true" Class="pa-4 h-100">
+                    <MudIcon Icon="@Icons.Material.Filled.HomeWork" Color="Color.Primary" />
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">Market research</MudText>
+                    <MudText Typo="Typo.body2">
+                        Open the saved Zillow page now. Zestimate or public-record values require approved API access
+                        and must keep the provider's attribution and usage rules.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Outlined="true" Class="pa-4 h-100">
+                    <MudIcon Icon="@Icons.Material.Filled.PhotoLibrary" Color="Color.Primary" />
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">Photos and videos</MudText>
+                    <MudText Typo="Typo.body2">
+                        Upload originals you own today. Automated media import will be enabled only for a licensed feed
+                        that explicitly grants reuse in downloadable marketing videos.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid PropertyId { get; set; }
+
+    [Parameter, EditorRequired]
+    public string PropertyAddress { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private PropertyListingSourceItem? source;
+    private string sourceUrl = string.Empty;
+    private bool addressConfirmed;
+    private bool loaded;
+    private bool saving;
+    private string? message;
+    private Severity messageSeverity = Severity.Info;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loaded = false;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        source = await Service.GetAsync(userId, PropertyId);
+        if (source is not null && string.IsNullOrWhiteSpace(sourceUrl))
+        {
+            sourceUrl = source.SourceUrl;
+        }
+
+        loaded = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        message = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            source = await Service.LinkZillowAsync(userId, PropertyId, sourceUrl, addressConfirmed);
+            if (source is null)
+            {
+                message = "This property is no longer available to update.";
+                messageSeverity = Severity.Error;
+                return;
+            }
+
+            sourceUrl = source.SourceUrl;
+            addressConfirmed = false;
+            message = "Zillow research link saved. No Zillow content was copied.";
+            messageSeverity = Severity.Success;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            message = exception.Message;
+            messageSeverity = Severity.Error;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (await DialogService.ShowMessageBoxAsync(
+            "Remove Zillow link?",
+            "This removes only the saved research link. It does not change the property or its media.",
+            yesText: "Remove link",
+            cancelText: "Cancel") != true)
+        {
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            if (await Service.RemoveAsync(userId, PropertyId))
+            {
+                source = null;
+                sourceUrl = string.Empty;
+                addressConfirmed = false;
+                message = "Zillow research link removed.";
+                messageSeverity = Severity.Success;
+            }
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}
