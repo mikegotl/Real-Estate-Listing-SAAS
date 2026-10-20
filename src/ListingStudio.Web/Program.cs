@@ -29,6 +29,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Application.Administration;
 using ListingStudio.Web.Administration;
+using ListingStudio.Application.Leads;
+using QRCoder;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -308,6 +310,68 @@ app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
             deliverable.Content,
             deliverable.ContentType,
             enableRangeProcessing: true);
+}).RequireAuthorization();
+
+app.MapGet("/public/listings/{publicSlug}/cover", async (
+    string publicSlug,
+    ILeadGenerationService leadService,
+    CancellationToken cancellationToken) =>
+{
+    var asset = await leadService.OpenCoverAsync(publicSlug, cancellationToken);
+    return asset is null
+        ? Results.NotFound()
+        : Results.Stream(asset.Content, asset.ContentType, enableRangeProcessing: true);
+}).AllowAnonymous();
+
+app.MapGet("/public/listings/{publicSlug}/video", async (
+    string publicSlug,
+    ILeadGenerationService leadService,
+    CancellationToken cancellationToken) =>
+{
+    var asset = await leadService.OpenVideoAsync(publicSlug, cancellationToken);
+    return asset is null
+        ? Results.NotFound()
+        : Results.Stream(asset.Content, asset.ContentType, enableRangeProcessing: true);
+}).AllowAnonymous();
+
+app.MapGet("/public/listings/{publicSlug}/qr", async (
+    string publicSlug,
+    string? source,
+    HttpContext context,
+    ILeadGenerationService leadService,
+    CancellationToken cancellationToken) =>
+{
+    if (await leadService.GetPublicListingAsync(publicSlug, cancellationToken) is null)
+    {
+        return Results.NotFound();
+    }
+
+    var normalizedSource = string.IsNullOrWhiteSpace(source) ? "qr" : source.Trim().ToLowerInvariant();
+    if (normalizedSource.Length > 32 || normalizedSource.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '-'))
+    {
+        return Results.BadRequest();
+    }
+
+    var destination = $"{context.Request.Scheme}://{context.Request.Host}/listing/{Uri.EscapeDataString(publicSlug)}"
+        + $"?utm_source={Uri.EscapeDataString(normalizedSource)}&utm_medium=offline&utm_campaign=property";
+    using var qrData = QRCodeGenerator.GenerateQrCode(destination, QRCodeGenerator.ECCLevel.Q);
+    var svg = new SvgQRCode(qrData).GetGraphic(4);
+    return Results.Content(svg, "image/svg+xml", Encoding.UTF8);
+}).AllowAnonymous();
+
+app.MapGet("/leads/export.csv", async (
+    HttpContext context,
+    ILeadGenerationService leadService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var content = await leadService.ExportCsvAsync(userId, cancellationToken);
+    return Results.File(content, "text/csv; charset=utf-8", "listing-studio-leads.csv");
 }).RequireAuthorization();
 
 app.MapPost("/billing/checkout", async (

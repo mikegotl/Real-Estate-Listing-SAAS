@@ -28,6 +28,8 @@ public sealed record UserNotificationItem(
     DateTimeOffset CreatedAtUtc,
     bool IsRead)
 {
-    public static string LinkFor(Guid propertyId, string tab) =>
-        $"/properties/{propertyId}?tab={Uri.EscapeDataString(tab)}";
+    public static string LinkFor(Guid propertyId, string tab, UserNotificationKind kind) =>
+        kind == UserNotificationKind.Lead
+            ? $"/leads?propertyId={propertyId}"
+            : $"/properties/{propertyId}?tab={Uri.EscapeDataString(tab)}";
 }

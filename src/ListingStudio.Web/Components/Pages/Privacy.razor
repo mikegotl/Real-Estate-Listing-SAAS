@@ -1,0 +1,36 @@
+@page "/privacy"
+@attribute [AllowAnonymous]
+
+<PageTitle>Privacy</PageTitle>
+
+<section class="page-heading">
+    <div>
+        <span class="eyebrow">PRIVACY</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Inquiry data and your choices</MudText>
+        <MudText Typo="Typo.body1">How Listing Studio handles information submitted on a public property page.</MudText>
+    </div>
+</section>
+
+<MudPaper Class="pa-6">
+    <MudText Typo="Typo.h5" HtmlTag="h2">Information collected</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        A property inquiry records the name, email address, optional phone number, message, contact preference,
+        referring campaign source, and the separate email or SMS consent choices submitted with the form.
+    </MudText>
+
+    <MudText Typo="Typo.h5" HtmlTag="h2">How it is used</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        The real-estate organization that published the property uses the information to answer the inquiry and manage
+        follow-up. Marketing consent is optional and is not required to ask about a property. Listing Studio does not
+        sell public-inquiry data or use it to infer protected personal characteristics.
+    </MudText>
+
+    <MudText Typo="Typo.h5" HtmlTag="h2">Retention and requests</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        The publishing organization controls its lead records and can permanently delete an inquiry and its activity
+        history. To request access, correction, or deletion, contact the agent or organization that shared the listing.
+        You can also withdraw marketing consent through any follow-up communication you receive.
+    </MudText>
+
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">Lead-consent notice version @ILeadGenerationService.ConsentVersion.</MudText>
+</MudPaper>
