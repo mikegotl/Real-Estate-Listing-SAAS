@@ -447,6 +447,178 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("CampaignGenerationJobs", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Leads.LeadActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("LeadId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeadId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "LeadId", "CreatedAtUtc");
+
+                    b.ToTable("LeadActivities", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Leads.LeadCapturePage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Headline")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PublicSlug")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicSlug")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "PropertyId")
+                        .IsUnique();
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.ToTable("LeadCapturePages", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Leads.PropertyLead", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Campaign")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ConsentVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<bool>("EmailMarketingConsent")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("FollowUpAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("LeadCapturePageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Medium")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("PreferredContact")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("SmsMarketingConsent")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeadCapturePageId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "CreatedAtUtc");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("LeadCapturePageId", "Email", "CreatedAtUtc");
+
+                    b.HasIndex("OrganizationId", "Status", "FollowUpAtUtc");
+
+                    b.ToTable("PropertyLeads", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Neighborhoods.NeighborhoodInsight", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1976,6 +2148,51 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("VideoNarration");
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Leads.LeadActivity", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Leads.PropertyLead", "Lead")
+                        .WithMany("Activities")
+                        .HasForeignKey("LeadId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Lead");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Leads.LeadCapturePage", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Leads.PropertyLead", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Leads.LeadCapturePage", "LeadCapturePage")
+                        .WithMany()
+                        .HasForeignKey("LeadCapturePageId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LeadCapturePage");
+
+                    b.Navigation("Property");
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Neighborhoods.NeighborhoodInsight", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
@@ -2315,6 +2532,11 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignGenerationJob", b =>
                 {
                     b.Navigation("Deliverables");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Leads.PropertyLead", b =>
+                {
+                    b.Navigation("Activities");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Organizations.Organization", b =>

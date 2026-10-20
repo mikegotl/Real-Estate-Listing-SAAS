@@ -1,0 +1,261 @@
+@page "/leads"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILeadGenerationService LeadService
+@inject IDialogService DialogService
+
+<PageTitle>Leads</PageTitle>
+
+<section class="page-heading">
+    <div>
+        <span class="eyebrow">LEAD CENTER</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Property inquiries</MudText>
+        <MudText Typo="Typo.body1">Track where inquiries came from and keep every follow-up moving.</MudText>
+    </div>
+    <MudButton Href="/leads/export.csv" Variant="Variant.Outlined" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Download">Export CSV</MudButton>
+</section>
+
+@if (!loaded || dashboard is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudGrid Spacing="2" Class="mb-5">
+        <MudItem xs="6" md="2"><LeadMetric Label="Total" Value="@dashboard.Total" /></MudItem>
+        <MudItem xs="6" md="2"><LeadMetric Label="New" Value="@dashboard.New" /></MudItem>
+        <MudItem xs="6" md="2"><LeadMetric Label="Follow-ups due" Value="@dashboard.FollowUpsDue" /></MudItem>
+        <MudItem xs="6" md="3"><LeadMetric Label="Showings scheduled" Value="@dashboard.ShowingScheduled" /></MudItem>
+        <MudItem xs="6" md="2"><LeadMetric Label="Won" Value="@dashboard.Won" /></MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4 mb-4">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="7">
+                <MudTextField T="string" @bind-Value="search" Immediate="true" DebounceInterval="200" Clearable="true"
+                              Label="Search name, email, property, or source" Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="5">
+                <MudSelect T="LeadStatus?" @bind-Value="statusFilter" Clearable="true" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var status in Enum.GetValues<LeadStatus>())
+                    {
+                        <MudSelectItem T="LeadStatus?" Value="@status">@Display(status)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (Filtered.Count == 0)
+    {
+        <MudPaper Class="pa-8 text-center">
+            <MudIcon Icon="@Icons.Material.Filled.PersonSearch" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h5" Class="mt-3">No matching leads</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Publish a Lead destination from a property Campaign tab, then share its tracked link.
+            </MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudTable T="LeadSummary" Items="Filtered" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Class="mb-5">
+            <HeaderContent>
+                <MudTh>Lead</MudTh>
+                <MudTh>Property</MudTh>
+                <MudTh>Source</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Follow-up</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Lead">
+                    <strong>@context.Name</strong><br />
+                    <span class="mud-text-secondary">@context.Email</span>
+                </MudTd>
+                <MudTd DataLabel="Property">@context.PropertyLabel</MudTd>
+                <MudTd DataLabel="Source">@(context.Source ?? "Direct")</MudTd>
+                <MudTd DataLabel="Status"><MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@Display(context.Status)</MudChip></MudTd>
+                <MudTd DataLabel="Follow-up">@(context.FollowUpAtUtc?.ToLocalTime().ToString("MMM d, yyyy") ?? "—")</MudTd>
+                <MudTd><MudButton Variant="Variant.Text" OnClick="@(() => OpenAsync(context.Id))">Review</MudButton></MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+
+    @if (selected is not null)
+    {
+        <MudPaper Class="pa-6">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <div>
+                    <MudText Typo="Typo.h5" HtmlTag="h2">@selected.Name</MudText>
+                    <MudLink Href="@($"/properties/{selected.PropertyId}")">@selected.PropertyLabel</MudLink>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => selected = null)" aria-label="Close lead details" />
+            </MudStack>
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.overline">Contact</MudText>
+                    <MudText>@selected.Email</MudText>
+                    <MudText>@(selected.Phone ?? "No phone provided")</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Prefers @Display(selected.PreferredContact)</MudText>
+                    <MudText Typo="Typo.overline" Class="mt-4">Inquiry</MudText>
+                    <MudText>@selected.Message</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-3">
+                        Source: @(selected.Source ?? "Direct") / @(selected.Medium ?? "—") · Email updates: @(selected.EmailMarketingConsent ? "Consented" : "Not consented") · SMS: @(selected.SmsMarketingConsent ? "Consented" : "Not consented")
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="LeadStatus" @bind-Value="editStatus" Label="Status" Variant="Variant.Outlined" Class="mb-3">
+                        @foreach (var status in Enum.GetValues<LeadStatus>())
+                        {
+                            <MudSelectItem Value="@status">@Display(status)</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudDatePicker @bind-Date="followUpDate" Label="Follow-up date" Clearable="true" Variant="Variant.Outlined" Class="mb-3" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveWorkflowAsync" Disabled="busy">Save workflow</MudButton>
+                    <MudTextField T="string" @bind-Value="note" Label="Add private note" Lines="3" MaxLength="@LeadActivity.MaximumTextLength" Variant="Variant.Outlined" Class="mt-5 mb-2" />
+                    <MudButton Variant="Variant.Outlined" OnClick="AddNoteAsync" Disabled="@(busy || string.IsNullOrWhiteSpace(note))">Add note</MudButton>
+                </MudItem>
+            </MudGrid>
+            <MudDivider Class="my-5" />
+            <MudText Typo="Typo.subtitle1">Activity</MudText>
+            <MudList T="LeadActivityItem" Dense="true">
+                @foreach (var activity in selected.Activities)
+                {
+                    <MudListItem T="LeadActivityItem" Icon="@ActivityIcon(activity.Kind)">
+                        @activity.Text <span class="mud-text-secondary">· @activity.CreatedAtUtc.ToLocalTime().ToString("g")</span>
+                    </MudListItem>
+                }
+            </MudList>
+            <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteAsync" Disabled="busy" Class="mt-3">
+                Delete lead data
+            </MudButton>
+        </MudPaper>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "propertyId")]
+    public Guid? PropertyId { get; set; }
+
+    private LeadDashboard? dashboard;
+    private LeadDetails? selected;
+    private string? search;
+    private LeadStatus? statusFilter;
+    private LeadStatus editStatus;
+    private DateTime? followUpDate;
+    private string? note;
+    private bool loaded;
+    private bool busy;
+
+    private IReadOnlyList<LeadSummary> Filtered => dashboard is null
+        ? []
+        : [.. dashboard.Leads.Where(lead =>
+            (!PropertyId.HasValue || lead.PropertyId == PropertyId)
+            && (!statusFilter.HasValue || lead.Status == statusFilter)
+            && (string.IsNullOrWhiteSpace(search)
+                || lead.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || lead.Email.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || lead.PropertyLabel.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || (lead.Source?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)))];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        dashboard = await LeadService.GetDashboardAsync(userId);
+        loaded = true;
+    }
+
+    private async Task OpenAsync(Guid leadId)
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        selected = await LeadService.GetLeadAsync(userId, leadId);
+        if (selected is not null)
+        {
+            editStatus = selected.Status;
+            followUpDate = selected.FollowUpAtUtc?.ToLocalTime().Date;
+            note = null;
+        }
+    }
+
+    private async Task SaveWorkflowAsync()
+    {
+        if (selected is null)
+        {
+            return;
+        }
+
+        busy = true;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        DateTimeOffset? followUp = followUpDate.HasValue
+            ? new DateTimeOffset(DateTime.SpecifyKind(followUpDate.Value.Date.AddHours(9), DateTimeKind.Local)).ToUniversalTime()
+            : null;
+        await LeadService.UpdateWorkflowAsync(userId, selected.Id, editStatus, followUp);
+        await LoadAsync();
+        await OpenAsync(selected.Id);
+        busy = false;
+    }
+
+    private async Task AddNoteAsync()
+    {
+        if (selected is null || string.IsNullOrWhiteSpace(note))
+        {
+            return;
+        }
+
+        busy = true;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await LeadService.AddNoteAsync(userId, selected.Id, note);
+        await OpenAsync(selected.Id);
+        busy = false;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (selected is null)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete this lead?",
+            "This permanently removes the inquiry, consent record, and activity history. This cannot be undone.",
+            yesText: "Delete permanently",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        busy = true;
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await LeadService.DeleteAsync(userId, selected.Id);
+        selected = null;
+        await LoadAsync();
+        busy = false;
+    }
+
+    private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
+        index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
+
+    private static Color StatusColor(LeadStatus status) => status switch
+    {
+        LeadStatus.New => Color.Info,
+        LeadStatus.Qualified or LeadStatus.ShowingScheduled => Color.Primary,
+        LeadStatus.Won => Color.Success,
+        LeadStatus.Lost => Color.Error,
+        _ => Color.Default,
+    };
+
+    private static string ActivityIcon(LeadActivityKind kind) => kind switch
+    {
+        LeadActivityKind.Created => Icons.Material.Filled.PersonAdd,
+        LeadActivityKind.StatusChanged => Icons.Material.Filled.SyncAlt,
+        _ => Icons.Material.Filled.Note,
+    };
+
+}

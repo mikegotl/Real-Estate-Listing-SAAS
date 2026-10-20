@@ -14,6 +14,8 @@
                            StartIcon="@Icons.Material.Filled.Dashboard">Workspace</MudButton>
                 <MudButton Href="/properties" Variant="Variant.Text" Color="Color.Inherit"
                            StartIcon="@Icons.Material.Filled.HomeWork">Properties</MudButton>
+                <MudButton Href="/leads" Variant="Variant.Text" Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.PersonSearch">Leads</MudButton>
                 <MudButton Href="/billing" Variant="Variant.Text" Color="Color.Inherit"
                            StartIcon="@Icons.Material.Filled.CreditCard">Billing</MudButton>
                 <AuthorizeView Policy="@PlatformAdministration.Policy">
@@ -39,6 +41,7 @@
                     <div class="mobile-nav-panel">
                         <a href="/auth"><MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Small" /> Workspace</a>
                         <a href="/properties"><MudIcon Icon="@Icons.Material.Filled.HomeWork" Size="Size.Small" /> Properties</a>
+                        <a href="/leads"><MudIcon Icon="@Icons.Material.Filled.PersonSearch" Size="Size.Small" /> Leads</a>
                         <a href="/billing"><MudIcon Icon="@Icons.Material.Filled.CreditCard" Size="Size.Small" /> Billing</a>
                         <AuthorizeView Policy="@PlatformAdministration.Policy">
                             <a href="/admin"><MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" /> Admin</a>

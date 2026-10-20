@@ -119,6 +119,7 @@ else
         </MudTabPanel>
         <MudTabPanel Text="Campaign" Icon="@Icons.Material.Filled.MovieCreation">
             <CampaignGenerationManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" StatusChanged="RefreshSummaryAsync" />
+            <LeadCaptureManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
         </MudTabPanel>
     </MudTabs>
 }

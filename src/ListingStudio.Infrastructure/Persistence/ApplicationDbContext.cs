@@ -7,6 +7,7 @@ using ListingStudio.Domain.Billing;
 using ListingStudio.Domain.Neighborhoods;
 using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Administration;
+using ListingStudio.Domain.Leads;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -65,6 +66,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<AiUsageEvent> AiUsageEvents => Set<AiUsageEvent>();
 
     public DbSet<PlatformMetricsReset> PlatformMetricsResets => Set<PlatformMetricsReset>();
+
+    public DbSet<LeadCapturePage> LeadCapturePages => Set<LeadCapturePage>();
+
+    public DbSet<PropertyLead> PropertyLeads => Set<PropertyLead>();
+
+    public DbSet<LeadActivity> LeadActivities => Set<LeadActivity>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

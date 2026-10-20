@@ -11,6 +11,7 @@ public enum UserNotificationKind
     WalkthroughClips,
     Campaign,
     PhotoFixes,
+    Lead,
 }
 
 public enum UserNotificationOutcome

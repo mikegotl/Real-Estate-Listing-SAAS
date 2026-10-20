@@ -1,0 +1,179 @@
+@page "/listing/{PublicSlug}"
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@inherits OwningComponentBase<ILeadGenerationService>
+
+<PageTitle>@(listing is null ? "Property listing" : listing.Address1)</PageTitle>
+
+@if (!loaded)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (listing is null)
+{
+    <MudPaper Class="pa-8 mt-8 text-center">
+        <MudIcon Icon="@Icons.Material.Filled.HomeWork" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4" HtmlTag="h1" Class="mt-3">This listing is not available</MudText>
+        <MudText Typo="Typo.body1" Class="mud-text-secondary">The agent may have unpublished or archived it.</MudText>
+    </MudPaper>
+}
+else
+{
+    <section class="page-heading">
+        <div>
+            <span class="eyebrow">@listing.OrganizationName</span>
+            <MudText Typo="Typo.h3" HtmlTag="h1">@(listing.Headline ?? $"Discover {listing.Address1}")</MudText>
+            <MudText Typo="Typo.body1">@listing.Address1, @listing.City, @listing.State @listing.ZipCode</MudText>
+        </div>
+        <MudText Typo="Typo.h4">@listing.ListingPrice.ToString("C0")</MudText>
+    </section>
+
+    @if (listing.HasCover)
+    {
+        <img src="@($"/public/listings/{listing.PublicSlug}/cover")"
+             alt="Front view of @listing.Address1" style="width:100%;max-height:540px;object-fit:cover;border-radius:12px;" />
+    }
+
+    <dl class="fact-strip mt-4">
+        <div><dt>Bedrooms</dt><dd>@listing.Bedrooms</dd></div>
+        <div><dt>Bathrooms</dt><dd>@listing.Bathrooms.ToString("0.#")</dd></div>
+        <div><dt>Square feet</dt><dd>@(listing.SquareFeet?.ToString("N0") ?? "—")</dd></div>
+        <div><dt>Lot size</dt><dd>@(listing.LotSize is null ? "—" : $"{listing.LotSize:0.##} ac")</dd></div>
+        <div><dt>Year built</dt><dd>@(listing.YearBuilt?.ToString() ?? "—")</dd></div>
+        <div><dt>Type</dt><dd>@Display(listing.PropertyType)</dd></div>
+    </dl>
+
+    <MudGrid Spacing="4" Class="mt-4">
+        <MudItem xs="12" md="7">
+            @if (listing.HasVideo)
+            {
+                <MudPaper Class="pa-3 mb-4">
+                    <video controls preload="metadata" style="width:100%;border-radius:8px;" aria-label="Property tour video">
+                        <source src="@($"/public/listings/{listing.PublicSlug}/video")" type="video/mp4" />
+                    </video>
+                </MudPaper>
+            }
+            <MudPaper Class="pa-6">
+                <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">About this property</MudText>
+                <MudText Typo="Typo.body1">@(listing.Description ?? "Contact the listing agent for complete property details.")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-6">
+                <MudText Typo="Typo.h5" HtmlTag="h2">Request information</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                    Send your question or request a showing. Your information goes directly to the listing organization.
+                </MudText>
+                @if (submitted)
+                {
+                    <MudAlert Severity="Severity.Success">
+                        Your inquiry was sent. The listing organization can now follow up with you.
+                    </MudAlert>
+                }
+                else
+                {
+                    @if (errors.Count > 0)
+                    {
+                        <MudAlert Severity="Severity.Error" Class="mb-3">@string.Join(" ", errors)</MudAlert>
+                    }
+                    <EditForm Model="form" OnValidSubmit="SubmitAsync">
+                        <DataAnnotationsValidator />
+                        <MudTextField T="string" @bind-Value="form.Name" For="@(() => form.Name)" Label="Name" Required="true" Variant="Variant.Outlined" Class="mb-3" />
+                        <MudTextField T="string" @bind-Value="form.Email" For="@(() => form.Email)" Label="Email" InputType="InputType.Email" Required="true" Variant="Variant.Outlined" Class="mb-3" />
+                        <MudTextField T="string" @bind-Value="form.Phone" For="@(() => form.Phone)" Label="Phone (optional)" InputType="InputType.Telephone" Variant="Variant.Outlined" Class="mb-3" />
+                        <MudSelect T="LeadPreferredContact" @bind-Value="form.PreferredContact" Label="Preferred contact" Variant="Variant.Outlined" Class="mb-3">
+                            <MudSelectItem Value="LeadPreferredContact.Email">Email</MudSelectItem>
+                            <MudSelectItem Value="LeadPreferredContact.Phone">Phone</MudSelectItem>
+                            <MudSelectItem Value="LeadPreferredContact.Either">Either</MudSelectItem>
+                        </MudSelect>
+                        <MudTextField T="string" @bind-Value="form.Message" For="@(() => form.Message)" Label="How can the agent help?" Required="true" Lines="4" MaxLength="@PropertyLead.MaximumMessageLength" Variant="Variant.Outlined" Class="mb-3" />
+                        <MudCheckBox T="bool" @bind-Value="form.EmailConsent" Label="Email me occasional updates about this property. I can unsubscribe at any time." Color="Color.Primary" />
+                        <MudCheckBox T="bool" @bind-Value="form.SmsConsent" Label="Text me about this inquiry. Message and data rates may apply." Color="Color.Primary" />
+                        <InputText @bind-Value="form.Website" aria-hidden="true" tabindex="-1" autocomplete="off" style="position:absolute;left:-10000px;" />
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="busy" Class="mt-3">
+                            @(busy ? "Sending…" : "Send inquiry")
+                        </MudButton>
+                    </EditForm>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-3">
+                        Marketing consent is optional and is recorded separately from your property inquiry.
+                        <MudLink Href="/privacy" Target="_blank">Privacy details</MudLink>
+                    </MudText>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter]
+    public string PublicSlug { get; set; } = string.Empty;
+
+    [SupplyParameterFromQuery(Name = "utm_source")]
+    public string? Source { get; set; }
+
+    [SupplyParameterFromQuery(Name = "utm_medium")]
+    public string? Medium { get; set; }
+
+    [SupplyParameterFromQuery(Name = "utm_campaign")]
+    public string? Campaign { get; set; }
+
+    private PublicListingResult? listing;
+    private InquiryForm form = new();
+    private bool loaded;
+    private bool busy;
+    private bool submitted;
+    private IReadOnlyList<string> errors = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        listing = await Service.GetPublicListingAsync(PublicSlug);
+        loaded = true;
+    }
+
+    private async Task SubmitAsync()
+    {
+        busy = true;
+        errors = [];
+        var result = await Service.SubmitAsync(PublicSlug, new PublicLeadInput(
+            form.Name,
+            form.Email,
+            form.Phone,
+            form.PreferredContact,
+            form.Message,
+            form.EmailConsent,
+            form.SmsConsent,
+            Source,
+            Medium,
+            Campaign,
+            form.Website));
+        submitted = result.Succeeded;
+        errors = result.Errors;
+        busy = false;
+    }
+
+    private static string Display(string value) => string.Concat(value.Select((character, index) =>
+        index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
+
+    private sealed class InquiryForm
+    {
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(PropertyLead.MaximumNameLength)]
+        public string Name { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.EmailAddress, System.ComponentModel.DataAnnotations.StringLength(PropertyLead.MaximumEmailLength)]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.StringLength(PropertyLead.MaximumPhoneLength)]
+        public string? Phone { get; set; }
+
+        public LeadPreferredContact PreferredContact { get; set; } = LeadPreferredContact.Email;
+
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(PropertyLead.MaximumMessageLength, MinimumLength = 5)]
+        public string Message { get; set; } = string.Empty;
+
+        public bool EmailConsent { get; set; }
+
+        public bool SmsConsent { get; set; }
+
+        public string? Website { get; set; }
+    }
+}

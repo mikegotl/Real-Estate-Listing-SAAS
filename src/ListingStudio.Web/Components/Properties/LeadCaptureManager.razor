@@ -1,0 +1,141 @@
+@inherits OwningComponentBase<ILeadGenerationService>
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<MudPaper Class="pa-6 mt-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Lead destination</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Publish a branded inquiry page and use its tracked links in your campaign posts.
+            </MudText>
+        </div>
+        @if (settings?.IsPublished == true)
+        {
+            <MudChip T="string" Color="Color.Success" Variant="Variant.Filled">Published</MudChip>
+        }
+        else
+        {
+            <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">Private</MudChip>
+        }
+    </MudStack>
+
+    @if (!loaded)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">@error</MudAlert>
+        }
+
+        <MudTextField T="string" @bind-Value="headline" Label="Landing-page headline (optional)"
+                      Placeholder="Tour this home and request more information"
+                      MaxLength="@LeadCapturePage.MaximumHeadlineLength" Counter="@LeadCapturePage.MaximumHeadlineLength"
+                      Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)" />
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-3">
+            <MudSwitch T="bool" @bind-Value="published" Color="Color.Primary"
+                       Disabled="@(busy || IsReadOnly)" Label="Accept inquiries on the public listing page" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || IsReadOnly)" OnClick="SaveAsync">
+                Save lead page
+            </MudButton>
+        </MudStack>
+
+        @if (settings?.IsPublished == true)
+        {
+            <MudDivider Class="my-5" />
+            <MudText Typo="Typo.subtitle1">Tracked campaign links</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Use the matching link in each post so Listing Studio can attribute every inquiry.
+            </MudText>
+            <MudGrid Spacing="2">
+                @foreach (var channel in Channels)
+                {
+                    <MudItem xs="12" md="6">
+                        <MudPaper Outlined="true" Class="pa-3">
+                            <MudText Typo="Typo.subtitle2">@channel.Label</MudText>
+                            <a href="@TrackedUrl(channel.Source)" target="_blank" rel="noopener noreferrer">@TrackedUrl(channel.Source)</a>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mt-4">
+                <img src="@QrUrl" width="132" height="132" alt="QR code for the public property inquiry page" />
+                <div>
+                    <MudText Typo="Typo.subtitle2">Printable QR code</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Use this on flyers and open-house materials.</MudText>
+                    <MudButton Href="@QrUrl" Target="_blank" Variant="Variant.Text" Color="Color.Primary">Open QR code</MudButton>
+                </div>
+            </MudStack>
+        }
+    }
+</MudPaper>
+
+@code {
+    [Parameter]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private static readonly (string Label, string Source)[] Channels =
+    [
+        ("Facebook", "facebook"),
+        ("Instagram", "instagram"),
+        ("TikTok", "tiktok"),
+        ("YouTube", "youtube"),
+    ];
+
+    private LeadCaptureSettings? settings;
+    private string? headline;
+    private bool published;
+    private bool loaded;
+    private bool busy;
+    private string? error;
+
+    private string PublicPath => settings is null ? string.Empty : $"/listing/{settings.PublicSlug}";
+
+    private string QrUrl => settings is null
+        ? string.Empty
+        : $"/public/listings/{settings.PublicSlug}/qr?source=qr";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        settings = await Service.GetCaptureSettingsAsync(userId, PropertyId);
+        headline = settings?.Headline;
+        published = settings?.IsPublished ?? false;
+        loaded = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            settings = await Service.SaveCaptureSettingsAsync(userId, PropertyId, headline, published);
+            if (settings is null)
+            {
+                error = "The property is unavailable or archived.";
+            }
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private string TrackedUrl(string source)
+    {
+        var path = $"{PublicPath}?utm_source={Uri.EscapeDataString(source)}&utm_medium=social&utm_campaign=property";
+        return Navigation.ToAbsoluteUri(path).AbsoluteUri;
+    }
+}

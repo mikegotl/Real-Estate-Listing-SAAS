@@ -26,7 +26,7 @@ public sealed class UserNotificationService(
                 notification.Outcome,
                 notification.Title,
                 notification.Message,
-                UserNotificationItem.LinkFor(notification.PropertyId, notification.Tab),
+                UserNotificationItem.LinkFor(notification.PropertyId, notification.Tab, notification.Kind),
                 notification.CreatedAtUtc,
                 notification.IsRead))
             .ToArray();
