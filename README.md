@@ -229,6 +229,12 @@ no estimate has been configured, and changes affect only future calls. Update th
 the typical request shape changes. Existing Application Insights/OpenTelemetry remains the source for correlated
 infrastructure diagnostics; the in-product dashboard deliberately does not query or display raw traces.
 
+A platform administrator can use **Reset metrics** on `/admin` after changing cost assumptions or beginning a new
+reporting period. Resetting creates a new reporting baseline: dashboard totals include only activity at or after that
+time, while operational history, customer data, campaign records, billing data, and the append-only audit log remain
+untouched. Each reset is itself recorded with a one-way administrator reference. New traffic and provider calls can
+therefore appear immediately after a reset.
+
 Operational records never include credentials, full URLs, query strings, IP addresses, user agents, prompts,
 provider payloads, property IDs, organization IDs, emails, or customer media. Active users are derived from the
 account's latest successful sign-in timestamp. This operational collection is for security, reliability, and cost

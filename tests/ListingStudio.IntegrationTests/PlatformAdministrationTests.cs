@@ -119,6 +119,75 @@ public sealed class PlatformAdministrationTests(PostgreSqlWebApplicationFixture 
         await Assert.ThrowsAsync<InvalidOperationException>(() => dbContext.SaveChangesAsync());
     }
 
+    [Fact]
+    public async Task MetricsResetCreatesAnAuditedBaselineWithoutDeletingHistory()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var resetService = scope.ServiceProvider.GetRequiredService<IPlatformAdminMetricsResetService>();
+        var dashboardService = scope.ServiceProvider.GetRequiredService<IPlatformAdminDashboardService>();
+        var now = fixture.Factory.TimeProvider.GetUtcNow();
+
+        dbContext.OperationalEvents.Add(OperationalEvent.Create(
+            "request",
+            "legacy-metrics-route",
+            "2xx",
+            now.AddMinutes(-10)));
+        dbContext.AiUsageEvents.Add(AiUsageEvent.Create(
+            "legacy-provider",
+            "legacy-model",
+            "legacy-operation",
+            true,
+            100,
+            42m,
+            null,
+            now.AddMinutes(-10)));
+        await dbContext.SaveChangesAsync();
+
+        var resetAtUtc = await resetService.ResetAsync("metrics-reset-test-admin");
+        dbContext.OperationalEvents.Add(OperationalEvent.Create(
+            "request",
+            "current-metrics-route",
+            "2xx",
+            resetAtUtc.AddMinutes(1)));
+        dbContext.AiUsageEvents.Add(AiUsageEvent.Create(
+            "current-provider",
+            "current-model",
+            "current-operation",
+            true,
+            50,
+            0.25m,
+            null,
+            resetAtUtc.AddMinutes(1)));
+        await dbContext.SaveChangesAsync();
+
+        var dashboard = await dashboardService.GetAsync(new AdminDateRange(
+            now.AddDays(-1),
+            resetAtUtc.AddMinutes(2)));
+
+        Assert.Equal(resetAtUtc, dashboard.MetricsResetAtUtc);
+        Assert.DoesNotContain(dashboard.Traffic, row => row.Primary == "legacy-metrics-route");
+        Assert.Contains(dashboard.Traffic, row => row.Primary == "current-metrics-route");
+        Assert.DoesNotContain(dashboard.AiUsage, row => row.Primary == "legacy-provider");
+        Assert.Contains(dashboard.AiUsage, row =>
+            row.Primary == "current-provider" && row.EstimatedCostUsd == 0.25m);
+        Assert.True(await dbContext.OperationalEvents.AnyAsync(
+            item => item.Category == "legacy-metrics-route"));
+        Assert.True(await dbContext.AiUsageEvents.AnyAsync(
+            item => item.Provider == "legacy-provider"));
+
+        var auditEvent = await dbContext.PlatformAdminAuditEvents.SingleAsync(item =>
+            item.Action == "platform-metrics.reset" && item.OccurredAtUtc == resetAtUtc);
+        Assert.Equal("platform-admin", auditEvent.ActorType);
+        Assert.Equal("succeeded", auditEvent.Outcome);
+        Assert.Equal(64, auditEvent.TargetReference.Length);
+        Assert.DoesNotContain("metrics-reset-test-admin", auditEvent.TargetReference, StringComparison.Ordinal);
+
+        var resetRecord = await dbContext.PlatformMetricsResets.SingleAsync(item => item.ResetAtUtc == resetAtUtc);
+        dbContext.PlatformMetricsResets.Remove(resetRecord);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => dbContext.SaveChangesAsync());
+    }
+
     private static PropertyInput ValidProperty => new(
         "100 Tenant Boundary Lane",
         null,

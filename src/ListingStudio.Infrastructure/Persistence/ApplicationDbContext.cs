@@ -62,6 +62,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<AiUsageEvent> AiUsageEvents => Set<AiUsageEvent>();
 
+    public DbSet<PlatformMetricsReset> PlatformMetricsResets => Set<PlatformMetricsReset>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -88,6 +90,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
             throw new InvalidOperationException("Platform administrator audit events are append-only.");
+        }
+
+        if (ChangeTracker.Entries<PlatformMetricsReset>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Platform metric resets are append-only.");
         }
     }
 }

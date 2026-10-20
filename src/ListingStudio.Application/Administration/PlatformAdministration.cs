@@ -41,6 +41,7 @@ public sealed record AdminAuditRow(
 
 public sealed record PlatformAdminDashboard(
     AdminDateRange Range,
+    DateTimeOffset? MetricsResetAtUtc,
     long RequestCount,
     long SignInCount,
     long ActiveUserCount,
@@ -65,6 +66,13 @@ public interface IPlatformAdminDashboardService
     Task<IReadOnlyList<AdminAuditRow>> GetAuditEventsAsync(
         AdminDateRange range,
         int maximumResults = 200,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IPlatformAdminMetricsResetService
+{
+    Task<DateTimeOffset> ResetAsync(
+        string actorUserId,
         CancellationToken cancellationToken = default);
 }
 

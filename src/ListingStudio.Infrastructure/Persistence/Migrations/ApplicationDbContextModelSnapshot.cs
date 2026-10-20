@@ -134,6 +134,22 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("PlatformAdminAuditEvents", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Administration.PlatformMetricsReset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ResetAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ResetAtUtc");
+
+                    b.ToTable("PlatformMetricsResets", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Billing.BillingWebhookReceipt", b =>
                 {
                     b.Property<string>("EventId")

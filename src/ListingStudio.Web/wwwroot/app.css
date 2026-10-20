@@ -372,6 +372,7 @@ h1:focus { outline: none; }
 .admin-range { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .admin-range-copy { color: var(--ls-muted); font-size: .82rem; margin: 0 0 16px; }
 .admin-metrics { display: grid; gap: 14px; grid-template-columns: repeat(3, 1fr); margin: 0 0 20px; }
+.admin-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
 .admin-metrics > div { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 16px; padding: 18px 20px; }
 .admin-metrics dt { color: var(--ls-subtle); font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .admin-metrics dd { font-family: var(--ls-font-display); font-size: 1.8rem; font-weight: 650; margin: 3px 0; }

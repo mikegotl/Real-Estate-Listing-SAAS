@@ -144,6 +144,7 @@ public static class ServiceCollectionExtensions
             PlatformAdministration.Policy,
             policy => policy.RequireAuthenticatedUser().RequireRole(PlatformAdministration.Role)));
         services.AddScoped<IPlatformAdminDashboardService, PlatformAdminDashboardService>();
+        services.AddScoped<IPlatformAdminMetricsResetService, PlatformMetricsResetService>();
         services.AddScoped<PlatformAdminRoleBootstrapper>();
         services.AddSingleton<OperationalEventRecorder>();
         services.AddSingleton<IOperationalEventRecorder>(provider =>

@@ -151,6 +151,11 @@ updates or deletes of platform-admin audit rows. The dashboard offers bounded da
 optional behavioral product analytics remain out of scope until consent, retention, deletion, and regional privacy
 requirements are approved.
 
+Dashboard resets are non-destructive, append-only reporting baselines. The latest baseline is applied to telemetry,
+AI usage, active-user and campaign queries without deleting those source records. Reset rows are protected from
+updates and deletion in both the DbContext and PostgreSQL, and every reset adds a pseudonymous platform-admin audit
+event.
+
 ## Production deployment slice
 
 Web and Worker publish as separate non-root .NET 10 containers with FFmpeg/ffprobe installed from the runtime distribution. The Worker hosts an internal HTTP health surface alongside its background services. Both hosts expose process liveness and dependency readiness; readiness verifies PostgreSQL connectivity and executes the configured FFmpeg binary with a bounded timeout. Production console logs use structured JSON, while the Azure Monitor OpenTelemetry distro exports correlated telemetry to workspace-backed Application Insights when its runtime connection string is present.
