@@ -229,13 +229,14 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
         Assert.Equal(CampaignOutputSelectionPolicy.Recommended, completed.RequestedOutputs);
-        Assert.Equal(4, completed.Deliverables.Count);
+        Assert.Equal(5, completed.Deliverables.Count);
         Assert.Collection(
             completed.Deliverables.OrderBy(item => item.Kind),
             item => AssertPlatformCut(item, CampaignOutputKind.TikTok, 30, "9:16"),
             item => AssertPlatformCut(item, CampaignOutputKind.InstagramReel, 30, "9:16"),
             item => AssertPlatformCut(item, CampaignOutputKind.YouTubeShort, 30, "9:16"),
-            item => AssertPlatformCut(item, CampaignOutputKind.YouTubeTour, 60, "16:9"));
+            item => AssertPlatformCut(item, CampaignOutputKind.YouTubeTour, 60, "16:9"),
+            item => AssertPlatformCut(item, CampaignOutputKind.FacebookFeed, 30, "16:9"));
     }
 
     [Fact]
