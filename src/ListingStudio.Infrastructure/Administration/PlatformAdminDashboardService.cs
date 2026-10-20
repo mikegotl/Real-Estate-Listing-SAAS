@@ -13,12 +13,19 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
         CancellationToken cancellationToken = default)
     {
         range.Validate();
+        var resetAtUtc = await dbContext.PlatformMetricsResets.AsNoTracking()
+            .OrderByDescending(item => item.ResetAtUtc)
+            .Select(item => (DateTimeOffset?)item.ResetAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        var metricsFromUtc = resetAtUtc is not null && resetAtUtc > range.FromUtc
+            ? resetAtUtc.Value
+            : range.FromUtc;
         var operational = dbContext.OperationalEvents.AsNoTracking()
-            .Where(item => item.OccurredAtUtc >= range.FromUtc && item.OccurredAtUtc < range.ToUtc);
+            .Where(item => item.OccurredAtUtc >= metricsFromUtc && item.OccurredAtUtc < range.ToUtc);
         var ai = dbContext.AiUsageEvents.AsNoTracking()
-            .Where(item => item.OccurredAtUtc >= range.FromUtc && item.OccurredAtUtc < range.ToUtc);
+            .Where(item => item.OccurredAtUtc >= metricsFromUtc && item.OccurredAtUtc < range.ToUtc);
         var campaigns = dbContext.CampaignGenerationJobs.AsNoTracking()
-            .Where(item => item.CreatedAtUtc >= range.FromUtc && item.CreatedAtUtc < range.ToUtc);
+            .Where(item => item.CreatedAtUtc >= metricsFromUtc && item.CreatedAtUtc < range.ToUtc);
 
         var trafficGroups = await operational.Where(item => item.Kind == "request")
             .GroupBy(item => new { item.Category, item.Outcome })
@@ -84,7 +91,7 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
             item => item.Kind == "sign-in" && item.Outcome == "succeeded",
             cancellationToken);
         var activeUsers = await dbContext.Users.AsNoTracking().LongCountAsync(
-            item => item.LastSuccessfulSignInAtUtc >= range.FromUtc
+            item => item.LastSuccessfulSignInAtUtc >= metricsFromUtc
                 && item.LastSuccessfulSignInAtUtc < range.ToUtc,
             cancellationToken);
         var campaignCount = await campaigns.LongCountAsync(cancellationToken);
@@ -98,6 +105,7 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
 
         return new PlatformAdminDashboard(
             range,
+            resetAtUtc,
             requestCount,
             signInCount,
             activeUsers,

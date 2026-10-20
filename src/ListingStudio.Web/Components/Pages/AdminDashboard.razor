@@ -1,11 +1,18 @@
 @page "/admin"
 @attribute [Authorize(Policy = PlatformAdministration.Policy)]
 @attribute [StreamRendering]
+@rendermode InteractiveServer
 @inject IPlatformAdminDashboardService DashboardService
+@inject IPlatformAdminMetricsResetService MetricsResetService
 @inject HealthCheckService HealthChecks
 @inject TimeProvider TimeProvider
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>Platform administration</PageTitle>
+
+<PropertyPageProviders />
 
 <section class="admin-hero">
     <div>
@@ -13,7 +20,13 @@
         <MudText Typo="Typo.h2" HtmlTag="h1">System overview</MudText>
         <MudText Typo="Typo.body1">Aggregate operational signals only. Customer content and secrets are never shown here.</MudText>
     </div>
-    <MudButton Href="/admin/audit" Variant="Variant.Outlined" Color="Color.Inherit">Audit log</MudButton>
+    <div class="admin-actions">
+        <MudButton Href="/admin/audit" Variant="Variant.Outlined" Color="Color.Inherit">Audit log</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Disabled="resetting"
+                   StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetMetricsAsync">
+            @(resetting ? "Resetting…" : "Reset metrics")
+        </MudButton>
+    </div>
 </section>
 
 <nav class="admin-range" aria-label="Dashboard date range">
@@ -31,6 +44,14 @@
 else
 {
     <p class="admin-range-copy">@dashboard.Range.FromUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt") – @dashboard.Range.ToUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</p>
+    @if (dashboard.MetricsResetAtUtc is not null)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            Dashboard totals include activity since the most recent reset on
+            @dashboard.MetricsResetAtUtc.Value.ToLocalTime().ToString("MMM d, yyyy h:mm tt").
+            Historical records remain safely stored.
+        </MudAlert>
+    }
     <dl class="admin-metrics">
         <div><dt>Requests</dt><dd>@dashboard.RequestCount.ToString("N0")</dd></div>
         <div><dt>Active users</dt><dd>@dashboard.ActiveUserCount.ToString("N0")</dd></div>
@@ -69,6 +90,7 @@ else
     private static readonly int[] RangeOptions = [1, 7, 30, 90];
     private PlatformAdminDashboard? dashboard;
     private HealthReport? health;
+    private bool resetting;
 
     [SupplyParameterFromQuery]
     public int Days { get; set; } = 7;
@@ -76,7 +98,38 @@ else
     protected override async Task OnParametersSetAsync()
     {
         Days = RangeOptions.Contains(Days) ? Days : 7;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
         dashboard = await DashboardService.GetAsync(AdminDateRange.LastDays(Days, TimeProvider));
         health = await HealthChecks.CheckHealthAsync();
+    }
+
+    private async Task ResetMetricsAsync()
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Reset all dashboard metrics?",
+            "All dashboard totals will restart from now. Historical telemetry, audit entries, users, properties, campaigns, billing, and media will not be deleted.",
+            yesText: "Reset metrics",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        resetting = true;
+        try
+        {
+            var actorUserId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await MetricsResetService.ResetAsync(actorUserId);
+            await LoadAsync();
+            Snackbar.Add("Dashboard metrics were reset. New activity will appear from this point forward.", Severity.Success);
+        }
+        finally
+        {
+            resetting = false;
+        }
     }
 }
