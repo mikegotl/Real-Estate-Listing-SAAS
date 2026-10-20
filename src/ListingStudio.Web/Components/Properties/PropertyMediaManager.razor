@@ -596,6 +596,9 @@
                         <MudMenuItem Icon="@Icons.Material.Filled.WbSunny" OnClick="@(() => RequestFixAsync(item, PhotoFix.BrightnessAndColor))">
                             Fix brightness and color
                         </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.CropRotate" OnClick="@(() => RequestFixAsync(item, PhotoFix.LevelAndCrop))">
+                            Straighten and auto-crop
+                        </MudMenuItem>
                         @if (photoFixService?.IsClutterRemovalEnabled == true)
                         {
                             <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices" OnClick="@(() => RequestFixAsync(item, PhotoFix.RemoveClutter))">
@@ -618,7 +621,14 @@
     {
         @if (fix is { IsInProgress: false, Status: PropertyPhotoFixStatus.Failed })
         {
-            <span class="storyboard-photo-meta error">Photo fix failed: @fix.Error</span>
+            @if (fix.Kind == PhotoFix.LevelAndCrop)
+            {
+                <span class="storyboard-photo-meta warning">No straightening applied: @fix.Error</span>
+            }
+            else
+            {
+                <span class="storyboard-photo-meta error">Photo fix failed: @fix.Error</span>
+            }
         }
     };
 
@@ -857,11 +867,13 @@
             if (requested)
             {
                 await LoadPhotoFixesAsync(userId);
-                ShowMessage(
-                    fix == PhotoFix.RemoveClutter
-                        ? "Removing clutter with AI. This can take a minute; the original stays saved so you can compare and revert."
-                        : "Fixing brightness and color. The original stays saved so you can compare and revert.",
-                    Severity.Success);
+                var message = fix switch
+                {
+                    PhotoFix.RemoveClutter => "Removing clutter with AI. This can take a minute; the original stays saved so you can compare and revert.",
+                    PhotoFix.LevelAndCrop => "Straightening and safely cropping the photo. This runs locally, and the original stays saved so you can compare and revert.",
+                    _ => "Fixing brightness and color. The original stays saved so you can compare and revert.",
+                };
+                ShowMessage(message, Severity.Success);
             }
         }
         catch (InvalidOperationException exception)

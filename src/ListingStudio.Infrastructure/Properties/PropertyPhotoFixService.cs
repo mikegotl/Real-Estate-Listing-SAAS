@@ -60,7 +60,7 @@ public sealed partial class PropertyPhotoFixService(
         PhotoFix fix,
         CancellationToken cancellationToken = default)
     {
-        if (fix is not (PhotoFix.BrightnessAndColor or PhotoFix.RemoveClutter))
+        if (fix is not (PhotoFix.BrightnessAndColor or PhotoFix.RemoveClutter or PhotoFix.LevelAndCrop))
         {
             throw new ArgumentOutOfRangeException(nameof(fix), "Choose one photo fix.");
         }

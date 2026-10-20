@@ -11,6 +11,9 @@ public enum PhotoFix
 
     /// <summary>An AI image edit that takes out movable clutter and leaves the home itself untouched.</summary>
     RemoveClutter = 2,
+
+    /// <summary>Levels a tilted photo and crops away the empty rotation edges. Runs locally.</summary>
+    LevelAndCrop = 4,
 }
 
 public enum PropertyPhotoFixStatus
@@ -66,7 +69,7 @@ public sealed class PropertyPhotoFix
             throw new ArgumentException("Organization, property, and photo identities are required.");
         }
 
-        if (kind is not (PhotoFix.BrightnessAndColor or PhotoFix.RemoveClutter))
+        if (kind is not (PhotoFix.BrightnessAndColor or PhotoFix.RemoveClutter or PhotoFix.LevelAndCrop))
         {
             throw new ArgumentOutOfRangeException(nameof(kind), "A photo fix request is for exactly one fix.");
         }

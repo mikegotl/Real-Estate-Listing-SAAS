@@ -582,6 +582,9 @@ public sealed class FakePhotoImageCodec : IPhotoImageCodec
     // A clutter remover result that redrew the room: it decodes to a different scene altogether.
     public static readonly byte[] RedrawnPng = [.. Png, 1];
 
+    // A structurally detailed test photo tilted clockwise by about five degrees.
+    public static readonly byte[] TiltedPng = [.. Png, 2];
+
     public static byte[] Jpeg => FakePropertyVideoFrameExtractor.Still;
 
     public Task<PhotoPixels> DecodeAsync(
@@ -600,7 +603,11 @@ public sealed class FakePhotoImageCodec : IPhotoImageCodec
         };
         var pixels = new byte[width * height * 3];
         pixels.AsSpan().Fill(SourceLevel);
-        if (image.AsSpan().SequenceEqual(RedrawnPng))
+        if (image.AsSpan().SequenceEqual(TiltedPng))
+        {
+            FillTiltedGrid(pixels, width, height, 5);
+        }
+        else if (image.AsSpan().SequenceEqual(RedrawnPng))
         {
             for (var pixel = 0; pixel < width * height; pixel++)
             {
@@ -635,6 +642,34 @@ public sealed class FakePhotoImageCodec : IPhotoImageCodec
     {
         var scale = Math.Min(boxWidth / (double)SourceWidth, boxHeight / (double)SourceHeight);
         return (Math.Max(1, (int)Math.Round(SourceWidth * scale)), Math.Max(1, (int)Math.Round(SourceHeight * scale)));
+    }
+
+    private static void FillTiltedGrid(byte[] pixels, int width, int height, double angleDegrees)
+    {
+        pixels.AsSpan().Fill(232);
+        var radians = angleDegrees * Math.PI / 180;
+        var cosine = Math.Cos(radians);
+        var sine = Math.Sin(radians);
+        var centerX = (width - 1) / 2.0;
+        var centerY = (height - 1) / 2.0;
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var offsetX = x - centerX;
+                var offsetY = y - centerY;
+                var gridX = offsetX * cosine + offsetY * sine;
+                var gridY = -offsetX * sine + offsetY * cosine;
+                var distanceX = Math.Abs(gridX - Math.Round(gridX / 72) * 72);
+                var distanceY = Math.Abs(gridY - Math.Round(gridY / 54) * 54);
+                if (distanceX > 1.25 && distanceY > 1.25)
+                {
+                    continue;
+                }
+
+                pixels.AsSpan((y * width + x) * 3, 3).Fill(28);
+            }
+        }
     }
 }
 

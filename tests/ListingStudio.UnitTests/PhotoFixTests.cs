@@ -107,6 +107,89 @@ public sealed class PhotoToneNormalizerTests
     }
 }
 
+public sealed class PhotoStraightenerTests
+{
+    [Theory]
+    [InlineData(4.5)]
+    [InlineData(-5.0)]
+    public void LevelsStructuralLinesAndCropsAwayRotationEdges(double tiltDegrees)
+    {
+        var source = TiltedGrid(480, 320, tiltDegrees);
+
+        var result = PhotoStraightener.TryStraightenAndCrop(source);
+
+        Assert.NotNull(result);
+        Assert.InRange(result.TiltDegrees, tiltDegrees - 0.6, tiltDegrees + 0.6);
+        Assert.True(result.Photo.Width < source.Width);
+        Assert.True(result.Photo.Height < source.Height);
+        var remaining = PhotoStraightener.TryStraightenAndCrop(result.Photo);
+        Assert.True(
+            remaining is null || Math.Abs(remaining.TiltDegrees) < 0.75,
+            $"Expected a level result, but measured {remaining?.TiltDegrees:F2} degrees.");
+    }
+
+    [Fact]
+    public void LeavesAnAlreadyLevelPhotoAlone()
+    {
+        Assert.Null(PhotoStraightener.TryStraightenAndCrop(TiltedGrid(480, 320, 0)));
+    }
+
+    [Fact]
+    public void RejectsAFlatPhotoWithoutEnoughStructure()
+    {
+        Assert.Null(PhotoStraightener.TryStraightenAndCrop(
+            new PhotoPixels(320, 240, Enumerable.Repeat((byte)128, 320 * 240 * 3).ToArray())));
+    }
+
+    [Fact]
+    public void KeepsAUsableCropForAnExtraWidePhoto()
+    {
+        var result = PhotoStraightener.TryStraightenAndCrop(TiltedGrid(1_000, 120, 5));
+
+        Assert.NotNull(result);
+        Assert.True(result.Photo.Width > 500);
+        Assert.True(result.Photo.Height > 40);
+    }
+
+    private static PhotoPixels TiltedGrid(int width, int height, double angleDegrees)
+    {
+        var pixels = new byte[width * height * 3];
+        pixels.AsSpan().Fill(232);
+        var radians = angleDegrees * Math.PI / 180;
+        var cosine = Math.Cos(radians);
+        var sine = Math.Sin(radians);
+        var centerX = (width - 1) / 2.0;
+        var centerY = (height - 1) / 2.0;
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var offsetX = x - centerX;
+                var offsetY = y - centerY;
+                var gridX = offsetX * cosine + offsetY * sine;
+                var gridY = -offsetX * sine + offsetY * cosine;
+                if (DistanceToGridLine(gridX, 72) > 1.25 && DistanceToGridLine(gridY, 54) > 1.25)
+                {
+                    continue;
+                }
+
+                var index = (y * width + x) * 3;
+                pixels[index] = 28;
+                pixels[index + 1] = 28;
+                pixels[index + 2] = 28;
+            }
+        }
+
+        return new PhotoPixels(width, height, pixels);
+    }
+
+    private static double DistanceToGridLine(double value, int spacing)
+    {
+        var wrapped = value - Math.Round(value / spacing) * spacing;
+        return Math.Abs(wrapped);
+    }
+}
+
 public sealed class PhotoEditCanvasTests
 {
     [Theory]
@@ -159,7 +242,8 @@ public sealed class PropertyMediaPhotoFixTests
         Assert.Null(media.GetAnalysis());
 
         Assert.Equal("fixed-1.jpg", media.ApplyFix(PhotoFix.RemoveClutter, "fixed-2.jpg", "image/jpeg", 800, 1_365, 1_024, now));
-        Assert.Equal(PhotoFix.BrightnessAndColor | PhotoFix.RemoveClutter, media.AppliedFixes);
+        Assert.Equal("fixed-2.jpg", media.ApplyFix(PhotoFix.LevelAndCrop, "fixed-3.jpg", "image/jpeg", 700, 1_300, 980, now));
+        Assert.Equal(PhotoFix.BrightnessAndColor | PhotoFix.RemoveClutter | PhotoFix.LevelAndCrop, media.AppliedFixes);
         Assert.Equal("upload.png", media.OriginalBlobPath);
     }
 
