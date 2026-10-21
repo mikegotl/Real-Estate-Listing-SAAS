@@ -53,7 +53,13 @@ public sealed class OpenAIVoiceProvider(
             var startMs = (int)(pcm.Length * 1_000L / PcmByteRate);
             foreach (var chunk in SplitToFit(texts[index]))
             {
-                var segmentPcm = await SynthesizeAsync(openAI, voice, chunk, pcm.Length, cancellationToken);
+                var segmentPcm = await SynthesizeAsync(
+                    openAI,
+                    voice,
+                    request,
+                    chunk,
+                    pcm.Length,
+                    cancellationToken);
                 if (segmentPcm.Length % PcmBlockAlign != 0)
                 {
                     throw new InvalidDataException("OpenAI returned malformed PCM narration audio.");
@@ -79,6 +85,7 @@ public sealed class OpenAIVoiceProvider(
     private async Task<byte[]> SynthesizeAsync(
         OpenAIOptions openAI,
         VoiceOptions voice,
+        VoiceGenerationRequest request,
         string text,
         long bytesSoFar,
         CancellationToken cancellationToken)
@@ -90,7 +97,7 @@ public sealed class OpenAIVoiceProvider(
                 model = voice.OpenAIModel,
                 voice = voice.OpenAIVoice,
                 input = text,
-                instructions = voice.OpenAIInstructions,
+                instructions = BuildInstructions(voice.OpenAIInstructions, request),
                 response_format = "pcm",
             }),
         };
@@ -113,6 +120,23 @@ public sealed class OpenAIVoiceProvider(
         }
 
         return await ReadLimitedAsync(response, MaximumAudioBytes - bytesSoFar, cancellationToken);
+    }
+
+    private static string BuildInstructions(string configuredInstructions, VoiceGenerationRequest request)
+    {
+        if (string.Equals(request.SpokenLanguageCode, "en", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(request.AccentInstructions))
+        {
+            return configuredInstructions;
+        }
+
+        var language = string.IsNullOrWhiteSpace(request.SpokenLanguageCode)
+            ? "the language of the supplied text"
+            : request.SpokenLanguageCode.Trim();
+        var accent = string.IsNullOrWhiteSpace(request.AccentInstructions)
+            ? "Use clear, natural pronunciation."
+            : request.AccentInstructions.Trim();
+        return $"{configuredInstructions.Trim()} Speak only in {language}. {accent}";
     }
 
     private static List<string> ValidateSegments(VoiceGenerationRequest request)

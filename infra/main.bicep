@@ -34,6 +34,9 @@ param openAiVideoDirectionEstimatedCostUsd string = '0'
 @description('Estimated USD cost for one OpenAI speech request.')
 param openAiSpeechEstimatedCostUsd string = '0'
 
+@description('Estimated USD cost for one OpenAI campaign localization request.')
+param openAiLocalizationEstimatedCostUsd string = '0'
+
 @description('Estimated USD cost for one request to the configured voice provider.')
 param voiceEstimatedCostUsd string = '0'
 
@@ -571,6 +574,10 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
   {
     name: 'OpenAI__SpeechEstimatedCostUsd'
     value: openAiSpeechEstimatedCostUsd
+  }
+  {
+    name: 'OpenAI__LocalizationEstimatedCostUsd'
+    value: openAiLocalizationEstimatedCostUsd
   }
   {
     name: 'Voice__EstimatedCostUsd'

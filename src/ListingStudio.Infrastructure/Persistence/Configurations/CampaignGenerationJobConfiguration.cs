@@ -36,6 +36,36 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
             .HasMaxLength(32)
             .HasDefaultValue(CampaignCaptionStyle.Classic)
             .IsRequired();
+        builder.Property(job => job.NarrationRegion)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignNarrationRegion.UnitedStates)
+            .HasSentinel(CampaignNarrationRegion.UnitedStates)
+            .IsRequired();
+        builder.Property(job => job.SpokenLanguage)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignLanguage.English)
+            .HasSentinel(CampaignLanguage.English)
+            .IsRequired();
+        builder.Property(job => job.CaptionLanguage)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignLanguage.English)
+            .HasSentinel(CampaignLanguage.English)
+            .IsRequired();
+        builder.Property(job => job.VoiceAccent)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignVoiceAccent.American)
+            .HasSentinel(CampaignVoiceAccent.American)
+            .IsRequired();
+        builder.Property(job => job.LocalizeAgentCard)
+            .HasDefaultValue(true)
+            .HasSentinel(true)
+            .IsRequired();
+        builder.Property(job => job.LocalizedCopyJson).HasColumnType("text");
+        builder.Property(job => job.LongFormLocalizedCopyJson).HasColumnType("text");
         builder.HasOne<AgentPortrait>()
             .WithMany()
             .HasForeignKey(job => new { job.AgentPortraitId, job.OrganizationId })

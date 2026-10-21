@@ -27,6 +27,67 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z+VAAAAAASUVORK5CYII=");
 
     [Fact]
+    public async Task SelectedLanguagesAndAccentReachNarrationAndCaptionOutputs()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("localized-campaign");
+        await UploadAsync(owner);
+        var callsBefore = fixture.Factory.CampaignLocalizationService.CallCount;
+        fixture.Factory.CampaignLocalizationService.Enqueue(request => new CampaignLocalizedCopy(
+            request.NarrationSegments.Select(segment =>
+                new CampaignLocalizedSegment(segment.Id, $"Narración en español 123: {segment.Text}"))
+                .ToArray(),
+            request.NarrationSegments.Select(segment =>
+                new CampaignLocalizedSegment(segment.Id, $"Sous-titre français 123: {segment.Text}"))
+                .ToArray()));
+        QueueSuccessfulProviders();
+        var preferences = new CampaignNarrationPreferences(
+            CampaignNarrationRegion.Mexico,
+            CampaignLanguage.Spanish,
+            CampaignLanguage.French,
+            CampaignVoiceAccent.LatinAmerican,
+            LocalizeAgentCard: true);
+        CampaignGenerationResult queued;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            queued = (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.YouTubeTour,
+                CampaignCreativeOptions.SocialDefault,
+                preferences))!;
+        }
+
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        Assert.Equal(preferences, completed.NarrationPreferences);
+        Assert.Equal(callsBefore + 1, fixture.Factory.CampaignLocalizationService.CallCount);
+        var voiceRequest = Assert.IsType<VoiceGenerationRequest>(fixture.Factory.VoiceProvider.LastRequest);
+        Assert.Equal("es", voiceRequest.SpokenLanguageCode);
+        Assert.Contains("Latin American", voiceRequest.AccentInstructions, StringComparison.Ordinal);
+        Assert.Contains("Mexico", voiceRequest.AccentInstructions, StringComparison.Ordinal);
+        Assert.StartsWith("Narración en español 123", Assert.Single(voiceRequest.Segments).Text, StringComparison.Ordinal);
+
+        await using var verificationScope = fixture.Factory.Services.CreateAsyncScope();
+        var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await dbContext.CampaignGenerationJobs.AsNoTracking()
+            .SingleAsync(candidate => candidate.Id == queued.Id);
+        Assert.NotNull(persisted.LocalizedCopyJson);
+        var deliverable = await dbContext.CampaignDeliverables.AsNoTracking()
+            .SingleAsync(candidate => candidate.CampaignGenerationJobId == queued.Id);
+        var specification = JsonSerializer.Deserialize<VideoProductionSpecification>(
+            deliverable.SpecificationJson,
+            VideoSpecificationJson.Options)!;
+        Assert.StartsWith(
+            "Narración en español 123",
+            Assert.Single(specification.Audio.NarrationSegments).Text,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            specification.Scenes.SelectMany(scene => scene.TextOverlays),
+            overlay => overlay.StyleToken == TextOverlayStyle.PopCaption
+                && overlay.Text.Contains("SOUS-TITRE FRANÇAIS 123", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AgentPortraitUploadIsPrivateAndTenantScoped()
     {
         var owner = await CreateOwnerAndPropertyAsync("portrait-owner");

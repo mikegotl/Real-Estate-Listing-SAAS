@@ -22,6 +22,14 @@ public interface ICampaignGenerationService
         CampaignCreativeOptions creativeOptions,
         CancellationToken cancellationToken = default);
 
+    Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        CancellationToken cancellationToken = default);
+
     Task<CampaignGenerationResult?> GetLatestAsync(
         string userId,
         Guid propertyId,
@@ -54,6 +62,7 @@ public sealed record CampaignGenerationResult(
     Guid PropertyId,
     CampaignOutputSelection RequestedOutputs,
     CampaignCreativeOptions CreativeOptions,
+    CampaignNarrationPreferences NarrationPreferences,
     CampaignGenerationStatus Status,
     CampaignGenerationStage CurrentStage,
     int ProgressPercent,

@@ -19,7 +19,7 @@ public sealed class CampaignGenerationService(
     ICampaignBillingGate campaignBillingGate,
     IWalkthroughTransitionService walkthroughTransitionService) : ICampaignGenerationService
 {
-    private const string WorkflowVersion = "campaign-creative-controls-v8";
+    private const string WorkflowVersion = "campaign-localization-v9";
 
     public Task<CampaignGenerationResult?> EnqueueAsync(
         string userId,
@@ -37,6 +37,7 @@ public sealed class CampaignGenerationService(
             propertyId,
             requestedOutputs,
             CampaignCreativeOptions.Legacy,
+            CampaignNarrationPreferences.Default,
             cancellationToken);
 
     public async Task<CampaignGenerationResult?> EnqueueAsync(
@@ -44,11 +45,28 @@ public sealed class CampaignGenerationService(
         Guid propertyId,
         CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions,
+        CancellationToken cancellationToken = default) =>
+        await EnqueueAsync(
+            userId,
+            propertyId,
+            requestedOutputs,
+            creativeOptions,
+            CampaignNarrationPreferences.Default,
+            cancellationToken);
+
+    public async Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
         CancellationToken cancellationToken = default)
     {
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
         ArgumentNullException.ThrowIfNull(creativeOptions);
         creativeOptions.Validate();
+        ArgumentNullException.ThrowIfNull(narrationPreferences);
+        narrationPreferences.Validate();
         if (creativeOptions.Elements.HasFlag(CampaignVideoElement.KitchenIslandOrbit)
             && !walkthroughTransitionService.IsEnabled)
         {
@@ -195,6 +213,7 @@ public sealed class CampaignGenerationService(
             walkthroughVideos,
             requestedOutputs,
             creativeOptions,
+            narrationPreferences,
             portraitUpdatedAtUtc);
         var existing = await dbContext.CampaignGenerationJobs
             .Include(candidate => candidate.Deliverables)
@@ -219,7 +238,8 @@ public sealed class CampaignGenerationService(
             fingerprint,
             requestedOutputs,
             timeProvider.GetUtcNow(),
-            creativeOptions);
+            creativeOptions,
+            narrationPreferences);
         dbContext.CampaignGenerationJobs.Add(job);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -361,6 +381,7 @@ public sealed class CampaignGenerationService(
         object walkthroughVideos,
         CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
         DateTimeOffset? portraitUpdatedAtUtc)
     {
         var source = JsonSerializer.Serialize(new
@@ -373,6 +394,7 @@ public sealed class CampaignGenerationService(
             walkthroughVideos,
             requestedOutputs,
             creativeOptions,
+            narrationPreferences,
             portraitUpdatedAtUtc,
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
@@ -410,6 +432,12 @@ public sealed class CampaignGenerationService(
                 job.Soundtrack,
                 job.CaptionStyle,
                 job.AgentPortraitId),
+            new CampaignNarrationPreferences(
+                job.NarrationRegion,
+                job.SpokenLanguage,
+                job.CaptionLanguage,
+                job.VoiceAccent,
+                job.LocalizeAgentCard),
             job.Status,
             job.CurrentStage,
             progress,

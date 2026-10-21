@@ -24,6 +24,7 @@ public sealed partial class CampaignGenerationProcessor(
     IPropertyStoryService storyService,
     IVideoProductionPlanService productionPlanService,
     IVideoNarrationService narrationService,
+    ICampaignLocalizationService localizationService,
     ICampaignDerivativeGenerator derivativeGenerator,
     IGeneratedVideoClipService generatedVideoClipService,
     IVideoRenderer videoRenderer,
@@ -321,7 +322,21 @@ public sealed partial class CampaignGenerationProcessor(
             throw new InvalidOperationException("The master plan is missing.");
         }
 
-        var narration = await narrationService.GenerateAsync(job.RequestedByUserId, planId, cancellationToken)
+        var plan = await dbContext.VideoProductionPlans.AsNoTracking().SingleAsync(
+            candidate => candidate.Id == planId && candidate.OrganizationId == job.OrganizationId,
+            cancellationToken);
+        var specification = JsonSerializer.Deserialize<VideoProductionSpecification>(
+            plan.SpecificationJson,
+            SerializerOptions) ?? throw new InvalidDataException("The stored master specification is invalid.");
+        var localized = ApplyAgentCardPreference(
+            job,
+            specification,
+            await GetOrCreateLocalizationAsync(job, specification, longForm: false, cancellationToken));
+        var narration = await narrationService.GenerateAsync(
+            job.RequestedByUserId,
+            planId,
+            NarrationOptions(job, specification, localized),
+            cancellationToken)
             ?? throw new InvalidOperationException("Narration could not be created.");
         dbContext.ChangeTracker.Clear();
         job = await dbContext.CampaignGenerationJobs.SingleAsync(candidate => candidate.Id == jobId, cancellationToken);
@@ -360,6 +375,12 @@ public sealed partial class CampaignGenerationProcessor(
             plan.SpecificationJson,
             SerializerOptions)
             ?? throw new InvalidDataException("The stored master specification is invalid.");
+        var localized = ApplyAgentCardPreference(
+            job,
+            specification,
+            await GetOrCreateLocalizationAsync(job, specification, longForm: false, cancellationToken));
+        specification = ApplySpokenLocalization(specification, localized);
+        var captionText = localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
         var media = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.PropertyId == job.PropertyId
                 && candidate.OrganizationId == job.OrganizationId
@@ -389,6 +410,7 @@ public sealed partial class CampaignGenerationProcessor(
                 cancellationToken);
         VideoProductionPlanResult? longFormPlan = null;
         VideoNarrationResult? longFormNarration = null;
+        CampaignLocalizedCopy? longFormLocalized = null;
         var needsLongForm = job.RequestedOutputs == CampaignOutputSelection.LegacyStandard
             || job.RequestedOutputs.HasFlag(CampaignOutputSelection.FullNarratedTour);
         if (needsLongForm
@@ -403,11 +425,22 @@ public sealed partial class CampaignGenerationProcessor(
                 VideoAspectRatio.Landscape16By9,
                 cancellationToken)
                 ?? throw new InvalidOperationException("The long-form video plan could not be created.");
+            longFormLocalized = await GetOrCreateLocalizationAsync(
+                job,
+                longFormPlan.Specification,
+                longForm: true,
+                cancellationToken);
+            longFormLocalized = ApplyAgentCardPreference(job, longFormPlan.Specification, longFormLocalized);
             longFormNarration = await narrationService.GenerateAsync(
                 job.RequestedByUserId,
                 longFormPlan.Id,
+                NarrationOptions(job, longFormPlan.Specification, longFormLocalized),
                 cancellationToken)
                 ?? throw new InvalidOperationException("The long-form narration could not be created.");
+            longFormPlan = longFormPlan with
+            {
+                Specification = ApplySpokenLocalization(longFormPlan.Specification, longFormLocalized),
+            };
         }
 
         if (job.RequestedOutputs == CampaignOutputSelection.LegacyStandard)
@@ -415,7 +448,7 @@ public sealed partial class CampaignGenerationProcessor(
             foreach (var derivative in derivatives.Derivatives.Where(candidate =>
                 candidate.AspectRatio == VideoAspectRatio.Landscape16By9))
             {
-                AddDeliverable(job, shortFormNarrationId, ToOutputKind(derivative.Kind), derivative, yearBuilt);
+                AddDeliverable(job, shortFormNarrationId, ToOutputKind(derivative.Kind), derivative, yearBuilt, captionText);
             }
         }
         else
@@ -426,7 +459,8 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputSelection.YouTubeTour,
                 CampaignOutputKind.YouTubeTour,
                 derivatives.Get(CampaignDeliverableKind.Hero, VideoAspectRatio.Landscape16By9),
-                yearBuilt);
+                yearBuilt,
+                captionText);
             var verticalFeature = derivatives.Get(
                 CampaignDeliverableKind.Feature,
                 VideoAspectRatio.Vertical9By16);
@@ -436,28 +470,32 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputSelection.TikTok,
                 CampaignOutputKind.TikTok,
                 verticalFeature,
-                yearBuilt);
+                yearBuilt,
+                captionText);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
                 CampaignOutputSelection.InstagramReel,
                 CampaignOutputKind.InstagramReel,
                 verticalFeature,
-                yearBuilt);
+                yearBuilt,
+                captionText);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
                 CampaignOutputSelection.YouTubeShort,
                 CampaignOutputKind.YouTubeShort,
                 verticalFeature,
-                yearBuilt);
+                yearBuilt,
+                captionText);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
                 CampaignOutputSelection.FacebookFeed,
                 CampaignOutputKind.FacebookFeed,
                 derivatives.Get(CampaignDeliverableKind.Feature, VideoAspectRatio.Landscape16By9),
-                yearBuilt);
+                yearBuilt,
+                captionText);
         }
 
         if (longFormPlan is not null && longFormNarration is not null)
@@ -473,7 +511,13 @@ public sealed partial class CampaignGenerationProcessor(
                 longFormPlan.Specification.RequestedDuration,
                 longFormPlan.Specification.AspectRatio,
                 JsonSerializer.Serialize(
-                    CampaignCreativeDirector.Apply(longFormPlan.Specification, CreativeOptions(job), yearBuilt),
+                    CampaignCreativeDirector.Apply(
+                        longFormPlan.Specification,
+                        CreativeOptions(job),
+                        yearBuilt,
+                        longFormLocalized!.CaptionSegments.ToDictionary(
+                                segment => segment.Id,
+                                segment => segment.Text)),
                     SerializerOptions),
                 timeProvider.GetUtcNow()));
         }
@@ -488,11 +532,12 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignOutputSelection selection,
         CampaignOutputKind kind,
         CampaignDerivative derivative,
-        int? yearBuilt)
+        int? yearBuilt,
+        IReadOnlyDictionary<string, string> captionText)
     {
         if (job.RequestedOutputs.HasFlag(selection))
         {
-            AddDeliverable(job, narrationId, kind, derivative, yearBuilt);
+            AddDeliverable(job, narrationId, kind, derivative, yearBuilt, captionText);
         }
     }
 
@@ -501,7 +546,8 @@ public sealed partial class CampaignGenerationProcessor(
         Guid narrationId,
         CampaignOutputKind kind,
         CampaignDerivative derivative,
-        int? yearBuilt) =>
+        int? yearBuilt,
+        IReadOnlyDictionary<string, string> captionText) =>
         dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
             job.Id,
             job.OrganizationId,
@@ -511,7 +557,11 @@ public sealed partial class CampaignGenerationProcessor(
             derivative.Specification.RequestedDuration,
             derivative.AspectRatio,
             JsonSerializer.Serialize(
-                CampaignCreativeDirector.Apply(derivative.Specification, CreativeOptions(job), yearBuilt),
+                CampaignCreativeDirector.Apply(
+                    derivative.Specification,
+                    CreativeOptions(job),
+                    yearBuilt,
+                    captionText),
                 SerializerOptions),
             timeProvider.GetUtcNow()));
 
@@ -520,6 +570,122 @@ public sealed partial class CampaignGenerationProcessor(
         job.Soundtrack,
         job.CaptionStyle,
         job.AgentPortraitId);
+
+    private async Task<CampaignLocalizedCopy> GetOrCreateLocalizationAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        bool longForm,
+        CancellationToken cancellationToken)
+    {
+        var stored = longForm ? job.LongFormLocalizedCopyJson : job.LocalizedCopyJson;
+        if (!string.IsNullOrWhiteSpace(stored))
+        {
+            return JsonSerializer.Deserialize<CampaignLocalizedCopy>(stored, AudioSerializerOptions)
+                ?? throw new InvalidDataException("Stored campaign localization is invalid.");
+        }
+
+        var localized = await localizationService.LocalizeAsync(
+            new CampaignLocalizationRequest(
+                NarrationPreferences(job),
+                specification.Audio.NarrationSegments
+                    .OrderBy(segment => segment.StartMs)
+                    .Select(segment => new CampaignLocalizationSegment(segment.Id, segment.Text))
+                    .ToArray()),
+            cancellationToken);
+        var json = JsonSerializer.Serialize(localized, AudioSerializerOptions);
+        dbContext.ChangeTracker.Clear();
+        var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
+            candidate => candidate.Id == job.Id,
+            cancellationToken);
+        if (longForm)
+        {
+            tracked.SetLongFormLocalizedCopy(json);
+        }
+        else
+        {
+            tracked.SetLocalizedCopy(json);
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+        dbContext.ChangeTracker.Clear();
+        return localized;
+    }
+
+    private static NarrationGenerationOptions NarrationOptions(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        CampaignLocalizedCopy localized)
+    {
+        var sourceById = specification.Audio.NarrationSegments.ToDictionary(segment => segment.Id, StringComparer.Ordinal);
+        return new NarrationGenerationOptions(
+            localized.SpokenSegments.Select(segment => new VoiceNarrationSegment(
+                segment.Id,
+                segment.Text,
+                sourceById[segment.Id].StartMs,
+                sourceById[segment.Id].DurationMs)).ToArray(),
+            NarrationPreferences(job).SpokenLanguageCode,
+            AccentInstructions(job));
+    }
+
+    private static VideoProductionSpecification ApplySpokenLocalization(
+        VideoProductionSpecification specification,
+        CampaignLocalizedCopy localized)
+    {
+        var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+        return specification with
+        {
+            Audio = specification.Audio with
+            {
+                NarrationSegments = specification.Audio.NarrationSegments
+                    .Select(segment => segment with { Text = spoken[segment.Id] })
+                    .ToArray(),
+            },
+        };
+    }
+
+    private static CampaignLocalizedCopy ApplyAgentCardPreference(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        CampaignLocalizedCopy localized)
+    {
+        if (job.LocalizeAgentCard
+            || !job.CreativeElements.HasFlag(CampaignVideoElement.AgentPortrait)
+            || specification.Scenes.Count == 0)
+        {
+            return localized;
+        }
+
+        var closingSegmentIds = specification.Scenes
+            .OrderBy(scene => scene.SceneNumber)
+            .Last()
+            .NarrationSegmentIds
+            .ToHashSet(StringComparer.Ordinal);
+        if (closingSegmentIds.Count == 0)
+        {
+            return localized;
+        }
+
+        var source = specification.Audio.NarrationSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+        CampaignLocalizedSegment Restore(CampaignLocalizedSegment segment) =>
+            closingSegmentIds.Contains(segment.Id)
+                ? segment with { Text = source[segment.Id] }
+                : segment;
+        return new CampaignLocalizedCopy(
+            localized.SpokenSegments.Select(Restore).ToArray(),
+            localized.CaptionSegments.Select(Restore).ToArray());
+    }
+
+    private static CampaignNarrationPreferences NarrationPreferences(CampaignGenerationJob job) => new(
+        job.NarrationRegion,
+        job.SpokenLanguage,
+        job.CaptionLanguage,
+        job.VoiceAccent,
+        job.LocalizeAgentCard);
+
+    private static string AccentInstructions(CampaignGenerationJob job) =>
+        $"Use a natural {Display(job.VoiceAccent)} accent with pronunciation and delivery appropriate to {Display(job.NarrationRegion)}. Do not imitate a person or caricature a regional identity.";
+
+    private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
+        index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
 
     private async Task<bool> RenderSelectedAsync(
         Guid jobId,

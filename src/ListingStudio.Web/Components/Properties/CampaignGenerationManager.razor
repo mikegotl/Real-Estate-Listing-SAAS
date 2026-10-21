@@ -110,6 +110,48 @@
                 </MudItem>
             </MudGrid>
             <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2">Narration and captions</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                Choose the presentation region, spoken language, caption language, and voice accent. Region guides wording and pronunciation; it does not infer anyone's nationality.
+            </MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignNarrationRegion" Label="Narration region" @bind-Value="selectedNarrationRegion" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        @foreach (var region in Enum.GetValues<CampaignNarrationRegion>())
+                        {
+                            <MudSelectItem Value="region">@Display(region)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignLanguage" Label="Spoken language" @bind-Value="selectedSpokenLanguage" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        @foreach (var language in Enum.GetValues<CampaignLanguage>())
+                        {
+                            <MudSelectItem Value="language">@Display(language)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignLanguage" Label="Caption language" @bind-Value="selectedCaptionLanguage" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        @foreach (var language in Enum.GetValues<CampaignLanguage>())
+                        {
+                            <MudSelectItem Value="language">@Display(language)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignVoiceAccent" Label="Voice accent" @bind-Value="selectedVoiceAccent" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        @foreach (var accent in Enum.GetValues<CampaignVoiceAccent>())
+                        {
+                            <MudSelectItem Value="accent">@Display(accent)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                Accent is an AI voice direction and may vary by voice. Listing Studio always discloses that narration is AI-generated.
+            </MudAlert>
+            <MudDivider Class="my-4" />
             <MudText Typo="Typo.subtitle2">Optional agent photo</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
                 Upload a headshot or full-body photo. It stays private and is used only when “Agent photo on closing card” is checked.
@@ -122,6 +164,10 @@
                     <MudText Typo="Typo.caption">@portrait.OriginalFilename · @portrait.Width × @portrait.Height</MudText>
                 </MudStack>
             }
+            <MudCheckBox T="bool"
+                         @bind-Value="selectedLocalizeAgentCard"
+                         Disabled="@(busy || IsReadOnly || !selectedCreativeElements.HasFlag(CampaignVideoElement.AgentPortrait))"
+                         Label="Use the selected language and accent during the agent closing card" />
         </MudPaper>
     }
     else if (job.RequestedOutputs != CampaignOutputSelection.LegacyStandard)
@@ -279,6 +325,11 @@
     private CampaignVideoElement selectedCreativeElements = CampaignCreativeOptions.SocialDefault.Elements;
     private CampaignSoundtrack selectedSoundtrack = CampaignCreativeOptions.SocialDefault.Soundtrack;
     private CampaignCaptionStyle selectedCaptionStyle = CampaignCreativeOptions.SocialDefault.CaptionStyle;
+    private CampaignNarrationRegion selectedNarrationRegion = CampaignNarrationPreferences.Default.Region;
+    private CampaignLanguage selectedSpokenLanguage = CampaignNarrationPreferences.Default.SpokenLanguage;
+    private CampaignLanguage selectedCaptionLanguage = CampaignNarrationPreferences.Default.CaptionLanguage;
+    private CampaignVoiceAccent selectedVoiceAccent = CampaignNarrationPreferences.Default.VoiceAccent;
+    private bool selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
     private bool selectionInitialized;
     private Guid? loadedPropertyId;
     private CampaignOutputSelection selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
@@ -321,6 +372,11 @@
                     selectedCreativeElements = job.CreativeOptions.Elements;
                     selectedSoundtrack = job.CreativeOptions.Soundtrack;
                     selectedCaptionStyle = job.CreativeOptions.CaptionStyle;
+                    selectedNarrationRegion = job.NarrationPreferences.Region;
+                    selectedSpokenLanguage = job.NarrationPreferences.SpokenLanguage;
+                    selectedCaptionLanguage = job.NarrationPreferences.CaptionLanguage;
+                    selectedVoiceAccent = job.NarrationPreferences.VoiceAccent;
+                    selectedLocalizeAgentCard = job.NarrationPreferences.LocalizeAgentCard;
                 }
 
                 selectionInitialized = true;
@@ -374,7 +430,13 @@
             userId,
             PropertyId,
             selectedOutputs,
-            new CampaignCreativeOptions(elements, selectedSoundtrack, selectedCaptionStyle, portraitId));
+            new CampaignCreativeOptions(elements, selectedSoundtrack, selectedCaptionStyle, portraitId),
+            new CampaignNarrationPreferences(
+                selectedNarrationRegion,
+                selectedSpokenLanguage,
+                selectedCaptionLanguage,
+                selectedVoiceAccent,
+                selectedLocalizeAgentCard));
     });
 
     private async Task UploadPortraitAsync(InputFileChangeEventArgs args)
