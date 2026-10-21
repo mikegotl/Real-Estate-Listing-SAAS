@@ -68,6 +68,7 @@ public enum TextOverlayStyle
     PropertyFact,
     LowerThird,
     ClosingCta,
+    PopCaption,
 }
 
 public enum MusicMood

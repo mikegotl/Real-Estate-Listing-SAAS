@@ -49,6 +49,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
 
+    public DbSet<AgentPortrait> AgentPortraits => Set<AgentPortrait>();
+
     public DbSet<OrganizationBillingAccount> OrganizationBillingAccounts => Set<OrganizationBillingAccount>();
 
     public DbSet<CampaignUsageRecord> CampaignUsageRecords => Set<CampaignUsageRecord>();

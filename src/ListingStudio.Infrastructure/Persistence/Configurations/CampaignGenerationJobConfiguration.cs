@@ -21,6 +21,26 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
             .HasDefaultValue(CampaignOutputSelection.LegacyStandard)
             .HasSentinel(CampaignOutputSelection.None)
             .IsRequired();
+        builder.Property(job => job.CreativeElements)
+            .HasConversion<string>()
+            .HasMaxLength(256)
+            .HasDefaultValue(CampaignCreativeOptions.Legacy.Elements)
+            .IsRequired();
+        builder.Property(job => job.Soundtrack)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignSoundtrack.None)
+            .IsRequired();
+        builder.Property(job => job.CaptionStyle)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignCaptionStyle.Classic)
+            .IsRequired();
+        builder.HasOne<AgentPortrait>()
+            .WithMany()
+            .HasForeignKey(job => new { job.AgentPortraitId, job.OrganizationId })
+            .HasPrincipalKey(portrait => new { portrait.Id, portrait.OrganizationId })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.Property(job => job.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(job => job.CurrentStage).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(job => job.LastError).HasMaxLength(1_000);

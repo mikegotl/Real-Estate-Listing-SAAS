@@ -312,6 +312,24 @@ app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
             enableRangeProcessing: true);
 }).RequireAuthorization();
 
+app.MapGet("/agent-portraits/{portraitId:guid}", async (
+    Guid portraitId,
+    HttpContext context,
+    IAgentPortraitService portraitService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var portrait = await portraitService.OpenReadAsync(userId, portraitId, cancellationToken);
+    return portrait is null
+        ? Results.NotFound()
+        : Results.Stream(portrait.Content, portrait.ContentType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
 app.MapGet("/public/listings/{publicSlug}/cover", async (
     string publicSlug,
     ILeadGenerationService leadService,

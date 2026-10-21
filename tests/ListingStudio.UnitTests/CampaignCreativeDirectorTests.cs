@@ -1,0 +1,90 @@
+using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Videos;
+using Xunit;
+
+namespace ListingStudio.UnitTests;
+
+public sealed class CampaignCreativeDirectorTests
+{
+    [Theory]
+    [InlineData(1925, CampaignSoundtrack.HeritageWarm)]
+    [InlineData(1975, CampaignSoundtrack.UpbeatLifestyle)]
+    [InlineData(2024, CampaignSoundtrack.ModernAmbient)]
+    [InlineData(null, CampaignSoundtrack.ModernAmbient)]
+    public void AutoSoundtrackUsesHomeEra(int? yearBuilt, CampaignSoundtrack expected)
+    {
+        Assert.Equal(
+            expected,
+            CampaignCreativeDirector.ResolveSoundtrack(CampaignSoundtrack.AutoByHomeEra, yearBuilt));
+    }
+
+    [Fact]
+    public void PopCaptionsAndAgentPortraitAreGroundedInExistingNarration()
+    {
+        var portraitId = Guid.NewGuid();
+        var options = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentPortrait,
+            AgentPortraitId = portraitId,
+        };
+
+        var result = CampaignCreativeDirector.Apply(CreateSpecification(), options, 2020);
+
+        Assert.Equal(CampaignCreativeDirector.ModernAmbientAssetId, result.Audio.Music.AssetId);
+        Assert.Equal($"agent-portrait:{portraitId:N}", result.Brand.SecondaryLogo);
+        var captions = result.Scenes.SelectMany(scene => scene.TextOverlays)
+            .Where(overlay => overlay.StyleToken == TextOverlayStyle.PopCaption)
+            .ToArray();
+        Assert.NotEmpty(captions);
+        Assert.All(captions, caption => Assert.Equal("narration.fact", caption.GroundingKey));
+        Assert.Contains(result.Scenes.SelectMany(scene => scene.LogoOverlays),
+            overlay => overlay.AssetId == result.Brand.SecondaryLogo);
+    }
+
+    [Fact]
+    public void CreativeOptionsRejectMusicOrPortraitMismatches()
+    {
+        Assert.Throws<ArgumentException>(() => (CampaignCreativeOptions.SocialDefault with
+        {
+            Soundtrack = CampaignSoundtrack.None,
+        }).Validate());
+        Assert.Throws<ArgumentException>(() => (CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentPortrait,
+        }).Validate());
+    }
+
+    private static VideoProductionSpecification CreateSpecification()
+    {
+        var mediaId = Guid.NewGuid();
+        var narration = new NarrationSegment("n1", 0, 4_000, "A bright kitchen opens into generous living space", "narration.fact");
+        return new VideoProductionSpecification(
+            "1.0",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            RequestedDuration.Feature30,
+            VideoAspectRatio.Vertical9By16,
+            new VideoOutputProfile(1080, 1920, 30, "h264", "aac", "yuv420p", 48_000, 2),
+            new NormalizedRect(0.05m, 0.05m, 0.90m, 0.90m),
+            [new FactBinding("narration.fact", narration.Text, FactSource.PropertyStory, "story")],
+            new BrandKit(null, null, "Agent", null, null, null, "#FFFFFF", "#17324D"),
+            new GroundedText("Book a tour", "cta"),
+            new AudioPlan([narration], new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)),
+            [new VideoScene(
+                1,
+                0,
+                4_000,
+                new VisualSource(VisualSourceKind.PropertyMedia, mediaId, null, null, null),
+                new TransitionPlan(TransitionKind.Cut, 0),
+                new MotionPlan(
+                    MotionKind.KenBurns,
+                    new NormalizedRect(0, 0, 1, 1),
+                    new NormalizedRect(0.02m, 0.02m, 0.96m, 0.96m),
+                    MotionEasing.EaseInOut),
+                [],
+                [],
+                [narration.Id])]);
+    }
+}

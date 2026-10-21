@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<VideoBrandingTemplateOptions>()
             .Bind(configuration.GetSection(VideoBrandingTemplateOptions.SectionName));
         services.AddSingleton<IVideoRenderer, FfmpegVideoRenderer>();
+        services.AddSingleton<ICampaignSoundtrackService, OriginalCampaignSoundtrackService>();
         services.AddSingleton<IPropertyVideoTranscoder, FfmpegPropertyVideoTranscoder>();
         services.AddSingleton<IPropertyVideoFrameExtractor, FfmpegPropertyVideoFrameExtractor>();
         services.AddSingleton<IPhotoImageCodec, FfmpegPhotoImageCodec>();

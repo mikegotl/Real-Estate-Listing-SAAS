@@ -27,6 +27,28 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z+VAAAAAASUVORK5CYII=");
 
     [Fact]
+    public async Task AgentPortraitUploadIsPrivateAndTenantScoped()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("portrait-owner");
+        var outsider = await CreateOwnerAndPropertyAsync("portrait-outsider");
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var portraits = scope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+        await using var upload = new MemoryStream(OnePixelPng);
+
+        var saved = await portraits.UploadAsync(
+            owner.UserId,
+            new AgentPortraitUpload("agent.png", "image/png", upload.Length, upload));
+
+        Assert.Equal(saved, await portraits.GetLatestAsync(owner.UserId));
+        Assert.Null(await portraits.GetLatestAsync(outsider.UserId));
+        var content = await portraits.OpenReadAsync(owner.UserId, saved.Id);
+        Assert.NotNull(content);
+        Assert.Equal("image/jpeg", content.ContentType);
+        await content.Content.DisposeAsync();
+        Assert.Null(await portraits.OpenReadAsync(outsider.UserId, saved.Id));
+    }
+
+    [Fact]
     public async Task UploadToGenerateWaitAndDownloadIsDurableIdempotentAndTenantScoped()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-owner");

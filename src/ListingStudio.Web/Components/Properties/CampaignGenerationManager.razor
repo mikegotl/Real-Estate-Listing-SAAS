@@ -2,6 +2,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IPropertyMediaService MediaService
 @inject IPropertyNarrationScriptService NarrationScriptService
+@inject IAgentPortraitService AgentPortraitService
 @inject ILogger<CampaignGenerationManager> Logger
 
 <MudPaper Class="pa-6 mt-6">
@@ -64,6 +65,62 @@
                 <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-2">
                     Choose at least one output before generating the campaign.
                 </MudText>
+            }
+        </MudPaper>
+        <MudPaper Outlined="true" Class="pa-4 mb-4">
+            <MudText Typo="Typo.subtitle1">Creative direction</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Choose what appears in the videos. Each output gets a platform-specific edit instead of a simple crop.
+            </MudText>
+            <MudGrid Spacing="2">
+                @foreach (var option in CreativeElementOptions)
+                {
+                    var unavailable = option.Element == CampaignVideoElement.KitchenIslandOrbit && !kitchenOrbitEligible;
+                    <MudItem xs="12" sm="6">
+                        <MudCheckBox T="bool"
+                                     Value="@IsCreativeElementSelected(option.Element)"
+                                     ValueChanged="@(value => SetCreativeElement(option.Element, value))"
+                                     Disabled="@(busy || IsReadOnly || unavailable)"
+                                     Label="@option.Name" />
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@option.Details</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+            @if (!kitchenOrbitEligible)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-2">
+                    Kitchen island turnaround becomes available after analysis verifies an island and at least three kitchen viewpoints.
+                </MudText>
+            }
+            <MudGrid Spacing="2" Class="mt-2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignSoundtrack" Label="Soundtrack" @bind-Value="selectedSoundtrack" Variant="Variant.Outlined">
+                        <MudSelectItem Value="CampaignSoundtrack.None">No background music</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.AutoByHomeEra">Choose for the home's era</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.HeritageWarm">Heritage warm</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.ModernAmbient">Modern ambient</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.UpbeatLifestyle">Upbeat lifestyle</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignCaptionStyle" Label="Caption look" @bind-Value="selectedCaptionStyle" Variant="Variant.Outlined">
+                        <MudSelectItem Value="CampaignCaptionStyle.Pop">Poppy social captions</MudSelectItem>
+                        <MudSelectItem Value="CampaignCaptionStyle.Classic">Classic captions</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2">Optional agent photo</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                Upload a headshot or full-body photo. It stays private and is used only when “Agent photo on closing card” is checked.
+            </MudText>
+            <InputFile OnChange="UploadPortraitAsync" accept="image/jpeg,image/png,image/webp" />
+            @if (portrait is not null)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
+                    <img src="@($"/agent-portraits/{portrait.Id}")" alt="Agent photo preview" style="width:72px;height:72px;object-fit:cover;border-radius:50%;" />
+                    <MudText Typo="Typo.caption">@portrait.OriginalFilename · @portrait.Width × @portrait.Height</MudText>
+                </MudStack>
             }
         </MudPaper>
     }
@@ -217,6 +274,11 @@
     private int mediaCount;
     private int failedAnalysisCount;
     private bool longFormAvailable;
+    private bool kitchenOrbitEligible;
+    private AgentPortraitItem? portrait;
+    private CampaignVideoElement selectedCreativeElements = CampaignCreativeOptions.SocialDefault.Elements;
+    private CampaignSoundtrack selectedSoundtrack = CampaignCreativeOptions.SocialDefault.Soundtrack;
+    private CampaignCaptionStyle selectedCaptionStyle = CampaignCreativeOptions.SocialDefault.CaptionStyle;
     private bool selectionInitialized;
     private Guid? loadedPropertyId;
     private CampaignOutputSelection selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
@@ -254,6 +316,12 @@
                 {
                     selectedOutputs = job.RequestedOutputs;
                 }
+                if (job is not null)
+                {
+                    selectedCreativeElements = job.CreativeOptions.Elements;
+                    selectedSoundtrack = job.CreativeOptions.Soundtrack;
+                    selectedCaptionStyle = job.CreativeOptions.CaptionStyle;
+                }
 
                 selectionInitialized = true;
             }
@@ -265,6 +333,15 @@
                 .Where(item => !item.IsInGallery)
                 .ToArray();
             mediaCount = media.Length;
+            var kitchenViews = media.Where(item => string.Equals(item.WalkthroughStop, "Kitchen", StringComparison.OrdinalIgnoreCase)
+                || item.Analysis?.Category == PropertyMediaCategory.Kitchen).ToArray();
+            kitchenOrbitEligible = kitchenViews.Length >= 3
+                && kitchenViews.Any(item => item.Analysis?.Description.Contains("island", StringComparison.OrdinalIgnoreCase) == true);
+            if (!kitchenOrbitEligible)
+            {
+                selectedCreativeElements &= ~CampaignVideoElement.KitchenIslandOrbit;
+            }
+            portrait = await AgentPortraitService.GetLatestAsync(userId, pollingCancellation.Token);
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             error = null;
             refreshError = null;
@@ -281,7 +358,47 @@
     }
 
     private async Task GenerateAsync() => await MutateAsync(async userId =>
-        job = await Service.EnqueueAsync(userId, PropertyId, selectedOutputs));
+    {
+        var elements = selectedCreativeElements;
+        if (selectedSoundtrack == CampaignSoundtrack.None)
+        {
+            elements &= ~CampaignVideoElement.BackgroundMusic;
+        }
+        else
+        {
+            elements |= CampaignVideoElement.BackgroundMusic;
+        }
+
+        var portraitId = elements.HasFlag(CampaignVideoElement.AgentPortrait) ? portrait?.Id : null;
+        job = await Service.EnqueueAsync(
+            userId,
+            PropertyId,
+            selectedOutputs,
+            new CampaignCreativeOptions(elements, selectedSoundtrack, selectedCaptionStyle, portraitId));
+    });
+
+    private async Task UploadPortraitAsync(InputFileChangeEventArgs args)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var file = args.File;
+            await using var stream = file.OpenReadStream(IAgentPortraitService.MaximumFileSize);
+            portrait = await AgentPortraitService.UploadAsync(
+                userId,
+                new AgentPortraitUpload(file.Name, file.ContentType, file.Size, stream));
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or IOException)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
 
     private async Task RetryAsync() => await MutateAsync(async userId =>
     {
@@ -410,6 +527,25 @@
             : selectedOutputs & ~selection;
     }
 
+    private bool IsCreativeElementSelected(CampaignVideoElement element) => selectedCreativeElements.HasFlag(element);
+
+    private void SetCreativeElement(CampaignVideoElement element, bool selected)
+    {
+        selectedCreativeElements = selected
+            ? selectedCreativeElements | element
+            : selectedCreativeElements & ~element;
+        if (element == CampaignVideoElement.AgentPortrait && selected && portrait is null)
+        {
+            selectedCreativeElements &= ~CampaignVideoElement.AgentPortrait;
+            error = "Upload an agent photo before adding it to the video.";
+        }
+
+        if (element == CampaignVideoElement.KitchenIslandOrbit && selected)
+        {
+            selectedCreativeElements |= CampaignVideoElement.WalkthroughMotion;
+        }
+    }
+
     private static string SelectedOutputNames(CampaignOutputSelection selection) => string.Join(", ",
         OutputOptions.Where(option => selection.HasFlag(option.Selection)).Select(option => option.Name));
 
@@ -432,6 +568,20 @@
         aspectRatio == "16:9" ? "1920 × 1080" : "1080 × 1920";
 
     private sealed record OutputOption(CampaignOutputSelection Selection, string Name, string Details);
+
+    private static readonly CreativeElementOption[] CreativeElementOptions =
+    [
+        new(CampaignVideoElement.OpeningTitle, "Opening title", "Bold, location-led opening like the reference edit."),
+        new(CampaignVideoElement.PropertyFacts, "Property facts", "Verified facts only, shown as compact feature callouts."),
+        new(CampaignVideoElement.NarrationCaptions, "Narration captions", "Short, timed caption bursts designed for mobile viewing."),
+        new(CampaignVideoElement.NeighborhoodHighlights, "Neighborhood highlights", "Approved neighborhood facts and licensed images."),
+        new(CampaignVideoElement.WalkthroughMotion, "Walkthrough motion", "Use enhanced walkthrough footage and available room-to-room transitions."),
+        new(CampaignVideoElement.KitchenIslandOrbit, "Kitchen island turnaround", "Use three or more verified kitchen viewpoints to build a grounded multi-angle turn."),
+        new(CampaignVideoElement.AgentPortrait, "Agent photo on closing card", "Place the uploaded agent photo beside the final call to action."),
+        new(CampaignVideoElement.ClosingCallToAction, "Closing call to action", "End with the campaign's verified contact call to action."),
+    ];
+
+    private sealed record CreativeElementOption(CampaignVideoElement Element, string Name, string Details);
 
     private static string DisplayError(CampaignGenerationResult campaign) =>
         campaign.CurrentStage == CampaignGenerationStage.GenerateMasterVideoPlan
