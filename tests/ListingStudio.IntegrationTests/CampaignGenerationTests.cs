@@ -119,6 +119,32 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     }
 
     [Fact]
+    public async Task AgentPortraitCropCreatesANewOwnedVersionWithoutChangingTheUpload()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("portrait-crop-owner");
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var portraits = scope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+        await using var upload = new MemoryStream(OnePixelPng);
+        var original = await portraits.UploadAsync(
+            owner.UserId,
+            new AgentPortraitUpload("agent.png", "image/png", upload.Length, upload));
+
+        var cropped = await portraits.CropAsync(
+            owner.UserId,
+            original.Id,
+            new AgentPortraitCrop(0.5m, 0.5m, 1m, AgentPortraitCropShape.Square));
+
+        Assert.NotNull(cropped);
+        Assert.NotEqual(original.Id, cropped.Id);
+        Assert.Equal(cropped.Width, cropped.Height);
+        Assert.True(cropped.Width > 0);
+        Assert.Equal(cropped, await portraits.GetLatestAsync(owner.UserId));
+        var originalContent = await portraits.OpenReadAsync(owner.UserId, original.Id);
+        Assert.NotNull(originalContent);
+        await originalContent.Content.DisposeAsync();
+    }
+
+    [Fact]
     public async Task UploadToGenerateWaitAndDownloadIsDurableIdempotentAndTenantScoped()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-owner");

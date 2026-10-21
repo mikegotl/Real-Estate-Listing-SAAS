@@ -56,6 +56,26 @@ public sealed class CampaignCreativeDirectorTests
     }
 
     [Fact]
+    public void AgentAvatarRequiresOwnedPortraitConsentAndAddsPresenterOverlays()
+    {
+        var portraitId = Guid.NewGuid();
+        var withoutConsent = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = portraitId,
+        };
+        Assert.Throws<ArgumentException>(withoutConsent.Validate);
+
+        var approved = withoutConsent with { AgentAvatarConsentConfirmed = true };
+        var result = CampaignCreativeDirector.Apply(CreateSpecification(), approved, 2020);
+
+        Assert.Equal($"agent-portrait:{portraitId:N}", result.Brand.SecondaryLogo);
+        Assert.Contains(
+            result.Scenes[0].LogoOverlays,
+            overlay => overlay.AssetId == result.Brand.SecondaryLogo && overlay.StartOffsetMs == 0);
+    }
+
+    [Fact]
     public void PriceDropTemplateRequiresAgentVerificationAndAddsGroundedHook()
     {
         var unverified = CampaignCreativeOptions.SocialDefault with

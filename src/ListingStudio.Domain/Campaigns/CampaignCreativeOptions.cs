@@ -13,6 +13,7 @@ public enum CampaignVideoElement
     KitchenIslandOrbit = 1 << 6,
     AgentPortrait = 1 << 7,
     ClosingCallToAction = 1 << 8,
+    AgentAvatar = 1 << 9,
 }
 
 public enum CampaignSoundtrack
@@ -46,7 +47,8 @@ public sealed record CampaignCreativeOptions(
     Guid? AgentPortraitId = null,
     CampaignMarketingTemplate MarketingTemplate = CampaignMarketingTemplate.BalancedShowcase,
     decimal? PriceReductionAmount = null,
-    bool PriceReductionVerified = false)
+    bool PriceReductionVerified = false,
+    bool AgentAvatarConsentConfirmed = false)
 {
     public static CampaignCreativeOptions Legacy { get; } = new(
         CampaignVideoElement.OpeningTitle
@@ -120,10 +122,19 @@ public sealed record CampaignCreativeOptions(
             throw new ArgumentException("The music checkbox and soundtrack choice must agree.");
         }
 
-        var hasPortrait = Elements.HasFlag(CampaignVideoElement.AgentPortrait);
+        var hasPortrait = Elements.HasFlag(CampaignVideoElement.AgentPortrait)
+            || Elements.HasFlag(CampaignVideoElement.AgentAvatar);
         if (hasPortrait != AgentPortraitId.HasValue || AgentPortraitId == Guid.Empty)
         {
             throw new ArgumentException("An agent portrait must be uploaded before it can be included.");
+        }
+
+        var hasAvatar = Elements.HasFlag(CampaignVideoElement.AgentAvatar);
+        if (hasAvatar != AgentAvatarConsentConfirmed)
+        {
+            throw new ArgumentException(
+                "Confirm that the portrait is yours and that you consent to its use as an AI presenter.",
+                nameof(AgentAvatarConsentConfirmed));
         }
 
         if (Elements.HasFlag(CampaignVideoElement.KitchenIslandOrbit)

@@ -43,6 +43,9 @@ param voiceEstimatedCostUsd string = '0'
 @description('Estimated USD cost for one OpenAI photo-fix request.')
 param photoFixEstimatedCostUsd string = '0'
 
+@description('Estimated USD cost for one OpenAI agent headshot enhancement.')
+param agentPortraitEstimatedCostUsd string = '0'
+
 @description('Estimated USD cost for one request to the generic AI video provider.')
 param aiVideoEstimatedCostUsd string = '0'
 
@@ -74,6 +77,9 @@ param higgsfieldEnabled bool = false
 
 @description('Enable the paid OpenAI Remove clutter photo fix on the Media tab. Requires openAiApiKey.')
 param photoClutterRemovalEnabled bool = false
+
+@description('Enable the paid OpenAI identity-preserving headshot fix on the agent Profile page. Requires openAiApiKey.')
+param agentPortraitEnhancementEnabled bool = false
 
 @secure()
 @description('Higgsfield API key ID.')
@@ -588,6 +594,10 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
     value: photoFixEstimatedCostUsd
   }
   {
+    name: 'PhotoFixes__AgentPortraitEstimatedCostUsd'
+    value: agentPortraitEstimatedCostUsd
+  }
+  {
     name: 'AIVideo__EstimatedCostUsd'
     value: aiVideoEstimatedCostUsd
   }
@@ -610,6 +620,10 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
   {
     name: 'PhotoFixes__RemoveClutterEnabled'
     value: string(photoClutterRemovalEnabled && !empty(openAiApiKey))
+  }
+  {
+    name: 'PhotoFixes__AgentPortraitEnhancementEnabled'
+    value: string(agentPortraitEnhancementEnabled && !empty(openAiApiKey))
   }
   {
     name: 'Voice__Provider'

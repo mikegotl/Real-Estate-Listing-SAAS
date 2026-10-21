@@ -40,6 +40,9 @@ public sealed class PhotoFixOptions
     /// <summary>Off until switched on; it also needs OpenAI:ApiKey.</summary>
     public bool RemoveClutterEnabled { get; init; }
 
+    /// <summary>Off until the owner approves paid identity-preserving edits for agent-owned photos.</summary>
+    public bool AgentPortraitEnhancementEnabled { get; init; }
+
     public string ImageModel { get; init; } = "gpt-image-1";
 
     public string ImageEditsEndpoint { get; init; } = "https://api.openai.com/v1/images/edits";
@@ -53,4 +56,6 @@ public sealed class PhotoFixOptions
 
     public int MaxOutputMegabytes { get; init; } = 40;
     public decimal EstimatedCostUsd { get; init; }
+
+    public decimal AgentPortraitEstimatedCostUsd { get; init; }
 }

@@ -46,6 +46,9 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
         builder.Property(job => job.PriceReductionVerified)
             .HasDefaultValue(false)
             .IsRequired();
+        builder.Property(job => job.AgentAvatarConsentConfirmed)
+            .HasDefaultValue(false)
+            .IsRequired();
         builder.Property(job => job.NarrationRegion)
             .HasConversion<string>()
             .HasMaxLength(32)

@@ -126,6 +126,7 @@ non-secret variables on the protected GitHub `production` environment:
 | `OPENAI_SPEECH_ESTIMATED_COST_USD` | OpenAI narration |
 | `VOICE_ESTIMATED_COST_USD` | Alternate configured voice provider |
 | `PHOTO_FIX_ESTIMATED_COST_USD` | OpenAI photo fix |
+| `AGENT_PORTRAIT_ESTIMATED_COST_USD` | OpenAI agent headshot enhancement |
 | `AI_VIDEO_ESTIMATED_COST_USD` | Generic AI video generation |
 | `HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD` | Higgsfield walk-through generation |
 

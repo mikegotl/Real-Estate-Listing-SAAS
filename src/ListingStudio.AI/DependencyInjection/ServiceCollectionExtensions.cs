@@ -43,6 +43,18 @@ public static class ServiceCollectionExtensions
                     "photo-clutter-removal",
                     photo.EstimatedCostUsd);
             });
+        services.AddHttpClient<IAgentPortraitEnhancer, OpenAIAgentPortraitEnhancer>(client =>
+            client.Timeout = Timeout.InfiniteTimeSpan)
+            .AddHttpMessageHandler(provider =>
+            {
+                var photo = provider.GetRequiredService<IOptions<PhotoFixOptions>>().Value;
+                return new AiUsageHttpMessageHandler(
+                    provider.GetRequiredService<IAiUsageRecorder>(),
+                    "OpenAI",
+                    photo.ImageModel,
+                    "agent-portrait-enhancement",
+                    photo.AgentPortraitEstimatedCostUsd);
+            });
         services.AddHttpClient<IPropertyStoryGenerator, OpenAIPropertyStoryGenerator>()
             .AddHttpMessageHandler(provider => OpenAiHandler(
                 provider, "property-story", options => options.StoryEstimatedCostUsd));

@@ -1,0 +1,206 @@
+@page "/profile"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IAgentPortraitService AgentPortraitService
+
+<PageTitle>Agent profile</PageTitle>
+
+<section class="page-heading">
+    <div>
+        <span class="eyebrow">ACCOUNT</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Agent profile</MudText>
+        <MudText Typo="Typo.body1">Manage the identity and headshot used in your campaign branding.</MudText>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+}
+@if (!string.IsNullOrWhiteSpace(success))
+{
+    <MudAlert Severity="Severity.Success" Class="mb-4">@success</MudAlert>
+}
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="0" Class="content-card pa-6 h-100">
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">SIGNED IN AS</MudText>
+            <MudText Typo="Typo.h5" Class="mt-1">@email</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3">
+                Your profile photo is private to your account. Other members of your organization cannot select or download it.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="8">
+        <MudPaper Elevation="0" Class="content-card pa-6">
+            <MudText Typo="Typo.h5" HtmlTag="h2">Campaign headshot</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                Upload a clear photo of yourself. JPEG, PNG, and WebP files up to 10 MB are supported.
+            </MudText>
+
+            <InputFile OnChange="UploadAsync" accept="image/jpeg,image/png,image/webp" disabled="@busy" />
+
+            @if (portrait is not null)
+            {
+                <MudDivider Class="my-5" />
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="5">
+                        <div class="agent-crop-preview @CropShapeClass" aria-label="Headshot crop preview">
+                            <img src="@PortraitUrl" alt="Current agent headshot"
+                                 style="@PreviewStyle" />
+                        </div>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+                            @portrait.OriginalFilename · @portrait.Width × @portrait.Height
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="7">
+                        <MudText Typo="Typo.subtitle2">Manual crop</MudText>
+                        <MudSelect T="AgentPortraitCropShape" Label="Crop shape" @bind-Value="cropShape"
+                                   Variant="Variant.Outlined" Disabled="busy" Class="mt-2">
+                            <MudSelectItem Value="AgentPortraitCropShape.Square">Square profile photo</MudSelectItem>
+                            <MudSelectItem Value="AgentPortraitCropShape.PortraitFourByFive">Portrait 4:5</MudSelectItem>
+                        </MudSelect>
+                        <MudText Typo="Typo.caption" Class="d-block mt-3">Zoom</MudText>
+                        <MudSlider T="double" @bind-Value="cropZoom" Min="1" Max="4" Step="0.05" Disabled="busy" />
+                        <MudText Typo="Typo.caption" Class="d-block mt-2">Horizontal focus</MudText>
+                        <MudSlider T="double" @bind-Value="focusX" Min="0" Max="1" Step="0.01" Disabled="busy" />
+                        <MudText Typo="Typo.caption" Class="d-block mt-2">Vertical focus</MudText>
+                        <MudSlider T="double" @bind-Value="focusY" Min="0" Max="1" Step="0.01" Disabled="busy" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Crop"
+                                   Disabled="busy" OnClick="SaveCropAsync" Class="mt-2">
+                            Save crop
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-5" />
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                               Disabled="@(busy || !AgentPortraitService.IsAiFixEnabled)" OnClick="AiFixAsync">
+                        AI Fix
+                    </MudButton>
+                    @if (busy)
+                    {
+                        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                    }
+                </MudStack>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+                    AI Fix corrects lighting, color, background distractions, noise, and sharpness while instructing the provider to preserve your identity, clothing, pose, and age.
+                </MudText>
+                @if (!AgentPortraitService.IsAiFixEnabled)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                        AI Fix is visible but unavailable until the workspace owner enables the approved image-edit provider.
+                    </MudAlert>
+                }
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<style>
+    .agent-crop-preview {
+        width: min(100%, 300px);
+        overflow: hidden;
+        border-radius: 18px;
+        background: #eee9e1;
+        border: 1px solid var(--mud-palette-divider);
+    }
+    .agent-crop-preview.square { aspect-ratio: 1 / 1; }
+    .agent-crop-preview.portrait { aspect-ratio: 4 / 5; }
+    .agent-crop-preview img { width: 100%; height: 100%; object-fit: cover; transform-origin: center; }
+</style>
+
+@code {
+    private AgentPortraitItem? portrait;
+    private string email = "Loading…";
+    private string? error;
+    private string? success;
+    private bool busy;
+    private double cropZoom = 1;
+    private double focusX = 0.5;
+    private double focusY = 0.5;
+    private AgentPortraitCropShape cropShape = AgentPortraitCropShape.Square;
+
+    private string PortraitUrl => portrait is null ? string.Empty : $"/agent-portraits/{portrait.Id}?v={portrait.UpdatedAtUtc.ToUnixTimeMilliseconds()}";
+    private string CropShapeClass => cropShape == AgentPortraitCropShape.Square ? "square" : "portrait";
+    private string PreviewStyle => FormattableString.Invariant(
+        $"object-position:{focusX * 100:0}% {focusY * 100:0}%;transform:scale({cropZoom:0.00});");
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        email = state.User.Identity?.Name ?? "Agent";
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        portrait = await AgentPortraitService.GetLatestAsync(userId);
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs args) => await RunAsync(async userId =>
+    {
+        var file = args.File;
+        await using var stream = file.OpenReadStream(IAgentPortraitService.MaximumFileSize);
+        portrait = await AgentPortraitService.UploadAsync(
+            userId,
+            new AgentPortraitUpload(file.Name, file.ContentType, file.Size, stream));
+        ResetCrop();
+        success = "Headshot uploaded. You can now crop it, run AI Fix, or select it in a campaign.";
+    });
+
+    private async Task SaveCropAsync() => await RunAsync(async userId =>
+    {
+        if (portrait is null)
+        {
+            return;
+        }
+
+        portrait = await AgentPortraitService.CropAsync(
+            userId,
+            portrait.Id,
+            new AgentPortraitCrop((decimal)focusX, (decimal)focusY, (decimal)cropZoom, cropShape))
+            ?? throw new InvalidOperationException("The headshot is no longer available.");
+        ResetCrop();
+        success = "The manual crop is saved and will be used by new campaigns.";
+    });
+
+    private async Task AiFixAsync() => await RunAsync(async userId =>
+    {
+        if (portrait is null)
+        {
+            return;
+        }
+
+        portrait = await AgentPortraitService.AiFixAsync(userId, portrait.Id)
+            ?? throw new InvalidOperationException("The headshot is no longer available.");
+        ResetCrop();
+        success = "AI Fix completed. Review the result before using it in a campaign.";
+    });
+
+    private async Task RunAsync(Func<string, Task> action)
+    {
+        busy = true;
+        error = null;
+        success = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await action(userId);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or IOException)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void ResetCrop()
+    {
+        cropZoom = 1;
+        focusX = 0.5;
+        focusY = 0.5;
+    }
+}

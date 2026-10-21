@@ -572,7 +572,8 @@ public sealed partial class CampaignGenerationProcessor(
         job.AgentPortraitId,
         job.MarketingTemplate,
         job.PriceReductionAmount,
-        job.PriceReductionVerified);
+        job.PriceReductionVerified,
+        job.AgentAvatarConsentConfirmed);
 
     private async Task<CampaignLocalizedCopy> GetOrCreateLocalizationAsync(
         CampaignGenerationJob job,
