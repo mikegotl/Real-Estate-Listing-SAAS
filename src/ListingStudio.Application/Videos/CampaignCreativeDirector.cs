@@ -28,7 +28,9 @@ public static class CampaignCreativeDirector
         }
 
         var factBindings = source.FactBindings.ToList();
-        if (options.MarketingTemplate == CampaignMarketingTemplate.PriceDrop)
+        // A short-form edit already carries the price-reduction pill in its hook lines.
+        if (options.MarketingTemplate == CampaignMarketingTemplate.PriceDrop
+            && !scenes.Any(scene => scene.TextOverlays.Any(overlay => overlay.StyleToken == TextOverlayStyle.HookTitle)))
         {
             ApplyPriceDropHook(source, options, scenes, factBindings);
         }
@@ -41,7 +43,7 @@ public static class CampaignCreativeDirector
             }).ToArray();
         }
         var soundtrack = ResolveSoundtrack(options.Soundtrack, yearBuilt);
-        var music = soundtrack == CampaignSoundtrack.None
+        var music = soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
             ? new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)
             : new MusicPlan(
                 SoundtrackAssetId(soundtrack),
@@ -173,6 +175,15 @@ public static class CampaignCreativeDirector
         scenes[0] = first with { TextOverlays = overlays };
     }
 
+    /// <summary>The tempo of a library soundtrack; 120 BPM, the common short-video tempo, when there is none.</summary>
+    public static int BeatsPerMinute(string? soundtrackAssetId) => soundtrackAssetId switch
+    {
+        HeritageWarmAssetId => 76,
+        ModernAmbientAssetId => 92,
+        UpbeatLifestyleAssetId => 112,
+        _ => 120,
+    };
+
     public static CampaignSoundtrack ResolveSoundtrack(CampaignSoundtrack selected, int? yearBuilt) =>
         selected != CampaignSoundtrack.AutoByHomeEra
             ? selected
@@ -211,6 +222,7 @@ public static class CampaignCreativeDirector
                 && (options.Elements.HasFlag(CampaignVideoElement.NeighborhoodHighlights)
                     || !IsNeighborhoodBinding(source, overlay.GroundingKey)),
             TextOverlayStyle.ClosingCta => options.Elements.HasFlag(CampaignVideoElement.ClosingCallToAction),
+            TextOverlayStyle.AgentContact => options.Elements.HasFlag(CampaignVideoElement.AgentContact),
             _ => true,
         }).ToList();
 

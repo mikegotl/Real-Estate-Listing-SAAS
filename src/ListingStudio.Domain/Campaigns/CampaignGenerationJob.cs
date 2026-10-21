@@ -63,6 +63,10 @@ public sealed class CampaignGenerationJob
         PriceReductionAmount = creativeOptions.PriceReductionAmount;
         PriceReductionVerified = creativeOptions.PriceReductionVerified;
         AgentAvatarConsentConfirmed = creativeOptions.AgentAvatarConsentConfirmed;
+        Pace = creativeOptions.Pace;
+        ShortFormVoiceover = creativeOptions.Voiceover;
+        OpenHouseText = creativeOptions.OpenHouseText?.Trim();
+        OpenHouseVerified = creativeOptions.OpenHouseVerified;
         NarrationRegion = narrationPreferences.Region;
         SpokenLanguage = narrationPreferences.SpokenLanguage;
         CaptionLanguage = narrationPreferences.CaptionLanguage;
@@ -102,6 +106,16 @@ public sealed class CampaignGenerationJob
     public bool PriceReductionVerified { get; private set; }
 
     public bool AgentAvatarConsentConfirmed { get; private set; }
+
+    public CampaignPace Pace { get; private set; }
+
+    public CampaignVoiceoverMode ShortFormVoiceover { get; private set; }
+
+    public string? OpenHouseText { get; private set; }
+
+    public bool OpenHouseVerified { get; private set; }
+
+    public string? ShortFormLocalizedCopyJson { get; private set; }
 
     public CampaignNarrationRegion NarrationRegion { get; private set; }
 
@@ -326,6 +340,25 @@ public sealed class CampaignGenerationJob
     {
         LongFormLocalizedCopyJson = Required(localizedCopyJson, 500_000, nameof(localizedCopyJson));
     }
+
+    public void SetShortFormLocalizedCopy(string localizedCopyJson)
+    {
+        ShortFormLocalizedCopyJson = Required(localizedCopyJson, 500_000, nameof(localizedCopyJson));
+    }
+
+    public CampaignCreativeOptions CreativeOptions => new(
+        CreativeElements,
+        Soundtrack,
+        CaptionStyle,
+        AgentPortraitId,
+        MarketingTemplate,
+        PriceReductionAmount,
+        PriceReductionVerified,
+        AgentAvatarConsentConfirmed,
+        Pace,
+        ShortFormVoiceover,
+        OpenHouseText,
+        OpenHouseVerified);
 
     public void SetSocialCopy(string longCaption, string shortCaption)
     {

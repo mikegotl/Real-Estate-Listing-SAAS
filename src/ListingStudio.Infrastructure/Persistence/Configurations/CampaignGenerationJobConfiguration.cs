@@ -49,6 +49,23 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
         builder.Property(job => job.AgentAvatarConsentConfirmed)
             .HasDefaultValue(false)
             .IsRequired();
+        builder.Property(job => job.Pace)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignPace.Fast)
+            .HasSentinel(CampaignPace.Fast)
+            .IsRequired();
+        builder.Property(job => job.ShortFormVoiceover)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignVoiceoverMode.ShortHook)
+            .HasSentinel(CampaignVoiceoverMode.ShortHook)
+            .IsRequired();
+        builder.Property(job => job.OpenHouseText).HasMaxLength(CampaignCreativeOptions.MaximumOpenHouseTextLength);
+        builder.Property(job => job.OpenHouseVerified)
+            .HasDefaultValue(false)
+            .IsRequired();
+        builder.Property(job => job.ShortFormLocalizedCopyJson).HasColumnType("text");
         builder.Property(job => job.NarrationRegion)
             .HasConversion<string>()
             .HasMaxLength(32)

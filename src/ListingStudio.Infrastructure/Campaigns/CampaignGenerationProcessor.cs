@@ -444,6 +444,21 @@ public sealed partial class CampaignGenerationProcessor(
             };
         }
 
+        ShortFormDeliverable? shortForm = null;
+        if (job.RequestedOutputs != CampaignOutputSelection.LegacyStandard
+            && ShortFormOutputs.Any(output => job.RequestedOutputs.HasFlag(output.Selection)))
+        {
+            shortForm = await CreateShortFormAsync(
+                job,
+                specification,
+                captionText,
+                shortFormNarrationId,
+                shortFormTiming,
+                propertyVideos,
+                yearBuilt,
+                cancellationToken);
+        }
+
         if (job.RequestedOutputs == CampaignOutputSelection.LegacyStandard)
         {
             foreach (var derivative in derivatives.Derivatives.Where(candidate =>
@@ -463,36 +478,17 @@ public sealed partial class CampaignGenerationProcessor(
                 yearBuilt,
                 captionText,
                 shortFormTiming);
-            var verticalFeature = derivatives.Get(
-                CampaignDeliverableKind.Feature,
-                VideoAspectRatio.Vertical9By16);
-            AddSelectedDeliverable(
-                job,
-                shortFormNarrationId,
-                CampaignOutputSelection.TikTok,
-                CampaignOutputKind.TikTok,
-                verticalFeature,
-                yearBuilt,
-                captionText,
-                shortFormTiming);
-            AddSelectedDeliverable(
-                job,
-                shortFormNarrationId,
-                CampaignOutputSelection.InstagramReel,
-                CampaignOutputKind.InstagramReel,
-                verticalFeature,
-                yearBuilt,
-                captionText,
-                shortFormTiming);
-            AddSelectedDeliverable(
-                job,
-                shortFormNarrationId,
-                CampaignOutputSelection.YouTubeShort,
-                CampaignOutputKind.YouTubeShort,
-                verticalFeature,
-                yearBuilt,
-                captionText,
-                shortFormTiming);
+            if (shortForm is not null)
+            {
+                foreach (var (selection, kind) in ShortFormOutputs)
+                {
+                    if (job.RequestedOutputs.HasFlag(selection))
+                    {
+                        AddDeliverable(job, shortForm.NarrationId, kind, shortForm.Specification);
+                    }
+                }
+            }
+
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
@@ -553,6 +549,214 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignGenerationJob job,
         Guid narrationId,
         CampaignOutputKind kind,
+        VideoProductionSpecification specification) =>
+        dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
+            job.Id,
+            job.OrganizationId,
+            job.PropertyId,
+            narrationId,
+            kind,
+            specification.RequestedDuration,
+            specification.AspectRatio,
+            JsonSerializer.Serialize(specification, SerializerOptions),
+            timeProvider.GetUtcNow()));
+
+    private static readonly (CampaignOutputSelection Selection, CampaignOutputKind Kind)[] ShortFormOutputs =
+    [
+        (CampaignOutputSelection.TikTok, CampaignOutputKind.TikTok),
+        (CampaignOutputSelection.InstagramReel, CampaignOutputKind.InstagramReel),
+        (CampaignOutputSelection.YouTubeShort, CampaignOutputKind.YouTubeShort),
+    ];
+
+    private sealed record ShortFormDeliverable(Guid NarrationId, VideoProductionSpecification Specification);
+
+    /// <summary>
+    /// The vertical beat-cut edit shared by TikTok, Reels and Shorts, with the voiceover the agent chose: a short
+    /// voiceover written for the cut (voiced in the campaign language), none, or the full tour voiceover.
+    /// </summary>
+    private async Task<ShortFormDeliverable> CreateShortFormAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification master,
+        IReadOnlyDictionary<string, string> masterCaptionText,
+        Guid masterNarrationId,
+        VoiceTimingMetadata? masterTiming,
+        IReadOnlyList<CampaignDerivativeVideo> propertyVideos,
+        int? yearBuilt,
+        CancellationToken cancellationToken)
+    {
+        var options = CreativeOptions(job);
+        var location = await dbContext.Properties.AsNoTracking()
+            .Where(candidate => candidate.Id == job.PropertyId && candidate.OrganizationId == job.OrganizationId)
+            .Select(candidate => new { candidate.City, candidate.State })
+            .SingleAsync(cancellationToken);
+        var photos = await dbContext.PropertyMedia.AsNoTracking()
+            .Where(candidate => candidate.PropertyId == job.PropertyId
+                && candidate.OrganizationId == job.OrganizationId
+                && !candidate.IsInGallery)
+            .OrderBy(candidate => candidate.DisplayOrder)
+            .ThenBy(candidate => candidate.Id)
+            .Select(candidate => new ShortFormPhoto(candidate.Id, candidate.Width, candidate.Height))
+            .ToArrayAsync(cancellationToken);
+        var soundtrack = CampaignCreativeDirector.ResolveSoundtrack(options.Soundtrack, yearBuilt);
+        var beatMs = 60_000 / CampaignCreativeDirector.BeatsPerMinute(
+            soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
+                ? null
+                : CampaignCreativeDirector.SoundtrackAssetId(soundtrack));
+        VideoProductionSpecification Edit(bool withHighlights) => ShortFormEditor.Create(new ShortFormEditRequest(
+            master,
+            photos,
+            propertyVideos,
+            ShortFormCopyBuilder.DurationFor(options.Voiceover),
+            beatMs,
+            options.Pace,
+            ShortFormCopyBuilder.Build(master, options, location.City, location.State, withHighlights)));
+
+        var edit = Edit(withHighlights: true);
+        if (options.Voiceover != CampaignVoiceoverMode.ShortHook || edit.Audio.NarrationSegments.Count == 0)
+        {
+            // The full voiceover keeps the master's segments and timing, so its audio is reused as is; with no
+            // voiceover the edit has no narration segments and the master audio is never mixed in.
+            return new ShortFormDeliverable(
+                masterNarrationId,
+                CampaignCreativeDirector.Apply(edit, options, yearBuilt, masterCaptionText, masterTiming));
+        }
+
+        var localized = await GetOrCreateShortFormLocalizationAsync(job, edit, cancellationToken);
+        VideoNarrationResult narration;
+        try
+        {
+            narration = await GenerateShortFormNarrationAsync(job, edit, localized, cancellationToken);
+        }
+        catch (InvalidDataException) when (edit.Audio.NarrationSegments.Count > 2)
+        {
+            // The voiceover ran long in the spoken language: keep only the opening hook and the call to action.
+            edit = Edit(withHighlights: false);
+            narration = await GenerateShortFormNarrationAsync(job, edit, localized, cancellationToken);
+        }
+
+        var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+        edit = edit with
+        {
+            Audio = edit.Audio with
+            {
+                NarrationSegments = edit.Audio.NarrationSegments
+                    .Select(segment => segment with { Text = spoken[segment.Id] })
+                    .ToArray(),
+            },
+        };
+        return new ShortFormDeliverable(
+            narration.Id,
+            CampaignCreativeDirector.Apply(
+                edit,
+                options,
+                yearBuilt,
+                localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text),
+                narration.Timing));
+    }
+
+    /// <summary>
+    /// Saves the edit as a video plan (narration is generated per plan) and voices it. The plan is found again by
+    /// its fingerprint, so a retried stage reuses both the plan and the cached narration.
+    /// </summary>
+    private async Task<VideoNarrationResult> GenerateShortFormNarrationAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification edit,
+        CampaignLocalizedCopy localized,
+        CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(edit, SerializerOptions);
+        var fingerprint = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+                $"{ShortFormEditor.EditorVersion}\n{json}"))).ToLowerInvariant();
+        var planId = await dbContext.VideoProductionPlans.AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId
+                && candidate.SourceFingerprint == fingerprint)
+            .Select(candidate => (Guid?)candidate.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (planId is null)
+        {
+            var latestVersion = await dbContext.VideoProductionPlans
+                .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                    && candidate.PropertyId == job.PropertyId
+                    && candidate.RequestedDuration == edit.RequestedDuration
+                    && candidate.AspectRatio == edit.AspectRatio)
+                .Select(candidate => (int?)candidate.Version)
+                .MaxAsync(cancellationToken) ?? 0;
+            var plan = VideoProductionPlan.Create(
+                job.OrganizationId,
+                job.PropertyId,
+                edit.PropertyStoryId,
+                latestVersion + 1,
+                edit.RequestedDuration,
+                edit.AspectRatio,
+                edit.SchemaVersion,
+                ShortFormEditor.EditorVersion,
+                fingerprint,
+                json);
+            dbContext.VideoProductionPlans.Add(plan);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            dbContext.ChangeTracker.Clear();
+            planId = plan.Id;
+        }
+
+        var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+        return await narrationService.GenerateAsync(
+            job.RequestedByUserId,
+            planId.Value,
+            new NarrationGenerationOptions(
+                edit.Audio.NarrationSegments.Select(segment => new VoiceNarrationSegment(
+                    segment.Id,
+                    spoken[segment.Id],
+                    segment.StartMs,
+                    segment.DurationMs)).ToArray(),
+                NarrationPreferences(job).SpokenLanguageCode,
+                AccentInstructions(job),
+                job.VoiceAccent.ToString()),
+            cancellationToken)
+            ?? throw new InvalidOperationException("The short-form narration could not be created.");
+    }
+
+    private async Task<CampaignLocalizedCopy> GetOrCreateShortFormLocalizationAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification edit,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(job.ShortFormLocalizedCopyJson))
+        {
+            var stored = JsonSerializer.Deserialize<CampaignLocalizedCopy>(
+                job.ShortFormLocalizedCopyJson,
+                AudioSerializerOptions)
+                ?? throw new InvalidDataException("Stored short-form localization is invalid.");
+            var ids = stored.SpokenSegments.Select(segment => segment.Id).ToHashSet(StringComparer.Ordinal);
+            if (edit.Audio.NarrationSegments.All(segment => ids.Contains(segment.Id)))
+            {
+                return stored;
+            }
+        }
+
+        var localized = await localizationService.LocalizeAsync(
+            new CampaignLocalizationRequest(
+                NarrationPreferences(job),
+                edit.Audio.NarrationSegments
+                    .OrderBy(segment => segment.StartMs)
+                    .Select(segment => new CampaignLocalizationSegment(segment.Id, segment.Text))
+                    .ToArray()),
+            cancellationToken);
+        dbContext.ChangeTracker.Clear();
+        var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
+            candidate => candidate.Id == job.Id,
+            cancellationToken);
+        tracked.SetShortFormLocalizedCopy(JsonSerializer.Serialize(localized, AudioSerializerOptions));
+        await dbContext.SaveChangesAsync(cancellationToken);
+        dbContext.ChangeTracker.Clear();
+        return localized;
+    }
+
+    private void AddDeliverable(
+        CampaignGenerationJob job,
+        Guid narrationId,
+        CampaignOutputKind kind,
         CampaignDerivative derivative,
         int? yearBuilt,
         IReadOnlyDictionary<string, string> captionText,
@@ -575,15 +779,7 @@ public sealed partial class CampaignGenerationProcessor(
                 SerializerOptions),
             timeProvider.GetUtcNow()));
 
-    private static CampaignCreativeOptions CreativeOptions(CampaignGenerationJob job) => new(
-        job.CreativeElements,
-        job.Soundtrack,
-        job.CaptionStyle,
-        job.AgentPortraitId,
-        job.MarketingTemplate,
-        job.PriceReductionAmount,
-        job.PriceReductionVerified,
-        job.AgentAvatarConsentConfirmed);
+    private static CampaignCreativeOptions CreativeOptions(CampaignGenerationJob job) => job.CreativeOptions;
 
     private async Task<CampaignLocalizedCopy> GetOrCreateLocalizationAsync(
         CampaignGenerationJob job,

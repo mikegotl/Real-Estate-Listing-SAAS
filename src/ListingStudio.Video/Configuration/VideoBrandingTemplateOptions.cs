@@ -57,6 +57,45 @@ public sealed class VideoBrandingTemplateOptions
         Padding = 20,
     };
 
+    /// <summary>The big opening price or "Just listed" pill on a short-form edit.</summary>
+    public TextOverlayTemplateOptions HookTitle { get; set; } = new()
+    {
+        FontSize = 120,
+        TextColor = BrandColorToken.Secondary,
+        BoxColor = BrandColorToken.Primary,
+        BoxOpacity = 0.92m,
+        Padding = 28,
+    };
+
+    /// <summary>The location and bed/bath pills stacked under the hook title.</summary>
+    public TextOverlayTemplateOptions HookFact { get; set; } = new()
+    {
+        FontSize = 72,
+        TextColor = BrandColorToken.Primary,
+        BoxColor = BrandColorToken.Secondary,
+        BoxOpacity = 0.92m,
+        Padding = 20,
+    };
+
+    /// <summary>The small price and bed/bath line kept at the top of every short-form shot.</summary>
+    public TextOverlayTemplateOptions SpecLine { get; set; } = new()
+    {
+        FontSize = 46,
+        TextColor = BrandColorToken.Secondary,
+        BoxColor = BrandColorToken.Primary,
+        BoxOpacity = 0.62m,
+        Padding = 14,
+    };
+
+    public TextOverlayTemplateOptions AgentContact { get; set; } = new()
+    {
+        FontSize = 50,
+        TextColor = BrandColorToken.Secondary,
+        BoxColor = BrandColorToken.Primary,
+        BoxOpacity = 0.78m,
+        Padding = 16,
+    };
+
     public TextOverlayTemplateOptions For(TextOverlayStyle style) => style switch
     {
         TextOverlayStyle.OpeningTitle => OpeningTitle,
@@ -64,6 +103,10 @@ public sealed class VideoBrandingTemplateOptions
         TextOverlayStyle.LowerThird => LowerThird,
         TextOverlayStyle.ClosingCta => ClosingCta,
         TextOverlayStyle.PopCaption => PopCaption,
+        TextOverlayStyle.HookTitle => HookTitle,
+        TextOverlayStyle.HookFact => HookFact,
+        TextOverlayStyle.SpecLine => SpecLine,
+        TextOverlayStyle.AgentContact => AgentContact,
         _ => throw new ArgumentOutOfRangeException(nameof(style)),
     };
 }

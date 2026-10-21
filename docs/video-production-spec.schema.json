@@ -297,7 +297,17 @@
         "box": { "$ref": "#/$defs/normalizedRect" },
         "styleToken": {
           "type": "string",
-          "enum": ["openingTitle", "propertyFact", "lowerThird", "closingCta", "popCaption"]
+          "enum": [
+            "openingTitle",
+            "propertyFact",
+            "lowerThird",
+            "closingCta",
+            "popCaption",
+            "hookTitle",
+            "hookFact",
+            "specLine",
+            "agentContact"
+          ]
         }
       },
       "required": [

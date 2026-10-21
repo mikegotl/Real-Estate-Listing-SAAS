@@ -576,7 +576,7 @@ public static class FfmpegCommandBuilder
                 : $"fontfile='{EscapeFilterLiteral(Path.GetFullPath(brandingTemplate.FontFilePath))}'";
             filters.Add(
                 $"[{current}]drawtext={font}:text='{EscapeFilterLiteral(overlay.Text)}'"
-                + $":fontcolor={ResolveColor(template.TextColor, brand)}:fontsize={template.FontSize}"
+                + $":fontcolor={ResolveColor(template.TextColor, brand)}:fontsize={FontSize(template, overlay.Text, box, output)}"
                 + $":box=1:boxcolor={ResolveColor(template.BoxColor, brand)}@{Number(template.BoxOpacity)}"
                 + $":boxborderw={template.Padding}:x='{position.X}':y='{position.Y}':fix_bounds=1"
                 + $":enable='between(t,{Seconds(startMs)},{Seconds(endMs)})'[{next}]");
@@ -887,6 +887,18 @@ public static class FfmpegCommandBuilder
         {
             throw new ArgumentException("The supplied music asset or mix plan is invalid.", nameof(request));
         }
+    }
+
+    /// <summary>
+    /// Template sizes are for a 1080-pixel short side, so they scale with the output. drawtext does not wrap, so a
+    /// line too long for its box is set smaller instead of running off the frame (about 0.56 em per character).
+    /// </summary>
+    private static int FontSize(TextOverlayTemplateOptions template, string text, PixelBox box, VideoOutputProfile output)
+    {
+        var scaled = template.FontSize * Math.Min(output.Width, output.Height) / 1_080m;
+        var available = Math.Max(1, box.Width - 2 * template.Padding);
+        var fitting = available / (0.56m * Math.Max(1, text.Length));
+        return Math.Max(8, (int)Math.Floor(Math.Min(scaled, fitting)));
     }
 
     private static PixelBox ToPixelBox(NormalizedRect box, VideoOutputProfile output)

@@ -14,6 +14,8 @@ public enum CampaignVideoElement
     AgentPortrait = 1 << 7,
     ClosingCallToAction = 1 << 8,
     AgentAvatar = 1 << 9,
+    /// <summary>The agent's name and phone along the bottom of short-form videos.</summary>
+    AgentContact = 1 << 10,
 }
 
 public enum CampaignSoundtrack
@@ -23,6 +25,8 @@ public enum CampaignSoundtrack
     HeritageWarm,
     ModernAmbient,
     UpbeatLifestyle,
+    /// <summary>No music in the file; the agent adds a sound in the TikTok or Instagram app.</summary>
+    AddInApp,
 }
 
 public enum CampaignCaptionStyle
@@ -38,6 +42,31 @@ public enum CampaignMarketingTemplate
     QuickTour,
     FeatureSpotlight,
     AgentShowcase,
+    JustListed,
+    OpenHouse,
+}
+
+/// <summary>How short-form (TikTok, Reels, Shorts) videos move.</summary>
+public enum CampaignPace
+{
+    /// <summary>A cut on the beat every one to two seconds, every shot moving.</summary>
+    Fast,
+
+    /// <summary>Longer gliding shots joined by walk-through clips.</summary>
+    Cinematic,
+}
+
+/// <summary>What short-form videos say out loud.</summary>
+public enum CampaignVoiceoverMode
+{
+    /// <summary>A short voiceover written for the cut from the approved story.</summary>
+    ShortHook,
+
+    /// <summary>Music and on-screen text only.</summary>
+    None,
+
+    /// <summary>The full tour voiceover, in a 60-second vertical video.</summary>
+    Full,
 }
 
 public sealed record CampaignCreativeOptions(
@@ -48,8 +77,14 @@ public sealed record CampaignCreativeOptions(
     CampaignMarketingTemplate MarketingTemplate = CampaignMarketingTemplate.BalancedShowcase,
     decimal? PriceReductionAmount = null,
     bool PriceReductionVerified = false,
-    bool AgentAvatarConsentConfirmed = false)
+    bool AgentAvatarConsentConfirmed = false,
+    CampaignPace Pace = CampaignPace.Fast,
+    CampaignVoiceoverMode Voiceover = CampaignVoiceoverMode.ShortHook,
+    string? OpenHouseText = null,
+    bool OpenHouseVerified = false)
 {
+    public const int MaximumOpenHouseTextLength = 40;
+
     public static CampaignCreativeOptions Legacy { get; } = new(
         CampaignVideoElement.OpeningTitle
         | CampaignVideoElement.PropertyFacts
@@ -63,7 +98,8 @@ public sealed record CampaignCreativeOptions(
     public static CampaignCreativeOptions SocialDefault { get; } = new(
         Legacy.Elements
         | CampaignVideoElement.NarrationCaptions
-        | CampaignVideoElement.BackgroundMusic,
+        | CampaignVideoElement.BackgroundMusic
+        | CampaignVideoElement.AgentContact,
         CampaignSoundtrack.AutoByHomeEra,
         CampaignCaptionStyle.Pop,
         MarketingTemplate: CampaignMarketingTemplate.BalancedShowcase);
@@ -116,8 +152,38 @@ public sealed record CampaignCreativeOptions(
                 nameof(PriceReductionAmount));
         }
 
+        if (!Enum.IsDefined(Pace) || !Enum.IsDefined(Voiceover))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Pace));
+        }
+
+        if (MarketingTemplate == CampaignMarketingTemplate.OpenHouse)
+        {
+            if (string.IsNullOrWhiteSpace(OpenHouseText)
+                || OpenHouseText.Trim().Length > MaximumOpenHouseTextLength
+                || OpenHouseText.Any(char.IsControl))
+            {
+                throw new ArgumentException(
+                    $"Enter the open house day and time in up to {MaximumOpenHouseTextLength} characters.",
+                    nameof(OpenHouseText));
+            }
+
+            if (!OpenHouseVerified)
+            {
+                throw new ArgumentException(
+                    "Confirm that the open house day and time are accurate.",
+                    nameof(OpenHouseVerified));
+            }
+        }
+        else if (OpenHouseText is not null || OpenHouseVerified)
+        {
+            throw new ArgumentException(
+                "Open house details can be used only with the Open House template.",
+                nameof(OpenHouseText));
+        }
+
         var hasMusic = Elements.HasFlag(CampaignVideoElement.BackgroundMusic);
-        if (hasMusic == (Soundtrack == CampaignSoundtrack.None))
+        if (hasMusic == (Soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp))
         {
             throw new ArgumentException("The music checkbox and soundtrack choice must agree.");
         }
@@ -148,9 +214,12 @@ public sealed record CampaignCreativeOptions(
         CampaignMarketingTemplate template,
         Guid? agentPortraitId = null,
         decimal? priceReductionAmount = null,
-        bool priceReductionVerified = false)
+        bool priceReductionVerified = false,
+        string? openHouseText = null,
+        bool openHouseVerified = false)
     {
-        var common = CampaignVideoElement.OpeningTitle
+        var common = CampaignVideoElement.AgentContact
+            | CampaignVideoElement.OpeningTitle
             | CampaignVideoElement.NarrationCaptions
             | CampaignVideoElement.BackgroundMusic
             | CampaignVideoElement.WalkthroughMotion
@@ -178,6 +247,18 @@ public sealed record CampaignCreativeOptions(
                 CampaignSoundtrack.AutoByHomeEra,
                 CampaignCaptionStyle.Pop,
                 MarketingTemplate: template),
+            CampaignMarketingTemplate.JustListed => new CampaignCreativeOptions(
+                common | CampaignVideoElement.PropertyFacts,
+                CampaignSoundtrack.UpbeatLifestyle,
+                CampaignCaptionStyle.Pop,
+                MarketingTemplate: template),
+            CampaignMarketingTemplate.OpenHouse => new CampaignCreativeOptions(
+                common | CampaignVideoElement.PropertyFacts,
+                CampaignSoundtrack.UpbeatLifestyle,
+                CampaignCaptionStyle.Pop,
+                MarketingTemplate: template,
+                OpenHouseText: openHouseText,
+                OpenHouseVerified: openHouseVerified),
             CampaignMarketingTemplate.AgentShowcase => new CampaignCreativeOptions(
                 common | CampaignVideoElement.PropertyFacts
                     | (agentPortraitId.HasValue ? CampaignVideoElement.AgentPortrait : CampaignVideoElement.None),
