@@ -195,21 +195,41 @@
                 Accent is an AI voice direction and may vary by voice. Listing Studio always discloses that narration is AI-generated.
             </MudAlert>
             <MudDivider Class="my-4" />
-            <MudText Typo="Typo.subtitle2">Optional agent photo</MudText>
+            <MudText Typo="Typo.subtitle2">Agent presenter</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
-                Upload a headshot or full-body photo. It stays private and is used only when “Agent photo on closing card” is checked.
+                Your private profile headshot can appear on the closing card or as an on-screen presenter while the disclosed AI voice narrates.
             </MudText>
-            <InputFile OnChange="UploadPortraitAsync" accept="image/jpeg,image/png,image/webp" />
             @if (portrait is not null)
             {
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
                     <img src="@($"/agent-portraits/{portrait.Id}")" alt="Agent photo preview" style="width:72px;height:72px;object-fit:cover;border-radius:50%;" />
-                    <MudText Typo="Typo.caption">@portrait.OriginalFilename · @portrait.Width × @portrait.Height</MudText>
+                    <div>
+                        <MudText Typo="Typo.caption">@portrait.OriginalFilename · @portrait.Width × @portrait.Height</MudText>
+                        <MudLink Href="/profile" Typo="Typo.caption">Crop, replace, or AI-fix this headshot</MudLink>
+                    </div>
                 </MudStack>
+            }
+            else
+            {
+                <MudButton Href="/profile" Variant="Variant.Outlined" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.AddAPhoto" Class="mt-2">
+                    Add profile headshot
+                </MudButton>
+            }
+            @if (selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar))
+            {
+                <MudCheckBox T="bool"
+                             @bind-Value="selectedAgentAvatarConsent"
+                             Disabled="@(busy || IsReadOnly)"
+                             Label="I confirm this is my photo and I consent to its use as an AI presenter in this campaign" />
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                    The current presenter uses your approved portrait during the opening and closing while the selected AI voice narrates.
+                    It does not clone your voice or claim that the portrait is lip-synced.
+                </MudAlert>
             }
             <MudCheckBox T="bool"
                          @bind-Value="selectedLocalizeAgentCard"
-                         Disabled="@(busy || IsReadOnly || !selectedCreativeElements.HasFlag(CampaignVideoElement.AgentPortrait))"
+                         Disabled="@(busy || IsReadOnly || !(selectedCreativeElements.HasFlag(CampaignVideoElement.AgentPortrait) || selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)))"
                          Label="Use the selected language and accent during the agent closing card" />
         </MudPaper>
     }
@@ -376,6 +396,7 @@
     private CampaignLanguage selectedCaptionLanguage = CampaignNarrationPreferences.Default.CaptionLanguage;
     private CampaignVoiceAccent selectedVoiceAccent = CampaignNarrationPreferences.Default.VoiceAccent;
     private bool selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
+    private bool selectedAgentAvatarConsent;
     private bool selectionInitialized;
     private Guid? loadedPropertyId;
     private CampaignOutputSelection selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
@@ -421,6 +442,7 @@
                     selectedMarketingTemplate = job.CreativeOptions.MarketingTemplate;
                     selectedPriceReductionAmount = job.CreativeOptions.PriceReductionAmount;
                     selectedPriceReductionVerified = job.CreativeOptions.PriceReductionVerified;
+                    selectedAgentAvatarConsent = job.CreativeOptions.AgentAvatarConsentConfirmed;
                     selectedNarrationRegion = job.NarrationPreferences.Region;
                     selectedSpokenLanguage = job.NarrationPreferences.SpokenLanguage;
                     selectedCaptionLanguage = job.NarrationPreferences.CaptionLanguage;
@@ -474,7 +496,10 @@
             elements |= CampaignVideoElement.BackgroundMusic;
         }
 
-        var portraitId = elements.HasFlag(CampaignVideoElement.AgentPortrait) ? portrait?.Id : null;
+        var portraitId = elements.HasFlag(CampaignVideoElement.AgentPortrait)
+            || elements.HasFlag(CampaignVideoElement.AgentAvatar)
+                ? portrait?.Id
+                : null;
         job = await Service.EnqueueAsync(
             userId,
             PropertyId,
@@ -486,7 +511,8 @@
                 portraitId,
                 selectedMarketingTemplate,
                 selectedPriceReductionAmount,
-                selectedPriceReductionVerified),
+                selectedPriceReductionVerified,
+                elements.HasFlag(CampaignVideoElement.AgentAvatar) && selectedAgentAvatarConsent),
             new CampaignNarrationPreferences(
                 selectedNarrationRegion,
                 selectedSpokenLanguage,
@@ -494,29 +520,6 @@
                 selectedVoiceAccent,
                 selectedLocalizeAgentCard));
     });
-
-    private async Task UploadPortraitAsync(InputFileChangeEventArgs args)
-    {
-        busy = true;
-        error = null;
-        try
-        {
-            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-            var file = args.File;
-            await using var stream = file.OpenReadStream(IAgentPortraitService.MaximumFileSize);
-            portrait = await AgentPortraitService.UploadAsync(
-                userId,
-                new AgentPortraitUpload(file.Name, file.ContentType, file.Size, stream));
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or IOException)
-        {
-            error = exception.Message;
-        }
-        finally
-        {
-            busy = false;
-        }
-    }
 
     private async Task RetryAsync() => await MutateAsync(async userId =>
     {
@@ -647,9 +650,10 @@
 
     private bool IsCreativeElementSelected(CampaignVideoElement element) => selectedCreativeElements.HasFlag(element);
 
-    private bool TemplateReady => selectedMarketingTemplate != CampaignMarketingTemplate.PriceDrop
-        || selectedPriceReductionAmount is > 0 and <= 100_000_000m
-            && selectedPriceReductionVerified;
+    private bool TemplateReady =>
+        (selectedMarketingTemplate != CampaignMarketingTemplate.PriceDrop
+            || selectedPriceReductionAmount is > 0 and <= 100_000_000m && selectedPriceReductionVerified)
+        && (!selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar) || selectedAgentAvatarConsent);
 
     private void ApplyTemplate(CampaignMarketingTemplate template)
     {
@@ -677,10 +681,17 @@
         selectedCreativeElements = selected
             ? selectedCreativeElements | element
             : selectedCreativeElements & ~element;
-        if (element == CampaignVideoElement.AgentPortrait && selected && portrait is null)
+        if (element is CampaignVideoElement.AgentPortrait or CampaignVideoElement.AgentAvatar
+            && selected
+            && portrait is null)
         {
-            selectedCreativeElements &= ~CampaignVideoElement.AgentPortrait;
-            error = "Upload an agent photo before adding it to the video.";
+            selectedCreativeElements &= ~element;
+            error = "Add a profile headshot before adding an agent presenter to the video.";
+        }
+
+        if (element == CampaignVideoElement.AgentAvatar && !selected)
+        {
+            selectedAgentAvatarConsent = false;
         }
 
         if (element == CampaignVideoElement.KitchenIslandOrbit && selected)
@@ -721,6 +732,7 @@
         new(CampaignVideoElement.WalkthroughMotion, "Walkthrough motion", "Use enhanced walkthrough footage and available room-to-room transitions."),
         new(CampaignVideoElement.KitchenIslandOrbit, "Kitchen island turnaround", "Use three or more verified kitchen viewpoints to build a grounded multi-angle turn."),
         new(CampaignVideoElement.AgentPortrait, "Agent photo on closing card", "Place the uploaded agent photo beside the final call to action."),
+        new(CampaignVideoElement.AgentAvatar, "AI agent presenter", "Show the approved profile headshot during the opening and closing while the selected AI voice provides the tour narration."),
         new(CampaignVideoElement.ClosingCallToAction, "Closing call to action", "End with the campaign's verified contact call to action."),
     ];
 

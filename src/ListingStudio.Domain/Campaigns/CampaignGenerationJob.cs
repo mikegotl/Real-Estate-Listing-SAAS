@@ -62,6 +62,7 @@ public sealed class CampaignGenerationJob
         MarketingTemplate = creativeOptions.MarketingTemplate;
         PriceReductionAmount = creativeOptions.PriceReductionAmount;
         PriceReductionVerified = creativeOptions.PriceReductionVerified;
+        AgentAvatarConsentConfirmed = creativeOptions.AgentAvatarConsentConfirmed;
         NarrationRegion = narrationPreferences.Region;
         SpokenLanguage = narrationPreferences.SpokenLanguage;
         CaptionLanguage = narrationPreferences.CaptionLanguage;
@@ -99,6 +100,8 @@ public sealed class CampaignGenerationJob
     public decimal? PriceReductionAmount { get; private set; }
 
     public bool PriceReductionVerified { get; private set; }
+
+    public bool AgentAvatarConsentConfirmed { get; private set; }
 
     public CampaignNarrationRegion NarrationRegion { get; private set; }
 

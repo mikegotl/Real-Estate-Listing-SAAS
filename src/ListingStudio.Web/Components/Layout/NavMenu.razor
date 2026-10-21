@@ -18,6 +18,8 @@
                            StartIcon="@Icons.Material.Filled.PersonSearch">Leads</MudButton>
                 <MudButton Href="/billing" Variant="Variant.Text" Color="Color.Inherit"
                            StartIcon="@Icons.Material.Filled.CreditCard">Billing</MudButton>
+                <MudButton Href="/profile" Variant="Variant.Text" Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.AccountCircle">Profile</MudButton>
                 <AuthorizeView Policy="@PlatformAdministration.Policy">
                     <MudButton Href="/admin" Variant="Variant.Text" Color="Color.Inherit"
                                StartIcon="@Icons.Material.Filled.AdminPanelSettings">Admin</MudButton>
@@ -43,6 +45,7 @@
                         <a href="/properties"><MudIcon Icon="@Icons.Material.Filled.HomeWork" Size="Size.Small" /> Properties</a>
                         <a href="/leads"><MudIcon Icon="@Icons.Material.Filled.PersonSearch" Size="Size.Small" /> Leads</a>
                         <a href="/billing"><MudIcon Icon="@Icons.Material.Filled.CreditCard" Size="Size.Small" /> Billing</a>
+                        <a href="/profile"><MudIcon Icon="@Icons.Material.Filled.AccountCircle" Size="Size.Small" /> Profile</a>
                         <AuthorizeView Policy="@PlatformAdministration.Policy">
                             <a href="/admin"><MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" /> Admin</a>
                         </AuthorizeView>

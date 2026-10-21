@@ -402,6 +402,11 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("AgentAvatarConsentConfirmed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid?>("AgentPortraitId")
                         .HasColumnType("uuid");
 

@@ -89,6 +89,8 @@ jobs:
       OPENAI_SPEECH_ESTIMATED_COST_USD: ${{ vars.OPENAI_SPEECH_ESTIMATED_COST_USD || '0' }}
       VOICE_ESTIMATED_COST_USD: ${{ vars.VOICE_ESTIMATED_COST_USD || '0' }}
       PHOTO_FIX_ESTIMATED_COST_USD: ${{ vars.PHOTO_FIX_ESTIMATED_COST_USD || '0' }}
+      AGENT_PORTRAIT_ESTIMATED_COST_USD: ${{ vars.AGENT_PORTRAIT_ESTIMATED_COST_USD || '0' }}
+      AGENT_PORTRAIT_ENHANCEMENT_ENABLED: ${{ vars.AGENT_PORTRAIT_ENHANCEMENT_ENABLED || 'true' }}
       AI_VIDEO_ESTIMATED_COST_USD: ${{ vars.AI_VIDEO_ESTIMATED_COST_USD || '0' }}
       HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD: ${{ vars.HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD || '0' }}
 
@@ -120,6 +122,7 @@ jobs:
             OPENAI_SPEECH_ESTIMATED_COST_USD
             VOICE_ESTIMATED_COST_USD
             PHOTO_FIX_ESTIMATED_COST_USD
+            AGENT_PORTRAIT_ESTIMATED_COST_USD
             AI_VIDEO_ESTIMATED_COST_USD
             HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD
           )
@@ -164,6 +167,7 @@ jobs:
               openAiSpeechEstimatedCostUsd="$OPENAI_SPEECH_ESTIMATED_COST_USD" \
               voiceEstimatedCostUsd="$VOICE_ESTIMATED_COST_USD" \
               photoFixEstimatedCostUsd="$PHOTO_FIX_ESTIMATED_COST_USD" \
+              agentPortraitEstimatedCostUsd="$AGENT_PORTRAIT_ESTIMATED_COST_USD" \
               aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \
               higgsfieldEstimatedCostPerCallUsd="$HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD" \
               mediaAnalysisEnabled=true \
@@ -174,6 +178,7 @@ jobs:
               googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
               higgsfieldEnabled=true \
               photoClutterRemovalEnabled=true \
+              agentPortraitEnhancementEnabled="$AGENT_PORTRAIT_ENHANCEMENT_ENABLED" \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
               voiceProvider=OpenAI \
@@ -231,6 +236,7 @@ jobs:
               openAiSpeechEstimatedCostUsd="$OPENAI_SPEECH_ESTIMATED_COST_USD" \
               voiceEstimatedCostUsd="$VOICE_ESTIMATED_COST_USD" \
               photoFixEstimatedCostUsd="$PHOTO_FIX_ESTIMATED_COST_USD" \
+              agentPortraitEstimatedCostUsd="$AGENT_PORTRAIT_ESTIMATED_COST_USD" \
               aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \
               higgsfieldEstimatedCostPerCallUsd="$HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD" \
               mediaAnalysisEnabled=true \
@@ -241,6 +247,7 @@ jobs:
               googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
               higgsfieldEnabled=true \
               photoClutterRemovalEnabled=true \
+              agentPortraitEnhancementEnabled="$AGENT_PORTRAIT_ENHANCEMENT_ENABLED" \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
               voiceProvider=OpenAI \

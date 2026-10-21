@@ -49,10 +49,14 @@ public static class CampaignCreativeDirector
                 900,
                 1_400,
                 -13);
-        var portraitAssetId = options.AgentPortraitId is { } portraitId
+        var usesPortrait = options.Elements.HasFlag(CampaignVideoElement.AgentPortrait)
+            || options.Elements.HasFlag(CampaignVideoElement.AgentAvatar);
+        var portraitAssetId = usesPortrait && options.AgentPortraitId is { } portraitId
             ? $"agent-portrait:{portraitId:N}"
             : null;
-        if (portraitAssetId is not null && scenes.Length > 0)
+        if (portraitAssetId is not null
+            && options.Elements.HasFlag(CampaignVideoElement.AgentPortrait)
+            && scenes.Length > 0)
         {
             var closingIndex = scenes.Length - 1;
             var closing = scenes[closingIndex];
@@ -67,6 +71,43 @@ public static class CampaignCreativeDirector
                         : new NormalizedRect(0.78m, 0.60m, 0.16m, 0.28m),
                     0.95m)).ToArray(),
             };
+        }
+
+        if (portraitAssetId is not null
+            && options.Elements.HasFlag(CampaignVideoElement.AgentAvatar)
+            && scenes.Length > 0)
+        {
+            // The approved portrait acts as an on-screen presenter while the campaign's disclosed AI voice narrates.
+            // It is deliberately not described as lip-synced: a protected talking-avatar provider is not invoked by
+            // this deterministic renderer.
+            var first = scenes[0];
+            scenes[0] = first with
+            {
+                LogoOverlays = first.LogoOverlays.Append(new LogoOverlay(
+                    portraitAssetId,
+                    0,
+                    Math.Min(6_000, first.DurationMs),
+                    source.AspectRatio == VideoAspectRatio.Vertical9By16
+                        ? new NormalizedRect(0.56m, 0.43m, 0.36m, 0.42m)
+                        : new NormalizedRect(0.72m, 0.50m, 0.22m, 0.38m),
+                    0.98m)).ToArray(),
+            };
+            if (scenes.Length > 1)
+            {
+                var closingIndex = scenes.Length - 1;
+                var closing = scenes[closingIndex];
+                scenes[closingIndex] = closing with
+                {
+                    LogoOverlays = closing.LogoOverlays.Append(new LogoOverlay(
+                        portraitAssetId,
+                        Math.Max(0, closing.DurationMs - Math.Min(4_000, closing.DurationMs)),
+                        Math.Min(4_000, closing.DurationMs),
+                        source.AspectRatio == VideoAspectRatio.Vertical9By16
+                            ? new NormalizedRect(0.68m, 0.66m, 0.24m, 0.24m)
+                            : new NormalizedRect(0.78m, 0.60m, 0.16m, 0.28m),
+                        0.95m)).ToArray(),
+                };
+            }
         }
 
         return source with
