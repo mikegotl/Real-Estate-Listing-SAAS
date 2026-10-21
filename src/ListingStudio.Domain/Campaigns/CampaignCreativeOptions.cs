@@ -76,11 +76,19 @@ public sealed record CampaignCreativeOptions(
             throw new ArgumentOutOfRangeException(nameof(Elements), "Choose at least one supported video element.");
         }
 
-        if (!Enum.IsDefined(Soundtrack)
-            || !Enum.IsDefined(CaptionStyle)
-            || !Enum.IsDefined(MarketingTemplate))
+        if (!Enum.IsDefined(Soundtrack))
         {
             throw new ArgumentOutOfRangeException(nameof(Soundtrack));
+        }
+
+        if (!Enum.IsDefined(CaptionStyle))
+        {
+            throw new ArgumentOutOfRangeException(nameof(CaptionStyle));
+        }
+
+        if (!Enum.IsDefined(MarketingTemplate))
+        {
+            throw new ArgumentOutOfRangeException(nameof(MarketingTemplate));
         }
 
         if (MarketingTemplate == CampaignMarketingTemplate.PriceDrop)
