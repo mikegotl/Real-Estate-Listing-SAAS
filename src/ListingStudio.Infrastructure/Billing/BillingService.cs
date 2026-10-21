@@ -171,7 +171,7 @@ public sealed class BillingService(
         if (account.CampaignUsage + reservedCampaignUsage >= account.MonthlyCampaignAllowance)
         {
             throw new CampaignAllowanceExceededException(isTrial
-                ? "Your free campaign has already been used or is still processing. Choose a plan on Billing to create another campaign."
+                ? "Your free campaign allowance is fully used or another campaign is still processing. Choose a plan on Billing to create another campaign."
                 : $"Your {account.Plan} plan's campaign allowance is fully used or reserved for this period. Upgrade on Billing to continue.");
         }
     }

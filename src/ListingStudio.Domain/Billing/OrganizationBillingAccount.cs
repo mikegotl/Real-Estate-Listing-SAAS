@@ -75,7 +75,7 @@ public sealed class OrganizationBillingAccount
     public static OrganizationBillingAccount Create(
         Guid organizationId,
         DateTimeOffset now,
-        int freeTrialCampaignAllowance = 1,
+        int freeTrialCampaignAllowance = 10,
         int freeTrialDays = 30)
     {
         if (organizationId == Guid.Empty)

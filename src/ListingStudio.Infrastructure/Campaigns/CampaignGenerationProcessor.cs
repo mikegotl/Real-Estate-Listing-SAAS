@@ -1226,7 +1226,7 @@ public sealed partial class CampaignGenerationProcessor(
                 ?? throw new InvalidDataException("Stored narration timing is invalid.");
     }
 
-        private async Task<VideoRenderNarrationAsset?> MaterializeNarrationAsync(
+    private async Task<VideoRenderNarrationAsset?> MaterializeNarrationAsync(
         CampaignGenerationJob job,
         Guid narrationId,
         string directory,

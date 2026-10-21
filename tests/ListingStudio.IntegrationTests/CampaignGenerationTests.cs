@@ -282,7 +282,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
 
         var usedError = await Assert.ThrowsAsync<CampaignAllowanceExceededException>(
             () => EnqueueAsync(secondProperty));
-        Assert.Contains("already been used", usedError.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("allowance is fully used", usedError.Message, StringComparison.OrdinalIgnoreCase);
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {

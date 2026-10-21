@@ -111,6 +111,7 @@ public sealed class ListingStudioWebApplicationFactory(
                 ["Stripe:WebhookSecret"] = FakeBillingProviderGateway.WebhookSecret,
                 ["Stripe:StarterPriceId"] = FakeBillingProviderGateway.StarterPriceId,
                 ["Stripe:ProfessionalPriceId"] = FakeBillingProviderGateway.ProfessionalPriceId,
+                ["Stripe:FreeTrialCampaignAllowance"] = "1",
                 ["Stripe:StarterMonthlyCampaignAllowance"] = "2",
                 ["Stripe:ProfessionalMonthlyCampaignAllowance"] = "5",
             });
