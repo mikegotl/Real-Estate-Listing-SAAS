@@ -325,7 +325,7 @@ public static class FfmpegCommandBuilder
         }
         else if (scene.Motion.Type == MotionKind.KenBurns)
         {
-            transform = BuildKenBurns(scene.Motion, output, scene.DurationMs);
+            transform = BuildKenBurns(scene.Motion, asset, output, scene.DurationMs);
         }
         else
         {
@@ -408,8 +408,44 @@ public static class FfmpegCommandBuilder
         return result;
     }
 
-    private static string BuildKenBurns(MotionPlan motion, VideoOutputProfile output, int sceneDurationMs)
+    /// <summary>
+    /// zoompan always shows a window with the input's own shape, so a 4:3 photo would be stretched into a 9:16 or
+    /// 16:9 frame. Padding the photo to the output shape first keeps the planned viewports, which already have the
+    /// output's shape, undistorted; they lie inside the photo, so the padding never shows.
+    /// </summary>
+    private static string BuildKenBurns(
+        MotionPlan motion,
+        SceneVisualAsset asset,
+        VideoOutputProfile output,
+        int sceneDurationMs)
     {
+        var outputAspect = (decimal)output.Width / output.Height;
+        var canvasWidth = asset.Width;
+        var canvasHeight = asset.Height;
+        if ((decimal)asset.Width / asset.Height > outputAspect)
+        {
+            canvasHeight = (int)Math.Round(asset.Width / outputAspect);
+        }
+        else
+        {
+            canvasWidth = (int)Math.Round(asset.Height * outputAspect);
+        }
+
+        var padX = (canvasWidth - asset.Width) / 2;
+        var padY = (canvasHeight - asset.Height) / 2;
+        NormalizedRect OnCanvas(NormalizedRect viewport) => new(
+            (viewport.X * asset.Width + padX) / canvasWidth,
+            (viewport.Y * asset.Height + padY) / canvasHeight,
+            viewport.Width * asset.Width / canvasWidth,
+            viewport.Height * asset.Height / canvasHeight);
+        motion = motion with
+        {
+            StartViewport = OnCanvas(motion.StartViewport),
+            EndViewport = OnCanvas(motion.EndViewport),
+        };
+        var pad = canvasWidth == asset.Width && canvasHeight == asset.Height
+            ? string.Empty
+            : $"pad={canvasWidth}:{canvasHeight}:{padX}:{padY}:color=black,setsar=1,";
         var frameCount = Math.Max(2, (int)Math.Ceiling(sceneDurationMs / 1_000m * output.FrameRate));
         var rawProgress = $"min(on/{frameCount - 1},1)";
         var progress = motion.Easing == MotionEasing.EaseInOut
@@ -420,7 +456,7 @@ public static class FfmpegCommandBuilder
         var zoom = $"{Number(startZoom)}+({Number(endZoom - startZoom)})*({progress})";
         var x = $"iw*({Number(motion.StartViewport.X)}+({Number(motion.EndViewport.X - motion.StartViewport.X)})*({progress}))";
         var y = $"ih*({Number(motion.StartViewport.Y)}+({Number(motion.EndViewport.Y - motion.StartViewport.Y)})*({progress}))";
-        return $"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output.Width}x{output.Height}:fps={output.FrameRate}";
+        return $"{pad}zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output.Width}x{output.Height}:fps={output.FrameRate}";
     }
 
     private static NeighborhoodOverlay[] CreateNeighborhoodOverlays(
@@ -704,7 +740,11 @@ public static class FfmpegCommandBuilder
             chain.Add($"adelay={music.StartMs}:all=1");
         }
 
-        var narration = request.Specification.Audio.NarrationSegments;
+        // Duck under the voice where it is actually heard, which can run later and longer than planned.
+        var narration = NarrationPlacement.Place(
+            request.Specification.Audio.NarrationSegments,
+            request.Narration?.Timing,
+            (int)request.Specification.RequestedDuration * 1_000);
         if (narration.Count > 0 && music.DuckingGainDb < 0)
         {
             var duckingIntervals = string.Join(
@@ -1001,10 +1041,10 @@ public static class FfmpegCommandBuilder
             return;
         }
 
-        var expected = segments.Select(segment => segment.Id).Order(StringComparer.Ordinal).ToArray();
-        var actual = narration.Timing.Segments.Select(segment => segment.SegmentId).Order(StringComparer.Ordinal).ToArray();
+        // A shorter cut reuses the full campaign narration, so its timing may cover segments the cut leaves out.
+        var actual = narration.Timing.Segments.Select(segment => segment.SegmentId).ToArray();
         if (actual.Distinct(StringComparer.Ordinal).Count() != actual.Length
-            || !expected.SequenceEqual(actual, StringComparer.Ordinal)
+            || segments.Any(segment => !actual.Contains(segment.Id, StringComparer.Ordinal))
             || narration.Timing.Segments.Any(timing => timing.StartMs < 0 || timing.EndMs <= timing.StartMs))
         {
             throw new ArgumentException("Narration timing does not match the production specification.");

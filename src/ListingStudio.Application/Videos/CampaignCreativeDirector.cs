@@ -1,3 +1,4 @@
+using ListingStudio.Application.Audio;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Videos;
 
@@ -13,17 +14,19 @@ public static class CampaignCreativeDirector
         VideoProductionSpecification source,
         CampaignCreativeOptions options,
         int? yearBuilt,
-        IReadOnlyDictionary<string, string>? captionTextBySegmentId = null)
+        IReadOnlyDictionary<string, string>? captionTextBySegmentId = null,
+        VoiceTimingMetadata? narrationTiming = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
 
-        var scenes = source.Scenes.Select(scene => ApplyScene(
-            scene,
-            source,
-            options,
-            captionTextBySegmentId)).ToArray();
+        var scenes = source.Scenes.Select(scene => ApplyScene(scene, source, options)).ToArray();
+        if (options.Elements.HasFlag(CampaignVideoElement.NarrationCaptions))
+        {
+            AddCaptions(source, options, scenes, captionTextBySegmentId, narrationTiming);
+        }
+
         var factBindings = source.FactBindings.ToList();
         if (options.MarketingTemplate == CampaignMarketingTemplate.PriceDrop)
         {
@@ -199,8 +202,7 @@ public static class CampaignCreativeDirector
     private static VideoScene ApplyScene(
         VideoScene scene,
         VideoProductionSpecification source,
-        CampaignCreativeOptions options,
-        IReadOnlyDictionary<string, string>? captionTextBySegmentId)
+        CampaignCreativeOptions options)
     {
         var overlays = scene.TextOverlays.Where(overlay => overlay.StyleToken switch
         {
@@ -212,47 +214,6 @@ public static class CampaignCreativeDirector
             _ => true,
         }).ToList();
 
-        if (options.Elements.HasFlag(CampaignVideoElement.NarrationCaptions))
-        {
-            foreach (var segmentId in scene.NarrationSegmentIds)
-            {
-                var segment = source.Audio.NarrationSegments.FirstOrDefault(item => item.Id == segmentId);
-                if (segment is null || string.IsNullOrWhiteSpace(segment.Text))
-                {
-                    continue;
-                }
-
-                var captionText = captionTextBySegmentId is not null
-                    && captionTextBySegmentId.TryGetValue(segment.Id, out var localizedCaption)
-                    ? localizedCaption
-                    : segment.Text;
-                var words = captionText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var chunks = words.Chunk(5).ToArray();
-                var segmentStart = Math.Max(scene.StartMs, segment.StartMs);
-                var segmentEnd = Math.Min(
-                    scene.StartMs + scene.DurationMs,
-                    segment.StartMs + segment.DurationMs);
-                var localStart = Math.Max(0, segmentStart - scene.StartMs);
-                var localDuration = Math.Max(1, segmentEnd - segmentStart);
-                for (var index = 0; index < chunks.Length; index++)
-                {
-                    var start = localStart + index * Math.Max(1, localDuration / chunks.Length);
-                    var end = localStart + (index + 1) * localDuration / chunks.Length;
-                    overlays.Add(new TextOverlay(
-                        $"caption-{scene.SceneNumber}-{segment.Id}-{index}",
-                        string.Join(' ', chunks[index]).ToUpperInvariant(),
-                        segment.GroundingKey,
-                        start,
-                        Math.Max(250, end - start),
-                        OverlayAnchor.BottomCenter,
-                        new NormalizedRect(0.08m, 0.72m, 0.84m, 0.18m),
-                        options.CaptionStyle == CampaignCaptionStyle.Pop
-                            ? TextOverlayStyle.PopCaption
-                            : TextOverlayStyle.LowerThird));
-                }
-            }
-        }
-
         var visual = scene.VisualSource;
         if (!options.Elements.HasFlag(CampaignVideoElement.WalkthroughMotion)
             && visual.Kind == VisualSourceKind.PropertyVideo
@@ -262,6 +223,113 @@ public static class CampaignCreativeDirector
         }
 
         return scene with { VisualSource = visual, TextOverlays = overlays };
+    }
+
+    private static string[] ChunkCaption(string text, int maximumCharacters)
+    {
+        var chunks = new List<string>();
+        var current = new List<string>();
+        var length = 0;
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (current.Count > 0 && (current.Count == 5 || length + 1 + word.Length > maximumCharacters))
+            {
+                chunks.Add(string.Join(' ', current));
+                current.Clear();
+                length = 0;
+            }
+
+            length += (current.Count > 0 ? 1 : 0) + word.Length;
+            current.Add(word);
+        }
+
+        if (current.Count > 0)
+        {
+            chunks.Add(string.Join(' ', current));
+        }
+
+        return [.. chunks];
+    }
+
+    /// <summary>
+    /// Shows each narration segment once, in short bursts of up to five words spread over the window where the voice is heard. A
+    /// segment often spans several scenes, so each burst goes to the scene it starts in. Bursts get time in
+    /// proportion to their length, which tracks speech more closely than equal slots.
+    /// </summary>
+    private static void AddCaptions(
+        VideoProductionSpecification source,
+        CampaignCreativeOptions options,
+        VideoScene[] scenes,
+        IReadOnlyDictionary<string, string>? captionTextBySegmentId,
+        VoiceTimingMetadata? narrationTiming)
+    {
+        var programMs = (int)source.RequestedDuration * 1_000;
+        var segments = source.Audio.NarrationSegments.ToDictionary(segment => segment.Id, StringComparer.Ordinal);
+        var overlays = scenes.Select(scene => scene.TextOverlays.ToList()).ToArray();
+        // Captions are one unwrapped line, so a vertical frame takes fewer words per burst. They also sit above the
+        // closing call to action and the platform's own controls at the bottom of a phone screen.
+        var vertical = source.AspectRatio == VideoAspectRatio.Vertical9By16;
+        var captionBox = vertical
+            ? new NormalizedRect(0.08m, 0.56m, 0.84m, 0.12m)
+            : new NormalizedRect(0.08m, 0.72m, 0.84m, 0.18m);
+        foreach (var placed in NarrationPlacement.Place(source.Audio.NarrationSegments, narrationTiming, programMs))
+        {
+            var segment = segments[placed.SegmentId];
+            var captionText = captionTextBySegmentId is not null
+                && captionTextBySegmentId.TryGetValue(segment.Id, out var localizedCaption)
+                ? localizedCaption
+                : segment.Text;
+            if (string.IsNullOrWhiteSpace(captionText))
+            {
+                continue;
+            }
+
+            var spokenMs = narrationTiming?.Segments
+                .FirstOrDefault(item => item.SegmentId == segment.Id) is { } audio
+                ? audio.EndMs - audio.StartMs
+                : placed.DurationMs;
+            var chunks = ChunkCaption(captionText, vertical ? 20 : 36);
+            var totalLength = chunks.Sum(chunk => chunk.Length + 1);
+            var offset = 0;
+            for (var index = 0; index < chunks.Length; index++)
+            {
+                var startMs = placed.StartMs + (int)((long)spokenMs * offset / totalLength);
+                offset += chunks[index].Length + 1;
+                var endMs = Math.Min(
+                    placed.StartMs + placed.DurationMs,
+                    placed.StartMs + (int)((long)spokenMs * offset / totalLength));
+                if (startMs >= placed.StartMs + placed.DurationMs || startMs >= programMs)
+                {
+                    break;
+                }
+
+                var sceneIndex = Array.FindLastIndex(scenes, scene => scene.StartMs <= startMs);
+                var scene = scenes[sceneIndex];
+                var localStart = startMs - scene.StartMs;
+                var duration = Math.Min(Math.Max(250, endMs - startMs), scene.DurationMs - localStart);
+                if (duration <= 0)
+                {
+                    continue;
+                }
+
+                overlays[sceneIndex].Add(new TextOverlay(
+                    $"caption-{scene.SceneNumber}-{segment.Id}-{index}",
+                    chunks[index].ToUpperInvariant(),
+                    segment.GroundingKey,
+                    localStart,
+                    duration,
+                    OverlayAnchor.BottomCenter,
+                    captionBox,
+                    options.CaptionStyle == CampaignCaptionStyle.Pop
+                        ? TextOverlayStyle.PopCaption
+                        : TextOverlayStyle.LowerThird));
+            }
+        }
+
+        for (var index = 0; index < scenes.Length; index++)
+        {
+            scenes[index] = scenes[index] with { TextOverlays = overlays[index] };
+        }
     }
 
     private static bool IsNeighborhoodBinding(VideoProductionSpecification source, string key) =>

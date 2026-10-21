@@ -381,6 +381,7 @@ public sealed partial class CampaignGenerationProcessor(
             await GetOrCreateLocalizationAsync(job, specification, longForm: false, cancellationToken));
         specification = ApplySpokenLocalization(specification, localized);
         var captionText = localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+        var shortFormTiming = await GetNarrationTimingAsync(job, shortFormNarrationId, cancellationToken);
         var media = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.PropertyId == job.PropertyId
                 && candidate.OrganizationId == job.OrganizationId
@@ -448,7 +449,7 @@ public sealed partial class CampaignGenerationProcessor(
             foreach (var derivative in derivatives.Derivatives.Where(candidate =>
                 candidate.AspectRatio == VideoAspectRatio.Landscape16By9))
             {
-                AddDeliverable(job, shortFormNarrationId, ToOutputKind(derivative.Kind), derivative, yearBuilt, captionText);
+                AddDeliverable(job, shortFormNarrationId, ToOutputKind(derivative.Kind), derivative, yearBuilt, captionText, shortFormTiming);
             }
         }
         else
@@ -460,7 +461,8 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputKind.YouTubeTour,
                 derivatives.Get(CampaignDeliverableKind.Hero, VideoAspectRatio.Landscape16By9),
                 yearBuilt,
-                captionText);
+                captionText,
+                shortFormTiming);
             var verticalFeature = derivatives.Get(
                 CampaignDeliverableKind.Feature,
                 VideoAspectRatio.Vertical9By16);
@@ -471,7 +473,8 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputKind.TikTok,
                 verticalFeature,
                 yearBuilt,
-                captionText);
+                captionText,
+                shortFormTiming);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
@@ -479,7 +482,8 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputKind.InstagramReel,
                 verticalFeature,
                 yearBuilt,
-                captionText);
+                captionText,
+                shortFormTiming);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
@@ -487,7 +491,8 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputKind.YouTubeShort,
                 verticalFeature,
                 yearBuilt,
-                captionText);
+                captionText,
+                shortFormTiming);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
@@ -495,7 +500,8 @@ public sealed partial class CampaignGenerationProcessor(
                 CampaignOutputKind.FacebookFeed,
                 derivatives.Get(CampaignDeliverableKind.Feature, VideoAspectRatio.Landscape16By9),
                 yearBuilt,
-                captionText);
+                captionText,
+                shortFormTiming);
         }
 
         if (longFormPlan is not null && longFormNarration is not null)
@@ -517,7 +523,8 @@ public sealed partial class CampaignGenerationProcessor(
                         yearBuilt,
                         longFormLocalized!.CaptionSegments.ToDictionary(
                                 segment => segment.Id,
-                                segment => segment.Text)),
+                                segment => segment.Text),
+                        longFormNarration.Timing),
                     SerializerOptions),
                 timeProvider.GetUtcNow()));
         }
@@ -533,11 +540,12 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignOutputKind kind,
         CampaignDerivative derivative,
         int? yearBuilt,
-        IReadOnlyDictionary<string, string> captionText)
+        IReadOnlyDictionary<string, string> captionText,
+        VoiceTimingMetadata? narrationTiming)
     {
         if (job.RequestedOutputs.HasFlag(selection))
         {
-            AddDeliverable(job, narrationId, kind, derivative, yearBuilt, captionText);
+            AddDeliverable(job, narrationId, kind, derivative, yearBuilt, captionText, narrationTiming);
         }
     }
 
@@ -547,7 +555,8 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignOutputKind kind,
         CampaignDerivative derivative,
         int? yearBuilt,
-        IReadOnlyDictionary<string, string> captionText) =>
+        IReadOnlyDictionary<string, string> captionText,
+        VoiceTimingMetadata? narrationTiming) =>
         dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
             job.Id,
             job.OrganizationId,
@@ -561,7 +570,8 @@ public sealed partial class CampaignGenerationProcessor(
                     derivative.Specification,
                     CreativeOptions(job),
                     yearBuilt,
-                    captionText),
+                    captionText,
+                    narrationTiming),
                 SerializerOptions),
             timeProvider.GetUtcNow()));
 
@@ -1002,7 +1012,24 @@ public sealed partial class CampaignGenerationProcessor(
         return [.. result];
     }
 
-    private async Task<VideoRenderNarrationAsset?> MaterializeNarrationAsync(
+    private async Task<VoiceTimingMetadata?> GetNarrationTimingAsync(
+        CampaignGenerationJob job,
+        Guid narrationId,
+        CancellationToken cancellationToken)
+    {
+        var timingJson = await dbContext.VideoNarrations.AsNoTracking()
+            .Where(candidate => candidate.Id == narrationId
+                && candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId)
+            .Select(candidate => candidate.TimingJson)
+            .SingleAsync(cancellationToken);
+        return timingJson is null
+            ? null
+            : JsonSerializer.Deserialize<VoiceTimingMetadata>(timingJson, AudioSerializerOptions)
+                ?? throw new InvalidDataException("Stored narration timing is invalid.");
+    }
+
+        private async Task<VideoRenderNarrationAsset?> MaterializeNarrationAsync(
         CampaignGenerationJob job,
         Guid narrationId,
         string directory,
