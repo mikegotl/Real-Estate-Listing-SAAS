@@ -70,6 +70,10 @@ public enum TextOverlayStyle
     LowerThird,
     ClosingCta,
     PopCaption,
+    HookTitle,
+    HookFact,
+    SpecLine,
+    AgentContact,
 }
 
 public enum MusicMood

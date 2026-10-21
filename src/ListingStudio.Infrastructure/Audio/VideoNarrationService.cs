@@ -213,7 +213,11 @@ public sealed class VideoNarrationService(
                 sourceById[segment.Id].DurationMs))
             .OrderBy(segment => segment.PlannedStartMs)
             .ToArray();
-        return new VoiceGenerationRequest(segments, options.SpokenLanguageCode, options.AccentInstructions);
+        return new VoiceGenerationRequest(
+            segments,
+            options.SpokenLanguageCode,
+            options.AccentInstructions,
+            options.VoiceAccent);
     }
 
     private static void ValidateGeneratedResult(

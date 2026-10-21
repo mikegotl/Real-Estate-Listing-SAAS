@@ -83,6 +83,9 @@ jobs:
       GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
       HIGGSFIELD_API_KEY: ${{ secrets.HIGGSFIELD_API_KEY }}
       HIGGSFIELD_API_SECRET: ${{ secrets.HIGGSFIELD_API_SECRET }}
+      # Optional: with this secret set, campaign narration uses ElevenLabs instead of OpenAI.
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      VOICE_PROVIDER: ${{ secrets.ELEVENLABS_API_KEY != '' && 'ElevenLabs' || 'OpenAI' }}
       OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD: ${{ vars.OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD || '0' }}
       OPENAI_STORY_ESTIMATED_COST_USD: ${{ vars.OPENAI_STORY_ESTIMATED_COST_USD || '0' }}
       OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD: ${{ vars.OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD || '0' }}
@@ -181,7 +184,8 @@ jobs:
               agentPortraitEnhancementEnabled="$AGENT_PORTRAIT_ENHANCEMENT_ENABLED" \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
-              voiceProvider=OpenAI \
+              voiceProvider="$VOICE_PROVIDER" \
+              elevenLabsApiKey="$ELEVENLABS_API_KEY" \
               deployApplications=false \
             --query properties.outputs \
             --output json)
@@ -250,7 +254,8 @@ jobs:
               agentPortraitEnhancementEnabled="$AGENT_PORTRAIT_ENHANCEMENT_ENABLED" \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
-              voiceProvider=OpenAI \
+              voiceProvider="$VOICE_PROVIDER" \
+              elevenLabsApiKey="$ELEVENLABS_API_KEY" \
               deployApplications=true \
               webImage="$ACR_LOGIN_SERVER/listingstudio-web:$GITHUB_SHA" \
               workerImage="$ACR_LOGIN_SERVER/listingstudio-worker:$GITHUB_SHA" \

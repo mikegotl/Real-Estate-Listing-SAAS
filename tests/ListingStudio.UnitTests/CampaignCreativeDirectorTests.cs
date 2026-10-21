@@ -1,3 +1,4 @@
+using ListingStudio.Application.Audio;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Videos;
@@ -113,6 +114,75 @@ public sealed class CampaignCreativeDirectorTests
 
         Assert.All(result.Scenes, scene => Assert.Equal(TransitionKind.Cut, scene.TransitionIn.Type));
         Assert.False(options.Elements.HasFlag(CampaignVideoElement.PropertyFacts));
+    }
+
+    [Fact]
+    public void CaptionsShowANarrationThatSpansScenesOnceWhileTheVoiceIsHeard()
+    {
+        var source = CreateSpecification();
+        var narration = source.Audio.NarrationSegments[0] with { StartMs = 0, DurationMs = 8_000 };
+        var first = source.Scenes[0] with { NarrationSegmentIds = [narration.Id] };
+        source = source with
+        {
+            Audio = source.Audio with { NarrationSegments = [narration] },
+            Scenes = [first, first with { SceneNumber = 2, StartMs = 4_000 }],
+        };
+        var timing = new VoiceTimingMetadata([], [new VoiceSegmentTiming(narration.Id, 0, 6_000)]);
+
+        var result = CampaignCreativeDirector.Apply(
+            source, CampaignCreativeOptions.SocialDefault, 2020, narrationTiming: timing);
+
+        var captions = result.Scenes
+            .SelectMany(scene => scene.TextOverlays
+                .Where(overlay => overlay.StyleToken == TextOverlayStyle.PopCaption)
+                .Select(overlay => (Scene: scene, Overlay: overlay)))
+            .OrderBy(item => item.Scene.StartMs + item.Overlay.StartOffsetMs)
+            .ToArray();
+        Assert.Equal(
+            narration.Text.ToUpperInvariant(),
+            string.Join(' ', captions.Select(item => item.Overlay.Text)));
+        Assert.All(result.Scenes, scene => Assert.Contains(scene.TextOverlays,
+            overlay => overlay.StyleToken == TextOverlayStyle.PopCaption));
+        Assert.All(captions, item =>
+        {
+            Assert.True(item.Overlay.Text.Length <= 20);
+            Assert.True(item.Scene.StartMs + item.Overlay.StartOffsetMs < 6_000);
+            Assert.True(item.Overlay.StartOffsetMs + item.Overlay.DurationMs <= item.Scene.DurationMs);
+        });
+    }
+
+    [Fact]
+    public void CaptionsStartAsTheirFirstWordIsSpokenWhenTheVoiceHasCharacterTiming()
+    {
+        var source = CreateSpecification();
+        var narration = source.Audio.NarrationSegments[0];
+        // "A bright kitchen opens into generous living space": each word starts 400 ms after the last.
+        var characters = new List<VoiceCharacterTiming>();
+        var clock = 0;
+        foreach (var word in narration.Text.Split(' '))
+        {
+            foreach (var character in word)
+            {
+                characters.Add(new VoiceCharacterTiming(character.ToString(), clock, clock + 10));
+                clock += 10;
+            }
+
+            characters.Add(new VoiceCharacterTiming(" ", clock, clock + 10));
+            clock = (characters.Count(mark => mark.Character == " ")) * 400;
+        }
+
+        var timing = new VoiceTimingMetadata(characters, [new VoiceSegmentTiming(narration.Id, 0, 3_000)]);
+
+        var result = CampaignCreativeDirector.Apply(
+            source, CampaignCreativeOptions.SocialDefault, 2020, narrationTiming: timing);
+
+        var captions = result.Scenes[0].TextOverlays
+            .Where(overlay => overlay.StyleToken == TextOverlayStyle.PopCaption)
+            .OrderBy(overlay => overlay.StartOffsetMs)
+            .ToArray();
+        // Vertical bursts of up to 20 characters start at words 0, 3 and 6.
+        Assert.Equal(["A BRIGHT KITCHEN", "OPENS INTO GENEROUS", "LIVING SPACE"], captions.Select(caption => caption.Text));
+        Assert.Equal([0, 1_200, 2_400], captions.Select(caption => caption.StartOffsetMs));
     }
 
     private static VideoProductionSpecification CreateSpecification()

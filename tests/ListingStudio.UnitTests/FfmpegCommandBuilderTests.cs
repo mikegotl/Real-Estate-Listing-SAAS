@@ -82,6 +82,77 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildPadsAPhotoToTheOutputShapeBeforeKenBurnsSoItIsNotStretched()
+    {
+        var request = CreateRequest();
+        var fill = new NormalizedRect(0, 0.125m, 1, 0.75m);
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            Motion = scenes[0].Motion with { StartViewport = fill, EndViewport = new NormalizedRect(0.1m, 0.2m, 0.8m, 0.6m) },
+        };
+        scenes[1] = scenes[1] with { Motion = scenes[1].Motion with { StartViewport = fill, EndViewport = fill } };
+        request = request with
+        {
+            Specification = request.Specification with { Scenes = scenes },
+            PropertyMedia = [request.PropertyMedia[0] with { Width = 320, Height = 240 }],
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        // 4:3 pads to 427x240; the 16:9 viewport is then as wide as it is tall on the canvas, so zoom 1/0.749415.
+        Assert.Contains("[0:v]pad=427:240:53:0:color=black,setsar=1,zoompan=z='1.334375+", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildAcceptsTimingForSegmentsThatAShorterCutLeftOut()
+    {
+        var request = CreateRequest() with
+        {
+            Narration = new VideoRenderNarrationAsset(
+                CreateFile("campaign-narration.wav"),
+                new VoiceTimingMetadata(
+                    [],
+                    [
+                        new VoiceSegmentTiming("narration-1", 0, 500),
+                        new VoiceSegmentTiming("narration-left-out", 500, 4_000),
+                        new VoiceSegmentTiming("narration-2", 4_000, 4_500),
+                    ])),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("atrim=start=4:end=4.5,asetpts=PTS-STARTPTS,adelay=9000:all=1", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("end=4,", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildDucksMusicWhereAnOverrunningVoiceIsActuallyHeard()
+    {
+        var request = CreateBrandedRequest() with
+        {
+            Narration = new VideoRenderNarrationAsset(
+                CreateFile("narration-long.wav"),
+                new VoiceTimingMetadata(
+                    [],
+                    [
+                        new VoiceSegmentTiming("narration-1", 0, 9_000),
+                        new VoiceSegmentTiming("narration-2", 9_000, 10_000),
+                    ])),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("volume='if(gt(between(t,0.5,9.5)+between(t,9.5,10.5),0)", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildRejectsUnsupportedOutputProfile()
     {
         var request = CreateRequest();
@@ -159,7 +230,7 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         Assert.Contains("volume=-18dB", graph, StringComparison.Ordinal);
         Assert.Contains("afade=t=in:st=0:d=1", graph, StringComparison.Ordinal);
         Assert.Contains("afade=t=out:st=14:d=1", graph, StringComparison.Ordinal);
-        Assert.Contains("volume='if(gt(between(t,0.5,1.5)+between(t,9,10),0)", graph, StringComparison.Ordinal);
+        Assert.Contains("volume='if(gt(between(t,0.5,1)+between(t,9,9.5),0)", graph, StringComparison.Ordinal);
         Assert.Contains("fade=t=in:st=0:d=0.6", graph, StringComparison.Ordinal);
         Assert.Contains("fade=t=out:st=14.1:d=0.9", graph, StringComparison.Ordinal);
     }

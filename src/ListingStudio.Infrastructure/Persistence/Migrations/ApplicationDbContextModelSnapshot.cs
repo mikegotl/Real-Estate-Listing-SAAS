@@ -483,8 +483,24 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("NextAttemptAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("OpenHouseText")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<bool>("OpenHouseVerified")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Pace")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Fast");
 
                     b.Property<decimal?>("PriceReductionAmount")
                         .HasPrecision(14, 2)
@@ -509,6 +525,16 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasDefaultValue("LegacyStandard");
+
+                    b.Property<string>("ShortFormLocalizedCopyJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ShortFormVoiceover")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("ShortHook");
 
                     b.Property<string>("SocialCaptionLong")
                         .HasMaxLength(4000)

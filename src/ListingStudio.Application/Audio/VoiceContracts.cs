@@ -6,15 +6,19 @@ public sealed record VoiceNarrationSegment(
     int PlannedStartMs,
     int PlannedDurationMs);
 
+/// <param name="VoiceAccent">The campaign's voice accent (a CampaignVoiceAccent name); a provider with a voice
+/// per accent picks it from this.</param>
 public sealed record VoiceGenerationRequest(
     IReadOnlyList<VoiceNarrationSegment> Segments,
     string SpokenLanguageCode = "en",
-    string AccentInstructions = "");
+    string AccentInstructions = "",
+    string VoiceAccent = "");
 
 public sealed record NarrationGenerationOptions(
     IReadOnlyList<VoiceNarrationSegment> Segments,
     string SpokenLanguageCode,
-    string AccentInstructions);
+    string AccentInstructions,
+    string VoiceAccent = "");
 
 public sealed record VoiceCharacterTiming(string Character, int StartMs, int EndMs);
 

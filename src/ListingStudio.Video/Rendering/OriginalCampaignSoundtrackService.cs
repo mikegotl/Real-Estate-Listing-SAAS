@@ -21,9 +21,12 @@ public sealed class OriginalCampaignSoundtrackService : ICampaignSoundtrackServi
 
         var profile = assetId switch
         {
-            CampaignCreativeDirector.HeritageWarmAssetId => new Profile(76, [261.63, 329.63, 392.00], 0.20),
-            CampaignCreativeDirector.ModernAmbientAssetId => new Profile(92, [220.00, 277.18, 329.63], 0.16),
-            CampaignCreativeDirector.UpbeatLifestyleAssetId => new Profile(112, [293.66, 369.99, 440.00], 0.18),
+            CampaignCreativeDirector.HeritageWarmAssetId => new Profile(
+                CampaignCreativeDirector.BeatsPerMinute(assetId), [261.63, 329.63, 392.00], 0.16, 0.45, false),
+            CampaignCreativeDirector.ModernAmbientAssetId => new Profile(
+                CampaignCreativeDirector.BeatsPerMinute(assetId), [220.00, 277.18, 329.63], 0.13, 0.75, true),
+            CampaignCreativeDirector.UpbeatLifestyleAssetId => new Profile(
+                CampaignCreativeDirector.BeatsPerMinute(assetId), [293.66, 369.99, 440.00], 0.14, 1.0, true),
             _ => throw new InvalidDataException("The selected soundtrack is not part of the Listing Studio music library."),
         };
 
@@ -58,20 +61,13 @@ public sealed class OriginalCampaignSoundtrackService : ICampaignSoundtrackServi
         await stream.WriteAsync(header, cancellationToken);
 
         var buffer = new byte[16_384];
-        var beatSeconds = 60d / profile.BeatsPerMinute;
-        var chordSeconds = beatSeconds * 4;
         var written = 0;
         while (written < samples)
         {
             var batch = Math.Min(buffer.Length / 2, samples - written);
             for (var index = 0; index < batch; index++)
             {
-                var time = (written + index) / (double)SampleRate;
-                var chordStep = (int)(time / chordSeconds) % 4;
-                var shift = chordStep switch { 1 => 4d / 3d, 2 => 3d / 2d, 3 => 5d / 4d, _ => 1d };
-                var value = profile.Frequencies.Sum(frequency => Math.Sin(2 * Math.PI * frequency * shift * time)) / 3d;
-                var pulse = Math.Exp(-8 * (time % beatSeconds) / beatSeconds) * Math.Sin(2 * Math.PI * 82 * time);
-                var sample = (short)Math.Clamp((value * profile.Gain + pulse * 0.08) * short.MaxValue, short.MinValue, short.MaxValue);
+                var sample = (short)(Math.Tanh(Sample(written + index, profile) * 1.2) * 0.85 * short.MaxValue);
                 BinaryPrimitives.WriteInt16LittleEndian(buffer.AsSpan(index * 2), sample);
             }
 
@@ -80,5 +76,46 @@ public sealed class OriginalCampaignSoundtrackService : ICampaignSoundtrackServi
         }
     }
 
-    private sealed record Profile(int BeatsPerMinute, double[] Frequencies, double Gain);
+    /// <summary>
+    /// A four-chord pad with a plucked bass on the chord root and a drum pattern locked to the tempo: a kick on every
+    /// beat, a snare on two and four and a hi-hat on the eighths. Short-form edits cut on the same beat, so the
+    /// cuts land on the drums.
+    /// </summary>
+    private static double Sample(int sampleIndex, Profile profile)
+    {
+        var time = sampleIndex / (double)SampleRate;
+        var beatSeconds = 60d / profile.BeatsPerMinute;
+        var beatIndex = (long)(time / beatSeconds);
+        var inBeat = time - beatIndex * beatSeconds;
+        var chordStep = (int)(beatIndex / 4 % 4);
+        var shift = chordStep switch { 1 => 4d / 3d, 2 => 3d / 2d, 3 => 5d / 4d, _ => 1d };
+
+        var pad = profile.Frequencies.Sum(frequency => Math.Sin(2 * Math.PI * frequency * shift * time)) / 3d
+            * profile.PadGain;
+        var bassFrequency = profile.Frequencies[0] / 2 * shift;
+        var bassNote = profile.EighthBass ? inBeat % (beatSeconds / 2) : inBeat;
+        var bass = Math.Sin(2 * Math.PI * bassFrequency * time) * Math.Exp(-5 * bassNote) * 0.22;
+
+        var kickPhase = 2 * Math.PI * (48 * inBeat + 2.8 * (1 - Math.Exp(-28 * inBeat)));
+        var kick = Math.Sin(kickPhase) * Math.Exp(-11 * inBeat) * 0.55;
+        var snare = beatIndex % 2 == 1
+            ? (Noise(sampleIndex) * 0.6 + Math.Sin(2 * Math.PI * 185 * inBeat) * 0.4) * Math.Exp(-18 * inBeat) * 0.32
+            : 0;
+        var inEighth = inBeat % (beatSeconds / 2);
+        var hat = (Noise(sampleIndex) - Noise(sampleIndex - 1)) * Math.Exp(-70 * inEighth) * 0.07;
+
+        return pad + bass + (kick + snare + hat) * profile.DrumLevel;
+    }
+
+    /// <summary>Deterministic white noise in [-1, 1], so the same soundtrack renders identically every time.</summary>
+    private static double Noise(int sampleIndex)
+    {
+        var value = unchecked((uint)sampleIndex * 2_654_435_761u);
+        value ^= value >> 15;
+        value = unchecked(value * 2_246_822_519u);
+        value ^= value >> 13;
+        return value / (double)uint.MaxValue * 2 - 1;
+    }
+
+    private sealed record Profile(int BeatsPerMinute, double[] Frequencies, double PadGain, double DrumLevel, bool EighthBass);
 }

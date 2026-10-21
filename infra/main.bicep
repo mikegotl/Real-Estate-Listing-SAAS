@@ -89,7 +89,11 @@ param higgsfieldApiKey string = ''
 @description('Higgsfield API secret.')
 param higgsfieldApiSecret string = ''
 
-@description('Narration provider. Production defaults to OpenAI so no separate ElevenLabs credential is required.')
+@secure()
+@description('ElevenLabs API key. Required when voiceProvider is ElevenLabs.')
+param elevenLabsApiKey string = ''
+
+@description('Narration provider. The deploy workflow selects ElevenLabs when an ElevenLabs API key is configured.')
 @allowed([
   'OpenAI'
   'ElevenLabs'
@@ -404,6 +408,14 @@ resource googlePlacesApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01'
   }
 }
 
+resource elevenLabsApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(elevenLabsApiKey)) {
+  parent: keyVault
+  name: 'elevenlabs-api-key'
+  properties: {
+    value: elevenLabsApiKey
+  }
+}
+
 resource higgsfieldApiKeySecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(higgsfieldApiKey)) {
   parent: keyVault
   name: 'higgsfield-api-key'
@@ -629,7 +641,12 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
     name: 'Voice__Provider'
     value: voiceProvider
   }
-], !empty(openAiApiKey) ? [
+], !empty(elevenLabsApiKey) ? [
+  {
+    name: 'Voice__ApiKey'
+    secretRef: 'elevenlabs-api-key'
+  }
+] : [], !empty(openAiApiKey) ? [
   {
     name: 'OpenAI__ApiKey'
     secretRef: 'openai-api-key'
@@ -690,7 +707,13 @@ var databaseKeyVaultSecrets = [
   }
 ]
 
-var providerKeyVaultSecrets = concat(databaseKeyVaultSecrets, !empty(openAiApiKey) ? [
+var providerKeyVaultSecrets = concat(databaseKeyVaultSecrets, !empty(elevenLabsApiKey) ? [
+  {
+    name: 'elevenlabs-api-key'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/elevenlabs-api-key'
+    identity: runtimeIdentity.id
+  }
+] : [], !empty(openAiApiKey) ? [
   {
     name: 'openai-api-key'
     keyVaultUrl: '${keyVault.properties.vaultUri}secrets/openai-api-key'

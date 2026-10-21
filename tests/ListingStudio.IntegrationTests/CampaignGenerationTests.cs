@@ -377,6 +377,12 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         var owner = await CreateOwnerAndPropertyAsync("campaign-platform-outputs");
         await UploadAsync(owner);
         QueueSuccessfulProviders();
+        var shortFormSegments = new List<string>();
+        fixture.Factory.VoiceProvider.Enqueue(request =>
+        {
+            shortFormSegments.AddRange(request.Segments.Select(segment => segment.Id));
+            return CreateSegmentedVoiceResult(request);
+        });
 
         var queued = await EnqueueAsync(owner, CampaignOutputSelectionPolicy.Recommended);
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
@@ -390,7 +396,31 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             item => AssertPlatformCut(item, CampaignOutputKind.YouTubeShort, 30, "9:16"),
             item => AssertPlatformCut(item, CampaignOutputKind.YouTubeTour, 60, "16:9"),
             item => AssertPlatformCut(item, CampaignOutputKind.FacebookFeed, 30, "16:9"));
+
+        // TikTok, Reels and Shorts share one beat-cut edit voiced with its own short voiceover.
+        Assert.Equal("short-story.openingHook", shortFormSegments[0]);
+        Assert.Equal("short-story.closingCta", shortFormSegments[^1]);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deliverables = await db.CampaignDeliverables.AsNoTracking()
+            .Where(item => item.CampaignGenerationJobId == queued.Id)
+            .ToListAsync();
+        var tikTok = deliverables.Single(item => item.Kind == CampaignOutputKind.TikTok);
+        var tour = deliverables.Single(item => item.Kind == CampaignOutputKind.YouTubeTour);
+        Assert.NotEqual(tour.VideoNarrationId, tikTok.VideoNarrationId);
+        Assert.Equal(tikTok.VideoNarrationId, deliverables.Single(item => item.Kind == CampaignOutputKind.InstagramReel).VideoNarrationId);
+        Assert.Contains("\"hookTitle\"", tikTok.SpecificationJson, StringComparison.Ordinal);
     }
+
+    private static VoiceGenerationResult CreateSegmentedVoiceResult(VoiceGenerationRequest request) => new(
+        [1, 2, 3, 4],
+        "audio/mpeg",
+        ".mp3",
+        request.Segments.Count * 1_000,
+        new VoiceTimingMetadata(
+            [new VoiceCharacterTiming("W", 0, 1_000)],
+            request.Segments.Select((segment, index) =>
+                new VoiceSegmentTiming(segment.Id, index * 1_000, index * 1_000 + 900)).ToArray()));
 
     [Fact]
     public async Task FullNarratedTourRequiresAnAcceptedLongScript()
