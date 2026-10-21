@@ -3,6 +3,7 @@ using ListingStudio.AI.DependencyInjection;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.DependencyInjection;
 using ListingStudio.Application.Campaigns;
+using ListingStudio.Application.Videos;
 using ListingStudio.Application.Billing;
 using ListingStudio.Domain.Billing;
 using ListingStudio.Domain.Campaigns;
@@ -310,6 +311,39 @@ app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
             deliverable.Content,
             deliverable.ContentType,
             enableRangeProcessing: true);
+}).RequireAuthorization();
+
+// A 15-second sample of a library soundtrack for the Campaign tab's music preview.
+app.MapGet("/campaigns/soundtracks/{soundtrack}", async (
+    CampaignSoundtrack soundtrack,
+    ICampaignSoundtrackService soundtrackService,
+    CancellationToken cancellationToken) =>
+{
+    if (soundtrack is not (CampaignSoundtrack.HeritageWarm or CampaignSoundtrack.ModernAmbient
+        or CampaignSoundtrack.UpbeatLifestyle))
+    {
+        return Results.NotFound();
+    }
+
+    var directory = Path.Combine(Path.GetTempPath(), "listing-studio-soundtrack-previews", Guid.NewGuid().ToString("N"));
+    try
+    {
+        var asset = await soundtrackService.MaterializeAsync(
+            CampaignCreativeDirector.SoundtrackAssetId(soundtrack),
+            15_000,
+            directory,
+            cancellationToken);
+        return asset is null
+            ? Results.NotFound()
+            : Results.File(await File.ReadAllBytesAsync(asset.FilePath, cancellationToken), "audio/wav");
+    }
+    finally
+    {
+        if (Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }).RequireAuthorization();
 
 app.MapGet("/agent-portraits/{portraitId:guid}", async (

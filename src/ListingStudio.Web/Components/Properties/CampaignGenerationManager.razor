@@ -115,6 +115,91 @@
                     </MudText>
                 }
             }
+            @if (selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse)
+            {
+                <MudGrid Spacing="2" Class="mb-3">
+                    <MudItem xs="12" sm="6">
+                        <MudTextField T="string"
+                                      Label="Open house day and time"
+                                      Placeholder="Sat 1-3 PM"
+                                      @bind-Value="selectedOpenHouseText"
+                                      MaxLength="CampaignCreativeOptions.MaximumOpenHouseTextLength"
+                                      Counter="CampaignCreativeOptions.MaximumOpenHouseTextLength"
+                                      Variant="Variant.Outlined"
+                                      Disabled="@(busy || IsReadOnly)" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudCheckBox T="bool"
+                                     @bind-Value="selectedOpenHouseVerified"
+                                     Disabled="@(busy || IsReadOnly)"
+                                     Label="I confirm the open house day and time are accurate" />
+                    </MudItem>
+                </MudGrid>
+                @if (!TemplateReady)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Error" Class="mb-3">
+                        Enter the open house day and time and confirm them before generating this template.
+                    </MudText>
+                }
+            }
+            <MudText Typo="Typo.subtitle2" Class="mt-2">TikTok, Reels and Shorts</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                Short videos open with the price and location, cut on the music beat, and end on your contact card.
+            </MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignPace" Label="Style" @bind-Value="selectedPace" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        <MudSelectItem Value="CampaignPace.Fast">Fast cuts on the beat</MudSelectItem>
+                        <MudSelectItem Value="CampaignPace.Cinematic">Cinematic glide</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignVoiceoverMode" Label="Voiceover" @bind-Value="selectedVoiceover" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        <MudSelectItem Value="CampaignVoiceoverMode.ShortHook">Short voiceover (30 seconds)</MudSelectItem>
+                        <MudSelectItem Value="CampaignVoiceoverMode.None">Music and text only (30 seconds)</MudSelectItem>
+                        <MudSelectItem Value="CampaignVoiceoverMode.Full">Full tour voiceover (60 seconds)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignSoundtrack" Label="Music" @bind-Value="selectedSoundtrack" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        <MudSelectItem Value="CampaignSoundtrack.AutoByHomeEra">Choose for the home's era</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.UpbeatLifestyle">Upbeat lifestyle</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.ModernAmbient">Modern ambient</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.HeritageWarm">Heritage warm</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.AddInApp">None, I'll add a sound in TikTok or Instagram</MudSelectItem>
+                        <MudSelectItem Value="CampaignSoundtrack.None">No music</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    @if (PreviewSoundtrack is { } previewSoundtrack)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Preview</MudText>
+                        <audio controls preload="none" src="@($"/campaigns/soundtracks/{previewSoundtrack}")"
+                               style="width:100%;" aria-label="Preview the selected music"></audio>
+                    }
+                    else if (selectedSoundtrack == CampaignSoundtrack.AutoByHomeEra)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            Older homes get Heritage warm, mid-century homes Upbeat lifestyle, newer homes Modern ambient.
+                        </MudText>
+                    }
+                    else if (selectedSoundtrack == CampaignSoundtrack.AddInApp)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            The videos have no music, so a trending sound you add in the app won't clash.
+                        </MudText>
+                    }
+                </MudItem>
+                <MudItem xs="12">
+                    <MudCheckBox T="bool"
+                                 Value="@IsCreativeElementSelected(CampaignVideoElement.AgentContact)"
+                                 ValueChanged="@(value => SetCreativeElement(CampaignVideoElement.AgentContact, value))"
+                                 Disabled="@(busy || IsReadOnly)"
+                                 Label="Show my name and phone on short videos" />
+                </MudItem>
+            </MudGrid>
+            <MudExpansionPanels Elevation="0" Outlined="true" Class="mt-3">
+                <MudExpansionPanel Text="Advanced: on-screen elements and captions">
             <MudGrid Spacing="2">
                 @foreach (var option in CreativeElementOptions)
                 {
@@ -137,21 +222,14 @@
             }
             <MudGrid Spacing="2" Class="mt-2">
                 <MudItem xs="12" sm="6">
-                    <MudSelect T="CampaignSoundtrack" Label="Soundtrack" @bind-Value="selectedSoundtrack" Variant="Variant.Outlined">
-                        <MudSelectItem Value="CampaignSoundtrack.None">No background music</MudSelectItem>
-                        <MudSelectItem Value="CampaignSoundtrack.AutoByHomeEra">Choose for the home's era</MudSelectItem>
-                        <MudSelectItem Value="CampaignSoundtrack.HeritageWarm">Heritage warm</MudSelectItem>
-                        <MudSelectItem Value="CampaignSoundtrack.ModernAmbient">Modern ambient</MudSelectItem>
-                        <MudSelectItem Value="CampaignSoundtrack.UpbeatLifestyle">Upbeat lifestyle</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudSelect T="CampaignCaptionStyle" Label="Caption look" @bind-Value="selectedCaptionStyle" Variant="Variant.Outlined">
+                    <MudSelect T="CampaignCaptionStyle" Label="Caption look" @bind-Value="selectedCaptionStyle" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
                         <MudSelectItem Value="CampaignCaptionStyle.Pop">Poppy social captions</MudSelectItem>
                         <MudSelectItem Value="CampaignCaptionStyle.Classic">Classic captions</MudSelectItem>
                     </MudSelect>
                 </MudItem>
             </MudGrid>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
             <MudDivider Class="my-4" />
             <MudText Typo="Typo.subtitle2">Narration and captions</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
@@ -397,6 +475,10 @@
     private CampaignVoiceAccent selectedVoiceAccent = CampaignNarrationPreferences.Default.VoiceAccent;
     private bool selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
     private bool selectedAgentAvatarConsent;
+    private CampaignPace selectedPace = CampaignCreativeOptions.SocialDefault.Pace;
+    private CampaignVoiceoverMode selectedVoiceover = CampaignCreativeOptions.SocialDefault.Voiceover;
+    private string? selectedOpenHouseText;
+    private bool selectedOpenHouseVerified;
     private bool selectionInitialized;
     private Guid? loadedPropertyId;
     private CampaignOutputSelection selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
@@ -443,6 +525,10 @@
                     selectedPriceReductionAmount = job.CreativeOptions.PriceReductionAmount;
                     selectedPriceReductionVerified = job.CreativeOptions.PriceReductionVerified;
                     selectedAgentAvatarConsent = job.CreativeOptions.AgentAvatarConsentConfirmed;
+                    selectedPace = job.CreativeOptions.Pace;
+                    selectedVoiceover = job.CreativeOptions.Voiceover;
+                    selectedOpenHouseText = job.CreativeOptions.OpenHouseText;
+                    selectedOpenHouseVerified = job.CreativeOptions.OpenHouseVerified;
                     selectedNarrationRegion = job.NarrationPreferences.Region;
                     selectedSpokenLanguage = job.NarrationPreferences.SpokenLanguage;
                     selectedCaptionLanguage = job.NarrationPreferences.CaptionLanguage;
@@ -487,7 +573,7 @@
     private async Task GenerateAsync() => await MutateAsync(async userId =>
     {
         var elements = selectedCreativeElements;
-        if (selectedSoundtrack == CampaignSoundtrack.None)
+        if (selectedSoundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp)
         {
             elements &= ~CampaignVideoElement.BackgroundMusic;
         }
@@ -512,7 +598,11 @@
                 selectedMarketingTemplate,
                 selectedPriceReductionAmount,
                 selectedPriceReductionVerified,
-                elements.HasFlag(CampaignVideoElement.AgentAvatar) && selectedAgentAvatarConsent),
+                elements.HasFlag(CampaignVideoElement.AgentAvatar) && selectedAgentAvatarConsent,
+                selectedPace,
+                selectedVoiceover,
+                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText?.Trim() : null,
+                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse && selectedOpenHouseVerified),
             new CampaignNarrationPreferences(
                 selectedNarrationRegion,
                 selectedSpokenLanguage,
@@ -631,9 +721,9 @@
 
     private static readonly OutputOption[] OutputOptions =
     [
-        new(CampaignOutputSelection.TikTok, "TikTok", "Vertical 1080 × 1920 · approximately 30 seconds · quick hook, captions, and CTA."),
-        new(CampaignOutputSelection.InstagramReel, "Instagram Reel", "Vertical 1080 × 1920 · approximately 30 seconds · Reel-safe framing and captions."),
-        new(CampaignOutputSelection.YouTubeShort, "YouTube Short", "Vertical 1080 × 1920 · approximately 30 seconds · concise highlight edit."),
+        new(CampaignOutputSelection.TikTok, "TikTok", "Vertical 1080 × 1920 · 30 seconds (60 with the full voiceover) · price hook, beat-cut edit, contact card."),
+        new(CampaignOutputSelection.InstagramReel, "Instagram Reel", "Vertical 1080 × 1920 · the same beat-cut edit as TikTok, with Reel-safe text placement."),
+        new(CampaignOutputSelection.YouTubeShort, "YouTube Short", "Vertical 1080 × 1920 · the same beat-cut edit as TikTok."),
         new(CampaignOutputSelection.YouTubeTour, "YouTube property tour", "Horizontal 1920 × 1080 · approximately 60 seconds · logical walkthrough order."),
         new(CampaignOutputSelection.FacebookFeed, "Facebook Feed", "Horizontal 1920 × 1080 · approximately 30 seconds · feed-ready highlights with the long social caption as post copy."),
         new(CampaignOutputSelection.FullNarratedTour, "Full narrated tour", "Horizontal 1920 × 1080 · duration follows the complete accepted script."),
@@ -648,11 +738,20 @@
             : selectedOutputs & ~selection;
     }
 
+    private CampaignSoundtrack? PreviewSoundtrack => selectedSoundtrack
+        is CampaignSoundtrack.HeritageWarm or CampaignSoundtrack.ModernAmbient or CampaignSoundtrack.UpbeatLifestyle
+            ? selectedSoundtrack
+            : null;
+
     private bool IsCreativeElementSelected(CampaignVideoElement element) => selectedCreativeElements.HasFlag(element);
 
     private bool TemplateReady =>
         (selectedMarketingTemplate != CampaignMarketingTemplate.PriceDrop
             || selectedPriceReductionAmount is > 0 and <= 100_000_000m && selectedPriceReductionVerified)
+        && (selectedMarketingTemplate != CampaignMarketingTemplate.OpenHouse
+            || !string.IsNullOrWhiteSpace(selectedOpenHouseText)
+                && selectedOpenHouseText.Trim().Length <= CampaignCreativeOptions.MaximumOpenHouseTextLength
+                && selectedOpenHouseVerified)
         && (!selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar) || selectedAgentAvatarConsent);
 
     private void ApplyTemplate(CampaignMarketingTemplate template)
@@ -664,13 +763,20 @@
             selectedPriceReductionVerified = false;
         }
 
-        var preset = template == CampaignMarketingTemplate.PriceDrop
-            ? CampaignCreativeOptions.SocialDefault with
-            {
-                MarketingTemplate = template,
-                Soundtrack = CampaignSoundtrack.UpbeatLifestyle,
-            }
-            : CampaignCreativeOptions.ForTemplate(template, portrait?.Id);
+        if (template != CampaignMarketingTemplate.OpenHouse)
+        {
+            selectedOpenHouseText = null;
+            selectedOpenHouseVerified = false;
+        }
+
+        // Placeholder details let the preset validate; the agent enters and confirms the real ones above.
+        var preset = CampaignCreativeOptions.ForTemplate(
+            template,
+            portrait?.Id,
+            template == CampaignMarketingTemplate.PriceDrop ? 1m : null,
+            template == CampaignMarketingTemplate.PriceDrop,
+            template == CampaignMarketingTemplate.OpenHouse ? "-" : null,
+            template == CampaignMarketingTemplate.OpenHouse);
         selectedCreativeElements = preset.Elements;
         selectedSoundtrack = preset.Soundtrack;
         selectedCaptionStyle = preset.CaptionStyle;
@@ -745,6 +851,8 @@
         CampaignMarketingTemplate.QuickTour => "Fast social tour",
         CampaignMarketingTemplate.FeatureSpotlight => "Feature spotlight",
         CampaignMarketingTemplate.AgentShowcase => "Agent-branded showcase",
+        CampaignMarketingTemplate.JustListed => "Just listed",
+        CampaignMarketingTemplate.OpenHouse => "Open house",
         _ => Display(template),
     };
 
@@ -760,6 +868,10 @@
             "Prioritizes verified property and approved neighborhood features for buyers comparing details.",
         CampaignMarketingTemplate.AgentShowcase =>
             "Keeps the listing central while strengthening the agent identity and closing contact card.",
+        CampaignMarketingTemplate.JustListed =>
+            "Opens with a bold JUST LISTED banner over the price, city, and beds and baths.",
+        CampaignMarketingTemplate.OpenHouse =>
+            "Opens with an OPEN HOUSE banner and the day and time you confirm, then the price and city.",
         _ => string.Empty,
     };
 

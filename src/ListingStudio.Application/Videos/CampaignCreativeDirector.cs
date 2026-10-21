@@ -50,7 +50,8 @@ public static class CampaignCreativeDirector
                 SoundtrackMood(soundtrack),
                 0,
                 (int)source.RequestedDuration * 1_000,
-                -20,
+                // Music carries a video with no voiceover, so it plays louder there.
+                source.Audio.NarrationSegments.Count == 0 ? 0 : -16,
                 900,
                 1_400,
                 -13);
