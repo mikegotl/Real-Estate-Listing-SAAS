@@ -36,6 +36,16 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
             .HasMaxLength(32)
             .HasDefaultValue(CampaignCaptionStyle.Classic)
             .IsRequired();
+        builder.Property(job => job.MarketingTemplate)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CampaignMarketingTemplate.BalancedShowcase)
+            .HasSentinel(CampaignMarketingTemplate.BalancedShowcase)
+            .IsRequired();
+        builder.Property(job => job.PriceReductionAmount).HasPrecision(14, 2);
+        builder.Property(job => job.PriceReductionVerified)
+            .HasDefaultValue(false)
+            .IsRequired();
         builder.Property(job => job.NarrationRegion)
             .HasConversion<string>()
             .HasMaxLength(32)

@@ -46,6 +46,10 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             CampaignLanguage.French,
             CampaignVoiceAccent.LatinAmerican,
             LocalizeAgentCard: true);
+        var creativeOptions = CampaignCreativeOptions.ForTemplate(
+            CampaignMarketingTemplate.PriceDrop,
+            priceReductionAmount: 235_000m,
+            priceReductionVerified: true);
         CampaignGenerationResult queued;
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -53,13 +57,14 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                 owner.UserId,
                 owner.PropertyId,
                 CampaignOutputSelection.YouTubeTour,
-                CampaignCreativeOptions.SocialDefault,
+                creativeOptions,
                 preferences))!;
         }
 
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
         Assert.Equal(preferences, completed.NarrationPreferences);
+        Assert.Equal(creativeOptions, completed.CreativeOptions);
         Assert.Equal(callsBefore + 1, fixture.Factory.CampaignLocalizationService.CallCount);
         var voiceRequest = Assert.IsType<VoiceGenerationRequest>(fixture.Factory.VoiceProvider.LastRequest);
         Assert.Equal("es", voiceRequest.SpokenLanguageCode);
@@ -85,6 +90,10 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             specification.Scenes.SelectMany(scene => scene.TextOverlays),
             overlay => overlay.StyleToken == TextOverlayStyle.PopCaption
                 && overlay.Text.Contains("SOUS-TITRE FRANÇAIS 123", StringComparison.Ordinal));
+        Assert.Contains(
+            specification.Scenes.SelectMany(scene => scene.TextOverlays),
+            overlay => overlay.Id == "campaign-price-reduction"
+                && overlay.Text == "PRICE REDUCED $235,000");
     }
 
     [Fact]

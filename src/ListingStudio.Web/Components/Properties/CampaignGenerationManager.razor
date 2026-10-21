@@ -20,7 +20,7 @@
         {
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
-                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None)"
+                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None || !TemplateReady)"
                        OnClick="GenerateAsync">
                 @(job?.Status == CampaignGenerationStatus.Completed ? "Generate updated campaign" : "Generate campaign")
             </MudButton>
@@ -70,8 +70,51 @@
         <MudPaper Outlined="true" Class="pa-4 mb-4">
             <MudText Typo="Typo.subtitle1">Creative direction</MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-                Choose what appears in the videos. Each output gets a platform-specific edit instead of a simple crop.
+                Start with a marketing template, then customize its verified content, branding, and presentation.
+                Each output gets a platform-specific edit instead of a simple crop.
             </MudText>
+            <MudSelect T="CampaignMarketingTemplate"
+                       Label="Marketing template"
+                       Value="selectedMarketingTemplate"
+                       ValueChanged="ApplyTemplate"
+                       Variant="Variant.Outlined"
+                       Disabled="@(busy || IsReadOnly)"
+                       Class="mb-2">
+                @foreach (var template in Enum.GetValues<CampaignMarketingTemplate>())
+                {
+                    <MudSelectItem Value="template">@TemplateName(template)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                @TemplateDescription(selectedMarketingTemplate)
+            </MudAlert>
+            @if (selectedMarketingTemplate == CampaignMarketingTemplate.PriceDrop)
+            {
+                <MudGrid Spacing="2" Class="mb-3">
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField T="decimal?"
+                                         Label="Price reduction amount"
+                                         @bind-Value="selectedPriceReductionAmount"
+                                         Min="0.01m"
+                                         Max="100000000m"
+                                         Format="C0"
+                                         Variant="Variant.Outlined"
+                                         Disabled="@(busy || IsReadOnly)" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudCheckBox T="bool"
+                                     @bind-Value="selectedPriceReductionVerified"
+                                     Disabled="@(busy || IsReadOnly)"
+                                     Label="I confirm this price reduction is accurate and approved for marketing" />
+                    </MudItem>
+                </MudGrid>
+                @if (!TemplateReady)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Error" Class="mb-3">
+                        Enter the reduction amount and confirm it before generating this template.
+                    </MudText>
+                }
+            }
             <MudGrid Spacing="2">
                 @foreach (var option in CreativeElementOptions)
                 {
@@ -325,6 +368,9 @@
     private CampaignVideoElement selectedCreativeElements = CampaignCreativeOptions.SocialDefault.Elements;
     private CampaignSoundtrack selectedSoundtrack = CampaignCreativeOptions.SocialDefault.Soundtrack;
     private CampaignCaptionStyle selectedCaptionStyle = CampaignCreativeOptions.SocialDefault.CaptionStyle;
+    private CampaignMarketingTemplate selectedMarketingTemplate = CampaignCreativeOptions.SocialDefault.MarketingTemplate;
+    private decimal? selectedPriceReductionAmount;
+    private bool selectedPriceReductionVerified;
     private CampaignNarrationRegion selectedNarrationRegion = CampaignNarrationPreferences.Default.Region;
     private CampaignLanguage selectedSpokenLanguage = CampaignNarrationPreferences.Default.SpokenLanguage;
     private CampaignLanguage selectedCaptionLanguage = CampaignNarrationPreferences.Default.CaptionLanguage;
@@ -372,6 +418,9 @@
                     selectedCreativeElements = job.CreativeOptions.Elements;
                     selectedSoundtrack = job.CreativeOptions.Soundtrack;
                     selectedCaptionStyle = job.CreativeOptions.CaptionStyle;
+                    selectedMarketingTemplate = job.CreativeOptions.MarketingTemplate;
+                    selectedPriceReductionAmount = job.CreativeOptions.PriceReductionAmount;
+                    selectedPriceReductionVerified = job.CreativeOptions.PriceReductionVerified;
                     selectedNarrationRegion = job.NarrationPreferences.Region;
                     selectedSpokenLanguage = job.NarrationPreferences.SpokenLanguage;
                     selectedCaptionLanguage = job.NarrationPreferences.CaptionLanguage;
@@ -430,7 +479,14 @@
             userId,
             PropertyId,
             selectedOutputs,
-            new CampaignCreativeOptions(elements, selectedSoundtrack, selectedCaptionStyle, portraitId),
+            new CampaignCreativeOptions(
+                elements,
+                selectedSoundtrack,
+                selectedCaptionStyle,
+                portraitId,
+                selectedMarketingTemplate,
+                selectedPriceReductionAmount,
+                selectedPriceReductionVerified),
             new CampaignNarrationPreferences(
                 selectedNarrationRegion,
                 selectedSpokenLanguage,
@@ -591,6 +647,31 @@
 
     private bool IsCreativeElementSelected(CampaignVideoElement element) => selectedCreativeElements.HasFlag(element);
 
+    private bool TemplateReady => selectedMarketingTemplate != CampaignMarketingTemplate.PriceDrop
+        || selectedPriceReductionAmount is > 0 and <= 100_000_000m
+            && selectedPriceReductionVerified;
+
+    private void ApplyTemplate(CampaignMarketingTemplate template)
+    {
+        selectedMarketingTemplate = template;
+        if (template != CampaignMarketingTemplate.PriceDrop)
+        {
+            selectedPriceReductionAmount = null;
+            selectedPriceReductionVerified = false;
+        }
+
+        var preset = template == CampaignMarketingTemplate.PriceDrop
+            ? CampaignCreativeOptions.SocialDefault with
+            {
+                MarketingTemplate = template,
+                Soundtrack = CampaignSoundtrack.UpbeatLifestyle,
+            }
+            : CampaignCreativeOptions.ForTemplate(template, portrait?.Id);
+        selectedCreativeElements = preset.Elements;
+        selectedSoundtrack = preset.Soundtrack;
+        selectedCaptionStyle = preset.CaptionStyle;
+    }
+
     private void SetCreativeElement(CampaignVideoElement element, bool selected)
     {
         selectedCreativeElements = selected
@@ -644,6 +725,31 @@
     ];
 
     private sealed record CreativeElementOption(CampaignVideoElement Element, string Name, string Details);
+
+    private static string TemplateName(CampaignMarketingTemplate template) => template switch
+    {
+        CampaignMarketingTemplate.BalancedShowcase => "Balanced showcase",
+        CampaignMarketingTemplate.PriceDrop => "Price-drop announcement",
+        CampaignMarketingTemplate.QuickTour => "Fast social tour",
+        CampaignMarketingTemplate.FeatureSpotlight => "Feature spotlight",
+        CampaignMarketingTemplate.AgentShowcase => "Agent-branded showcase",
+        _ => Display(template),
+    };
+
+    private static string TemplateDescription(CampaignMarketingTemplate template) => template switch
+    {
+        CampaignMarketingTemplate.BalancedShowcase =>
+            "A polished all-purpose edit with verified facts, narration, captions, music, and a clear call to action.",
+        CampaignMarketingTemplate.PriceDrop =>
+            "Leads with an agent-confirmed reduction amount, then moves through the strongest property highlights.",
+        CampaignMarketingTemplate.QuickTour =>
+            "A fast, cut-driven room tour for short-form feeds with minimal on-screen clutter.",
+        CampaignMarketingTemplate.FeatureSpotlight =>
+            "Prioritizes verified property and approved neighborhood features for buyers comparing details.",
+        CampaignMarketingTemplate.AgentShowcase =>
+            "Keeps the listing central while strengthening the agent identity and closing contact card.",
+        _ => string.Empty,
+    };
 
     private static string DisplayError(CampaignGenerationResult campaign) =>
         campaign.CurrentStage == CampaignGenerationStage.GenerateMasterVideoPlan

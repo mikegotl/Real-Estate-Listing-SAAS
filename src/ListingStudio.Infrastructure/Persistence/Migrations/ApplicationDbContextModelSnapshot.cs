@@ -458,6 +458,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<string>("LongFormLocalizedCopyJson")
                         .HasColumnType("text");
 
+                    b.Property<string>("MarketingTemplate")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("BalancedShowcase");
+
                     b.Property<Guid?>("MasterVideoProductionPlanId")
                         .HasColumnType("uuid");
 
@@ -473,6 +480,15 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal?>("PriceReductionAmount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)");
+
+                    b.Property<bool>("PriceReductionVerified")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid>("PropertyId")
                         .HasColumnType("uuid");

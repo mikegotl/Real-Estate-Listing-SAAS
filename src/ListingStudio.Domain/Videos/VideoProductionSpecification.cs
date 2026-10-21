@@ -22,6 +22,7 @@ public enum FactSource
     AcceptedScript,
     ApprovedNeighborhood,
     BrandKit,
+    AgentVerifiedCampaignInput,
 }
 
 public enum VisualSourceKind

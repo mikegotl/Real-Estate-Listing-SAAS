@@ -55,6 +55,46 @@ public sealed class CampaignCreativeDirectorTests
         }).Validate());
     }
 
+    [Fact]
+    public void PriceDropTemplateRequiresAgentVerificationAndAddsGroundedHook()
+    {
+        var unverified = CampaignCreativeOptions.SocialDefault with
+        {
+            MarketingTemplate = CampaignMarketingTemplate.PriceDrop,
+            PriceReductionAmount = 235_000m,
+        };
+        Assert.Throws<ArgumentException>(unverified.Validate);
+
+        var options = unverified with { PriceReductionVerified = true };
+        var result = CampaignCreativeDirector.Apply(CreateSpecification(), options, 2020);
+
+        var binding = Assert.Single(result.FactBindings,
+            item => item.Source == FactSource.AgentVerifiedCampaignInput);
+        Assert.Equal("PRICE REDUCED $235,000", binding.Value);
+        var hook = Assert.Single(result.Scenes[0].TextOverlays,
+            overlay => overlay.Id == "campaign-price-reduction");
+        Assert.Equal(binding.Key, hook.GroundingKey);
+        Assert.Equal(TextOverlayStyle.OpeningTitle, hook.StyleToken);
+    }
+
+    [Fact]
+    public void QuickTourTemplateUsesCutsAndOmitsPropertyFactPreset()
+    {
+        var options = CampaignCreativeOptions.ForTemplate(CampaignMarketingTemplate.QuickTour);
+        var source = CreateSpecification();
+        source = source with
+        {
+            Scenes = [source.Scenes[0] with
+            {
+                TransitionIn = new TransitionPlan(TransitionKind.Crossfade, 500),
+            }],
+        };
+        var result = CampaignCreativeDirector.Apply(source, options, 2020);
+
+        Assert.All(result.Scenes, scene => Assert.Equal(TransitionKind.Cut, scene.TransitionIn.Type));
+        Assert.False(options.Elements.HasFlag(CampaignVideoElement.PropertyFacts));
+    }
+
     private static VideoProductionSpecification CreateSpecification()
     {
         var mediaId = Guid.NewGuid();
