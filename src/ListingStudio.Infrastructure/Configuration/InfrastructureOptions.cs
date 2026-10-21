@@ -62,7 +62,7 @@ public sealed class StripeOptions
     public string WebhookSecret { get; init; } = string.Empty;
     public string StarterPriceId { get; init; } = string.Empty;
     public string ProfessionalPriceId { get; init; } = string.Empty;
-    public int FreeTrialCampaignAllowance { get; init; } = 1;
+    public int FreeTrialCampaignAllowance { get; init; } = 10;
     public int FreeTrialDays { get; init; } = 30;
     public int StarterMonthlyCampaignAllowance { get; init; } = 4;
     public int ProfessionalMonthlyCampaignAllowance { get; init; } = 12;
