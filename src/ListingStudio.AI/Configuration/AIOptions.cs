@@ -11,6 +11,7 @@ public sealed class OpenAIOptions
     public decimal StoryEstimatedCostUsd { get; init; }
     public decimal VideoDirectionEstimatedCostUsd { get; init; }
     public decimal SpeechEstimatedCostUsd { get; init; }
+    public decimal LocalizationEstimatedCostUsd { get; init; }
 }
 
 public sealed class VoiceOptions

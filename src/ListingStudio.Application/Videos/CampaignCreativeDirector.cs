@@ -12,13 +12,18 @@ public static class CampaignCreativeDirector
     public static VideoProductionSpecification Apply(
         VideoProductionSpecification source,
         CampaignCreativeOptions options,
-        int? yearBuilt)
+        int? yearBuilt,
+        IReadOnlyDictionary<string, string>? captionTextBySegmentId = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
 
-        var scenes = source.Scenes.Select(scene => ApplyScene(scene, source, options)).ToArray();
+        var scenes = source.Scenes.Select(scene => ApplyScene(
+            scene,
+            source,
+            options,
+            captionTextBySegmentId)).ToArray();
         var soundtrack = ResolveSoundtrack(options.Soundtrack, yearBuilt);
         var music = soundtrack == CampaignSoundtrack.None
             ? new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)
@@ -88,7 +93,8 @@ public static class CampaignCreativeDirector
     private static VideoScene ApplyScene(
         VideoScene scene,
         VideoProductionSpecification source,
-        CampaignCreativeOptions options)
+        CampaignCreativeOptions options,
+        IReadOnlyDictionary<string, string>? captionTextBySegmentId)
     {
         var overlays = scene.TextOverlays.Where(overlay => overlay.StyleToken switch
         {
@@ -110,7 +116,11 @@ public static class CampaignCreativeDirector
                     continue;
                 }
 
-                var words = segment.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var captionText = captionTextBySegmentId is not null
+                    && captionTextBySegmentId.TryGetValue(segment.Id, out var localizedCaption)
+                    ? localizedCaption
+                    : segment.Text;
+                var words = captionText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 var chunks = words.Chunk(5).ToArray();
                 var segmentStart = Math.Max(scene.StartMs, segment.StartMs);
                 var segmentEnd = Math.Min(

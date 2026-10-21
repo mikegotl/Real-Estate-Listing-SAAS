@@ -408,6 +408,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("CancellationRequested")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("CaptionLanguage")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("English");
+
                     b.Property<string>("CaptionStyle")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -440,8 +447,26 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("LeaseExpiresAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("LocalizeAgentCard")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("LocalizedCopyJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LongFormLocalizedCopyJson")
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("MasterVideoProductionPlanId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("NarrationRegion")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("UnitedStates");
 
                     b.Property<DateTimeOffset?>("NextAttemptAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -484,6 +509,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("SpokenLanguage")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("English");
+
                     b.Property<int>("StageAttemptCount")
                         .HasColumnType("integer");
 
@@ -500,6 +532,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("VideoNarrationId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("VoiceAccent")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("American");
 
                     b.HasKey("Id");
 

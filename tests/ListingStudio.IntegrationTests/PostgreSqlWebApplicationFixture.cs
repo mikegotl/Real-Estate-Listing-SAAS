@@ -16,6 +16,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.PostgreSql;
 using Xunit;
 using ListingStudio.Application.Billing;
+using ListingStudio.Application.Campaigns;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Billing;
 using ListingStudio.Infrastructure.Configuration;
 using Microsoft.Extensions.Options;
@@ -80,6 +82,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeVoiceProvider VoiceProvider { get; } = new();
 
+    public FakeCampaignLocalizationService CampaignLocalizationService { get; } = new();
+
     public FakeVideoRenderer VideoRenderer { get; } = new();
 
     public FakeAiVideoProvider AiVideoProvider { get; } = new();
@@ -127,6 +131,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IVideoDirector>(VideoDirector);
             services.RemoveAll<IVoiceProvider>();
             services.AddSingleton<IVoiceProvider>(VoiceProvider);
+            services.RemoveAll<ICampaignLocalizationService>();
+            services.AddSingleton<ICampaignLocalizationService>(CampaignLocalizationService);
             services.RemoveAll<IVideoRenderer>();
             services.AddSingleton<IVideoRenderer>(VideoRenderer);
             services.RemoveAll<IAiVideoProvider>();
@@ -460,6 +466,33 @@ public sealed class FakeVoiceProvider : IVoiceProvider
         LastRequest = request;
         Assert.True(outcomes.TryDequeue(out var outcome), "A fake voice-generation outcome must be queued.");
         return Task.FromResult(outcome(request));
+    }
+}
+
+public sealed class FakeCampaignLocalizationService : ICampaignLocalizationService
+{
+    private readonly ConcurrentQueue<Func<CampaignLocalizationRequest, CampaignLocalizedCopy>> outcomes = new();
+    private int callCount;
+
+    public int CallCount => callCount;
+
+    public void Enqueue(Func<CampaignLocalizationRequest, CampaignLocalizedCopy> factory) => outcomes.Enqueue(factory);
+
+    public Task<CampaignLocalizedCopy> LocalizeAsync(
+        CampaignLocalizationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref callCount);
+        if (outcomes.TryDequeue(out var outcome))
+        {
+            return Task.FromResult(outcome(request));
+        }
+
+        var original = request.NarrationSegments
+            .Select(segment => new CampaignLocalizedSegment(segment.Id, segment.Text))
+            .ToArray();
+        return Task.FromResult(new CampaignLocalizedCopy(original, original));
     }
 }
 

@@ -6,7 +6,15 @@ public sealed record VoiceNarrationSegment(
     int PlannedStartMs,
     int PlannedDurationMs);
 
-public sealed record VoiceGenerationRequest(IReadOnlyList<VoiceNarrationSegment> Segments);
+public sealed record VoiceGenerationRequest(
+    IReadOnlyList<VoiceNarrationSegment> Segments,
+    string SpokenLanguageCode = "en",
+    string AccentInstructions = "");
+
+public sealed record NarrationGenerationOptions(
+    IReadOnlyList<VoiceNarrationSegment> Segments,
+    string SpokenLanguageCode,
+    string AccentInstructions);
 
 public sealed record VoiceCharacterTiming(string Character, int StartMs, int EndMs);
 

@@ -85,6 +85,24 @@ public sealed class OpenAIVoiceProviderTests
     }
 
     [Fact]
+    public async Task GeneratePassesSelectedLanguageAndAccentAsVoiceInstructions()
+    {
+        var handler = new RecordingHandler(CreatePcmResponse(CreatePcm(durationMs: 500, fill: 1)));
+        using var httpClient = new HttpClient(handler);
+        var provider = CreateProvider(httpClient);
+
+        await provider.GenerateAsync(new VoiceGenerationRequest(
+            [new VoiceNarrationSegment("one", "Bienvenido.", 0, 2_000)],
+            "es",
+            "Use a natural Latin American accent."));
+
+        using var body = JsonDocument.Parse(Assert.Single(handler.Requests).Body);
+        var instructions = body.RootElement.GetProperty("instructions").GetString();
+        Assert.Contains("Speak only in es", instructions, StringComparison.Ordinal);
+        Assert.Contains("Latin American accent", instructions, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GenerateDoesNotExposeProviderResponseBody()
     {
         var failure = new HttpResponseMessage(HttpStatusCode.UnprocessableEntity)

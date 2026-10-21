@@ -11,6 +11,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ListingStudio.Application.Administration;
+using ListingStudio.Application.Campaigns;
+using ListingStudio.AI.Campaigns;
 
 namespace ListingStudio.AI.DependencyInjection;
 
@@ -47,6 +49,9 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IVideoDirector, OpenAIVideoDirector>()
             .AddHttpMessageHandler(provider => OpenAiHandler(
                 provider, "video-direction", options => options.VideoDirectionEstimatedCostUsd));
+        services.AddHttpClient<ICampaignLocalizationService, OpenAICampaignLocalizationService>()
+            .AddHttpMessageHandler(provider => OpenAiHandler(
+                provider, "campaign-localization", options => options.LocalizationEstimatedCostUsd));
         services.AddHttpClient<ElevenLabsVoiceProvider>()
             .AddHttpMessageHandler(provider =>
             {

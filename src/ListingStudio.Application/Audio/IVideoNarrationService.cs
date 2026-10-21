@@ -12,6 +12,12 @@ public interface IVideoNarrationService
         Guid videoProductionPlanId,
         CancellationToken cancellationToken = default);
 
+    Task<VideoNarrationResult?> GenerateAsync(
+        string userId,
+        Guid videoProductionPlanId,
+        NarrationGenerationOptions options,
+        CancellationToken cancellationToken = default);
+
     Task<CampaignAssetContent?> OpenAudioAsync(
         string userId,
         Guid narrationId,

@@ -37,7 +37,24 @@ public sealed class VideoNarrationService(
     public async Task<VideoNarrationResult?> GenerateAsync(
         string userId,
         Guid videoProductionPlanId,
+        CancellationToken cancellationToken = default) =>
+        await GenerateCoreAsync(userId, videoProductionPlanId, null, cancellationToken);
+
+    public async Task<VideoNarrationResult?> GenerateAsync(
+        string userId,
+        Guid videoProductionPlanId,
+        NarrationGenerationOptions options,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return await GenerateCoreAsync(userId, videoProductionPlanId, options, cancellationToken);
+    }
+
+    private async Task<VideoNarrationResult?> GenerateCoreAsync(
+        string userId,
+        Guid videoProductionPlanId,
+        NarrationGenerationOptions? options,
+        CancellationToken cancellationToken)
     {
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         var plan = await dbContext.VideoProductionPlans
@@ -55,7 +72,9 @@ public sealed class VideoNarrationService(
             plan.SpecificationJson,
             VideoSpecificationJson.Options)
             ?? throw new InvalidDataException("Stored video production specification is invalid.");
-        var request = CreateRequest(specification);
+        var request = options is null
+            ? CreateRequest(specification)
+            : CreateRequest(specification, options);
         var fingerprint = CreateFingerprint(plan.Id, voiceProvider.GenerationVersion, request);
         var existing = await FindByFingerprintAsync(organizationId, plan.Id, fingerprint, cancellationToken);
         if (existing is not null)
@@ -172,6 +191,29 @@ public sealed class VideoNarrationService(
         }
 
         return new VoiceGenerationRequest(segments);
+    }
+
+    private static VoiceGenerationRequest CreateRequest(
+        VideoProductionSpecification specification,
+        NarrationGenerationOptions options)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.SpokenLanguageCode);
+        var sourceById = specification.Audio.NarrationSegments.ToDictionary(segment => segment.Id, StringComparer.Ordinal);
+        if (options.Segments.Count != sourceById.Count
+            || options.Segments.Any(segment => !sourceById.ContainsKey(segment.Id)))
+        {
+            throw new InvalidDataException("Localized narration does not match the production plan segments.");
+        }
+
+        var segments = options.Segments
+            .Select(segment => new VoiceNarrationSegment(
+                segment.Id,
+                segment.Text,
+                sourceById[segment.Id].StartMs,
+                sourceById[segment.Id].DurationMs))
+            .OrderBy(segment => segment.PlannedStartMs)
+            .ToArray();
+        return new VoiceGenerationRequest(segments, options.SpokenLanguageCode, options.AccentInstructions);
     }
 
     private static void ValidateGeneratedResult(

@@ -43,7 +43,12 @@ public sealed class ElevenLabsVoiceProvider(
         {
             for (var attempt = 1; attempt <= configuration.MaxRetryAttempts; attempt++)
             {
-                response = await SendAsync(endpoint, configuration, script.Text, cancellationToken);
+                response = await SendAsync(
+                    endpoint,
+                    configuration,
+                    script.Text,
+                    request.SpokenLanguageCode,
+                    cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
                     return await ReadResultAsync(response, script, configuration.OutputFormat, cancellationToken);
@@ -73,11 +78,17 @@ public sealed class ElevenLabsVoiceProvider(
         Uri endpoint,
         VoiceOptions configuration,
         string text,
+        string languageCode,
         CancellationToken cancellationToken)
     {
         using var message = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
-            Content = JsonContent.Create(new { text, model_id = configuration.ModelId }),
+            Content = JsonContent.Create(new
+            {
+                text,
+                model_id = configuration.ModelId,
+                language_code = string.IsNullOrWhiteSpace(languageCode) ? null : languageCode,
+            }),
         };
         message.Headers.Add("xi-api-key", configuration.ApiKey);
         return await httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);

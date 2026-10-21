@@ -43,6 +43,7 @@ public sealed class CampaignGenerationJob
         string sourceFingerprint,
         CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
         DateTimeOffset now)
     {
         Id = Guid.NewGuid();
@@ -52,11 +53,17 @@ public sealed class CampaignGenerationJob
         SourceFingerprint = Required(sourceFingerprint, 64, nameof(sourceFingerprint));
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
         creativeOptions.Validate();
+        narrationPreferences.Validate();
         RequestedOutputs = requestedOutputs;
         CreativeElements = creativeOptions.Elements;
         Soundtrack = creativeOptions.Soundtrack;
         CaptionStyle = creativeOptions.CaptionStyle;
         AgentPortraitId = creativeOptions.AgentPortraitId;
+        NarrationRegion = narrationPreferences.Region;
+        SpokenLanguage = narrationPreferences.SpokenLanguage;
+        CaptionLanguage = narrationPreferences.CaptionLanguage;
+        VoiceAccent = narrationPreferences.VoiceAccent;
+        LocalizeAgentCard = narrationPreferences.LocalizeAgentCard;
         Status = CampaignGenerationStatus.Queued;
         CurrentStage = CampaignGenerationStage.ValidateProperty;
         NextAttemptAtUtc = now;
@@ -83,6 +90,20 @@ public sealed class CampaignGenerationJob
     public CampaignCaptionStyle CaptionStyle { get; private set; }
 
     public Guid? AgentPortraitId { get; private set; }
+
+    public CampaignNarrationRegion NarrationRegion { get; private set; }
+
+    public CampaignLanguage SpokenLanguage { get; private set; }
+
+    public CampaignLanguage CaptionLanguage { get; private set; }
+
+    public CampaignVoiceAccent VoiceAccent { get; private set; }
+
+    public bool LocalizeAgentCard { get; private set; }
+
+    public string? LocalizedCopyJson { get; private set; }
+
+    public string? LongFormLocalizedCopyJson { get; private set; }
 
     public CampaignGenerationStatus Status { get; private set; }
 
@@ -133,7 +154,8 @@ public sealed class CampaignGenerationJob
         string sourceFingerprint,
         CampaignOutputSelection requestedOutputs,
         DateTimeOffset now,
-        CampaignCreativeOptions? creativeOptions = null)
+        CampaignCreativeOptions? creativeOptions = null,
+        CampaignNarrationPreferences? narrationPreferences = null)
     {
         if (organizationId == Guid.Empty || propertyId == Guid.Empty)
         {
@@ -147,6 +169,7 @@ public sealed class CampaignGenerationJob
             sourceFingerprint,
             requestedOutputs,
             creativeOptions ?? CampaignCreativeOptions.Legacy,
+            narrationPreferences ?? CampaignNarrationPreferences.Default,
             now);
     }
 
@@ -280,6 +303,16 @@ public sealed class CampaignGenerationJob
         }
 
         VideoNarrationId = narrationId;
+    }
+
+    public void SetLocalizedCopy(string localizedCopyJson)
+    {
+        LocalizedCopyJson = Required(localizedCopyJson, 100_000, nameof(localizedCopyJson));
+    }
+
+    public void SetLongFormLocalizedCopy(string localizedCopyJson)
+    {
+        LongFormLocalizedCopyJson = Required(localizedCopyJson, 500_000, nameof(localizedCopyJson));
     }
 
     public void SetSocialCopy(string longCaption, string shortCaption)
