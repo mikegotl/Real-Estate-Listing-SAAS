@@ -637,7 +637,8 @@ public sealed partial class CampaignGenerationProcessor(
                 sourceById[segment.Id].StartMs,
                 sourceById[segment.Id].DurationMs)).ToArray(),
             NarrationPreferences(job).SpokenLanguageCode,
-            AccentInstructions(job));
+            AccentInstructions(job),
+            job.VoiceAccent.ToString());
     }
 
     private static VideoProductionSpecification ApplySpokenLocalization(

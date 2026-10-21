@@ -111,7 +111,7 @@ The protected `production` GitHub environment also supplies the approved externa
 - Secrets: `OPENAI_API_KEY`, `GOOGLE_AUTH_CLIENT_SECRET`, `GOOGLE_PLACES_API_KEY`, `HIGGSFIELD_API_KEY`, and `HIGGSFIELD_API_SECRET`.
 - Variables: `OPENAI_MODEL` and `GOOGLE_AUTH_CLIENT_ID`.
 
-The production workflow enables media analysis, Google sign-in, Google Places neighborhood insights, and Higgsfield walk-through clips after verifying that every required value is present. Narration remains on OpenAI by default, reusing `OPENAI_API_KEY`; ElevenLabs is not activated unless its own approved credentials and voice ID are added in a future deployment change. Register the production Google OAuth callback `https://<web-host>/signin-google` before deployment.
+The production workflow enables media analysis, Google sign-in, Google Places neighborhood insights, and Higgsfield walk-through clips after verifying that every required value is present. Narration uses ElevenLabs when the `ELEVENLABS_API_KEY` environment secret is set (stored in Key Vault as `elevenlabs-api-key`) and falls back to OpenAI, reusing `OPENAI_API_KEY`, when it is not. Set `VOICE_ESTIMATED_COST_USD` to the ElevenLabs cost of one narration request (about $0.10 per 1,000 characters on Multilingual v2). ElevenLabs voices are chosen per campaign voice accent; the defaults are ElevenLabs premade voices, and a native-speaker voice from the ElevenLabs library can be set per accent with `Voice__ElevenLabsVoices__<Accent>` (for example `Voice__ElevenLabsVoices__Castilian`). Register the production Google OAuth callback `https://<web-host>/signin-google` before deployment.
 
 ## AI cost estimates
 

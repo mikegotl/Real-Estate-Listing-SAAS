@@ -225,6 +225,69 @@ public static class CampaignCreativeDirector
         return scene with { VisualSource = visual, TextOverlays = overlays };
     }
 
+    /// <summary>Burst starts in proportion to their length, for a voice without per-word timing.</summary>
+    private static int[] LengthWeightedChunkStarts(string[] chunks, int spokenMs)
+    {
+        var totalLength = chunks.Sum(chunk => chunk.Length + 1);
+        var starts = new int[chunks.Length];
+        var offset = 0;
+        for (var index = 0; index < chunks.Length; index++)
+        {
+            starts[index] = (int)((long)spokenMs * offset / totalLength);
+            offset += chunks[index].Length + 1;
+        }
+
+        return starts;
+    }
+
+    /// <summary>
+    /// Burst starts from the voice's per-character timing, so each burst appears as its first word is spoken. Only
+    /// when the captions are the spoken words; translated captions keep the length-weighted timing.
+    /// </summary>
+    private static int[]? WordTimedChunkStarts(
+        string[] chunks,
+        string captionText,
+        string spokenText,
+        VoiceTimingMetadata? timing,
+        VoiceSegmentTiming? audio)
+    {
+        if (timing is null || audio is null || timing.Characters.Count == 0
+            || !string.Equals(captionText.Trim(), spokenText.Trim(), StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var wordStarts = new List<int>();
+        var inWord = false;
+        foreach (var mark in timing.Characters.Where(mark =>
+                     mark.StartMs >= audio.StartMs && mark.EndMs <= audio.EndMs))
+        {
+            var isSpace = string.IsNullOrWhiteSpace(mark.Character);
+            if (!isSpace && !inWord)
+            {
+                wordStarts.Add(mark.StartMs - audio.StartMs);
+            }
+
+            inWord = !isSpace;
+        }
+
+        var wordCount = chunks.Sum(chunk => chunk.Split(' ').Length);
+        if (wordStarts.Count != wordCount)
+        {
+            return null;
+        }
+
+        var starts = new int[chunks.Length];
+        var word = 0;
+        for (var index = 0; index < chunks.Length; index++)
+        {
+            starts[index] = wordStarts[word];
+            word += chunks[index].Split(' ').Length;
+        }
+
+        return starts;
+    }
+
     private static string[] ChunkCaption(string text, int maximumCharacters)
     {
         var chunks = new List<string>();
@@ -284,20 +347,17 @@ public static class CampaignCreativeDirector
                 continue;
             }
 
-            var spokenMs = narrationTiming?.Segments
-                .FirstOrDefault(item => item.SegmentId == segment.Id) is { } audio
-                ? audio.EndMs - audio.StartMs
-                : placed.DurationMs;
+            var audio = narrationTiming?.Segments.FirstOrDefault(item => item.SegmentId == segment.Id);
+            var spokenMs = audio is null ? placed.DurationMs : audio.EndMs - audio.StartMs;
             var chunks = ChunkCaption(captionText, vertical ? 20 : 36);
-            var totalLength = chunks.Sum(chunk => chunk.Length + 1);
-            var offset = 0;
+            var chunkStarts = WordTimedChunkStarts(chunks, captionText, segment.Text, narrationTiming, audio)
+                ?? LengthWeightedChunkStarts(chunks, spokenMs);
             for (var index = 0; index < chunks.Length; index++)
             {
-                var startMs = placed.StartMs + (int)((long)spokenMs * offset / totalLength);
-                offset += chunks[index].Length + 1;
+                var startMs = placed.StartMs + chunkStarts[index];
                 var endMs = Math.Min(
                     placed.StartMs + placed.DurationMs,
-                    placed.StartMs + (int)((long)spokenMs * offset / totalLength));
+                    placed.StartMs + (index + 1 < chunks.Length ? chunkStarts[index + 1] : spokenMs));
                 if (startMs >= placed.StartMs + placed.DurationMs || startMs >= programMs)
                 {
                     break;

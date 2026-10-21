@@ -33,7 +33,7 @@ public sealed class ElevenLabsVoiceProviderTests
         Assert.Equal(14, result.Timing!.Characters.Count);
         Assert.Equal(new VoiceSegmentTiming("one", 0, 600), result.Timing.Segments[0]);
         Assert.Equal(new VoiceSegmentTiming("two", 800, 1_400), result.Timing.Segments[1]);
-        Assert.StartsWith("elevenlabs-v1/test-model/mp3_44100_128/voice-", provider.GenerationVersion, StringComparison.Ordinal);
+        Assert.StartsWith("elevenlabs-v2/test-model/mp3_44100_128/voice-", provider.GenerationVersion, StringComparison.Ordinal);
 
         var sent = Assert.Single(handler.Requests);
         Assert.Equal(
@@ -43,6 +43,73 @@ public sealed class ElevenLabsVoiceProviderTests
         using var body = JsonDocument.Parse(sent.Body);
         Assert.Equal(script, body.RootElement.GetProperty("text").GetString());
         Assert.Equal("test-model", body.RootElement.GetProperty("model_id").GetString());
+        var settings = body.RootElement.GetProperty("voice_settings");
+        Assert.Equal(0.45m, settings.GetProperty("stability").GetDecimal());
+        Assert.Equal(0.8m, settings.GetProperty("similarity_boost").GetDecimal());
+        Assert.Equal(1.0m, settings.GetProperty("speed").GetDecimal());
+        Assert.False(body.RootElement.TryGetProperty("language_code", out _));
+        Assert.False(body.RootElement.TryGetProperty("previous_text", out _));
+    }
+
+    [Theory]
+    [InlineData("British", "british-voice")]
+    [InlineData("Castilian", "test-voice")]
+    [InlineData("", "test-voice")]
+    public async Task GenerateUsesTheVoiceConfiguredForTheAccent(string accent, string expectedVoice)
+    {
+        var handler = new RecordingHandler(Response(HttpStatusCode.OK, SuccessPayload("Hola.")));
+        using var httpClient = new HttpClient(handler);
+        var provider = CreateProvider(httpClient, voices: new() { ["British"] = "british-voice" });
+
+        await provider.GenerateAsync(new VoiceGenerationRequest(
+            [new VoiceNarrationSegment("one", "Hola.", 0, 2_000)], "es", VoiceAccent: accent));
+
+        Assert.Contains($"/text-to-speech/{expectedVoice}/with-timestamps", Assert.Single(handler.Requests).RequestUri);
+    }
+
+    [Fact]
+    public async Task GenerateSendsTheLanguageOnlyToModelsThatAcceptIt()
+    {
+        var handler = new RecordingHandler(Response(HttpStatusCode.OK, SuccessPayload("Hola.")));
+        using var httpClient = new HttpClient(handler);
+        var provider = CreateProvider(httpClient, modelId: "eleven_flash_v2_5");
+
+        await provider.GenerateAsync(new VoiceGenerationRequest(
+            [new VoiceNarrationSegment("one", "Hola.", 0, 2_000)], "es"));
+
+        using var body = JsonDocument.Parse(Assert.Single(handler.Requests).Body);
+        Assert.Equal("es", body.RootElement.GetProperty("language_code").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateSplitsALongScriptAndAppendsAudioAndTiming()
+    {
+        var first = new string('a', 400) + ".";
+        var second = new string('b', 300) + ".";
+        // The fake alignment is 0.1 s per character, so the first request speaks for 40.1 s; its four bytes of
+        // audio are shorter, so the spoken length is the offset for the second request.
+        var handler = new RecordingHandler(
+            Response(HttpStatusCode.OK, SuccessPayload(first)),
+            Response(HttpStatusCode.OK, SuccessPayload(second)));
+        using var httpClient = new HttpClient(handler);
+        var provider = CreateProvider(httpClient, maximumCharacters: 500);
+
+        var result = await provider.GenerateAsync(new VoiceGenerationRequest(
+        [
+            new VoiceNarrationSegment("one", first, 0, 2_000),
+            new VoiceNarrationSegment("two", second, 2_500, 2_000),
+        ]));
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal([1, 2, 3, 4, 1, 2, 3, 4], result.AudioData);
+        Assert.Equal(new VoiceSegmentTiming("one", 0, 40_100), result.Timing!.Segments[0]);
+        Assert.Equal(new VoiceSegmentTiming("two", 40_100, 70_200), result.Timing.Segments[1]);
+        Assert.Equal(70_200, result.DurationMs);
+        Assert.Equal(first.Length + second.Length, result.Timing.Characters.Count);
+        using var secondBody = JsonDocument.Parse(handler.Requests[1].Body);
+        Assert.Equal(first, secondBody.RootElement.GetProperty("previous_text").GetString());
+        using var firstBody = JsonDocument.Parse(handler.Requests[0].Body);
+        Assert.Equal(second, firstBody.RootElement.GetProperty("next_text").GetString());
     }
 
     [Fact]
@@ -80,15 +147,21 @@ public sealed class ElevenLabsVoiceProviderTests
         Assert.Single(handler.Requests);
     }
 
-    private static ElevenLabsVoiceProvider CreateProvider(HttpClient client) => new(
+    private static ElevenLabsVoiceProvider CreateProvider(
+        HttpClient client,
+        Dictionary<string, string>? voices = null,
+        string modelId = "test-model",
+        int maximumCharacters = 9_000) => new(
         client,
         Options.Create(new VoiceOptions
         {
             Provider = "ElevenLabs",
             ApiKey = "test-api-key",
             VoiceId = "test-voice",
+            ElevenLabsVoices = new(voices ?? [], StringComparer.OrdinalIgnoreCase),
+            MaximumCharactersPerRequest = maximumCharacters,
             Endpoint = "https://api.elevenlabs.test/v1/text-to-speech",
-            ModelId = "test-model",
+            ModelId = modelId,
             OutputFormat = "mp3_44100_128",
             MaxRetryAttempts = 3,
             RetryBaseDelayMilliseconds = 1,
