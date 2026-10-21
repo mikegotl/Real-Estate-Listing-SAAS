@@ -27,6 +27,7 @@ public sealed partial class CampaignGenerationProcessor(
     ICampaignDerivativeGenerator derivativeGenerator,
     IGeneratedVideoClipService generatedVideoClipService,
     IVideoRenderer videoRenderer,
+    ICampaignSoundtrackService campaignSoundtrackService,
     IPropertyMediaStorage propertyMediaStorage,
     ICampaignAssetStorage campaignAssetStorage,
     ICampaignBillingGate campaignBillingGate,
@@ -351,6 +352,10 @@ public sealed partial class CampaignGenerationProcessor(
         var plan = await dbContext.VideoProductionPlans.AsNoTracking().SingleAsync(
             candidate => candidate.Id == planId && candidate.OrganizationId == job.OrganizationId,
             cancellationToken);
+        var yearBuilt = await dbContext.Properties.AsNoTracking()
+            .Where(candidate => candidate.Id == job.PropertyId && candidate.OrganizationId == job.OrganizationId)
+            .Select(candidate => candidate.YearBuilt)
+            .SingleAsync(cancellationToken);
         var specification = JsonSerializer.Deserialize<VideoProductionSpecification>(
             plan.SpecificationJson,
             SerializerOptions)
@@ -410,7 +415,7 @@ public sealed partial class CampaignGenerationProcessor(
             foreach (var derivative in derivatives.Derivatives.Where(candidate =>
                 candidate.AspectRatio == VideoAspectRatio.Landscape16By9))
             {
-                AddDeliverable(job, shortFormNarrationId, ToOutputKind(derivative.Kind), derivative);
+                AddDeliverable(job, shortFormNarrationId, ToOutputKind(derivative.Kind), derivative, yearBuilt);
             }
         }
         else
@@ -420,7 +425,8 @@ public sealed partial class CampaignGenerationProcessor(
                 shortFormNarrationId,
                 CampaignOutputSelection.YouTubeTour,
                 CampaignOutputKind.YouTubeTour,
-                derivatives.Get(CampaignDeliverableKind.Hero, VideoAspectRatio.Landscape16By9));
+                derivatives.Get(CampaignDeliverableKind.Hero, VideoAspectRatio.Landscape16By9),
+                yearBuilt);
             var verticalFeature = derivatives.Get(
                 CampaignDeliverableKind.Feature,
                 VideoAspectRatio.Vertical9By16);
@@ -429,25 +435,29 @@ public sealed partial class CampaignGenerationProcessor(
                 shortFormNarrationId,
                 CampaignOutputSelection.TikTok,
                 CampaignOutputKind.TikTok,
-                verticalFeature);
+                verticalFeature,
+                yearBuilt);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
                 CampaignOutputSelection.InstagramReel,
                 CampaignOutputKind.InstagramReel,
-                verticalFeature);
+                verticalFeature,
+                yearBuilt);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
                 CampaignOutputSelection.YouTubeShort,
                 CampaignOutputKind.YouTubeShort,
-                verticalFeature);
+                verticalFeature,
+                yearBuilt);
             AddSelectedDeliverable(
                 job,
                 shortFormNarrationId,
                 CampaignOutputSelection.FacebookFeed,
                 CampaignOutputKind.FacebookFeed,
-                derivatives.Get(CampaignDeliverableKind.Feature, VideoAspectRatio.Landscape16By9));
+                derivatives.Get(CampaignDeliverableKind.Feature, VideoAspectRatio.Landscape16By9),
+                yearBuilt);
         }
 
         if (longFormPlan is not null && longFormNarration is not null)
@@ -462,7 +472,9 @@ public sealed partial class CampaignGenerationProcessor(
                     : CampaignOutputKind.FullNarratedTour,
                 longFormPlan.Specification.RequestedDuration,
                 longFormPlan.Specification.AspectRatio,
-                JsonSerializer.Serialize(longFormPlan.Specification, SerializerOptions),
+                JsonSerializer.Serialize(
+                    CampaignCreativeDirector.Apply(longFormPlan.Specification, CreativeOptions(job), yearBuilt),
+                    SerializerOptions),
                 timeProvider.GetUtcNow()));
         }
 
@@ -475,11 +487,12 @@ public sealed partial class CampaignGenerationProcessor(
         Guid narrationId,
         CampaignOutputSelection selection,
         CampaignOutputKind kind,
-        CampaignDerivative derivative)
+        CampaignDerivative derivative,
+        int? yearBuilt)
     {
         if (job.RequestedOutputs.HasFlag(selection))
         {
-            AddDeliverable(job, narrationId, kind, derivative);
+            AddDeliverable(job, narrationId, kind, derivative, yearBuilt);
         }
     }
 
@@ -487,7 +500,8 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignGenerationJob job,
         Guid narrationId,
         CampaignOutputKind kind,
-        CampaignDerivative derivative) =>
+        CampaignDerivative derivative,
+        int? yearBuilt) =>
         dbContext.CampaignDeliverables.Add(CampaignDeliverable.Create(
             job.Id,
             job.OrganizationId,
@@ -496,8 +510,16 @@ public sealed partial class CampaignGenerationProcessor(
             kind,
             derivative.Specification.RequestedDuration,
             derivative.AspectRatio,
-            JsonSerializer.Serialize(derivative.Specification, SerializerOptions),
+            JsonSerializer.Serialize(
+                CampaignCreativeDirector.Apply(derivative.Specification, CreativeOptions(job), yearBuilt),
+                SerializerOptions),
             timeProvider.GetUtcNow()));
+
+    private static CampaignCreativeOptions CreativeOptions(CampaignGenerationJob job) => new(
+        job.CreativeElements,
+        job.Soundtrack,
+        job.CaptionStyle,
+        job.AgentPortraitId);
 
     private async Task<bool> RenderSelectedAsync(
         Guid jobId,
@@ -578,8 +600,8 @@ public sealed partial class CampaignGenerationProcessor(
             SerializerOptions)
             ?? throw new InvalidDataException("The stored derivative specification is invalid.");
         if (specification.Brand.Logo is not null
-            || specification.Brand.SecondaryLogo is not null
-            || specification.Audio.Music.AssetId is not null)
+            || (specification.Brand.SecondaryLogo is not null
+                && !specification.Brand.SecondaryLogo.StartsWith("agent-portrait:", StringComparison.Ordinal)))
         {
             throw new InvalidOperationException("The campaign references unresolved brand or music assets.");
         }
@@ -615,13 +637,19 @@ public sealed partial class CampaignGenerationProcessor(
                 specification,
                 directory,
                 cancellationToken);
+            var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
+            var music = await campaignSoundtrackService.MaterializeAsync(
+                specification.Audio.Music.AssetId,
+                (int)specification.RequestedDuration * 1_000,
+                directory,
+                cancellationToken);
             await videoRenderer.RenderAsync(
                 new VideoRenderRequest(
                     specification,
                     mediaAssets,
                     narrationAsset,
-                    [],
-                    null,
+                    brandAssets,
+                    music,
                     outputPath,
                     generatedClips,
                     neighborhoodAssets,
@@ -680,12 +708,27 @@ public sealed partial class CampaignGenerationProcessor(
         Guid jobId,
         CancellationToken cancellationToken)
     {
+        var job = await GetJobAsync(jobId, cancellationToken);
+        if (job.CreativeElements.HasFlag(CampaignVideoElement.KitchenIslandOrbit))
+        {
+            var transitions = await dbContext.WalkthroughTransitions.AsNoTracking()
+                .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                    && candidate.PropertyId == job.PropertyId)
+                .Select(candidate => candidate.Status)
+                .ToArrayAsync(cancellationToken);
+            if (transitions.Any(status => status is WalkthroughTransitionStatus.Pending
+                    or WalkthroughTransitionStatus.Submitting
+                    or WalkthroughTransitionStatus.Generating))
+            {
+                return false;
+            }
+        }
+
         if (!generatedVideoClipService.IsEnabled)
         {
             return true;
         }
 
-        var job = await GetJobAsync(jobId, cancellationToken);
         var deliverables = await dbContext.CampaignDeliverables.AsNoTracking()
             .Where(candidate => candidate.CampaignGenerationJobId == jobId)
             .OrderBy(candidate => candidate.Kind)
@@ -810,6 +853,40 @@ public sealed partial class CampaignGenerationProcessor(
             : JsonSerializer.Deserialize<VoiceTimingMetadata>(narration.TimingJson, AudioSerializerOptions)
                 ?? throw new InvalidDataException("Stored narration timing is invalid.");
         return new VideoRenderNarrationAsset(path, timing);
+    }
+
+    private async Task<VideoRenderBrandAsset[]> MaterializeBrandAssetsAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        if (specification.Brand.SecondaryLogo is null
+            || !specification.Brand.SecondaryLogo.StartsWith("agent-portrait:", StringComparison.Ordinal)
+            || job.AgentPortraitId is not { } portraitId)
+        {
+            return [];
+        }
+
+        var portrait = await dbContext.AgentPortraits.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.Id == portraitId
+                && candidate.OrganizationId == job.OrganizationId
+                && candidate.UserId == job.RequestedByUserId,
+            cancellationToken)
+            ?? throw new InvalidOperationException("The campaign's agent photo is unavailable.");
+        await using var source = await propertyMediaStorage.OpenReadAsync(portrait.BlobPath, cancellationToken)
+            ?? throw new FileNotFoundException("The campaign's agent photo could not be opened.");
+        var path = Path.Combine(directory, $"agent-portrait-{portrait.Id:N}.jpg");
+        await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(target, cancellationToken);
+        return
+        [
+            new VideoRenderBrandAsset(
+                specification.Brand.SecondaryLogo,
+                path,
+                portrait.Width,
+                portrait.Height),
+        ];
     }
 
     private async Task<VideoRenderGeneratedClipAsset[]> MaterializeGeneratedClipsAsync(

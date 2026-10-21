@@ -42,6 +42,7 @@ public sealed class CampaignGenerationJob
         string requestedByUserId,
         string sourceFingerprint,
         CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
         DateTimeOffset now)
     {
         Id = Guid.NewGuid();
@@ -50,7 +51,12 @@ public sealed class CampaignGenerationJob
         RequestedByUserId = Required(requestedByUserId, 450, nameof(requestedByUserId));
         SourceFingerprint = Required(sourceFingerprint, 64, nameof(sourceFingerprint));
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
+        creativeOptions.Validate();
         RequestedOutputs = requestedOutputs;
+        CreativeElements = creativeOptions.Elements;
+        Soundtrack = creativeOptions.Soundtrack;
+        CaptionStyle = creativeOptions.CaptionStyle;
+        AgentPortraitId = creativeOptions.AgentPortraitId;
         Status = CampaignGenerationStatus.Queued;
         CurrentStage = CampaignGenerationStage.ValidateProperty;
         NextAttemptAtUtc = now;
@@ -69,6 +75,14 @@ public sealed class CampaignGenerationJob
     public string SourceFingerprint { get; private set; } = string.Empty;
 
     public CampaignOutputSelection RequestedOutputs { get; private set; }
+
+    public CampaignVideoElement CreativeElements { get; private set; }
+
+    public CampaignSoundtrack Soundtrack { get; private set; }
+
+    public CampaignCaptionStyle CaptionStyle { get; private set; }
+
+    public Guid? AgentPortraitId { get; private set; }
 
     public CampaignGenerationStatus Status { get; private set; }
 
@@ -118,7 +132,8 @@ public sealed class CampaignGenerationJob
         string requestedByUserId,
         string sourceFingerprint,
         CampaignOutputSelection requestedOutputs,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        CampaignCreativeOptions? creativeOptions = null)
     {
         if (organizationId == Guid.Empty || propertyId == Guid.Empty)
         {
@@ -131,6 +146,7 @@ public sealed class CampaignGenerationJob
             requestedByUserId,
             sourceFingerprint,
             requestedOutputs,
+            creativeOptions ?? CampaignCreativeOptions.Legacy,
             now);
     }
 

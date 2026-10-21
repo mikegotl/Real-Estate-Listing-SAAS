@@ -271,6 +271,59 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("OrganizationBillingAccounts", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.AgentPortrait", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BlobPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OriginalFilename")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BlobPath")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("OrganizationId", "UserId", "UpdatedAtUtc");
+
+                    b.ToTable("AgentPortraits", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignDeliverable", b =>
                 {
                     b.Property<Guid>("Id")
@@ -349,14 +402,31 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AgentPortraitId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("CancellationRequested")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("CaptionStyle")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Classic");
 
                     b.Property<DateTimeOffset?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreativeElements")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasDefaultValue("OpeningTitle, PropertyFacts, NeighborhoodHighlights, WalkthroughMotion, ClosingCallToAction");
 
                     b.Property<string>("CurrentStage")
                         .IsRequired()
@@ -402,6 +472,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<string>("Soundtrack")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("None");
+
                     b.Property<string>("SourceFingerprint")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -427,6 +504,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("AgentPortraitId", "OrganizationId");
 
                     b.HasIndex("OrganizationId", "PropertyId")
                         .IsUnique()
@@ -2085,6 +2164,23 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.AgentPortrait", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignDeliverable", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Campaigns.CampaignGenerationJob", "CampaignGenerationJob")
@@ -2119,6 +2215,12 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasForeignKey("RequestedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Campaigns.AgentPortrait", null)
+                        .WithMany()
+                        .HasForeignKey("AgentPortraitId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
                         .WithMany()

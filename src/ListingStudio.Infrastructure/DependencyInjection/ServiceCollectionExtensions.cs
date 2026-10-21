@@ -173,6 +173,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
+        services.AddScoped<IAgentPortraitService, AgentPortraitService>();
         services.AddScoped<IUserNotificationService, UserNotificationService>();
         services.AddScoped<ILeadGenerationService, LeadGenerationService>();
         services.AddScoped<BillingService>();

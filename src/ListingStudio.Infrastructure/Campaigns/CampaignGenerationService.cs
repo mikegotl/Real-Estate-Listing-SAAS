@@ -16,9 +16,10 @@ public sealed class CampaignGenerationService(
     ApplicationDbContext dbContext,
     ICampaignAssetStorage assetStorage,
     TimeProvider timeProvider,
-    ICampaignBillingGate campaignBillingGate) : ICampaignGenerationService
+    ICampaignBillingGate campaignBillingGate,
+    IWalkthroughTransitionService walkthroughTransitionService) : ICampaignGenerationService
 {
-    private const string WorkflowVersion = "campaign-platform-cuts-v7";
+    private const string WorkflowVersion = "campaign-creative-controls-v8";
 
     public Task<CampaignGenerationResult?> EnqueueAsync(
         string userId,
@@ -31,9 +32,42 @@ public sealed class CampaignGenerationService(
         Guid propertyId,
         CampaignOutputSelection requestedOutputs,
         CancellationToken cancellationToken = default)
+        => await EnqueueAsync(
+            userId,
+            propertyId,
+            requestedOutputs,
+            CampaignCreativeOptions.Legacy,
+            cancellationToken);
+
+    public async Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CancellationToken cancellationToken = default)
     {
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
+        ArgumentNullException.ThrowIfNull(creativeOptions);
+        creativeOptions.Validate();
+        if (creativeOptions.Elements.HasFlag(CampaignVideoElement.KitchenIslandOrbit)
+            && !walkthroughTransitionService.IsEnabled)
+        {
+            throw new InvalidOperationException(
+                "Kitchen island turnaround is unavailable until AI walk-through generation is configured.");
+        }
+
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        DateTimeOffset? portraitUpdatedAtUtc = null;
+        if (creativeOptions.AgentPortraitId is { } portraitId)
+        {
+            portraitUpdatedAtUtc = await dbContext.AgentPortraits.AsNoTracking()
+                .Where(candidate => candidate.Id == portraitId
+                    && candidate.OrganizationId == organizationId
+                    && candidate.UserId == userId)
+                .Select(candidate => (DateTimeOffset?)candidate.UpdatedAtUtc)
+                .SingleOrDefaultAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Upload an agent photo before including it in a campaign.");
+        }
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.ReadCommitted,
             cancellationToken);
@@ -68,11 +102,28 @@ public sealed class CampaignGenerationService(
                 candidate.Id,
                 candidate.DisplayOrder,
                 candidate.UploadedAt,
+                candidate.WalkthroughStop,
+                candidate.Category,
+                candidate.AnalysisDescription,
             })
             .ToArrayAsync(cancellationToken);
         if (media.Length == 0)
         {
             throw new InvalidOperationException("At least one property image is required to generate a campaign.");
+        }
+        if (creativeOptions.Elements.HasFlag(CampaignVideoElement.KitchenIslandOrbit))
+        {
+            var kitchenViews = media.Where(candidate =>
+                candidate.Category == Domain.Properties.PropertyMediaCategory.Kitchen
+                || string.Equals(candidate.WalkthroughStop, "Kitchen", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (kitchenViews.Length < 3
+                || !kitchenViews.Any(candidate => candidate.AnalysisDescription?.Contains(
+                    "island",
+                    StringComparison.OrdinalIgnoreCase) == true))
+            {
+                throw new InvalidOperationException(
+                    "Kitchen island turnaround requires an analyzed island and at least three verified kitchen viewpoints.");
+            }
         }
 
         var neighborhoodFacts = await dbContext.NeighborhoodInsights
@@ -133,11 +184,18 @@ public sealed class CampaignGenerationService(
             .ToArrayAsync(cancellationToken);
         var fingerprint = CreateFingerprint(
             property.UpdatedAtUtc,
-            media,
+            media.Select(candidate => new
+            {
+                candidate.Id,
+                candidate.DisplayOrder,
+                candidate.UploadedAt,
+            }),
             neighborhoodFacts,
             acceptedScript,
             walkthroughVideos,
-            requestedOutputs);
+            requestedOutputs,
+            creativeOptions,
+            portraitUpdatedAtUtc);
         var existing = await dbContext.CampaignGenerationJobs
             .Include(candidate => candidate.Deliverables)
             .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId
@@ -160,10 +218,33 @@ public sealed class CampaignGenerationService(
             userId,
             fingerprint,
             requestedOutputs,
-            timeProvider.GetUtcNow());
+            timeProvider.GetUtcNow(),
+            creativeOptions);
         dbContext.CampaignGenerationJobs.Add(job);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        if (creativeOptions.Elements.HasFlag(CampaignVideoElement.KitchenIslandOrbit))
+        {
+            try
+            {
+                await walkthroughTransitionService.QueueAsync(userId, propertyId, cancellationToken);
+            }
+            catch
+            {
+                dbContext.ChangeTracker.Clear();
+                var abandoned = await dbContext.CampaignGenerationJobs.SingleOrDefaultAsync(
+                    candidate => candidate.Id == job.Id,
+                    CancellationToken.None);
+                if (abandoned is not null)
+                {
+                    dbContext.CampaignGenerationJobs.Remove(abandoned);
+                    await dbContext.SaveChangesAsync(CancellationToken.None);
+                }
+
+                throw;
+            }
+        }
+
         return ToResult(job);
     }
 
@@ -278,7 +359,9 @@ public sealed class CampaignGenerationService(
         object neighborhoodFacts,
         object? acceptedScript,
         object walkthroughVideos,
-        CampaignOutputSelection requestedOutputs)
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        DateTimeOffset? portraitUpdatedAtUtc)
     {
         var source = JsonSerializer.Serialize(new
         {
@@ -289,6 +372,8 @@ public sealed class CampaignGenerationService(
             acceptedScript,
             walkthroughVideos,
             requestedOutputs,
+            creativeOptions,
+            portraitUpdatedAtUtc,
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
     }
@@ -320,6 +405,11 @@ public sealed class CampaignGenerationService(
             job.Id,
             job.PropertyId,
             job.RequestedOutputs,
+            new CampaignCreativeOptions(
+                job.CreativeElements,
+                job.Soundtrack,
+                job.CaptionStyle,
+                job.AgentPortraitId),
             job.Status,
             job.CurrentStage,
             progress,

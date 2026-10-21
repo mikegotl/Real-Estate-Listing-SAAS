@@ -48,12 +48,22 @@ public sealed class VideoBrandingTemplateOptions
         Padding = 22,
     };
 
+    public TextOverlayTemplateOptions PopCaption { get; set; } = new()
+    {
+        FontSize = 60,
+        TextColor = BrandColorToken.Primary,
+        BoxColor = BrandColorToken.Secondary,
+        BoxOpacity = 0.90m,
+        Padding = 20,
+    };
+
     public TextOverlayTemplateOptions For(TextOverlayStyle style) => style switch
     {
         TextOverlayStyle.OpeningTitle => OpeningTitle,
         TextOverlayStyle.PropertyFact => PropertyFact,
         TextOverlayStyle.LowerThird => LowerThird,
         TextOverlayStyle.ClosingCta => ClosingCta,
+        TextOverlayStyle.PopCaption => PopCaption,
         _ => throw new ArgumentOutOfRangeException(nameof(style)),
     };
 }
