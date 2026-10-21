@@ -59,6 +59,9 @@ public sealed class CampaignGenerationJob
         Soundtrack = creativeOptions.Soundtrack;
         CaptionStyle = creativeOptions.CaptionStyle;
         AgentPortraitId = creativeOptions.AgentPortraitId;
+        MarketingTemplate = creativeOptions.MarketingTemplate;
+        PriceReductionAmount = creativeOptions.PriceReductionAmount;
+        PriceReductionVerified = creativeOptions.PriceReductionVerified;
         NarrationRegion = narrationPreferences.Region;
         SpokenLanguage = narrationPreferences.SpokenLanguage;
         CaptionLanguage = narrationPreferences.CaptionLanguage;
@@ -90,6 +93,12 @@ public sealed class CampaignGenerationJob
     public CampaignCaptionStyle CaptionStyle { get; private set; }
 
     public Guid? AgentPortraitId { get; private set; }
+
+    public CampaignMarketingTemplate MarketingTemplate { get; private set; }
+
+    public decimal? PriceReductionAmount { get; private set; }
+
+    public bool PriceReductionVerified { get; private set; }
 
     public CampaignNarrationRegion NarrationRegion { get; private set; }
 

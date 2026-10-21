@@ -431,7 +431,10 @@ public sealed class CampaignGenerationService(
                 job.CreativeElements,
                 job.Soundtrack,
                 job.CaptionStyle,
-                job.AgentPortraitId),
+                job.AgentPortraitId,
+                job.MarketingTemplate,
+                job.PriceReductionAmount,
+                job.PriceReductionVerified),
             new CampaignNarrationPreferences(
                 job.NarrationRegion,
                 job.SpokenLanguage,

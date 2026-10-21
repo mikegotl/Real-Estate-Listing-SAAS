@@ -569,7 +569,10 @@ public sealed partial class CampaignGenerationProcessor(
         job.CreativeElements,
         job.Soundtrack,
         job.CaptionStyle,
-        job.AgentPortraitId);
+        job.AgentPortraitId,
+        job.MarketingTemplate,
+        job.PriceReductionAmount,
+        job.PriceReductionVerified);
 
     private async Task<CampaignLocalizedCopy> GetOrCreateLocalizationAsync(
         CampaignGenerationJob job,

@@ -24,6 +24,19 @@ public static class CampaignCreativeDirector
             source,
             options,
             captionTextBySegmentId)).ToArray();
+        var factBindings = source.FactBindings.ToList();
+        if (options.MarketingTemplate == CampaignMarketingTemplate.PriceDrop)
+        {
+            ApplyPriceDropHook(source, options, scenes, factBindings);
+        }
+
+        if (options.MarketingTemplate == CampaignMarketingTemplate.QuickTour)
+        {
+            scenes = scenes.Select(scene => scene with
+            {
+                TransitionIn = new TransitionPlan(TransitionKind.Cut, 0),
+            }).ToArray();
+        }
         var soundtrack = ResolveSoundtrack(options.Soundtrack, yearBuilt);
         var music = soundtrack == CampaignSoundtrack.None
             ? new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)
@@ -58,10 +71,62 @@ public static class CampaignCreativeDirector
 
         return source with
         {
+            FactBindings = factBindings,
             Brand = source.Brand with { SecondaryLogo = portraitAssetId ?? source.Brand.SecondaryLogo },
             Audio = source.Audio with { Music = music },
             Scenes = scenes,
         };
+    }
+
+    private static void ApplyPriceDropHook(
+        VideoProductionSpecification source,
+        CampaignCreativeOptions options,
+        VideoScene[] scenes,
+        List<FactBinding> factBindings)
+    {
+        if (scenes.Length == 0 || options.PriceReductionAmount is not { } amount)
+        {
+            return;
+        }
+
+        const string groundingKey = "campaign.priceReduction";
+        var formattedAmount = amount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
+        var hook = $"PRICE REDUCED {formattedAmount}";
+        factBindings.RemoveAll(binding => binding.Key == groundingKey);
+        factBindings.Add(new FactBinding(
+            groundingKey,
+            hook,
+            FactSource.AgentVerifiedCampaignInput,
+            "Agent-confirmed campaign input"));
+
+        var first = scenes[0];
+        var retainedLocation = first.TextOverlays
+            .Where(overlay => overlay.StyleToken == TextOverlayStyle.OpeningTitle)
+            .Take(1)
+            .Select(overlay => overlay with
+            {
+                Id = $"{overlay.Id}-location",
+                Box = source.AspectRatio == VideoAspectRatio.Vertical9By16
+                    ? new NormalizedRect(0.14m, 0.30m, 0.72m, 0.12m)
+                    : new NormalizedRect(0.20m, 0.28m, 0.60m, 0.12m),
+                StyleToken = TextOverlayStyle.PropertyFact,
+            });
+        var overlays = first.TextOverlays
+            .Where(overlay => overlay.StyleToken != TextOverlayStyle.OpeningTitle)
+            .Concat(retainedLocation)
+            .Prepend(new TextOverlay(
+                "campaign-price-reduction",
+                hook,
+                groundingKey,
+                0,
+                Math.Min(4_000, first.DurationMs),
+                OverlayAnchor.TopCenter,
+                source.AspectRatio == VideoAspectRatio.Vertical9By16
+                    ? new NormalizedRect(0.08m, 0.08m, 0.84m, 0.20m)
+                    : new NormalizedRect(0.12m, 0.08m, 0.76m, 0.18m),
+                TextOverlayStyle.OpeningTitle))
+            .ToArray();
+        scenes[0] = first with { TextOverlays = overlays };
     }
 
     public static CampaignSoundtrack ResolveSoundtrack(CampaignSoundtrack selected, int? yearBuilt) =>
