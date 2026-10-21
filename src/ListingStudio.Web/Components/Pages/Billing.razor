@@ -70,7 +70,8 @@ else
             <div>
                 <MudText Typo="Typo.h5" HtmlTag="h2">@(overview.IsFreeTrial ? "Free campaign trial" : "Monthly campaign allowance")</MudText>
                 <MudText Typo="Typo.body2">
-                    Completed campaigns use your allowance. Failed provider attempts and retries do not.
+                    The first completed campaign for each property uses your allowance. While your plan or trial is
+                    active, regenerating that property, failed provider attempts, and retries do not use another campaign.
                 </MudText>
             </div>
             <strong>@overview.RemainingCampaignUsage remaining</strong>

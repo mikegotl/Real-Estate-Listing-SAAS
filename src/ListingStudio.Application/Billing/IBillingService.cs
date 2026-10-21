@@ -28,6 +28,7 @@ public interface ICampaignBillingGate
 {
     Task EnsureCampaignCapacityAsync(
         Guid organizationId,
+        Guid propertyId,
         CancellationToken cancellationToken = default);
 
     Task RecordCompletedCampaignAsync(
