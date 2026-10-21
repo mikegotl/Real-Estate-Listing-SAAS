@@ -273,6 +273,41 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     }
 
     [Fact]
+    public async Task RegeneratingACompletedPropertyDoesNotConsumeAnotherCampaign()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-regeneration-billing");
+        await UploadAsync(owner);
+        QueueSuccessfulProviders();
+
+        var initial = await EnqueueAsync(owner);
+        await ProcessUntilAsync(owner, initial.Id, CampaignGenerationStatus.Completed);
+
+        var regenerated = await EnqueueAsync(owner, CampaignOutputSelection.YouTubeTour);
+
+        Assert.NotEqual(initial.Id, regenerated.Id);
+        await using (var reservationScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var overview = await reservationScope.ServiceProvider.GetRequiredService<IBillingService>()
+                .GetOverviewAsync(owner.UserId);
+            Assert.Equal(1, overview.CampaignUsage);
+            Assert.Equal(0, overview.ReservedCampaignUsage);
+            Assert.Equal(0, overview.RemainingCampaignUsage);
+        }
+
+        await ProcessUntilAsync(owner, regenerated.Id, CampaignGenerationStatus.Completed);
+
+        await using var verificationScope = fixture.Factory.Services.CreateAsyncScope();
+        var billing = await verificationScope.ServiceProvider.GetRequiredService<IBillingService>()
+            .GetOverviewAsync(owner.UserId);
+        Assert.Equal(1, billing.CampaignUsage);
+        Assert.Equal(0, billing.ReservedCampaignUsage);
+        var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Single(await dbContext.CampaignUsageRecords.AsNoTracking()
+            .Where(record => record.OrganizationId == owner.OrganizationId)
+            .ToArrayAsync());
+    }
+
+    [Fact]
     public async Task FinishedWalkthroughClipReachesTheRendererBetweenItsTwoPhotos()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-walkthrough");

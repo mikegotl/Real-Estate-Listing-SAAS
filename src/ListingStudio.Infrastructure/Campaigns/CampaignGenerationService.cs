@@ -230,7 +230,7 @@ public sealed class CampaignGenerationService(
             return ToResult(existing);
         }
 
-        await campaignBillingGate.EnsureCampaignCapacityAsync(organizationId, cancellationToken);
+        await campaignBillingGate.EnsureCampaignCapacityAsync(organizationId, propertyId, cancellationToken);
         var job = CampaignGenerationJob.Create(
             organizationId,
             propertyId,

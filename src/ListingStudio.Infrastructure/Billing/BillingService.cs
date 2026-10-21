@@ -136,8 +136,14 @@ public sealed class BillingService(
 
     public async Task EnsureCampaignCapacityAsync(
         Guid organizationId,
+        Guid propertyId,
         CancellationToken cancellationToken = default)
     {
+        if (propertyId == Guid.Empty)
+        {
+            throw new ArgumentException("A property identity is required.", nameof(propertyId));
+        }
+
         var now = timeProvider.GetUtcNow();
         var account = await GetLockedAccountAsync(organizationId, cancellationToken);
         account.ExpireFreeTrial(now);
@@ -154,6 +160,11 @@ public sealed class BillingService(
             throw new CampaignAllowanceExceededException(isTrial
                 ? "Your free campaign trial has ended. Choose a plan on Billing to create another campaign."
                 : "Your subscription is not currently active. Review it on Billing before creating another campaign.");
+        }
+
+        if (await PropertyCampaignUsageExistsAsync(account, propertyId, cancellationToken))
+        {
+            return;
         }
 
         var reservedCampaignUsage = await ReservedCampaignUsageAsync(account, cancellationToken);
@@ -178,6 +189,16 @@ public sealed class BillingService(
         }
 
         var account = await GetLockedAccountAsync(organizationId, cancellationToken);
+
+        var propertyId = await dbContext.CampaignGenerationJobs.AsNoTracking()
+            .Where(job => job.Id == campaignGenerationJobId && job.OrganizationId == organizationId)
+            .Select(job => (Guid?)job.PropertyId)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException("The completed campaign does not belong to the billing organization.");
+        if (await PropertyCampaignUsageExistsAsync(account, propertyId, cancellationToken))
+        {
+            return;
+        }
 
         account.RecordCampaignUsage(timeProvider.GetUtcNow());
         dbContext.CampaignUsageRecords.Add(CampaignUsageRecord.Create(
@@ -309,7 +330,21 @@ public sealed class BillingService(
             && (job.Status == CampaignGenerationStatus.Queued
                 || job.Status == CampaignGenerationStatus.Running)
             && !dbContext.CampaignUsageRecords.Any(record =>
-                record.CampaignGenerationJobId == job.Id),
+                record.CampaignGenerationJobId == job.Id)
+            && !dbContext.CampaignUsageRecords.Any(record =>
+                record.OrganizationId == account.OrganizationId
+                && record.PeriodStartUtc == account.CurrentPeriodStartUtc
+                && record.CampaignGenerationJob.PropertyId == job.PropertyId),
+            cancellationToken);
+
+    private async Task<bool> PropertyCampaignUsageExistsAsync(
+        OrganizationBillingAccount account,
+        Guid propertyId,
+        CancellationToken cancellationToken) =>
+        await dbContext.CampaignUsageRecords.AsNoTracking().AnyAsync(record =>
+            record.OrganizationId == account.OrganizationId
+            && record.PeriodStartUtc == account.CurrentPeriodStartUtc
+            && record.CampaignGenerationJob.PropertyId == propertyId,
             cancellationToken);
 
     private string PriceId(SubscriptionPlan plan)
