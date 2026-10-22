@@ -310,6 +310,52 @@
             }
             else
             {
+                @if (!IsReadOnly)
+                {
+                    <div class="gallery-bulk-toolbar" role="toolbar" aria-label="Extra photo bulk actions">
+                        <label class="gallery-select-all">
+                            <input type="checkbox"
+                                   checked="@AllGallerySelected"
+                                   disabled="@bulkActionRunning"
+                                   @onchange="ToggleAllGalleryItems" />
+                            <span>Select all</span>
+                        </label>
+                        <span class="gallery-selection-count" aria-live="polite">
+                            @SelectedGalleryCount selected
+                        </span>
+                        <MudSpacer />
+                        <MudMenu Label="Move selected" StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
+                                 Variant="Variant.Outlined" Color="Color.Primary"
+                                 Disabled="@(SelectedGalleryCount == 0 || bulkActionRunning)"
+                                 AriaLabel="Move selected extra photos to a walkthrough stop">
+                            @foreach (var target in stops)
+                            {
+                                <MudMenuItem OnClick="@(() => MoveSelectedToStopAsync(target.Name))">@target.Name</MudMenuItem>
+                            }
+                        </MudMenu>
+                        <MudMenu Label="Fix selected" StartIcon="@Icons.Material.Filled.AutoFixHigh" Size="Size.Small" Dense="true"
+                                 Variant="Variant.Outlined" Color="Color.Primary"
+                                 Disabled="@(SelectedGalleryCount == 0 || bulkActionRunning)"
+                                 AriaLabel="Apply a photo fix to selected extra photos">
+                            <MudMenuItem Icon="@Icons.Material.Filled.WbSunny" OnClick="@(() => FixSelectedAsync(PhotoFix.BrightnessAndColor))">
+                                Fix brightness and color
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.CropRotate" OnClick="@(() => FixSelectedAsync(PhotoFix.LevelAndCrop))">
+                                Straighten and auto-crop
+                            </MudMenuItem>
+                            @if (photoFixService?.IsClutterRemovalEnabled == true)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices" OnClick="@(() => FixSelectedAsync(PhotoFix.RemoveClutter))">
+                                    Remove clutter with AI
+                                </MudMenuItem>
+                            }
+                        </MudMenu>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Delete"
+                                   Disabled="@(SelectedGalleryCount == 0 || bulkActionRunning)"
+                                   OnClick="DeleteSelectedAsync">Delete selected</MudButton>
+                    </div>
+                }
                 <ul class="photo-gallery-strip">
                     @foreach (var item in gallery)
                     {
@@ -378,6 +424,13 @@
     private IPropertyPhotoFixService? photoFixService;
     private Dictionary<Guid, PropertyPhotoFixItem> photoFixes = [];
     private bool photoFixPollingStarted;
+    private readonly HashSet<Guid> selectedGalleryIds = [];
+    private bool bulkActionRunning;
+
+    private int SelectedGalleryCount => selectedGalleryIds.Count;
+
+    private bool AllGallerySelected => gallery.Count > 0
+        && gallery.All(item => selectedGalleryIds.Contains(item.Id));
 
     private bool AnyPhotoFixRunning => photoFixes.Values.Any(fix => fix.IsInProgress);
 
@@ -520,9 +573,19 @@
         var suggestion = item.Analysis is null ? null : WalkthroughStoryboard.SuggestStop(item.Analysis.Category);
         var label = item.Analysis?.RoomType ?? (item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed ? "Not recognized" : "Recognizing room…");
         var photoFix = photoFixes.GetValueOrDefault(item.Id);
-        <li class="gallery-thumb">
+        <li class="gallery-thumb @(selectedGalleryIds.Contains(item.Id) ? "is-selected" : null)">
             <div class="gallery-thumb-image">
                 <img src="@PhotoUrl(item)" alt="@item.OriginalFilename" loading="lazy" title="@item.OriginalFilename" />
+                @if (!IsReadOnly)
+                {
+                    <label class="gallery-thumb-select" title="Select @item.OriginalFilename">
+                        <input type="checkbox"
+                               checked="@selectedGalleryIds.Contains(item.Id)"
+                               disabled="@bulkActionRunning"
+                               aria-label="Select @item.OriginalFilename"
+                               @onchange="@(_ => ToggleGalleryItem(item.Id))" />
+                    </label>
+                }
                 @PhotoFixControls((item, photoFix))
             </div>
             <div class="gallery-thumb-body">
@@ -994,6 +1057,7 @@
     private void BuildStoryboard()
     {
         gallery = [.. media.Where(item => item.IsInGallery).OrderBy(item => item.DisplayOrder)];
+        selectedGalleryIds.IntersectWith(gallery.Select(item => item.Id));
         var groups = WalkthroughStoryboard.Group(
             media.Where(item => !item.IsInGallery),
             item => item.WalkthroughStop,
@@ -1166,6 +1230,176 @@
             await ReloadAfterChangeAsync();
             ShowMessage("Photo deleted.", Severity.Success);
         }
+    }
+
+    private void ToggleGalleryItem(Guid mediaId)
+    {
+        if (!selectedGalleryIds.Add(mediaId))
+        {
+            selectedGalleryIds.Remove(mediaId);
+        }
+    }
+
+    private void ToggleAllGalleryItems(ChangeEventArgs eventArgs)
+    {
+        if (eventArgs.Value is true)
+        {
+            selectedGalleryIds.UnionWith(gallery.Select(item => item.Id));
+        }
+        else
+        {
+            selectedGalleryIds.Clear();
+        }
+    }
+
+    private async Task DeleteSelectedAsync()
+    {
+        var selected = SelectedGalleryItems();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            $"Delete {selected.Count} selected {(selected.Count == 1 ? "photo" : "photos")}?",
+            "The selected photos are permanently removed from Extra Photos. This cannot be undone.",
+            yesText: "Delete selected",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        bulkActionRunning = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var deleted = 0;
+            foreach (var item in selected)
+            {
+                if (await Service.DeleteAsync(userId, PropertyId, item.Id))
+                {
+                    deleted++;
+                    selectedGalleryIds.Remove(item.Id);
+                }
+            }
+
+            await ReloadAfterChangeAsync();
+            ShowBulkResult(deleted, selected.Count, "deleted", "delete");
+        }
+        finally
+        {
+            bulkActionRunning = false;
+        }
+    }
+
+    private async Task MoveSelectedToStopAsync(string stop)
+    {
+        var selected = SelectedGalleryItems();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        bulkActionRunning = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var moved = 0;
+            foreach (var item in selected)
+            {
+                if (await Service.SetWalkthroughStopAsync(userId, PropertyId, item.Id, stop))
+                {
+                    moved++;
+                    selectedGalleryIds.Remove(item.Id);
+                }
+            }
+
+            await ReloadAfterChangeAsync();
+            ShowBulkResult(moved, selected.Count, $"moved to {stop}", "move");
+        }
+        finally
+        {
+            bulkActionRunning = false;
+        }
+    }
+
+    private async Task FixSelectedAsync(PhotoFix fix)
+    {
+        if (photoFixService is null)
+        {
+            return;
+        }
+
+        var selected = SelectedGalleryItems()
+            .Where(item => photoFixes.GetValueOrDefault(item.Id)?.IsInProgress != true)
+            .ToArray();
+        if (selected.Length == 0)
+        {
+            ShowMessage("Every selected photo already has a fix in progress.", Severity.Info);
+            return;
+        }
+
+        bulkActionRunning = true;
+        var requested = 0;
+        var failed = 0;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            foreach (var item in selected)
+            {
+                try
+                {
+                    bool accepted;
+                    await photoFixGate.WaitAsync();
+                    try
+                    {
+                        accepted = await photoFixService.RequestAsync(userId, PropertyId, item.Id, fix);
+                    }
+                    finally
+                    {
+                        photoFixGate.Release();
+                    }
+
+                    requested += accepted ? 1 : 0;
+                    failed += accepted ? 0 : 1;
+                }
+                catch (InvalidOperationException)
+                {
+                    failed++;
+                }
+            }
+
+            await LoadPhotoFixesAsync(userId);
+            var action = fix switch
+            {
+                PhotoFix.RemoveClutter => "AI clutter removal requested for",
+                PhotoFix.LevelAndCrop => "Straightening and auto-crop requested for",
+                _ => "Brightness and color correction requested for",
+            };
+            ShowMessage(
+                failed == 0
+                    ? $"{action} {requested} {(requested == 1 ? "photo" : "photos")}."
+                    : $"{action} {requested} {(requested == 1 ? "photo" : "photos")}; {failed} could not be queued.",
+                failed == 0 ? Severity.Success : Severity.Warning);
+        }
+        finally
+        {
+            bulkActionRunning = false;
+        }
+    }
+
+    private IReadOnlyList<PropertyMediaItem> SelectedGalleryItems() => gallery
+        .Where(item => selectedGalleryIds.Contains(item.Id))
+        .ToArray();
+
+    private void ShowBulkResult(int completed, int selected, string completedAction, string attemptedAction)
+    {
+        ShowMessage(
+            completed == selected
+                ? $"{completed} {(completed == 1 ? "photo" : "photos")} {completedAction}."
+                : $"{completed} of {selected} photos {completedAction}; some photos could not be {attemptedAction}d.",
+            completed == selected ? Severity.Success : Severity.Warning);
     }
 
     private async Task AssignStopAsync(Guid mediaId, string stop)

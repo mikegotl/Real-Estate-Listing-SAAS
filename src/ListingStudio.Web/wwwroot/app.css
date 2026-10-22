@@ -346,6 +346,10 @@ h1:focus { outline: none; }
 .gallery-upload::after { content: "Kept out of the walkthrough"; }
 .gallery-upload .mud-icon-root { font-size: 24px; }
 .photo-gallery-empty { color: var(--ls-muted); font-size: .88rem; margin: 0; }
+.gallery-bulk-toolbar { align-items: center; background: var(--ls-surface-muted); border: 1px solid var(--ls-line); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; padding: 9px 10px; }
+.gallery-select-all { align-items: center; cursor: pointer; display: inline-flex; font-size: .84rem; font-weight: 700; gap: 7px; }
+.gallery-select-all input, .gallery-thumb-select input { accent-color: var(--ls-primary); height: 18px; margin: 0; width: 18px; }
+.gallery-selection-count { color: var(--ls-muted); font-size: .78rem; }
 /* Photo fixes: the Fix button and Edited badge sit on the photo, and a running fix covers it with its progress. */
 .photo-fix-menu { position: absolute; right: 6px; top: 6px; }
 .photo-fix-button { align-items: center; background: rgba(var(--ls-night-rgb), .78); border: 0; border-radius: 999px; color: var(--ls-on-night); cursor: pointer; display: inline-flex; font: inherit; font-size: .74rem; font-weight: 700; gap: 3px; padding: 3px 9px 3px 6px; transition: background .15s ease; }
@@ -392,8 +396,10 @@ h1:focus { outline: none; }
 @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; }.admin-metrics { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .admin-hero { align-items: flex-start; flex-direction: column; gap: 16px; }.admin-metrics { grid-template-columns: 1fr 1fr; } }
 .photo-gallery-strip { display: flex; flex-flow: row wrap; gap: 12px; list-style: none; margin: 0; padding: 0; }
-.gallery-thumb { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 12px; display: flex; flex: 0 0 160px; flex-direction: column; overflow: hidden; width: 160px; }
+.gallery-thumb { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 12px; display: flex; flex: 0 0 160px; flex-direction: column; overflow: hidden; transition: border-color .15s ease, box-shadow .15s ease; width: 160px; }
+.gallery-thumb.is-selected { border-color: var(--ls-primary); box-shadow: 0 0 0 2px var(--ls-primary-soft); }
 .gallery-thumb img { aspect-ratio: 4 / 3; background: var(--ls-surface-muted); display: block; object-fit: cover; width: 100%; }
+.gallery-thumb-select { align-items: center; background: rgba(255, 255, 255, .92); border-radius: 7px; cursor: pointer; display: inline-flex; left: 6px; padding: 5px; position: absolute; top: 6px; z-index: 2; }
 .gallery-thumb-body { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px 0; }
 .gallery-thumb-room { font-size: .82rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gallery-thumb-source { align-items: center; color: var(--ls-muted); display: inline-flex; font-size: .72rem; gap: 3px; }
