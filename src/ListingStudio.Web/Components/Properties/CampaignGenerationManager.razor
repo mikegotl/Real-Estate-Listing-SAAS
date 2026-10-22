@@ -441,6 +441,9 @@
     }
 </MudPaper>
 
+<FeatureSuggestionBox PropertyId="PropertyId"
+                      ActiveCampaignId="@(job?.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running ? job.Id : null)" />
+
 @code {
     [Parameter]
     public Guid PropertyId { get; set; }
