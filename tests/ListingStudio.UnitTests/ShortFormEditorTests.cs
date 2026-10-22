@@ -141,20 +141,136 @@ public sealed class ShortFormEditorTests
             overlay => overlay.StyleToken == TextOverlayStyle.AgentContact);
     }
 
+    [Fact]
+    public void ARoomPhotoTakenFromAVideoPlaysThatMomentOfTheVideo()
+    {
+        var photos = PhotoIds.Select(id => new ShortFormPhoto(id, 1_600, 1_200)).ToArray();
+        photos[2] = photos[2] with { SourceVideoId = VideoId, SourceVideoTimestampMs = 20_000 };
+
+        var edit = Create(CampaignCreativeOptions.SocialDefault, 500, photos: photos, videos: [Walkthrough]);
+
+        var played = edit.Scenes.Where(scene => scene.VisualSource.Kind == VisualSourceKind.PropertyVideo).ToArray();
+        Assert.NotEmpty(played);
+        Assert.All(played, scene =>
+        {
+            Assert.Equal(VideoId, scene.VisualSource.PropertyVideoId);
+            Assert.Equal(20_000 - 750, scene.VisualSource.PropertyVideoStartMs);
+            Assert.Null(scene.VisualSource.PropertyMediaId);
+            Assert.Equal(MotionKind.None, scene.Motion.Type);
+            Assert.InRange(scene.Motion.StartViewport.Width * 1_920 / (scene.Motion.StartViewport.Height * 1_080), 0.5525m, 0.5725m);
+        });
+        Assert.DoesNotContain(edit.Scenes, other => other.VisualSource.PropertyMediaId == PhotoIds[2]);
+    }
+
+    [Fact]
+    public void VideoClipsWinEveryMiddleSlotWhenThereAreEnough()
+    {
+        var clips = Enumerable.Range(0, 20)
+            .Select(index => new ShortFormVideoClip(VideoId, index * 3_000, index * 3_000 + 3_000, 1))
+            .ToArray();
+
+        var edit = Create(CampaignCreativeOptions.SocialDefault, 500, videos: [Walkthrough], clips: clips);
+
+        Assert.Equal(PhotoIds[0], edit.Scenes[0].VisualSource.PropertyMediaId);
+        var middle = edit.Scenes.Skip(1).SkipLast(1).ToArray();
+        Assert.Equal(16, middle.Length);
+        Assert.All(middle, scene =>
+        {
+            Assert.Equal(VisualSourceKind.PropertyVideo, scene.VisualSource.Kind);
+            Assert.InRange(scene.VisualSource.PropertyVideoStartMs!.Value, 0, Walkthrough.DurationMs - scene.DurationMs);
+        });
+        var starts = middle.Select(scene => scene.VisualSource.PropertyVideoStartMs!.Value).ToArray();
+        Assert.Equal(starts.Order(), starts);
+        Assert.Equal(starts.Length, starts.Distinct().Count());
+    }
+
+    [Fact]
+    public void StillsFillOnlyTheSlotsTheClipsCannot()
+    {
+        ShortFormVideoClip[] clips =
+        [
+            new(VideoId, 10_000, 13_000, 1),
+            new(VideoId, 30_000, 33_000, 1),
+            new(VideoId, 50_000, 53_000, 1),
+        ];
+
+        var edit = Create(CampaignCreativeOptions.SocialDefault, 500, videos: [Walkthrough], clips: clips);
+
+        // Sixteen slots, three clips and five unused photos: every clip and every photo is used, clips after the photos.
+        var middle = edit.Scenes.Skip(1).SkipLast(1).ToArray();
+        Assert.Equal(
+            [10_750, 30_750, 50_750],
+            middle.Where(scene => scene.VisualSource.Kind == VisualSourceKind.PropertyVideo)
+                .Select(scene => scene.VisualSource.PropertyVideoStartMs!.Value)
+                .Distinct());
+        Assert.Equal(
+            PhotoIds.Skip(1),
+            middle.Take(5).Select(scene => scene.VisualSource.PropertyMediaId!.Value));
+    }
+
+    [Fact]
+    public void ClipsNearAPhotoFromTheSameVideoAreLeftOutAndTheRestFollowTheVideo()
+    {
+        var photos = PhotoIds.Select(id => new ShortFormPhoto(id, 1_600, 1_200)).ToArray();
+        photos[1] = photos[1] with { SourceVideoId = VideoId, SourceVideoTimestampMs = 12_000 };
+        photos[3] = photos[3] with { SourceVideoId = VideoId, SourceVideoTimestampMs = 40_000 };
+        ShortFormVideoClip[] clips =
+        [
+            new(VideoId, 10_000, 13_000, 1), // the same moment as photo 1
+            new(VideoId, 20_000, 23_000, 1),
+            new(VideoId, 50_000, 53_000, 1),
+        ];
+
+        var edit = Create(
+            CampaignCreativeOptions.SocialDefault with { Pace = CampaignPace.Cinematic },
+            500,
+            photos: photos,
+            videos: [Walkthrough],
+            clips: clips);
+
+        // Six 4-second slots (plus the 0.4-second crossfade): the four video shots in video order, each beside the
+        // photos around it, and two stills.
+        Assert.Equal(
+            ["video 9800", "video 19300", $"photo {PhotoIds[2]}", "video 37800", "video 49300", $"photo {PhotoIds[4]}"],
+            edit.Scenes.Skip(1).SkipLast(1).Select(scene => scene.VisualSource.Kind == VisualSourceKind.PropertyVideo
+                ? $"video {scene.VisualSource.PropertyVideoStartMs}"
+                : $"photo {scene.VisualSource.PropertyMediaId}"));
+    }
+
+    [Fact]
+    public void WithNoPhotosTheFirstClipOpensAndCloses()
+    {
+        ShortFormVideoClip[] clips = [new(VideoId, 2_000, 6_000, 1), new(VideoId, 30_000, 33_000, 1)];
+
+        var edit = Create(CampaignCreativeOptions.SocialDefault, 500, photos: [], videos: [Walkthrough], clips: clips);
+
+        Assert.All(edit.Scenes, scene => Assert.Equal(VisualSourceKind.PropertyVideo, scene.VisualSource.Kind));
+        Assert.Equal(4_000 - 1_500, edit.Scenes[0].VisualSource.PropertyVideoStartMs);
+        Assert.Equal(TextOverlayStyle.HookTitle, edit.Scenes[0].TextOverlays[0].StyleToken);
+    }
+
+    private static readonly Guid VideoId = Guid.NewGuid();
+
+    private static readonly CampaignDerivativeVideo Walkthrough = new(VideoId, 1_920, 1_080, 60_000);
+
     private static VideoProductionSpecification Create(
         CampaignCreativeOptions options,
         int beatMs,
-        int[]? tourPhotos = null)
+        int[]? tourPhotos = null,
+        ShortFormPhoto[]? photos = null,
+        CampaignDerivativeVideo[]? videos = null,
+        ShortFormVideoClip[]? clips = null)
     {
         var master = Master(tourPhotos);
         return ShortFormEditor.Create(new ShortFormEditRequest(
             master,
-            PhotoIds.Select(id => new ShortFormPhoto(id, 1_600, 1_200)).ToArray(),
-            [],
+            photos ?? PhotoIds.Select(id => new ShortFormPhoto(id, 1_600, 1_200)).ToArray(),
+            videos ?? [],
             ShortFormCopyBuilder.DurationFor(options.Voiceover),
             beatMs,
             options.Pace,
-            ShortFormCopyBuilder.Build(master, options, "Raleigh", "NC")));
+            ShortFormCopyBuilder.Build(master, options, "Raleigh", "NC"),
+            clips));
     }
 
     private static VideoProductionSpecification Master(int[]? tourPhotos = null)

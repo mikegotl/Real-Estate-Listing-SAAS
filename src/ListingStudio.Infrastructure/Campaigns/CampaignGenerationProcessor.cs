@@ -30,6 +30,7 @@ public sealed partial class CampaignGenerationProcessor(
     IVideoRenderer videoRenderer,
     ICampaignSoundtrackService campaignSoundtrackService,
     IPropertyMediaStorage propertyMediaStorage,
+    IPropertyVideoClipFinder videoClipFinder,
     ICampaignAssetStorage campaignAssetStorage,
     ICampaignBillingGate campaignBillingGate,
     IOptions<CampaignGenerationOptions> options,
@@ -396,6 +397,8 @@ public sealed partial class CampaignGenerationProcessor(
                 && candidate.EnhancedWidth != null
                 && candidate.EnhancedHeight != null
                 && candidate.EnhancedDurationMs != null)
+            .OrderBy(candidate => candidate.UploadedAtUtc)
+            .ThenBy(candidate => candidate.Id)
             .Select(candidate => new CampaignDerivativeVideo(
                 candidate.Id,
                 candidate.EnhancedWidth!.Value,
@@ -595,8 +598,14 @@ public sealed partial class CampaignGenerationProcessor(
                 && !candidate.IsInGallery)
             .OrderBy(candidate => candidate.DisplayOrder)
             .ThenBy(candidate => candidate.Id)
-            .Select(candidate => new ShortFormPhoto(candidate.Id, candidate.Width, candidate.Height))
+            .Select(candidate => new ShortFormPhoto(
+                candidate.Id,
+                candidate.Width,
+                candidate.Height,
+                candidate.SourceVideoId,
+                candidate.SourceVideoTimestampMs))
             .ToArrayAsync(cancellationToken);
+        var videoClips = await FindVideoClipsAsync(job, propertyVideos, cancellationToken);
         var soundtrack = CampaignCreativeDirector.ResolveSoundtrack(options.Soundtrack, yearBuilt);
         var beatMs = 60_000 / CampaignCreativeDirector.BeatsPerMinute(
             soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
@@ -609,7 +618,8 @@ public sealed partial class CampaignGenerationProcessor(
             ShortFormCopyBuilder.DurationFor(options.Voiceover),
             beatMs,
             options.Pace,
-            ShortFormCopyBuilder.Build(master, options, location.City, location.State, withHighlights)));
+            ShortFormCopyBuilder.Build(master, options, location.City, location.State, withHighlights),
+            videoClips));
 
         var edit = Edit(withHighlights: true);
         if (options.Voiceover != CampaignVoiceoverMode.ShortHook || edit.Audio.NarrationSegments.Count == 0)
@@ -652,6 +662,44 @@ public sealed partial class CampaignGenerationProcessor(
                 yearBuilt,
                 localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text),
                 narration.Timing));
+    }
+
+    /// <summary>
+    /// The steady, detailed stretches of each finished property video, for the short-form edit to cut from. A video
+    /// that cannot be read or sampled only costs its clips: the edit falls back to photos for it.
+    /// </summary>
+    private async Task<IReadOnlyList<ShortFormVideoClip>> FindVideoClipsAsync(
+        CampaignGenerationJob job,
+        IReadOnlyList<CampaignDerivativeVideo> propertyVideos,
+        CancellationToken cancellationToken)
+    {
+        if (propertyVideos.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = propertyVideos.Select(video => video.PropertyVideoId).ToArray();
+        var paths = await dbContext.PropertyVideos.AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == job.OrganizationId && ids.Contains(candidate.Id))
+            .Select(candidate => new { candidate.Id, candidate.EnhancedBlobPath })
+            .ToArrayAsync(cancellationToken);
+        var clips = new List<ShortFormVideoClip>();
+        foreach (var video in paths.Where(video => video.EnhancedBlobPath is not null).OrderBy(video => video.Id))
+        {
+            try
+            {
+                await using var content = await propertyMediaStorage.OpenReadAsync(video.EnhancedBlobPath!, cancellationToken)
+                    ?? throw new FileNotFoundException("The enhanced property video could not be opened.");
+                var spans = await videoClipFinder.FindClipsAsync(content, "enhanced.mp4", cancellationToken);
+                clips.AddRange(spans.Select(span => new ShortFormVideoClip(video.Id, span.StartMs, span.EndMs, span.Score)));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                LogVideoClipsUnavailable(exception, job.Id, video.Id);
+            }
+        }
+
+        return clips;
     }
 
     /// <summary>
@@ -1637,6 +1685,11 @@ public sealed partial class CampaignGenerationProcessor(
         Level = LogLevel.Warning,
         Message = "Campaign {JobId} skipped walk-through transition {TransitionId} because its clip could not be opened")]
     private partial void LogWalkthroughUnavailable(Guid jobId, Guid transitionId);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} could not find short-form clips in property video {VideoId}")]
+    private partial void LogVideoClipsUnavailable(Exception exception, Guid jobId, Guid videoId);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

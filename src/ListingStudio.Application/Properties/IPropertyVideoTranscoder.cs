@@ -21,7 +21,8 @@ public sealed record PropertyVideoMetadata(
     int Height,
     int DurationMs,
     decimal FrameRate,
-    bool HasAudio);
+    bool HasAudio,
+    bool IsHdr = false);
 
 public sealed record PropertyVideoEnhancementResult(
     Stream Content,

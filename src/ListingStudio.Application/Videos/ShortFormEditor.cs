@@ -3,8 +3,19 @@ using ListingStudio.Domain.Videos;
 
 namespace ListingStudio.Application.Videos;
 
-/// <summary>A listing photo in walkthrough storyboard order.</summary>
-public sealed record ShortFormPhoto(Guid MediaId, int Width, int Height);
+/// <summary>
+/// A listing photo in walkthrough storyboard order. A photo found in a property video remembers where, so the edit
+/// can show that moment of the video moving instead of the still.
+/// </summary>
+public sealed record ShortFormPhoto(
+    Guid MediaId,
+    int Width,
+    int Height,
+    Guid? SourceVideoId = null,
+    int? SourceVideoTimestampMs = null);
+
+/// <summary>A steady, detailed stretch of a property video that makes a good shot.</summary>
+public sealed record ShortFormVideoClip(Guid PropertyVideoId, int StartMs, int EndMs, double Score);
 
 public sealed record ShortFormEditRequest(
     VideoProductionSpecification Master,
@@ -13,17 +24,20 @@ public sealed record ShortFormEditRequest(
     RequestedDuration Duration,
     int BeatMs,
     CampaignPace Pace,
-    ShortFormCopy Copy);
+    ShortFormCopy Copy,
+    IReadOnlyList<ShortFormVideoClip>? VideoClips = null);
 
 /// <summary>
 /// Builds the vertical short-form edit (TikTok, Reels, Shorts) instead of trimming the landscape tour: a hook shot
 /// with the price and location, then a cut on the music beat every one to two seconds with every shot moving, and an
 /// end card with the call to action and the agent's contact. Shots follow the director's tour order, with storyboard
-/// photos the tour skipped slotted back in at their storyboard position.
+/// photos the tour skipped slotted back in at their storyboard position. Real moving video comes first, like the
+/// social examples: a room photo taken from a property video plays that moment of the video, steady stretches of the
+/// walkthrough videos join in, and still photos with a Ken Burns move only fill the slots the video cannot.
 /// </summary>
 public static class ShortFormEditor
 {
-    public const string EditorVersion = "short-form-editor-v1";
+    public const string EditorVersion = "short-form-editor-v2";
 
     private static readonly VideoOutputProfile Output = new(1_080, 1_920, 30, "h264", "aac", "yuv420p", 48_000, 2);
     private static readonly NormalizedRect SafeZone = new(0.075m, 0.05m, 0.85m, 0.9m);
@@ -47,7 +61,7 @@ public static class ShortFormEditor
         var shots = ShotPool(request, shotMs + crossfadeMs);
         if (shots.Count == 0)
         {
-            throw new ArgumentException("A short-form edit needs at least one photo.", nameof(request));
+            throw new ArgumentException("A short-form edit needs at least one photo or usable video clip.", nameof(request));
         }
 
         var planned = new List<(Shot Shot, Move Move, int DurationMs)> { (shots[0], Move.HookPush, hookMs) };
@@ -107,13 +121,16 @@ public static class ShortFormEditor
                     TextOverlayStyle.AgentContact));
             }
 
+            // The clip has to cover the scene and the crossfade into the next one; a photo plays its still instead
+            // when its video moment is too short for a long hook or end card.
+            var playable = shot.Playable(duration + (index + 1 < planned.Count ? crossfadeMs : 0));
             scenes.Add(new VideoScene(
                 index + 1,
                 startMs,
                 duration,
-                shot.Visual(),
+                playable.Visual(duration + (index + 1 < planned.Count ? crossfadeMs : 0)),
                 transition,
-                shot.Motion(move, request.Pace),
+                playable.Motion(move, request.Pace),
                 overlays,
                 [],
                 []));
@@ -234,8 +251,11 @@ public static class ShortFormEditor
         (int)(text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length * 10_000L / 26);
 
     /// <summary>
-    /// Photos and walkthrough-video windows in the order the tour shows them; storyboard photos the tour left out
-    /// go back in at their storyboard position. A video window is used only when it holds a whole shot.
+    /// Photos and walkthrough-video shots in the order the tour shows them; storyboard photos the tour left out go
+    /// back in at their storyboard position. A photo taken from a property video becomes that moment of the video.
+    /// Steady stretches of a video join next to the photos taken from it (in video time), or, for a video with no
+    /// photos in the storyboard, where the tour used that video, or after the photos. A video window is used only
+    /// when it holds a whole shot.
     /// </summary>
     private static List<Shot> ShotPool(ShortFormEditRequest request, int videoShotMs)
     {
@@ -245,24 +265,39 @@ public static class ShortFormEditor
             .GroupBy(item => item.Photo.MediaId)
             .ToDictionary(group => group.Key, group => group.First());
         var videos = request.PropertyVideos
+            .Where(video => video.Width > 0 && video.Height > 0 && video.DurationMs >= videoShotMs)
             .GroupBy(video => video.PropertyVideoId)
             .ToDictionary(group => group.Key, group => group.First());
+        var clips = (request.VideoClips ?? [])
+            .Where(clip => videos.ContainsKey(clip.PropertyVideoId) && clip.EndMs > clip.StartMs)
+            .GroupBy(clip => clip.PropertyVideoId)
+            .ToDictionary(group => group.Key, group => group.OrderBy(clip => clip.StartMs).ToList());
+
+        Shot PhotoShot(ShortFormPhoto photo) =>
+            photo.SourceVideoId is { } sourceId
+            && photo.SourceVideoTimestampMs is { } timestamp
+            && videos.TryGetValue(sourceId, out var source)
+                ? new Shot(photo, source, timestamp)
+                : new Shot(photo, null, 0);
+
         var ordered = new List<(decimal Order, Shot Shot)>();
         var used = new HashSet<Guid>();
+        var videoOrder = new Dictionary<Guid, decimal>();
         var lastOrder = -1m;
         foreach (var scene in request.Master.Scenes)
         {
             var visual = scene.VisualSource;
             if (visual.Kind == VisualSourceKind.PropertyVideo)
             {
-                if (visual.PropertyVideoId is { } videoId
-                    && videos.TryGetValue(videoId, out var video)
-                    && video.Width > 0 && video.Height > 0
-                    && video.DurationMs >= videoShotMs)
+                if (visual.PropertyVideoId is { } videoId && videos.TryGetValue(videoId, out var video))
                 {
                     lastOrder += 0.001m;
-                    var start = Math.Clamp(visual.PropertyVideoStartMs ?? 0, 0, video.DurationMs - videoShotMs);
-                    ordered.Add((lastOrder, new Shot(null, video, start)));
+                    videoOrder.TryAdd(videoId, lastOrder);
+                    if (!clips.ContainsKey(videoId))
+                    {
+                        var start = Math.Clamp(visual.PropertyVideoStartMs ?? 0, 0, video.DurationMs - videoShotMs);
+                        ordered.Add((lastOrder, new Shot(null, video, start + (videoShotMs / 2))));
+                    }
                 }
 
                 continue;
@@ -274,37 +309,117 @@ public static class ShortFormEditor
             if (mediaId is { } id && photos.TryGetValue(id, out var photo) && used.Add(id))
             {
                 lastOrder = Math.Max(lastOrder + 0.001m, photo.Index);
-                ordered.Add((lastOrder, new Shot(photo.Photo, null, 0)));
+                ordered.Add((lastOrder, PhotoShot(photo.Photo)));
             }
         }
 
         foreach (var (photo, index) in photos.Values.Where(item => !used.Contains(item.Photo.MediaId)))
         {
-            ordered.Add((index, new Shot(photo, null, 0)));
+            ordered.Add((index, PhotoShot(photo)));
         }
 
+        ordered.AddRange(ClipShots(clips, videos, ordered, videoOrder, photos.Count));
         var result = ordered.OrderBy(item => item.Order).Select(item => item.Shot).ToList();
 
-        // The hook and the end card use a photo (usually the front of the home) so the pills sit on a steady frame.
+        // The hook and the end card open on the first storyboard photo (usually the front of the home, moving when it
+        // came from a video) so the pills sit on the house; with no photos at all the first clip opens.
         var firstPhoto = result.FindIndex(shot => shot.Photo is not null);
-        if (firstPhoto < 0)
+        if (firstPhoto > 0)
         {
-            return [];
+            var hook = result[firstPhoto];
+            result.RemoveAt(firstPhoto);
+            result.Insert(0, hook);
         }
 
-        var hook = result[firstPhoto];
-        result.RemoveAt(firstPhoto);
-        result.Insert(0, hook);
         return result;
+    }
+
+    /// <summary>
+    /// Clips placed in the tour order. Clips within a few seconds of a storyboard photo from the same video are left
+    /// out, since that photo already plays that moment.
+    /// </summary>
+    private static IEnumerable<(decimal Order, Shot Shot)> ClipShots(
+        Dictionary<Guid, List<ShortFormVideoClip>> clips,
+        Dictionary<Guid, CampaignDerivativeVideo> videos,
+        List<(decimal Order, Shot Shot)> photoShots,
+        Dictionary<Guid, decimal> videoOrder,
+        int photoCount)
+    {
+        const int SameMomentMs = 3_000;
+        var nextUnplaced = (decimal)photoCount;
+        var uploadOrder = videos.Keys.Select((id, index) => (id, index)).ToDictionary(item => item.id, item => item.index);
+        foreach (var (videoId, videoClips) in clips
+            .OrderBy(item => videoOrder.GetValueOrDefault(item.Key, decimal.MaxValue))
+            .ThenBy(item => uploadOrder[item.Key]))
+        {
+            var video = videos[videoId];
+            var anchors = photoShots
+                .Where(item => item.Shot.Video?.PropertyVideoId == videoId)
+                .Select(item => (item.Order, item.Shot.CenterMs))
+                .OrderBy(anchor => anchor.CenterMs)
+                .ToArray();
+            var blockStart = videoOrder.TryGetValue(videoId, out var tourOrder) ? tourOrder : nextUnplaced;
+            if (!videoOrder.ContainsKey(videoId) && anchors.Length == 0)
+            {
+                nextUnplaced += 1;
+            }
+
+            for (var index = 0; index < videoClips.Count; index++)
+            {
+                var clip = videoClips[index];
+                var center = (clip.StartMs + clip.EndMs) / 2;
+                if (anchors.Any(anchor => Math.Abs(anchor.CenterMs - center) < SameMomentMs))
+                {
+                    continue;
+                }
+
+                // Between the photos taken just before and just after it in the video, or in video order as a block.
+                // Under half a thousandth, so clips never jump past the next photo in the tour.
+                var fraction = (decimal)center / Math.Max(1, video.DurationMs) * 0.0005m;
+                decimal order;
+                if (anchors.Length == 0)
+                {
+                    order = blockStart + fraction * 1_000;
+                }
+                else
+                {
+                    var before = anchors.LastOrDefault(anchor => anchor.CenterMs <= center);
+                    order = anchors.Any(anchor => anchor.CenterMs <= center)
+                        ? before.Order + fraction
+                        : anchors[0].Order - 0.0005m + fraction;
+                }
+
+                yield return (order, new Shot(null, video, center));
+            }
+        }
     }
 
     /// <summary>
     /// The middle shots: an even spread through the tour when there are more shots than slots (the hook shot opens
     /// and closes the video, so it is left out), or every shot again with a different move when there are fewer.
+    /// Video shots win the slots: stills are used only for the slots the video shots cannot fill.
     /// </summary>
     private static List<(Shot Shot, Move Move)> Sequence(List<Shot> shots, int count)
     {
         var pool = shots.Count > 1 ? shots.Skip(1).ToList() : shots;
+        var moving = pool.Where(shot => shot.Video is not null).ToList();
+        if (moving.Count > 0 && moving.Count < pool.Count)
+        {
+            if (moving.Count >= count)
+            {
+                pool = moving;
+            }
+            else
+            {
+                var stills = pool.Where(shot => shot.Video is null).ToList();
+                var wanted = count - moving.Count;
+                var keep = Enumerable.Range(0, Math.Min(wanted, stills.Count))
+                    .Select(index => stills[(int)((long)index * stills.Count / Math.Min(wanted, stills.Count))])
+                    .ToHashSet();
+                pool = pool.Where(shot => shot.Video is not null || keep.Contains(shot)).ToList();
+            }
+        }
+
         var moves = new[] { Move.PushIn, Move.PullOut, Move.Pan };
         var result = new List<(Shot, Move)>(count);
         for (var index = 0; index < count; index++)
@@ -327,11 +442,26 @@ public static class ShortFormEditor
         EndPullBack,
     }
 
-    private sealed record Shot(ShortFormPhoto? Photo, CampaignDerivativeVideo? Video, int VideoStartMs)
+    /// <summary>
+    /// A still photo, a moment of a property video centred on <paramref name="CenterMs"/>, or a storyboard photo
+    /// taken from a video (both set), which plays as video when the video has room for the shot.
+    /// </summary>
+    private sealed record Shot(ShortFormPhoto? Photo, CampaignDerivativeVideo? Video, int CenterMs)
     {
-        public VisualSource Visual() => Photo is not null
-            ? new VisualSource(VisualSourceKind.PropertyMedia, Photo.MediaId, null, null, null)
-            : new VisualSource(VisualSourceKind.PropertyVideo, null, null, null, null, Video!.PropertyVideoId, VideoStartMs);
+        /// <summary>This shot as a still when its video is too short to play <paramref name="durationMs"/>.</summary>
+        public Shot Playable(int durationMs) =>
+            Video is not null && Photo is not null && Video.DurationMs < durationMs ? this with { Video = null } : this;
+
+        public VisualSource Visual(int durationMs) => Video is null
+            ? new VisualSource(VisualSourceKind.PropertyMedia, Photo!.MediaId, null, null, null)
+            : new VisualSource(
+                VisualSourceKind.PropertyVideo,
+                null,
+                null,
+                null,
+                null,
+                Video.PropertyVideoId,
+                Math.Clamp(CenterMs - (durationMs / 2), 0, Math.Max(0, Video.DurationMs - durationMs)));
 
         /// <summary>
         /// Every photo moves: a fast shot covers about a fifth of the frame in under two seconds, several times the
@@ -359,7 +489,7 @@ public static class ShortFormEditor
         /// <summary>The largest 9:16 window of the source, centred.</summary>
         private NormalizedRect Fill()
         {
-            var (width, height) = Photo is not null ? (Photo.Width, Photo.Height) : (Video!.Width, Video.Height);
+            var (width, height) = Video is not null ? (Video.Width, Video.Height) : (Photo!.Width, Photo.Height);
             var normalizedWidth = (decimal)Output.Width / Output.Height * height / width;
             return normalizedWidth <= 1
                 ? new NormalizedRect((1 - normalizedWidth) / 2, 0, normalizedWidth, 1)

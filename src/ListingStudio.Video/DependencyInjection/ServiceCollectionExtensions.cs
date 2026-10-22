@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICampaignSoundtrackService, OriginalCampaignSoundtrackService>();
         services.AddSingleton<IPropertyVideoTranscoder, FfmpegPropertyVideoTranscoder>();
         services.AddSingleton<IPropertyVideoFrameExtractor, FfmpegPropertyVideoFrameExtractor>();
+        services.AddSingleton<IPropertyVideoClipFinder, FfmpegPropertyVideoClipFinder>();
         services.AddSingleton<IPhotoImageCodec, FfmpegPhotoImageCodec>();
         services.AddHealthChecks()
             .AddCheck<FfmpegHealthCheck>("ffmpeg", tags: ["ready"]);

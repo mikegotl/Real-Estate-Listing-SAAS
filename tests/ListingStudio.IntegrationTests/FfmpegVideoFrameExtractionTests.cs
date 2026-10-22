@@ -60,6 +60,59 @@ public sealed class FfmpegVideoFrameExtractionTests
         }
     }
 
+    [Fact]
+    public async Task FindsSteadyClipsAndRoomPhotosInAnHdrPhoneVideo()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("RUN_FFMPEG_E2E"), "1", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var ffmpeg = Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
+        var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-clip-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            // Ten seconds of a slowly moving, detailed 10-bit picture tagged the way an iPhone tags HLG video.
+            var videoPath = Path.Combine(directory, "hdr.mov");
+            await RunAsync(ffmpeg,
+            [
+                "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=10",
+                "-vf", "format=yuv420p10le",
+                "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error",
+                "-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc",
+                videoPath,
+            ]);
+            var options = Options.Create(new FfmpegOptions
+            {
+                ExecutablePath = ffmpeg,
+                ProbeExecutablePath = Environment.GetEnvironmentVariable("FFPROBE_PATH") ?? "ffprobe",
+                EnhancementTimeoutSeconds = 120,
+            });
+
+            await using (var video = File.OpenRead(videoPath))
+            {
+                var spans = await new FfmpegPropertyVideoClipFinder(options).FindClipsAsync(video, "hdr.mov");
+                Assert.NotEmpty(spans);
+                Assert.All(spans, span =>
+                {
+                    Assert.InRange(span.EndMs - span.StartMs, 2_000, 4_000);
+                    Assert.InRange(span.StartMs, 500, 10_000);
+                    Assert.True(span.Score > 0);
+                });
+            }
+
+            var stills = await ExtractAsync(new FfmpegPropertyVideoFrameExtractor(options), videoPath, maximumCandidates: 4);
+            Assert.NotEmpty(stills);
+            Assert.All(stills, still => Assert.Equal([0xFF, 0xD8], still.JpegContent[..2]));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static async Task<IReadOnlyList<ListingStudio.Application.Properties.VideoFrameCandidate>> ExtractAsync(
         FfmpegPropertyVideoFrameExtractor extractor,
         string path,

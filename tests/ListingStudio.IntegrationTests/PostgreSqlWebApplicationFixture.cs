@@ -94,6 +94,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakePhotoImageCodec PhotoImageCodec { get; } = new();
 
+    public FakePropertyVideoClipFinder PropertyVideoClipFinder { get; } = new();
+
     public FakePhotoClutterRemover PhotoClutterRemover { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -124,6 +126,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IPropertyVideoTranscoder>(PropertyVideoTranscoder);
             services.RemoveAll<IPropertyVideoFrameExtractor>();
             services.AddSingleton<IPropertyVideoFrameExtractor>(PropertyVideoFrameExtractor);
+            services.RemoveAll<IPropertyVideoClipFinder>();
+            services.AddSingleton<IPropertyVideoClipFinder>(PropertyVideoClipFinder);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(TimeProvider);
             services.RemoveAll<IPropertyStoryGenerator>();
@@ -197,6 +201,22 @@ public sealed class FakePropertyVideoTranscoder : IPropertyVideoTranscoder
             new MemoryStream(enhanced),
             enhanced.Length,
             Metadata with { FrameRate = 30m }));
+    }
+}
+
+public sealed class FakePropertyVideoClipFinder : IPropertyVideoClipFinder
+{
+    /// <summary>The spans every video offers; none by default, so edits use photos.</summary>
+    public IReadOnlyList<VideoClipSpan> Spans { get; set; } = [];
+
+    public Task<IReadOnlyList<VideoClipSpan>> FindClipsAsync(
+        Stream content,
+        string originalFilename,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Assert.True(content.CanRead);
+        return Task.FromResult(Spans);
     }
 }
 
