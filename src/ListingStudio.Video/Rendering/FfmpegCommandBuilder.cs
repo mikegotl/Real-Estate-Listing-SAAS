@@ -118,7 +118,7 @@ public static class FfmpegCommandBuilder
 
                 arguments.AddRange(
                     [
-                        "-t", Seconds(scenes[index].DurationMs + extensionMs),
+                        "-t", Seconds((int)Math.Ceiling((scenes[index].DurationMs + extensionMs) * sceneAssets[index].Speed)),
                         "-i", sceneAssets[index].FilePath,
                     ]);
             }
@@ -316,6 +316,10 @@ public static class FfmpegCommandBuilder
         {
             // A still next to a walk-through holds the whole photo, matching the clip's first or last frame.
             transform = FillTransform(output);
+            if (asset.Speed != 1)
+            {
+                transform += $",setpts=(PTS-STARTPTS)/{Number(asset.Speed)}";
+            }
         }
         else if (scene.Motion.Type == MotionKind.None)
         {
@@ -409,9 +413,10 @@ public static class FfmpegCommandBuilder
     }
 
     /// <summary>
-    /// zoompan always shows a window with the input's own shape, so a 4:3 photo would be stretched into a 9:16 or
-    /// 16:9 frame. Padding the photo to the output shape first keeps the planned viewports, which already have the
-    /// output's shape, undistorted; they lie inside the photo, so the padding never shows.
+    /// Moves a window from the start viewport to the end viewport with sub-pixel accuracy. zoompan snaps its window
+    /// to whole source pixels, which makes slow zooms on photos wobble from frame to frame, so the photo is padded to
+    /// the output shape (keeping viewports undistorted), cropped to the area the window travels over, and the window's
+    /// corners are moved with perspective, which interpolates between pixels.
     /// </summary>
     private static string BuildKenBurns(
         MotionPlan motion,
@@ -433,30 +438,48 @@ public static class FfmpegCommandBuilder
 
         var padX = (canvasWidth - asset.Width) / 2;
         var padY = (canvasHeight - asset.Height) / 2;
-        NormalizedRect OnCanvas(NormalizedRect viewport) => new(
-            (viewport.X * asset.Width + padX) / canvasWidth,
-            (viewport.Y * asset.Height + padY) / canvasHeight,
-            viewport.Width * asset.Width / canvasWidth,
-            viewport.Height * asset.Height / canvasHeight);
-        motion = motion with
+        // The window keeps the output's shape on the canvas, as zoompan's did, so only the viewport width sets its size.
+        (decimal X, decimal Y, decimal Width, decimal Height) OnCanvas(NormalizedRect viewport)
         {
-            StartViewport = OnCanvas(motion.StartViewport),
-            EndViewport = OnCanvas(motion.EndViewport),
-        };
-        var pad = canvasWidth == asset.Width && canvasHeight == asset.Height
-            ? string.Empty
-            : $"pad={canvasWidth}:{canvasHeight}:{padX}:{padY}:color=black,setsar=1,";
+            var width = viewport.Width * asset.Width;
+            return (viewport.X * asset.Width + padX, viewport.Y * asset.Height + padY, width, width / outputAspect);
+        }
+
+        var start = OnCanvas(motion.StartViewport);
+        var end = OnCanvas(motion.EndViewport);
+        var left = Math.Clamp((int)Math.Floor(Math.Min(start.X, end.X)), 0, canvasWidth - 1);
+        var top = Math.Clamp((int)Math.Floor(Math.Min(start.Y, end.Y)), 0, canvasHeight - 1);
+        var right = Math.Clamp((int)Math.Ceiling(Math.Max(start.X + start.Width, end.X + end.Width)), left + 1, canvasWidth);
+        var bottom = Math.Clamp((int)Math.Ceiling(Math.Max(start.Y + start.Height, end.Y + end.Height)), top + 1, canvasHeight);
+        var boxWidth = right - left;
+        var boxHeight = bottom - top;
+        // Sampling the travelled area finer than the output needs only costs render time.
+        var reduction = Math.Min(1m, output.Width / Math.Max(1m, Math.Min(start.Width, end.Width)));
+        var sampledWidth = reduction < 1 ? Math.Max(2, (int)Math.Ceiling(boxWidth * reduction)) : boxWidth;
+        var sampledHeight = reduction < 1 ? Math.Max(2, (int)Math.Ceiling(boxHeight * reduction)) : boxHeight;
+        var scaleX = sampledWidth / (decimal)boxWidth;
+        var scaleY = sampledHeight / (decimal)boxHeight;
+
         var frameCount = Math.Max(2, (int)Math.Ceiling(sceneDurationMs / 1_000m * output.FrameRate));
-        var rawProgress = $"min(on/{frameCount - 1},1)";
+        var rawProgress = $"min(in/{frameCount - 1},1)";
         var progress = motion.Easing == MotionEasing.EaseInOut
             ? $"({rawProgress})*({rawProgress})*(3-2*({rawProgress}))"
             : rawProgress;
-        var startZoom = 1m / motion.StartViewport.Width;
-        var endZoom = 1m / motion.EndViewport.Width;
-        var zoom = $"{Number(startZoom)}+({Number(endZoom - startZoom)})*({progress})";
-        var x = $"iw*({Number(motion.StartViewport.X)}+({Number(motion.EndViewport.X - motion.StartViewport.X)})*({progress}))";
-        var y = $"ih*({Number(motion.StartViewport.Y)}+({Number(motion.EndViewport.Y - motion.StartViewport.Y)})*({progress}))";
-        return $"{pad}zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output.Width}x{output.Height}:fps={output.FrameRate}";
+        string Edge(decimal from, decimal to, decimal origin, decimal scale) =>
+            $"{Number(Math.Round((from - origin) * scale, 4))}+({Number(Math.Round((to - from) * scale, 4))})*({progress})";
+        var leftEdge = Edge(start.X, end.X, left, scaleX);
+        var topEdge = Edge(start.Y, end.Y, top, scaleY);
+        var rightEdge = Edge(start.X + start.Width, end.X + end.Width, left, scaleX);
+        var bottomEdge = Edge(start.Y + start.Height, end.Y + end.Height, top, scaleY);
+
+        var pad = canvasWidth == asset.Width && canvasHeight == asset.Height
+            ? string.Empty
+            : $"pad={canvasWidth}:{canvasHeight}:{padX}:{padY}:color=black,setsar=1,";
+        var sample = reduction < 1 ? $"scale={sampledWidth}:{sampledHeight}:flags=lanczos," : string.Empty;
+        return $"{pad}crop={boxWidth}:{boxHeight}:{left}:{top},{sample}"
+            + $"perspective=x0='{leftEdge}':y0='{topEdge}':x1='{rightEdge}':y1='{topEdge}'"
+            + $":x2='{leftEdge}':y2='{bottomEdge}':x3='{rightEdge}':y3='{bottomEdge}':interpolation=cubic:eval=frame,"
+            + $"scale={output.Width}:{output.Height}:flags=lanczos,setsar=1";
     }
 
     private static NeighborhoodOverlay[] CreateNeighborhoodOverlays(
@@ -972,7 +995,19 @@ public static class FfmpegCommandBuilder
                 throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid generated video asset.");
             }
 
-            return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true, true, 0);
+            if (!clip.FitToScene)
+            {
+                return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true, true, 0);
+            }
+
+            // Skip the lead-in only while the rest still covers the shot, then speed up to show as much of the walk
+            // as the shot holds, never faster than the walk-through limit.
+            var leadInMs = Math.Clamp(clip.LeadInMs, 0, Math.Max(0, clip.DurationMs - requiredDurationMs));
+            var speed = Math.Clamp(
+                Math.Round((clip.DurationMs - leadInMs) / (decimal)requiredDurationMs, 3),
+                1,
+                MaximumWalkthroughSpeedUp);
+            return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true, false, leadInMs, speed);
         }
 
         if (scene.VisualSource.Kind == VisualSourceKind.PropertyVideo
@@ -1223,5 +1258,6 @@ public static class FfmpegCommandBuilder
         int Height,
         bool IsVideo,
         bool IsGeneratedClip,
-        int StartMs);
+        int StartMs,
+        decimal Speed = 1);
 }

@@ -30,12 +30,19 @@ public sealed record VideoRenderMusicAsset(
     string AssetId,
     string FilePath);
 
+/// <summary>
+/// A generated clip. A clip that is <paramref name="FitToScene"/> (an AI walk-through used as a short-form shot)
+/// skips its first <paramref name="LeadInMs"/>, which still look like the photo it starts from, and plays the rest
+/// up to twice as fast so the whole walk fits the shot; other clips play from the start at normal speed.
+/// </summary>
 public sealed record VideoRenderGeneratedClipAsset(
     Guid GeneratedClipId,
     string FilePath,
     int Width,
     int Height,
-    int DurationMs);
+    int DurationMs,
+    int LeadInMs = 0,
+    bool FitToScene = false);
 
 public sealed record VideoRenderPropertyVideoAsset(
     Guid PropertyVideoId,

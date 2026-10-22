@@ -30,7 +30,8 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         Assert.Contains(request.Narration!.FilePath, command.Arguments);
         var arguments = command.Arguments.ToList();
         var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
-        Assert.Contains("zoompan=", graph, StringComparison.Ordinal);
+        Assert.Contains("perspective=", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("zoompan", graph, StringComparison.Ordinal);
         Assert.Contains("xfade=transition=fade:duration=0.5:offset=7", graph, StringComparison.Ordinal);
         Assert.Contains("asplit=2", graph, StringComparison.Ordinal);
         Assert.Contains("atrim=start=0:end=0.5", graph, StringComparison.Ordinal);
@@ -102,8 +103,10 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
 
         var arguments = command.Arguments.ToList();
         var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
-        // 4:3 pads to 427x240; the 16:9 viewport is then as wide as it is tall on the canvas, so zoom 1/0.749415.
-        Assert.Contains("[0:v]pad=427:240:53:0:color=black,setsar=1,zoompan=z='1.334375+", graph, StringComparison.Ordinal);
+        // 4:3 pads to 427x240; the window travels over 320x180 of the photo, from its full width to 256 pixels wide.
+        Assert.Contains("[0:v]pad=427:240:53:0:color=black,setsar=1,crop=320:180:53:30,perspective=x0='0+(32)*(", graph, StringComparison.Ordinal);
+        Assert.Contains(":x3='320+(-32)*(", graph, StringComparison.Ordinal);
+        Assert.Contains(":y3='180+(-18)*(", graph, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -284,6 +287,43 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         var arguments = command.Arguments.ToList();
         var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
         Assert.Contains("scale=1920:1080:force_original_aspect_ratio=increase", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildPlaysAWalkthroughShotFromAfterItsLeadInSpedUpToFitTheShot()
+    {
+        var request = CreateRequest();
+        var clipId = Guid.NewGuid();
+        var clipPath = CreateFile("walkthrough shot.mp4");
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            VisualSource = new VisualSource(
+                VisualSourceKind.GeneratedClip,
+                null,
+                clipId,
+                request.PropertyMedia[0].PropertyMediaId,
+                null),
+        };
+        request = request with
+        {
+            Specification = request.Specification with { Scenes = scenes },
+            GeneratedClips =
+            [
+                new VideoRenderGeneratedClipAsset(clipId, clipPath, 1_920, 1_080, 60_000, LeadInMs: 1_000, FitToScene: true),
+            ],
+        };
+        var requiredMs = scenes[0].DurationMs + scenes[1].TransitionIn.DurationMs;
+
+        var arguments = FfmpegCommandBuilder.Build(request).Arguments.ToList();
+
+        // A minute-long clip in a shorter shot plays at the two-times limit from just after its lead-in.
+        var input = arguments.IndexOf(clipPath);
+        Assert.Equal(["-ss", "1", "-t"], arguments.Skip(input - 5).Take(3));
+        Assert.Equal((requiredMs * 2 / 1_000m).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture), arguments[input - 2]);
+        Assert.DoesNotContain("-stream_loop", arguments);
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("crop=1920:1080,setsar=1,setpts=(PTS-STARTPTS)/2,fps=", graph, StringComparison.Ordinal);
     }
 
     [Fact]

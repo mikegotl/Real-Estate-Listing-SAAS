@@ -357,18 +357,29 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         }
 
         var walkthroughInputsBefore = fixture.Factory.VideoRenderer.WalkthroughInputCount;
+        var walkthroughShotsBefore = fixture.Factory.VideoRenderer.WalkthroughShotCount;
         fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
         fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
         fixture.Factory.StoryGenerator.Enqueue(SafeStory);
         fixture.Factory.VideoDirector.Enqueue(request => CreateTwoPhotoEditorialPlan(request, front, foyer));
         fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        fixture.Factory.VoiceProvider.Enqueue(CreateSegmentedVoiceResult);
 
-        var queued = await EnqueueAsync(owner);
+        var queued = await EnqueueAsync(owner, CampaignOutputSelection.YouTubeTour | CampaignOutputSelection.TikTok);
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
         Assert.All(completed.Deliverables, deliverable =>
             Assert.Equal(CampaignDeliverableStatus.Rendered, deliverable.Status));
         Assert.True(fixture.Factory.VideoRenderer.WalkthroughInputCount > walkthroughInputsBefore);
+        // The short-form cut uses the same clip as a shot of its own.
+        Assert.True(fixture.Factory.VideoRenderer.WalkthroughShotCount > walkthroughShotsBefore);
+        await using var verificationScope = fixture.Factory.Services.CreateAsyncScope();
+        var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var specifications = await dbContext.CampaignDeliverables.AsNoTracking()
+            .Where(deliverable => deliverable.CampaignGenerationJobId == queued.Id)
+            .Select(deliverable => deliverable.SpecificationJson)
+            .ToArrayAsync();
+        Assert.Contains(specifications, json => json.Contains("\"generatedClip\"", StringComparison.Ordinal));
     }
 
     [Fact]

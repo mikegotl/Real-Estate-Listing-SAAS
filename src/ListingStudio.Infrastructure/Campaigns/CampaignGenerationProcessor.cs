@@ -606,6 +606,7 @@ public sealed partial class CampaignGenerationProcessor(
                 candidate.SourceVideoTimestampMs))
             .ToArrayAsync(cancellationToken);
         var videoClips = await FindVideoClipsAsync(job, propertyVideos, cancellationToken);
+        var walkthroughClips = await FindWalkthroughClipsAsync(job, photos, cancellationToken);
         var soundtrack = CampaignCreativeDirector.ResolveSoundtrack(options.Soundtrack, yearBuilt);
         var beatMs = 60_000 / CampaignCreativeDirector.BeatsPerMinute(
             soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
@@ -619,7 +620,8 @@ public sealed partial class CampaignGenerationProcessor(
             beatMs,
             options.Pace,
             ShortFormCopyBuilder.Build(master, options, location.City, location.State, withHighlights),
-            videoClips));
+            videoClips,
+            walkthroughClips));
 
         var edit = Edit(withHighlights: true);
         if (options.Voiceover != CampaignVoiceoverMode.ShortHook || edit.Audio.NarrationSegments.Count == 0)
@@ -662,6 +664,46 @@ public sealed partial class CampaignGenerationProcessor(
                 yearBuilt,
                 localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text),
                 narration.Timing));
+    }
+
+    /// <summary>
+    /// The newest finished AI walk-through clip for each pair of consecutive storyboard photos, the same clips the
+    /// tour plays between those photos.
+    /// </summary>
+    private async Task<IReadOnlyList<ShortFormWalkthroughClip>> FindWalkthroughClipsAsync(
+        CampaignGenerationJob job,
+        IReadOnlyList<ShortFormPhoto> storyboard,
+        CancellationToken cancellationToken)
+    {
+        var pairs = storyboard.Zip(storyboard.Skip(1))
+            .Select(pair => (From: pair.First.MediaId, To: pair.Second.MediaId))
+            .ToHashSet();
+        if (pairs.Count == 0)
+        {
+            return [];
+        }
+
+        var fromIds = pairs.Select(pair => pair.From).Distinct().ToArray();
+        var completed = await dbContext.WalkthroughTransitions.AsNoTracking()
+            .Where(transition => transition.OrganizationId == job.OrganizationId
+                && transition.PropertyId == job.PropertyId
+                && transition.Status == WalkthroughTransitionStatus.Completed
+                && transition.AssetPath != null
+                && transition.DurationMs != null
+                && fromIds.Contains(transition.FromPropertyMediaId))
+            .OrderByDescending(transition => transition.CompletedAtUtc)
+            .ThenBy(transition => transition.Id)
+            .Select(transition => new ShortFormWalkthroughClip(
+                transition.Id,
+                transition.FromPropertyMediaId,
+                transition.ToPropertyMediaId,
+                transition.DurationMs!.Value))
+            .ToArrayAsync(cancellationToken);
+        return completed
+            .Where(clip => pairs.Contains((clip.FromMediaId, clip.ToMediaId)))
+            .GroupBy(clip => (clip.FromMediaId, clip.ToMediaId))
+            .Select(group => group.First())
+            .ToArray();
     }
 
     /// <summary>
@@ -1352,12 +1394,47 @@ public sealed partial class CampaignGenerationProcessor(
                 && candidate.PropertyId == job.PropertyId
                 && ids.Contains(candidate.Id))
             .ToArrayAsync(cancellationToken);
-        if (clips.Length != ids.Length)
+
+        // The short-form edit also uses finished AI walk-through clips as shots of their own.
+        var walkthroughIds = ids.Except(clips.Select(clip => clip.Id)).ToArray();
+        var walkthroughs = walkthroughIds.Length == 0
+            ? []
+            : await dbContext.WalkthroughTransitions.AsNoTracking()
+                .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                    && candidate.PropertyId == job.PropertyId
+                    && candidate.Status == WalkthroughTransitionStatus.Completed
+                    && candidate.AssetPath != null
+                    && candidate.DurationMs != null
+                    && walkthroughIds.Contains(candidate.Id))
+                .Join(
+                    dbContext.PropertyMedia.AsNoTracking(),
+                    transition => transition.FromPropertyMediaId,
+                    media => media.Id,
+                    (transition, media) => new { transition.Id, transition.AssetPath, transition.DurationMs, media.Width, media.Height })
+                .ToArrayAsync(cancellationToken);
+        if (clips.Length + walkthroughs.Length != ids.Length)
         {
             throw new InvalidOperationException("A derivative references an unavailable generated clip.");
         }
 
-        var result = new List<VideoRenderGeneratedClipAsset>(clips.Length);
+        var result = new List<VideoRenderGeneratedClipAsset>(ids.Length);
+        foreach (var walkthrough in walkthroughs)
+        {
+            await using var source = await campaignAssetStorage.OpenReadAsync(walkthrough.AssetPath!, cancellationToken)
+                ?? throw new FileNotFoundException("A walk-through clip could not be opened.");
+            var path = Path.Combine(directory, $"walkthrough-shot-{walkthrough.Id:N}.mp4");
+            await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await source.CopyToAsync(target, cancellationToken);
+            result.Add(new VideoRenderGeneratedClipAsset(
+                walkthrough.Id,
+                path,
+                walkthrough.Width,
+                walkthrough.Height,
+                walkthrough.DurationMs!.Value,
+                LeadInMs: Math.Min(1_000, walkthrough.DurationMs!.Value / 5),
+                FitToScene: true));
+        }
+
         foreach (var clip in clips)
         {
             await using var source = await campaignAssetStorage.OpenReadAsync(clip.AssetPath, cancellationToken)

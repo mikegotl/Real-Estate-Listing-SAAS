@@ -323,8 +323,12 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     private int callCount;
     private int generatedClipInputCount;
     private int walkthroughInputCount;
+    private int walkthroughShotCount;
 
     public int CallCount => callCount;
+
+    /// <summary>AI walk-through clips supplied as short-form shots of their own.</summary>
+    public int WalkthroughShotCount => walkthroughShotCount;
 
     public int GeneratedClipInputCount => generatedClipInputCount;
 
@@ -345,6 +349,9 @@ public sealed class FakeVideoRenderer : IVideoRenderer
         Interlocked.Add(ref generatedClipInputCount, request.GeneratedClips?.Count ?? 0);
         Interlocked.Add(ref walkthroughInputCount, request.WalkthroughTransitions?.Count ?? 0);
         Assert.All(request.WalkthroughTransitions ?? [], transition => Assert.True(File.Exists(transition.FilePath)));
+        var walkthroughShots = (request.GeneratedClips ?? []).Where(clip => clip.FitToScene).ToArray();
+        Assert.All(walkthroughShots, clip => Assert.True(File.Exists(clip.FilePath) && clip.Width > 0 && clip.LeadInMs > 0));
+        Interlocked.Add(ref walkthroughShotCount, walkthroughShots.Length);
         if (failures.TryDequeue(out var failure))
         {
             throw failure;
