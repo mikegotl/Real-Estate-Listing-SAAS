@@ -244,6 +244,12 @@
         loaded = true;
     }
 
+    public async Task ReloadAsync()
+    {
+        await LoadAsync();
+        StateHasChanged();
+    }
+
     private async Task RefreshVideosAsync(IPropertyVideoService? service = null)
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);

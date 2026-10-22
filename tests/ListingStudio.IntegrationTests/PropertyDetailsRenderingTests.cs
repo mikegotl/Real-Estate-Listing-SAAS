@@ -272,6 +272,8 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("Move selected", content, StringComparison.Ordinal);
         Assert.Contains("Fix selected", content, StringComparison.Ordinal);
         Assert.Contains("Delete selected", content, StringComparison.Ordinal);
+        Assert.Contains("Start Again", content, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Start media over\"", content, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Select spare-one.png\"", content, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Select spare-two.png\"", content, StringComparison.Ordinal);
     }

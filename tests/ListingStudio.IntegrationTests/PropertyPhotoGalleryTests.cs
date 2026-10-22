@@ -232,6 +232,40 @@ public sealed class PropertyPhotoGalleryTests(PostgreSqlWebApplicationFixture fi
         Assert.Empty(await media.ListAsync(owner.UserId, owner.PropertyId));
     }
 
+    [Fact]
+    public async Task StartingMediaAgainDeletesOnlyTheOwnersPhotosAndVideosAndCanBeRepeated()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var owner = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "media-reset-owner");
+        var outsider = await CreateOwnerAndPropertyAsync(scope.ServiceProvider, "media-reset-outsider");
+        var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        var videos = scope.ServiceProvider.GetRequiredService<IPropertyVideoService>();
+        var reset = scope.ServiceProvider.GetRequiredService<IPropertyMediaResetService>();
+
+        await UploadAsync(media, owner.UserId, owner.PropertyId, "front.png", WalkthroughStoryboard.ExteriorFront);
+        await UploadAsync(media, owner.UserId, owner.PropertyId, "spare.png", null, toGallery: true);
+        await using (var upload = new MemoryStream(SampleVideo))
+        {
+            await videos.UploadAsync(
+                owner.UserId,
+                owner.PropertyId,
+                new PropertyVideoUpload("Walkthrough.mp4", "video/mp4", upload.Length, upload));
+        }
+
+        var denied = await reset.ResetAsync(outsider.UserId, owner.PropertyId);
+
+        Assert.Equal(new PropertyMediaResetResult(0, 0), denied);
+        Assert.Equal(2, (await media.ListAsync(owner.UserId, owner.PropertyId)).Count);
+        Assert.Single(await videos.ListAsync(owner.UserId, owner.PropertyId));
+
+        var completed = await reset.ResetAsync(owner.UserId, owner.PropertyId);
+
+        Assert.Equal(new PropertyMediaResetResult(2, 1), completed);
+        Assert.Empty(await media.ListAsync(owner.UserId, owner.PropertyId));
+        Assert.Empty(await videos.ListAsync(owner.UserId, owner.PropertyId));
+        Assert.Equal(new PropertyMediaResetResult(0, 0), await reset.ResetAsync(owner.UserId, owner.PropertyId));
+    }
+
     private static PropertyMediaAnalysis Analysis(PropertyMediaCategory category, string room, int quality) => new(
         category,
         room,
