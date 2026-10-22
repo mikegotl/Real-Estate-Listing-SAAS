@@ -50,6 +50,8 @@ public sealed record PlatformAdminDashboard(
     long AiCallCount,
     long FailedAiCallCount,
     decimal EstimatedAiCostUsd,
+    decimal AverageAiCostPerPropertyUsd,
+    long AiAttributedPropertyCount,
     IReadOnlyList<AdminMetricRow> Traffic,
     IReadOnlyList<AdminMetricRow> SignIns,
     IReadOnlyList<AdminMetricRow> CampaignOutcomes,
@@ -88,6 +90,17 @@ public sealed record AiCallObservation(
 public interface IAiUsageRecorder
 {
     ValueTask RecordAsync(AiCallObservation observation, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Carries the property responsible for an outbound AI/API call across the asynchronous provider request. The
+/// dashboard uses only aggregate counts and costs; it never displays the property identifier.
+/// </summary>
+public interface IAiUsagePropertyContext
+{
+    Guid? PropertyId { get; }
+
+    IDisposable BeginProperty(Guid propertyId);
 }
 
 public sealed record OperationalObservation(

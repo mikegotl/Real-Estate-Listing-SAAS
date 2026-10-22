@@ -2,6 +2,7 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Videos;
@@ -13,7 +14,8 @@ namespace ListingStudio.Infrastructure.Audio;
 public sealed class VideoNarrationService(
     ApplicationDbContext dbContext,
     IVoiceProvider voiceProvider,
-    ICampaignAssetStorage storage) : IVideoNarrationService
+    ICampaignAssetStorage storage,
+    IAiUsagePropertyContext aiUsagePropertyContext) : IVideoNarrationService
 {
     private const int MaximumAudioBytes = 50 * 1024 * 1024;
     private const int TimingToleranceMs = 250;
@@ -82,7 +84,11 @@ public sealed class VideoNarrationService(
             return ToResult(existing, reused: true);
         }
 
-        var generated = await voiceProvider.GenerateAsync(request, cancellationToken);
+        VoiceGenerationResult generated;
+        using (aiUsagePropertyContext.BeginProperty(plan.PropertyId))
+        {
+            generated = await voiceProvider.GenerateAsync(request, cancellationToken);
+        }
         ValidateGeneratedResult(request, generated, (int)specification.RequestedDuration * 1_000);
         var timingJson = generated.Timing is null
             ? null

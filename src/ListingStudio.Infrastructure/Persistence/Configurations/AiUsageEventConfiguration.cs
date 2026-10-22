@@ -15,6 +15,8 @@ public sealed class AiUsageEventConfiguration : IEntityTypeConfiguration<AiUsage
         builder.Property(item => item.Operation).HasMaxLength(100).IsRequired();
         builder.Property(item => item.EstimatedCostUsd).HasPrecision(18, 8);
         builder.Property(item => item.FailureCategory).HasMaxLength(50);
+        builder.Property(item => item.PropertyReference).HasMaxLength(64);
         builder.HasIndex(item => new { item.OccurredAtUtc, item.Provider, item.Operation });
+        builder.HasIndex(item => new { item.OccurredAtUtc, item.PropertyReference });
     }
 }

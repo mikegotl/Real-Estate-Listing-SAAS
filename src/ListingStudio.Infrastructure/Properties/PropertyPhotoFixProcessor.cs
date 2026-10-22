@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Notifications;
@@ -20,6 +21,7 @@ public sealed partial class PropertyPhotoFixProcessor(
     IPropertyMediaStorage storage,
     IPhotoImageCodec codec,
     IPhotoClutterRemover clutterRemover,
+    IAiUsagePropertyContext aiUsagePropertyContext,
     IWalkthroughTransitionService walkthroughTransitions,
     TimeProvider timeProvider,
     ILogger<PropertyPhotoFixProcessor> logger) : IPropertyPhotoFixProcessor
@@ -86,13 +88,17 @@ public sealed partial class PropertyPhotoFixProcessor(
                 original = buffer.ToArray();
             }
 
-            var fixedPhoto = claim.Kind switch
+            PhotoPixels fixedPhoto;
+            using (aiUsagePropertyContext.BeginProperty(claim.PropertyId))
             {
-                PhotoFix.BrightnessAndColor => await NormalizeAsync(original, source.MimeType, cancellationToken),
-                PhotoFix.RemoveClutter => await RemoveClutterAsync(original, source.MimeType, cancellationToken),
-                PhotoFix.LevelAndCrop => await LevelAndCropAsync(original, source.MimeType, cancellationToken),
-                _ => throw new InvalidOperationException("The photo fix is not supported."),
-            };
+                fixedPhoto = claim.Kind switch
+                {
+                    PhotoFix.BrightnessAndColor => await NormalizeAsync(original, source.MimeType, cancellationToken),
+                    PhotoFix.RemoveClutter => await RemoveClutterAsync(original, source.MimeType, cancellationToken),
+                    PhotoFix.LevelAndCrop => await LevelAndCropAsync(original, source.MimeType, cancellationToken),
+                    _ => throw new InvalidOperationException("The photo fix is not supported."),
+                };
+            }
             var jpeg = await codec.EncodeJpegAsync(fixedPhoto, cancellationToken);
             storedPath = $"organizations/{claim.OrganizationId:N}/properties/{claim.PropertyId:N}/{Guid.NewGuid():N}.jpg";
             await using (var stored = new MemoryStream(jpeg, writable: false))

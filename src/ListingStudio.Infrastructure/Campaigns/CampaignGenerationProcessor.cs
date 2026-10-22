@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text.Json;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Billing;
 using ListingStudio.Application.Campaigns;
@@ -25,6 +26,7 @@ public sealed partial class CampaignGenerationProcessor(
     IVideoProductionPlanService productionPlanService,
     IVideoNarrationService narrationService,
     ICampaignLocalizationService localizationService,
+    IAiUsagePropertyContext aiUsagePropertyContext,
     ICampaignDerivativeGenerator derivativeGenerator,
     IGeneratedVideoClipService generatedVideoClipService,
     IVideoRenderer videoRenderer,
@@ -825,14 +827,18 @@ public sealed partial class CampaignGenerationProcessor(
             }
         }
 
-        var localized = await localizationService.LocalizeAsync(
-            new CampaignLocalizationRequest(
-                NarrationPreferences(job),
-                edit.Audio.NarrationSegments
-                    .OrderBy(segment => segment.StartMs)
-                    .Select(segment => new CampaignLocalizationSegment(segment.Id, segment.Text))
-                    .ToArray()),
-            cancellationToken);
+        CampaignLocalizedCopy localized;
+        using (aiUsagePropertyContext.BeginProperty(job.PropertyId))
+        {
+            localized = await localizationService.LocalizeAsync(
+                new CampaignLocalizationRequest(
+                    NarrationPreferences(job),
+                    edit.Audio.NarrationSegments
+                        .OrderBy(segment => segment.StartMs)
+                        .Select(segment => new CampaignLocalizationSegment(segment.Id, segment.Text))
+                        .ToArray()),
+                cancellationToken);
+        }
         dbContext.ChangeTracker.Clear();
         var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
             candidate => candidate.Id == job.Id,
@@ -884,14 +890,18 @@ public sealed partial class CampaignGenerationProcessor(
                 ?? throw new InvalidDataException("Stored campaign localization is invalid.");
         }
 
-        var localized = await localizationService.LocalizeAsync(
-            new CampaignLocalizationRequest(
-                NarrationPreferences(job),
-                specification.Audio.NarrationSegments
-                    .OrderBy(segment => segment.StartMs)
-                    .Select(segment => new CampaignLocalizationSegment(segment.Id, segment.Text))
-                    .ToArray()),
-            cancellationToken);
+        CampaignLocalizedCopy localized;
+        using (aiUsagePropertyContext.BeginProperty(job.PropertyId))
+        {
+            localized = await localizationService.LocalizeAsync(
+                new CampaignLocalizationRequest(
+                    NarrationPreferences(job),
+                    specification.Audio.NarrationSegments
+                        .OrderBy(segment => segment.StartMs)
+                        .Select(segment => new CampaignLocalizationSegment(segment.Id, segment.Text))
+                        .ToArray()),
+                cancellationToken);
+        }
         var json = JsonSerializer.Serialize(localized, AudioSerializerOptions);
         dbContext.ChangeTracker.Clear();
         var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(

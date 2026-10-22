@@ -149,6 +149,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPlatformAdminMetricsResetService, PlatformMetricsResetService>();
         services.AddScoped<PlatformAdminRoleBootstrapper>();
         services.AddSingleton<OperationalEventRecorder>();
+        services.AddSingleton<IAiUsagePropertyContext, AiUsagePropertyContext>();
         services.AddSingleton<IOperationalEventRecorder>(provider =>
             provider.GetRequiredService<OperationalEventRecorder>());
         services.AddSingleton<IAiUsageRecorder>(provider =>

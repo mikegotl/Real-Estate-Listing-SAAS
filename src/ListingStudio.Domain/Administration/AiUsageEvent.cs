@@ -14,7 +14,8 @@ public sealed class AiUsageEvent
         long durationMs,
         decimal estimatedCostUsd,
         string? failureCategory,
-        DateTimeOffset occurredAtUtc)
+        DateTimeOffset occurredAtUtc,
+        string? propertyReference)
     {
         Id = Guid.NewGuid();
         Provider = Required(provider, 50, nameof(provider));
@@ -25,6 +26,7 @@ public sealed class AiUsageEvent
         EstimatedCostUsd = Math.Max(0, estimatedCostUsd);
         FailureCategory = Optional(failureCategory, 50, nameof(failureCategory));
         OccurredAtUtc = occurredAtUtc;
+        PropertyReference = Optional(propertyReference, 64, nameof(propertyReference));
     }
 
     public Guid Id { get; private set; }
@@ -36,6 +38,7 @@ public sealed class AiUsageEvent
     public decimal EstimatedCostUsd { get; private set; }
     public string? FailureCategory { get; private set; }
     public DateTimeOffset OccurredAtUtc { get; private set; }
+    public string? PropertyReference { get; private set; }
 
     public static AiUsageEvent Create(
         string provider,
@@ -45,8 +48,9 @@ public sealed class AiUsageEvent
         long durationMs,
         decimal estimatedCostUsd,
         string? failureCategory,
-        DateTimeOffset occurredAtUtc) =>
-        new(provider, model, operation, succeeded, durationMs, estimatedCostUsd, failureCategory, occurredAtUtc);
+        DateTimeOffset occurredAtUtc,
+        string? propertyReference = null) =>
+        new(provider, model, operation, succeeded, durationMs, estimatedCostUsd, failureCategory, occurredAtUtc, propertyReference);
 
     private static string Required(string value, int maximumLength, string parameterName)
     {
