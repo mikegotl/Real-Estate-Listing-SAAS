@@ -217,6 +217,65 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("Extra photos", content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ExtraPhotosRenderAccessibleBulkSelectionAndActions()
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = HeaderAuthenticationHandler.SchemeName;
+                    options.DefaultChallengeScheme = HeaderAuthenticationHandler.SchemeName;
+                })
+                .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
+                    HeaderAuthenticationHandler.SchemeName,
+                    _ => { });
+        });
+        await using var scope = factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        var registered = await registration.RegisterAsync(new RegisterAccountCommand(
+            $"bulk-extra-owner-{Guid.NewGuid():N}@example.com",
+            "Password123",
+            $"Bulk Extra Realty {Guid.NewGuid():N}"));
+        Assert.True(registered.Succeeded, string.Join(", ", registered.Errors));
+        var userId = registered.UserId!;
+        var propertyId = await properties.CreateAsync(userId, new PropertyInput(
+            "72 Gallery Lane",
+            null,
+            "Savannah",
+            "GA",
+            "31401",
+            525_000m,
+            3,
+            2m,
+            1_750,
+            0.15m,
+            2010,
+            PropertyType.SingleFamily,
+            "Bulk gallery regression property.",
+            ListingStatus.Draft));
+        await UploadAsync(mediaService, userId, propertyId, "spare-one.png", null, toGallery: true);
+        await UploadAsync(mediaService, userId, propertyId, "spare-two.png", null, toGallery: true);
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            HeaderAuthenticationHandler.SchemeName,
+            userId);
+        using var response = await client.GetAsync($"/properties/{propertyId}?tab=media");
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("aria-label=\"Extra photo bulk actions\"", content, StringComparison.Ordinal);
+        Assert.Contains("Select all", content, StringComparison.Ordinal);
+        Assert.Contains("Move selected", content, StringComparison.Ordinal);
+        Assert.Contains("Fix selected", content, StringComparison.Ordinal);
+        Assert.Contains("Delete selected", content, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Select spare-one.png\"", content, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Select spare-two.png\"", content, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -281,7 +340,8 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         string userId,
         Guid propertyId,
         string filename,
-        string walkthroughStop)
+        string? walkthroughStop,
+        bool toGallery = false)
     {
         var png = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z+VAAAAAASUVORK5CYII=");
@@ -289,7 +349,7 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         await mediaService.UploadAsync(
             userId,
             propertyId,
-            new PropertyMediaUpload(filename, "image/png", content.Length, content, walkthroughStop));
+            new PropertyMediaUpload(filename, "image/png", content.Length, content, walkthroughStop, toGallery));
     }
 }
 
