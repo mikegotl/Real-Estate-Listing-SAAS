@@ -30,7 +30,8 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         Assert.Contains(request.Narration!.FilePath, command.Arguments);
         var arguments = command.Arguments.ToList();
         var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
-        Assert.Contains("zoompan=", graph, StringComparison.Ordinal);
+        Assert.Contains("perspective=", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("zoompan", graph, StringComparison.Ordinal);
         Assert.Contains("xfade=transition=fade:duration=0.5:offset=7", graph, StringComparison.Ordinal);
         Assert.Contains("asplit=2", graph, StringComparison.Ordinal);
         Assert.Contains("atrim=start=0:end=0.5", graph, StringComparison.Ordinal);
@@ -102,8 +103,10 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
 
         var arguments = command.Arguments.ToList();
         var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
-        // 4:3 pads to 427x240; the 16:9 viewport is then as wide as it is tall on the canvas, so zoom 1/0.749415.
-        Assert.Contains("[0:v]pad=427:240:53:0:color=black,setsar=1,zoompan=z='1.334375+", graph, StringComparison.Ordinal);
+        // 4:3 pads to 427x240; the window travels over 320x180 of the photo, from its full width to 256 pixels wide.
+        Assert.Contains("[0:v]pad=427:240:53:0:color=black,setsar=1,crop=320:180:53:30,perspective=x0='0+(32)*(", graph, StringComparison.Ordinal);
+        Assert.Contains(":x3='320+(-32)*(", graph, StringComparison.Ordinal);
+        Assert.Contains(":y3='180+(-18)*(", graph, StringComparison.Ordinal);
     }
 
     [Fact]
