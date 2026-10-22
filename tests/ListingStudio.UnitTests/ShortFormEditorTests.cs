@@ -249,6 +249,32 @@ public sealed class ShortFormEditorTests
         Assert.Equal(TextOverlayStyle.HookTitle, edit.Scenes[0].TextOverlays[0].StyleToken);
     }
 
+    [Fact]
+    public void FinishedAiWalkthroughClipsAreShotsBetweenTheirTwoPhotos()
+    {
+        var walkFrom1 = new ShortFormWalkthroughClip(Guid.NewGuid(), PhotoIds[1], PhotoIds[2], 5_000);
+        var walkFrom3 = new ShortFormWalkthroughClip(Guid.NewGuid(), PhotoIds[3], PhotoIds[4], 5_000);
+        var notInEdit = new ShortFormWalkthroughClip(Guid.NewGuid(), PhotoIds[4], Guid.NewGuid(), 5_000);
+
+        var edit = Create(
+            CampaignCreativeOptions.SocialDefault with { Pace = CampaignPace.Cinematic },
+            500,
+            walkthroughs: [walkFrom1, walkFrom3, notInEdit]);
+
+        // Six slots: both walks (moving shots come first) and four of the five other photos, in tour order.
+        var middle = edit.Scenes.Skip(1).SkipLast(1).Select(scene => scene.VisualSource).ToArray();
+        Assert.Equal(
+            [$"photo {PhotoIds[1]}", $"walk {walkFrom1.TransitionId}", $"photo {PhotoIds[2]}", $"photo {PhotoIds[3]}", $"walk {walkFrom3.TransitionId}", $"photo {PhotoIds[4]}"],
+            middle.Select(source => source.Kind == VisualSourceKind.GeneratedClip
+                ? $"walk {source.GeneratedClipId}"
+                : $"photo {source.PropertyMediaId}"));
+        var walk = middle[1];
+        Assert.Null(walk.PropertyMediaId);
+        Assert.Equal(PhotoIds[1], walk.FallbackPropertyMediaId);
+        Assert.Null(walk.GenerationInstruction);
+        Assert.Equal(MotionKind.None, edit.Scenes[2].Motion.Type);
+    }
+
     private static readonly Guid VideoId = Guid.NewGuid();
 
     private static readonly CampaignDerivativeVideo Walkthrough = new(VideoId, 1_920, 1_080, 60_000);
@@ -259,7 +285,8 @@ public sealed class ShortFormEditorTests
         int[]? tourPhotos = null,
         ShortFormPhoto[]? photos = null,
         CampaignDerivativeVideo[]? videos = null,
-        ShortFormVideoClip[]? clips = null)
+        ShortFormVideoClip[]? clips = null,
+        ShortFormWalkthroughClip[]? walkthroughs = null)
     {
         var master = Master(tourPhotos);
         return ShortFormEditor.Create(new ShortFormEditRequest(
@@ -270,7 +297,8 @@ public sealed class ShortFormEditorTests
             beatMs,
             options.Pace,
             ShortFormCopyBuilder.Build(master, options, "Raleigh", "NC"),
-            clips));
+            clips,
+            walkthroughs));
     }
 
     private static VideoProductionSpecification Master(int[]? tourPhotos = null)

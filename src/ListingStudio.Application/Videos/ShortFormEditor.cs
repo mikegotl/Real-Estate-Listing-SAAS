@@ -17,6 +17,9 @@ public sealed record ShortFormPhoto(
 /// <summary>A steady, detailed stretch of a property video that makes a good shot.</summary>
 public sealed record ShortFormVideoClip(Guid PropertyVideoId, int StartMs, int EndMs, double Score);
 
+/// <summary>A finished AI walk-through clip from one storyboard photo to the next.</summary>
+public sealed record ShortFormWalkthroughClip(Guid TransitionId, Guid FromMediaId, Guid ToMediaId, int DurationMs);
+
 public sealed record ShortFormEditRequest(
     VideoProductionSpecification Master,
     IReadOnlyList<ShortFormPhoto> StoryboardPhotos,
@@ -25,7 +28,8 @@ public sealed record ShortFormEditRequest(
     int BeatMs,
     CampaignPace Pace,
     ShortFormCopy Copy,
-    IReadOnlyList<ShortFormVideoClip>? VideoClips = null);
+    IReadOnlyList<ShortFormVideoClip>? VideoClips = null,
+    IReadOnlyList<ShortFormWalkthroughClip>? WalkthroughClips = null);
 
 /// <summary>
 /// Builds the vertical short-form edit (TikTok, Reels, Shorts) instead of trimming the landscape tour: a hook shot
@@ -33,11 +37,12 @@ public sealed record ShortFormEditRequest(
 /// end card with the call to action and the agent's contact. Shots follow the director's tour order, with storyboard
 /// photos the tour skipped slotted back in at their storyboard position. Real moving video comes first, like the
 /// social examples: a room photo taken from a property video plays that moment of the video, steady stretches of the
-/// walkthrough videos join in, and still photos with a Ken Burns move only fill the slots the video cannot.
+/// walkthrough videos and finished AI walk-through clips (between the two photos they join) are shots of their own,
+/// and still photos with a Ken Burns move only fill the slots the video cannot.
 /// </summary>
 public static class ShortFormEditor
 {
-    public const string EditorVersion = "short-form-editor-v2";
+    public const string EditorVersion = "short-form-editor-v3";
 
     private static readonly VideoOutputProfile Output = new(1_080, 1_920, 30, "h264", "aac", "yuv420p", 48_000, 2);
     private static readonly NormalizedRect SafeZone = new(0.075m, 0.05m, 0.85m, 0.9m);
@@ -319,11 +324,12 @@ public static class ShortFormEditor
         }
 
         ordered.AddRange(ClipShots(clips, videos, ordered, videoOrder, photos.Count));
+        ordered.AddRange(WalkthroughShots(request.WalkthroughClips, ordered));
         var result = ordered.OrderBy(item => item.Order).Select(item => item.Shot).ToList();
 
         // The hook and the end card open on the first storyboard photo (usually the front of the home, moving when it
         // came from a video) so the pills sit on the house; with no photos at all the first clip opens.
-        var firstPhoto = result.FindIndex(shot => shot.Photo is not null);
+        var firstPhoto = result.FindIndex(shot => shot.Photo is not null && shot.Walkthrough is null);
         if (firstPhoto > 0)
         {
             var hook = result[firstPhoto];
@@ -395,6 +401,32 @@ public static class ShortFormEditor
     }
 
     /// <summary>
+    /// Each finished AI walk-through clip right after the photo it walks from, when both of its photos are in the
+    /// edit; the renderer plays the walk itself, sped up to fit the shot.
+    /// </summary>
+    private static IEnumerable<(decimal Order, Shot Shot)> WalkthroughShots(
+        IReadOnlyList<ShortFormWalkthroughClip>? walkthroughs,
+        List<(decimal Order, Shot Shot)> photoShots)
+    {
+        var photoOrders = photoShots
+            .Where(item => item.Shot.Photo is not null)
+            .GroupBy(item => item.Shot.Photo!.MediaId)
+            .ToDictionary(group => group.Key, group => (group.First().Order, group.First().Shot.Photo!));
+        foreach (var walkthrough in (walkthroughs ?? [])
+            .Where(clip => clip.DurationMs > 0)
+            .GroupBy(clip => (clip.FromMediaId, clip.ToMediaId))
+            .Select(group => group.First()))
+        {
+            if (photoOrders.TryGetValue(walkthrough.FromMediaId, out var from)
+                && photoOrders.ContainsKey(walkthrough.ToMediaId))
+            {
+                // After the photo and before anything else the tour places after it.
+                yield return (from.Order + 0.0007m, new Shot(from.Item2, null, 0, walkthrough));
+            }
+        }
+    }
+
+    /// <summary>
     /// The middle shots: an even spread through the tour when there are more shots than slots (the hook shot opens
     /// and closes the video, so it is left out), or every shot again with a different move when there are fewer.
     /// Video shots win the slots: stills are used only for the slots the video shots cannot fill.
@@ -402,7 +434,7 @@ public static class ShortFormEditor
     private static List<(Shot Shot, Move Move)> Sequence(List<Shot> shots, int count)
     {
         var pool = shots.Count > 1 ? shots.Skip(1).ToList() : shots;
-        var moving = pool.Where(shot => shot.Video is not null).ToList();
+        var moving = pool.Where(shot => shot.IsMoving).ToList();
         if (moving.Count > 0 && moving.Count < pool.Count)
         {
             if (moving.Count >= count)
@@ -411,12 +443,12 @@ public static class ShortFormEditor
             }
             else
             {
-                var stills = pool.Where(shot => shot.Video is null).ToList();
+                var stills = pool.Where(shot => !shot.IsMoving).ToList();
                 var wanted = count - moving.Count;
                 var keep = Enumerable.Range(0, Math.Min(wanted, stills.Count))
                     .Select(index => stills[(int)((long)index * stills.Count / Math.Min(wanted, stills.Count))])
                     .ToHashSet();
-                pool = pool.Where(shot => shot.Video is not null || keep.Contains(shot)).ToList();
+                pool = pool.Where(shot => shot.IsMoving || keep.Contains(shot)).ToList();
             }
         }
 
@@ -443,16 +475,27 @@ public static class ShortFormEditor
     }
 
     /// <summary>
-    /// A still photo, a moment of a property video centred on <paramref name="CenterMs"/>, or a storyboard photo
-    /// taken from a video (both set), which plays as video when the video has room for the shot.
+    /// A still photo, a moment of a property video centred on <paramref name="CenterMs"/>, a storyboard photo taken
+    /// from a video (both set), which plays as video when the video has room for the shot, or an AI walk-through
+    /// clip leaving <paramref name="Photo"/> (which it falls back to).
     /// </summary>
-    private sealed record Shot(ShortFormPhoto? Photo, CampaignDerivativeVideo? Video, int CenterMs)
+    private sealed record Shot(
+        ShortFormPhoto? Photo,
+        CampaignDerivativeVideo? Video,
+        int CenterMs,
+        ShortFormWalkthroughClip? Walkthrough = null)
     {
+        public bool IsMoving => Video is not null || Walkthrough is not null;
+
         /// <summary>This shot as a still when its video is too short to play <paramref name="durationMs"/>.</summary>
         public Shot Playable(int durationMs) =>
-            Video is not null && Photo is not null && Video.DurationMs < durationMs ? this with { Video = null } : this;
+            Video is not null && Photo is not null && Video.DurationMs < durationMs ? this with { Video = null }
+            : Walkthrough is not null && Walkthrough.DurationMs < durationMs ? this with { Walkthrough = null }
+            : this;
 
-        public VisualSource Visual(int durationMs) => Video is null
+        public VisualSource Visual(int durationMs) => Walkthrough is not null
+            ? new VisualSource(VisualSourceKind.GeneratedClip, null, Walkthrough.TransitionId, Photo!.MediaId, null)
+            : Video is null
             ? new VisualSource(VisualSourceKind.PropertyMedia, Photo!.MediaId, null, null, null)
             : new VisualSource(
                 VisualSourceKind.PropertyVideo,
@@ -470,7 +513,7 @@ public static class ShortFormEditor
         public MotionPlan Motion(Move move, CampaignPace pace)
         {
             var fill = Fill();
-            if (Video is not null)
+            if (IsMoving)
             {
                 return new MotionPlan(MotionKind.None, fill, fill, MotionEasing.Linear);
             }

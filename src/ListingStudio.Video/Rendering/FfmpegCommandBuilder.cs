@@ -118,7 +118,7 @@ public static class FfmpegCommandBuilder
 
                 arguments.AddRange(
                     [
-                        "-t", Seconds(scenes[index].DurationMs + extensionMs),
+                        "-t", Seconds((int)Math.Ceiling((scenes[index].DurationMs + extensionMs) * sceneAssets[index].Speed)),
                         "-i", sceneAssets[index].FilePath,
                     ]);
             }
@@ -316,6 +316,10 @@ public static class FfmpegCommandBuilder
         {
             // A still next to a walk-through holds the whole photo, matching the clip's first or last frame.
             transform = FillTransform(output);
+            if (asset.Speed != 1)
+            {
+                transform += $",setpts=(PTS-STARTPTS)/{Number(asset.Speed)}";
+            }
         }
         else if (scene.Motion.Type == MotionKind.None)
         {
@@ -972,7 +976,19 @@ public static class FfmpegCommandBuilder
                 throw new ArgumentException($"Scene {scene.SceneNumber} has an invalid generated video asset.");
             }
 
-            return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true, true, 0);
+            if (!clip.FitToScene)
+            {
+                return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true, true, 0);
+            }
+
+            // Skip the lead-in only while the rest still covers the shot, then speed up to show as much of the walk
+            // as the shot holds, never faster than the walk-through limit.
+            var leadInMs = Math.Clamp(clip.LeadInMs, 0, Math.Max(0, clip.DurationMs - requiredDurationMs));
+            var speed = Math.Clamp(
+                Math.Round((clip.DurationMs - leadInMs) / (decimal)requiredDurationMs, 3),
+                1,
+                MaximumWalkthroughSpeedUp);
+            return new SceneVisualAsset(clip.FilePath, clip.Width, clip.Height, true, false, leadInMs, speed);
         }
 
         if (scene.VisualSource.Kind == VisualSourceKind.PropertyVideo
@@ -1223,5 +1239,6 @@ public static class FfmpegCommandBuilder
         int Height,
         bool IsVideo,
         bool IsGeneratedClip,
-        int StartMs);
+        int StartMs,
+        decimal Speed = 1);
 }

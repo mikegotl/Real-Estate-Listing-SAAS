@@ -287,6 +287,43 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildPlaysAWalkthroughShotFromAfterItsLeadInSpedUpToFitTheShot()
+    {
+        var request = CreateRequest();
+        var clipId = Guid.NewGuid();
+        var clipPath = CreateFile("walkthrough shot.mp4");
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            VisualSource = new VisualSource(
+                VisualSourceKind.GeneratedClip,
+                null,
+                clipId,
+                request.PropertyMedia[0].PropertyMediaId,
+                null),
+        };
+        request = request with
+        {
+            Specification = request.Specification with { Scenes = scenes },
+            GeneratedClips =
+            [
+                new VideoRenderGeneratedClipAsset(clipId, clipPath, 1_920, 1_080, 60_000, LeadInMs: 1_000, FitToScene: true),
+            ],
+        };
+        var requiredMs = scenes[0].DurationMs + scenes[1].TransitionIn.DurationMs;
+
+        var arguments = FfmpegCommandBuilder.Build(request).Arguments.ToList();
+
+        // A minute-long clip in a shorter shot plays at the two-times limit from just after its lead-in.
+        var input = arguments.IndexOf(clipPath);
+        Assert.Equal(["-ss", "1", "-t"], arguments.Skip(input - 5).Take(3));
+        Assert.Equal((requiredMs * 2 / 1_000m).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture), arguments[input - 2]);
+        Assert.DoesNotContain("-stream_loop", arguments);
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("crop=1920:1080,setsar=1,setpts=(PTS-STARTPTS)/2,fps=", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildFallsBackToPropertyImageWhenGeneratedClipIsUnavailable()
     {
         var request = CreateRequest();
