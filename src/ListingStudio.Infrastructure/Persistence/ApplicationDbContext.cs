@@ -8,6 +8,7 @@ using ListingStudio.Domain.Neighborhoods;
 using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Leads;
+using ListingStudio.Domain.Feedback;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -74,6 +75,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<PropertyLead> PropertyLeads => Set<PropertyLead>();
 
     public DbSet<LeadActivity> LeadActivities => Set<LeadActivity>();
+
+    public DbSet<FeatureSuggestion> FeatureSuggestions => Set<FeatureSuggestion>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

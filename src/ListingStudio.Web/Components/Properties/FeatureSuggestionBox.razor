@@ -1,0 +1,102 @@
+@inherits OwningComponentBase<IFeatureSuggestionService>
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="pa-4 mt-6">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2">Suggest a future feature</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Tell us what would make Listing Studio more useful. Your suggestion stays linked to this property so the product team has the right context.
+    </MudText>
+    <MudTextField T="string"
+                  Label="Feature suggestion"
+                  Placeholder="Describe what you would like Listing Studio to add or improve..."
+                  @bind-Value="comment"
+                  Lines="5"
+                  MaxLength="FeatureSuggestion.MaximumCommentLength"
+                  Counter="FeatureSuggestion.MaximumCommentLength"
+                  Variant="Variant.Outlined"
+                  Disabled="submitting" />
+    <MudCheckBox T="bool"
+                 @bind-Value="requiredForActiveCampaign"
+                 Label="This feature is required for the currently active campaign"
+                 Color="Color.Primary"
+                 Disabled="@(submitting || ActiveCampaignId is null)" />
+    @if (ActiveCampaignId is null)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+            There is no queued or running campaign for this property. You can still submit a general suggestion.
+        </MudText>
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+            Check the box only when the missing feature affects the campaign that is running now.
+        </MudText>
+    }
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Send"
+               Disabled="@(submitting || string.IsNullOrWhiteSpace(comment))"
+               OnClick="SubmitAsync">
+        @(submitting ? "Sending..." : "Send suggestion")
+    </MudButton>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public Guid? ActiveCampaignId { get; set; }
+
+    private string? comment;
+    private bool requiredForActiveCampaign;
+    private bool submitting;
+
+    protected override void OnParametersSet()
+    {
+        if (ActiveCampaignId is null)
+        {
+            requiredForActiveCampaign = false;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            return;
+        }
+
+        submitting = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var receipt = await Service.SubmitAsync(
+                userId,
+                PropertyId,
+                new FeatureSuggestionInput(comment, requiredForActiveCampaign));
+            if (receipt is null)
+            {
+                Snackbar.Add("This property is no longer available to your organization.", Severity.Error);
+                return;
+            }
+
+            comment = null;
+            requiredForActiveCampaign = false;
+            Snackbar.Add(
+                receipt.RequiredForActiveCampaign
+                    ? "Suggestion sent and linked to the active campaign."
+                    : "Thanks—your feature suggestion was sent.",
+                Severity.Success);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+        finally
+        {
+            submitting = false;
+        }
+    }
+}

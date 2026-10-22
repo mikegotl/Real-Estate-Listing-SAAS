@@ -618,6 +618,50 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("CampaignGenerationJobs", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Feedback.FeatureSuggestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CampaignGenerationJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("RequiredForActiveCampaign")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("SubmittedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SubmittedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubmittedByUserId");
+
+                    b.HasIndex("CampaignGenerationJobId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "SubmittedAtUtc");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.ToTable("FeatureSuggestions", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Leads.LeadActivity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2340,6 +2384,40 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("Property");
 
                     b.Navigation("VideoNarration");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Feedback.FeatureSuggestion", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("SubmittedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Campaigns.CampaignGenerationJob", "CampaignGenerationJob")
+                        .WithMany()
+                        .HasForeignKey("CampaignGenerationJobId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CampaignGenerationJob");
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Property");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Leads.LeadActivity", b =>

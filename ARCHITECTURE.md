@@ -173,6 +173,16 @@ AI usage, active-user and campaign queries without deleting those source records
 updates and deletion in both the DbContext and PostgreSQL, and every reset adds a pseudonymous platform-admin audit
 event.
 
+## User feature-suggestion slice
+
+Authenticated agents can submit product suggestions from a property's Campaign tab. Suggestions are tenant-scoped,
+linked to the property that supplied their workflow context, and store the submitting account and timestamp. An agent
+may mark a suggestion as required for the currently active campaign only while that same organization and property
+have a queued or running campaign; Infrastructure revalidates this condition at submission and records the exact
+campaign reference. General suggestions remain available when no campaign is active. Comment length is bounded and
+cross-organization property or campaign references are rejected by both application queries and composite database
+foreign keys.
+
 ## Production deployment slice
 
 Web and Worker publish as separate non-root .NET 10 containers with FFmpeg/ffprobe installed from the runtime distribution. The Worker hosts an internal HTTP health surface alongside its background services. Both hosts expose process liveness and dependency readiness; readiness verifies PostgreSQL connectivity and executes the configured FFmpeg binary with a bounded timeout. Production console logs use structured JSON, while the Azure Monitor OpenTelemetry distro exports correlated telemetry to workspace-backed Application Insights when its runtime connection string is present.

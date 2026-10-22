@@ -30,6 +30,8 @@ using ListingStudio.Application.Administration;
 using ListingStudio.Infrastructure.Administration;
 using ListingStudio.Application.Leads;
 using ListingStudio.Infrastructure.Leads;
+using ListingStudio.Application.Feedback;
+using ListingStudio.Infrastructure.Feedback;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -178,6 +180,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentPortraitService, AgentPortraitService>();
         services.AddScoped<IUserNotificationService, UserNotificationService>();
         services.AddScoped<ILeadGenerationService, LeadGenerationService>();
+        services.AddScoped<IFeatureSuggestionService, FeatureSuggestionService>();
         services.AddScoped<BillingService>();
         services.AddScoped<IBillingService>(provider => provider.GetRequiredService<BillingService>());
         services.AddScoped<ICampaignBillingGate>(provider => provider.GetRequiredService<BillingService>());
