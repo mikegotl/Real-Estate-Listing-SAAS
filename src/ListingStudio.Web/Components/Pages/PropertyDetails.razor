@@ -5,6 +5,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>@(property is null ? "Property details" : property.Address1)</PageTitle>
 
@@ -107,8 +108,24 @@ else
                                           IsReadOnly="property.IsArchived" />
         </MudTabPanel>
         <MudTabPanel Text="Media" Icon="@Icons.Material.Filled.PhotoLibrary" BadgeData="@(photoCount > 0 ? photoCount : null)" BadgeColor="Color.Secondary">
+            @if (!property.IsArchived)
+            {
+                <MudPaper Class="pa-4 mt-6 media-reset-panel" Outlined="true">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" HtmlTag="h2">Need a clean slate?</MudText>
+                        <MudText Typo="Typo.body2">
+                            Remove every listing photo and video, then rebuild this property's media workspace from scratch.
+                        </MudText>
+                    </div>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.RestartAlt"
+                               Disabled="resettingMedia" aria-label="Start media over"
+                               OnClick="StartMediaAgainAsync">
+                        @(resettingMedia ? "Clearing media..." : "Start Again")
+                    </MudButton>
+                </MudPaper>
+            }
             <PropertyMediaManager @ref="mediaManager" PropertyId="PropertyId" IsReadOnly="property.IsArchived" MediaChanged="RefreshSummaryAsync" />
-            <PropertyVideoManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" RoomPhotosAdded="RoomPhotosAddedAsync" />
+            <PropertyVideoManager @ref="videoManager" PropertyId="PropertyId" IsReadOnly="property.IsArchived" RoomPhotosAdded="RoomPhotosAddedAsync" />
         </MudTabPanel>
         <MudTabPanel Text="Neighborhood" Icon="@Icons.Material.Filled.Map">
             <NeighborhoodInsightsManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
@@ -165,6 +182,8 @@ else
     }
 
     private PropertyMediaManager? mediaManager;
+    private PropertyVideoManager? videoManager;
+    private bool resettingMedia;
     private readonly SemaphoreSlim summaryGate = new(1, 1);
 
     private async Task RefreshSummaryAsync()
@@ -186,6 +205,51 @@ else
         }
 
         await RefreshSummaryAsync();
+    }
+
+    private async Task StartMediaAgainAsync()
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Start media over?",
+            "All listing photos and videos will be permanently deleted, including original uploads, edits, extracted room photos, and generated walk-through clips. Property details, neighborhood research, story and script, and campaign history stay. This cannot be undone.",
+            yesText: "Start again",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        resettingMedia = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var result = await ScopedServices.GetRequiredService<IPropertyMediaResetService>()
+                .ResetAsync(userId, PropertyId);
+            if (mediaManager is not null)
+            {
+                await mediaManager.ReloadAsync();
+            }
+
+            if (videoManager is not null)
+            {
+                await videoManager.ReloadAsync();
+            }
+
+            await LoadSummaryAsync(userId);
+            Snackbar.Add(
+                result.DeletedItemCount == 0
+                    ? "There was no media to reset."
+                    : $"Media reset. Removed {result.DeletedPhotoCount} {(result.DeletedPhotoCount == 1 ? "photo" : "photos")} and {result.DeletedVideoCount} {(result.DeletedVideoCount == 1 ? "video" : "videos")}.",
+                result.DeletedItemCount == 0 ? Severity.Info : Severity.Success);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException)
+        {
+            Snackbar.Add($"The media reset could not be completed: {exception.Message}", Severity.Error);
+        }
+        finally
+        {
+            resettingMedia = false;
+        }
     }
 
     private async Task LoadSummaryAsync(string userId)

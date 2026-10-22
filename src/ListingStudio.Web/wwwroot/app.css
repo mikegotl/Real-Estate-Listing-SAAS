@@ -347,6 +347,8 @@ h1:focus { outline: none; }
 .gallery-upload .mud-icon-root { font-size: 24px; }
 .photo-gallery-empty { color: var(--ls-muted); font-size: .88rem; margin: 0; }
 .gallery-bulk-toolbar { align-items: center; background: var(--ls-surface-muted); border: 1px solid var(--ls-line); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; padding: 9px 10px; }
+.media-reset-panel { align-items: center; background: var(--ls-surface-muted); display: flex; gap: 24px; justify-content: space-between; }
+@media (max-width: 599px) { .media-reset-panel { align-items: stretch; flex-direction: column; gap: 12px; } }
 .gallery-select-all { align-items: center; cursor: pointer; display: inline-flex; font-size: .84rem; font-weight: 700; gap: 7px; }
 .gallery-select-all input, .gallery-thumb-select input { accent-color: var(--ls-primary); height: 18px; margin: 0; width: 18px; }
 .gallery-selection-count { color: var(--ls-muted); font-size: .78rem; }
