@@ -7,7 +7,8 @@ namespace ListingStudio.Video.Processing;
 
 /// <summary>
 /// Samples the video twice a second at low resolution, picks the sharpest sample of each view, and exports those
-/// moments as full-resolution JPEG stills (at most 1920 pixels wide).
+/// moments as full-resolution JPEG stills (at most 1920 pixels wide). HDR phone video is converted to standard range
+/// so the stills are not grey and flat.
 /// </summary>
 public sealed class FfmpegPropertyVideoFrameExtractor(IOptions<FfmpegOptions> options) : IPropertyVideoFrameExtractor
 {
@@ -37,11 +38,12 @@ public sealed class FfmpegPropertyVideoFrameExtractor(IOptions<FfmpegOptions> op
                 await content.CopyToAsync(target, cancellationToken);
             }
 
+            var isHdr = await IsHdrAsync(options.Value, inputPath, directory, cancellationToken);
             var samplesPath = Path.Combine(directory, "samples.gray");
             await FfmpegProcess.RunAsync(
                 options.Value.ExecutablePath,
                 directory,
-                BuildSamplingArguments(inputPath, samplesPath),
+                BuildSamplingArguments(inputPath, samplesPath, isHdr),
                 options.Value.EnhancementTimeoutSeconds,
                 cancellationToken);
             var samples = MeasureSamples(await File.ReadAllBytesAsync(samplesPath, cancellationToken));
@@ -55,7 +57,7 @@ public sealed class FfmpegPropertyVideoFrameExtractor(IOptions<FfmpegOptions> op
                 await FfmpegProcess.RunAsync(
                     options.Value.ExecutablePath,
                     directory,
-                    BuildStillArguments(inputPath, stillPath, timestampMs),
+                    BuildStillArguments(inputPath, stillPath, timestampMs, isHdr),
                     120,
                     cancellationToken);
                 if (File.Exists(stillPath) && new FileInfo(stillPath).Length > 0)
@@ -75,23 +77,48 @@ public sealed class FfmpegPropertyVideoFrameExtractor(IOptions<FfmpegOptions> op
         }
     }
 
-    public static IReadOnlyList<string> BuildSamplingArguments(string inputPath, string samplesPath) =>
+    /// <summary>Whether the first video stream is HDR; a probe failure is read as ordinary video.</summary>
+    internal static async Task<bool> IsHdrAsync(
+        FfmpegOptions options,
+        string inputPath,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var probe = await FfmpegProcess.RunAsync(
+                options.ProbeExecutablePath,
+                directory,
+                HdrToneMapping.BuildTransferProbeArguments(inputPath),
+                30,
+                cancellationToken);
+            return HdrToneMapping.IsHdrTransfer(probe.StandardOutput.Trim());
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    public static IReadOnlyList<string> BuildSamplingArguments(string inputPath, string samplesPath, bool isHdr = false) =>
     [
         "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
         "-i", inputPath,
         "-map", "0:v:0", "-an", "-sn",
-        "-vf", $"fps={VideoFrameSampling.SamplesPerSecond},scale={VideoFrameSampling.SampleWidth}:{VideoFrameSampling.SampleHeight},format=gray",
+        // Sampling and shrinking come before the HDR conversion, which is slow on full-size frames.
+        "-vf", $"fps={VideoFrameSampling.SamplesPerSecond},scale={VideoFrameSampling.SampleWidth}:{VideoFrameSampling.SampleHeight},"
+            + $"{(isHdr ? HdrToneMapping.ToStandardRange + "," : string.Empty)}format=gray",
         "-f", "rawvideo",
         samplesPath,
     ];
 
-    public static IReadOnlyList<string> BuildStillArguments(string inputPath, string stillPath, int timestampMs) =>
+    public static IReadOnlyList<string> BuildStillArguments(string inputPath, string stillPath, int timestampMs, bool isHdr = false) =>
     [
         "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
         "-ss", (timestampMs / 1_000d).ToString("0.###", CultureInfo.InvariantCulture),
         "-i", inputPath,
         "-map", "0:v:0", "-frames:v", "1",
-        "-vf", $"scale='min({MaximumStillWidth},iw)':-2",
+        "-vf", $"{(isHdr ? HdrToneMapping.ToStandardRange + "," : string.Empty)}scale='min({MaximumStillWidth},iw)':-2",
         "-q:v", "2",
         stillPath,
     ];

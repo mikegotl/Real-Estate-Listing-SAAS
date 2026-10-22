@@ -8,7 +8,7 @@ namespace ListingStudio.Video.Processing;
 
 public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> options) : IPropertyVideoTranscoder
 {
-    public const string CurrentEnhancementVersion = "ffmpeg-stabilize-color-v1";
+    public const string CurrentEnhancementVersion = "ffmpeg-stabilize-hdr-bright-v2";
 
     public string EnhancementVersion => CurrentEnhancementVersion;
 
@@ -45,6 +45,7 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             var inputPath = Path.Combine(directory, $"input{SafeExtension(originalFilename)}");
             var outputPath = Path.Combine(directory, "enhanced.mp4");
             await CopyToFileAsync(content, inputPath, cancellationToken);
+            var source = await ProbeFileAsync(inputPath, cancellationToken);
 
             await FfmpegProcess.RunAsync(
                 options.Value.ExecutablePath,
@@ -62,7 +63,7 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             await FfmpegProcess.RunAsync(
                 options.Value.ExecutablePath,
                 directory,
-                BuildEnhancementArguments(inputPath, outputPath),
+                BuildEnhancementArguments(inputPath, outputPath, source.IsHdr),
                 options.Value.EnhancementTimeoutSeconds,
                 cancellationToken);
 
@@ -83,17 +84,31 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
         }
     }
 
-    public static IReadOnlyList<string> BuildEnhancementArguments(string inputPath, string outputPath)
+    /// <summary>
+    /// Stabilizes and evens out the video, then gives it the bright, clean look of social listing videos. HDR phone
+    /// footage is converted to standard range first and then lifted; brightness normalizing and gray-world white
+    /// balance are left out for it because they push the converted colors grey or pink. Ordinary footage keeps them,
+    /// since that is what rescues a dim or tinted phone video.
+    /// </summary>
+    public static IReadOnlyList<string> BuildEnhancementArguments(string inputPath, string outputPath, bool isHdr = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        const string filters =
+        const string stabilize =
             "vidstabtransform=input=transforms.trf:smoothing=30:optzoom=1:zoom=0:interpol=bicubic,"
-            + "deflicker=size=9:mode=pm,"
-            + "grayworld,"
-            + "normalize=smoothing=50:independence=0.85,"
-            + "eq=contrast=1.02:saturation=1.03,"
-            + "fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1";
+            + "deflicker=size=9:mode=pm,";
+        const string cadence = ",fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1";
+        var filters = isHdr
+            ? HdrToneMapping.ToStandardRange + ","
+                + stabilize
+                + "eq=brightness=0.04:contrast=1.08:saturation=1.08:gamma=1.04,"
+                + "colortemperature=temperature=7200:mix=0.6"
+                + cadence
+            : stabilize
+                + "grayworld,"
+                + "normalize=smoothing=50:independence=0.85,"
+                + "eq=brightness=0.03:contrast=1.05:saturation=1.08:gamma=1.03"
+                + cadence;
 
         return
         [
@@ -150,6 +165,7 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             var frameRate = ParseFrameRate(frameRateText);
             var width = video.GetProperty("width").GetInt32();
             var height = video.GetProperty("height").GetInt32();
+            var colorTransfer = video.TryGetProperty("color_transfer", out var transfer) ? transfer.GetString() : null;
             var hasAudio = streams.Any(stream =>
                 stream.TryGetProperty("codec_type", out var type)
                 && string.Equals(type.GetString(), "audio", StringComparison.Ordinal));
@@ -159,7 +175,8 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
                 height,
                 checked((int)Math.Round(durationSeconds * 1_000, MidpointRounding.AwayFromZero)),
                 frameRate,
-                hasAudio);
+                hasAudio,
+                HdrToneMapping.IsHdrTransfer(colorTransfer));
         }
         catch (JsonException exception)
         {
