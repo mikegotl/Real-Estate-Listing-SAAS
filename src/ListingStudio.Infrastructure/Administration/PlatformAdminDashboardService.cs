@@ -101,6 +101,16 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
         var aiCallCount = await ai.LongCountAsync(cancellationToken);
         var failedAiCallCount = await ai.LongCountAsync(item => !item.Succeeded, cancellationToken);
         var aiCost = await ai.SumAsync(item => (decimal?)item.EstimatedCostUsd, cancellationToken) ?? 0;
+        var attributedAi = ai.Where(item => item.PropertyReference != null);
+        var attributedPropertyCount = await attributedAi
+            .Select(item => item.PropertyReference)
+            .Distinct()
+            .LongCountAsync(cancellationToken);
+        var attributedAiCost = await attributedAi
+            .SumAsync(item => (decimal?)item.EstimatedCostUsd, cancellationToken) ?? 0;
+        var averageAiCostPerProperty = attributedPropertyCount == 0
+            ? 0
+            : attributedAiCost / attributedPropertyCount;
         var audit = await GetAuditEventsAsync(range, 25, cancellationToken);
 
         return new PlatformAdminDashboard(
@@ -114,6 +124,8 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
             aiCallCount,
             failedAiCallCount,
             aiCost,
+            averageAiCostPerProperty,
+            attributedPropertyCount,
             traffic,
             signIns,
             campaignOutcomes,

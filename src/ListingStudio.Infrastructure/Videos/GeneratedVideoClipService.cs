@@ -2,6 +2,7 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
@@ -16,6 +17,7 @@ public sealed class GeneratedVideoClipService(
     IPropertyMediaStorage propertyMediaStorage,
     ICampaignAssetStorage campaignAssetStorage,
     IAiVideoProvider provider,
+    IAiUsagePropertyContext aiUsagePropertyContext,
     TimeProvider timeProvider) : IGeneratedVideoClipService
 {
     private static readonly HashSet<string> AllowedMotionInstructions = new(StringComparer.OrdinalIgnoreCase)
@@ -93,17 +95,21 @@ public sealed class GeneratedVideoClipService(
 
         await using var image = await propertyMediaStorage.OpenReadAsync(media.BlobPath, cancellationToken)
             ?? throw new FileNotFoundException("The source property image could not be opened.");
-        var generated = await provider.GenerateAsync(
-            new AiVideoProviderRequest(
-                media.Id,
-                media.OriginalFilename,
-                media.MimeType,
-                image,
-                normalizedInstruction,
-                durationMs,
-                aspectRatio,
-                fingerprint),
-            cancellationToken);
+        AiVideoProviderResult generated;
+        using (aiUsagePropertyContext.BeginProperty(propertyId))
+        {
+            generated = await provider.GenerateAsync(
+                new AiVideoProviderRequest(
+                    media.Id,
+                    media.OriginalFilename,
+                    media.MimeType,
+                    image,
+                    normalizedInstruction,
+                    durationMs,
+                    aspectRatio,
+                    fingerprint),
+                cancellationToken);
+        }
         await using var video = generated.Content;
         ValidateResult(generated, durationMs, aspectRatio);
         var assetPath = $"organizations/{organizationId:N}/properties/{propertyId:N}/ai-video/{fingerprint}.mp4";

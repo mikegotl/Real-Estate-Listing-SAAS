@@ -59,6 +59,7 @@ else
         <div><dt>Campaigns</dt><dd>@dashboard.CampaignCount.ToString("N0")</dd><small>@dashboard.FailedCampaignCount failed</small></div>
         <div><dt>AI calls</dt><dd>@dashboard.AiCallCount.ToString("N0")</dd><small>@dashboard.FailedAiCallCount failed</small></div>
         <div><dt>Estimated AI cost</dt><dd>@dashboard.EstimatedAiCostUsd.ToString("C")</dd><small>configured estimates</small></div>
+        <div><dt>Average AI/API Cost per Property</dt><dd>@dashboard.AverageAiCostPerPropertyUsd.ToString("C")</dd><small>@dashboard.AiAttributedPropertyCount.ToString("N0") properties with attributed usage</small></div>
     </dl>
 
     <div class="admin-grid">

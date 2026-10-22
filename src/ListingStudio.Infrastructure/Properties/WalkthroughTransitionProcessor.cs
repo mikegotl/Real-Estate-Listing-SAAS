@@ -1,4 +1,5 @@
 using System.Data;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
@@ -19,6 +20,7 @@ public sealed partial class WalkthroughTransitionProcessor(
     IPropertyMediaStorage propertyMediaStorage,
     ICampaignAssetStorage campaignAssetStorage,
     IWalkthroughVideoProvider provider,
+    IAiUsagePropertyContext aiUsagePropertyContext,
     TimeProvider timeProvider,
     ILogger<WalkthroughTransitionProcessor> logger) : IWalkthroughTransitionProcessor
 {
@@ -135,6 +137,7 @@ public sealed partial class WalkthroughTransitionProcessor(
                 ?? throw new FileNotFoundException("The first shot's photo could not be opened.");
             await using var end = await propertyMediaStorage.OpenReadAsync(to.BlobPath, cancellationToken)
                 ?? throw new FileNotFoundException("The next shot's photo could not be opened.");
+            using var attribution = aiUsagePropertyContext.BeginProperty(claimed.PropertyId);
             var requestId = await provider.SubmitAsync(
                 new WalkthroughVideoSubmission(
                     new WalkthroughVideoFrame(start, NormalizeImageType(from.MimeType)),
