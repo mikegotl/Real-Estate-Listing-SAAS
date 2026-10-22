@@ -2,6 +2,7 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Stories;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
@@ -14,7 +15,8 @@ namespace ListingStudio.Infrastructure.Stories;
 public sealed class PropertyStoryService(
     ApplicationDbContext dbContext,
     IPropertyStoryGenerator generator,
-    IPropertyStoryGroundingValidator groundingValidator) : IPropertyStoryService
+    IPropertyStoryGroundingValidator groundingValidator,
+    IAiUsagePropertyContext aiUsagePropertyContext) : IPropertyStoryService
 {
     private static readonly JsonSerializerOptions FingerprintSerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -72,7 +74,11 @@ public sealed class PropertyStoryService(
             return ToResult(existing, reused: true);
         }
 
-        var content = await generator.GenerateAsync(request, cancellationToken);
+        PropertyStoryContent content;
+        using (aiUsagePropertyContext.BeginProperty(propertyId))
+        {
+            content = await generator.GenerateAsync(request, cancellationToken);
+        }
         var grounding = groundingValidator.Validate(request, content);
         if (!grounding.IsValid)
         {

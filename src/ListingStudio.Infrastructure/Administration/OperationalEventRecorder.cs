@@ -2,6 +2,7 @@ using ListingStudio.Application.Administration;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Infrastructure.Persistence;
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ namespace ListingStudio.Infrastructure.Administration;
 
 public sealed partial class OperationalEventRecorder(
     IServiceScopeFactory scopeFactory,
+    IAiUsagePropertyContext propertyContext,
     TimeProvider timeProvider,
     ILogger<OperationalEventRecorder> logger) : IOperationalEventRecorder, IAiUsageRecorder
 {
@@ -72,7 +74,8 @@ public sealed partial class OperationalEventRecorder(
                 (long)Math.Ceiling(observation.Duration.TotalMilliseconds),
                 observation.EstimatedCostUsd,
                 observation.FailureCategory,
-                timeProvider.GetUtcNow()));
+                timeProvider.GetUtcNow(),
+                PropertyReference(propertyContext.PropertyId)));
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -89,4 +92,8 @@ public sealed partial class OperationalEventRecorder(
 
     [LoggerMessage(3, LogLevel.Warning, "Unable to persist a privacy-safe AI usage event.")]
     private static partial void LogAiUsageFailure(ILogger logger, Exception exception);
+
+    private static string? PropertyReference(Guid? propertyId) => propertyId is null
+        ? null
+        : Convert.ToHexString(SHA256.HashData(propertyId.Value.ToByteArray())).ToLowerInvariant();
 }

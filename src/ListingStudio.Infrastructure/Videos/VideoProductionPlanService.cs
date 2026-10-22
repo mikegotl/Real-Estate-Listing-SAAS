@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
@@ -20,6 +21,7 @@ public sealed partial class VideoProductionPlanService(
     IVideoDirector director,
     IVideoProductionSpecificationValidator validator,
     IPropertyStoryGroundingValidator storyValidator,
+    IAiUsagePropertyContext aiUsagePropertyContext,
     ILogger<VideoProductionPlanService> logger) : IVideoProductionPlanService
 {
     public async Task<VideoProductionPlanResult?> GetLatestAsync(
@@ -182,6 +184,7 @@ public sealed partial class VideoProductionPlanService(
         VideoDirectionRequest request,
         CancellationToken cancellationToken)
     {
+        using var attribution = aiUsagePropertyContext.BeginProperty(request.PropertyId);
         DirectedEditorialPlan initialPlan;
         try
         {

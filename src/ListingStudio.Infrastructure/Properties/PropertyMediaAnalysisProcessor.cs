@@ -1,4 +1,5 @@
 using System.Data;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Persistence;
@@ -11,6 +12,7 @@ public sealed partial class PropertyMediaAnalysisProcessor(
     ApplicationDbContext dbContext,
     IPropertyMediaStorage storage,
     IPropertyMediaAnalyzer analyzer,
+    IAiUsagePropertyContext aiUsagePropertyContext,
     TimeProvider timeProvider,
     ILogger<PropertyMediaAnalysisProcessor> logger) : IPropertyMediaAnalysisProcessor
 {
@@ -98,6 +100,7 @@ public sealed partial class PropertyMediaAnalysisProcessor(
 
         var mediaId = media.Id;
         var organizationId = media.OrganizationId;
+        var propertyId = media.PropertyId;
         var attemptNumber = media.AnalysisAttemptCount;
         var blobPath = media.BlobPath;
         var originalFilename = media.OriginalFilename;
@@ -108,6 +111,7 @@ public sealed partial class PropertyMediaAnalysisProcessor(
         {
             await using var content = await storage.OpenReadAsync(blobPath, cancellationToken)
                 ?? throw new FileNotFoundException("The original property image could not be opened for analysis.");
+            using var attribution = aiUsagePropertyContext.BeginProperty(propertyId);
             var analysis = await analyzer.AnalyzeAsync(
                 new PropertyMediaAnalysisInput(mediaId, originalFilename, mimeType, content),
                 cancellationToken);

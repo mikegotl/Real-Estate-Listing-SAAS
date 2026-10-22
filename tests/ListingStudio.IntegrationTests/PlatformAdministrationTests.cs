@@ -49,10 +49,14 @@ public sealed class PlatformAdministrationTests(PostgreSqlWebApplicationFixture 
             PlatformAdminHeaderAuthenticationHandler.RoleHeader,
             PlatformAdministration.Role);
         using var platformAdmin = await client.GetAsync("/api/admin/dashboard");
+        using var adminPage = await client.GetAsync("/admin");
+        var adminContent = await adminPage.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, organizationOwner.StatusCode);
         Assert.Equal(HttpStatusCode.OK, platformAdmin.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, adminPage.StatusCode);
+        Assert.Contains("Average AI/API Cost per Property", adminContent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -127,6 +131,8 @@ public sealed class PlatformAdministrationTests(PostgreSqlWebApplicationFixture 
         var resetService = scope.ServiceProvider.GetRequiredService<IPlatformAdminMetricsResetService>();
         var dashboardService = scope.ServiceProvider.GetRequiredService<IPlatformAdminDashboardService>();
         var now = fixture.Factory.TimeProvider.GetUtcNow();
+        var propertyOne = new string('a', 64);
+        var propertyTwo = new string('b', 64);
 
         dbContext.OperationalEvents.Add(OperationalEvent.Create(
             "request",
@@ -158,6 +164,26 @@ public sealed class PlatformAdministrationTests(PostgreSqlWebApplicationFixture 
             50,
             0.25m,
             null,
+            resetAtUtc.AddMinutes(1),
+            propertyOne));
+        dbContext.AiUsageEvents.Add(AiUsageEvent.Create(
+            "second-current-provider",
+            "current-model",
+            "current-operation",
+            true,
+            75,
+            0.75m,
+            null,
+            resetAtUtc.AddMinutes(1),
+            propertyTwo));
+        dbContext.AiUsageEvents.Add(AiUsageEvent.Create(
+            "unattributed-current-provider",
+            "current-model",
+            "current-operation",
+            true,
+            25,
+            10m,
+            null,
             resetAtUtc.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
 
@@ -171,6 +197,9 @@ public sealed class PlatformAdministrationTests(PostgreSqlWebApplicationFixture 
         Assert.DoesNotContain(dashboard.AiUsage, row => row.Primary == "legacy-provider");
         Assert.Contains(dashboard.AiUsage, row =>
             row.Primary == "current-provider" && row.EstimatedCostUsd == 0.25m);
+        Assert.Equal(11m, dashboard.EstimatedAiCostUsd);
+        Assert.Equal(0.50m, dashboard.AverageAiCostPerPropertyUsd);
+        Assert.Equal(2, dashboard.AiAttributedPropertyCount);
         Assert.True(await dbContext.OperationalEvents.AnyAsync(
             item => item.Category == "legacy-metrics-route"));
         Assert.True(await dbContext.AiUsageEvents.AnyAsync(
@@ -186,6 +215,37 @@ public sealed class PlatformAdministrationTests(PostgreSqlWebApplicationFixture 
         var resetRecord = await dbContext.PlatformMetricsResets.SingleAsync(item => item.ResetAtUtc == resetAtUtc);
         dbContext.PlatformMetricsResets.Remove(resetRecord);
         await Assert.ThrowsAsync<InvalidOperationException>(() => dbContext.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task AiUsageRecorderPersistsTheCurrentPropertyAttribution()
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var recorder = scope.ServiceProvider.GetRequiredService<IAiUsageRecorder>();
+        var propertyContext = scope.ServiceProvider.GetRequiredService<IAiUsagePropertyContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var propertyId = Guid.NewGuid();
+        var operation = $"property-attribution-{Guid.NewGuid():N}";
+
+        using (propertyContext.BeginProperty(propertyId))
+        {
+            await recorder.RecordAsync(new AiCallObservation(
+                "test-provider",
+                "test-model",
+                operation,
+                true,
+                TimeSpan.FromMilliseconds(25),
+                0.10m));
+        }
+
+        var recorded = await dbContext.AiUsageEvents.AsNoTracking()
+            .SingleAsync(item => item.Operation == operation);
+        Assert.NotNull(recorded.PropertyReference);
+        Assert.Equal(64, recorded.PropertyReference.Length);
+        Assert.DoesNotContain(propertyId.ToString("N"), recorded.PropertyReference, StringComparison.OrdinalIgnoreCase);
+
+        dbContext.AiUsageEvents.Remove(await dbContext.AiUsageEvents.SingleAsync(item => item.Id == recorded.Id));
+        await dbContext.SaveChangesAsync();
     }
 
     private static PropertyInput ValidProperty => new(

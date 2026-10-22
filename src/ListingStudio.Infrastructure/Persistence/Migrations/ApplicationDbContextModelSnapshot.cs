@@ -52,6 +52,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("PropertyReference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -61,6 +65,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc", "PropertyReference");
 
                     b.HasIndex("OccurredAtUtc", "Provider", "Operation");
 

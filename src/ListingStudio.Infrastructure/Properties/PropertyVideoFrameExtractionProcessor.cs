@@ -1,4 +1,5 @@
 using System.Data;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Notifications;
@@ -18,6 +19,7 @@ public sealed partial class PropertyVideoFrameExtractionProcessor(
     IPropertyMediaStorage storage,
     IPropertyVideoFrameExtractor extractor,
     IPropertyMediaAnalyzer analyzer,
+    IAiUsagePropertyContext aiUsagePropertyContext,
     TimeProvider timeProvider,
     ILogger<PropertyVideoFrameExtractionProcessor> logger) : IPropertyVideoFrameExtractionProcessor
 {
@@ -146,6 +148,7 @@ public sealed partial class PropertyVideoFrameExtractionProcessor(
         IReadOnlyList<VideoFrameCandidate> frames,
         CancellationToken cancellationToken)
     {
+        using var attribution = aiUsagePropertyContext.BeginProperty(claim.PropertyId);
         var analyzed = new List<AnalyzedVideoFrame>(frames.Count);
         await ReportAsync(claim, PropertyVideoFrameExtractionStage.RecognizingRooms, 0, frames.Count, cancellationToken);
         for (var index = 0; index < frames.Count; index++)
