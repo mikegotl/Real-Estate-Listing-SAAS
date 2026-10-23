@@ -42,6 +42,12 @@ public sealed class SmtpOutboundEmailSender(IOptions<SmtpEmailOptions> options) 
 
         message.Subject = email.Subject;
         message.Body = new TextPart("plain") { Text = email.TextBody };
+        if (email.Priority == OutboundEmailPriority.High)
+        {
+            message.Importance = MessageImportance.High;
+            message.Priority = MessagePriority.Urgent;
+            message.Headers[HeaderId.XPriority] = "1 (Highest)";
+        }
 
         using var client = new SmtpClient { Timeout = settings.TimeoutSeconds * 1000 };
         // Port 465 is implicit TLS; anything else upgrades with STARTTLS when the server offers it.

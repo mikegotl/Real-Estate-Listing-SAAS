@@ -1,5 +1,11 @@
 namespace ListingStudio.Application.Email;
 
+public enum OutboundEmailPriority
+{
+    Normal,
+    High,
+}
+
 /// <summary>
 /// A plain-text message to people who should not see each other's addresses, so every recipient is blind copied.
 /// </summary>
@@ -7,7 +13,8 @@ public sealed record OutboundEmail(
     IReadOnlyList<string> BlindCopyRecipients,
     string Subject,
     string TextBody,
-    string? ReplyTo = null);
+    string? ReplyTo = null,
+    OutboundEmailPriority Priority = OutboundEmailPriority.Normal);
 
 public interface IOutboundEmailSender
 {

@@ -15,6 +15,10 @@ public sealed class FeatureSuggestionConfiguration : IEntityTypeConfiguration<Fe
         builder.Property(suggestion => suggestion.Comment)
             .HasMaxLength(FeatureSuggestion.MaximumCommentLength)
             .IsRequired();
+        builder.Property(suggestion => suggestion.Type)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
         builder.Property(suggestion => suggestion.PagePath).HasMaxLength(FeatureSuggestion.MaximumPagePathLength);
         builder.HasIndex(suggestion => new { suggestion.OrganizationId, suggestion.SubmittedAtUtc });
         builder.HasIndex(suggestion => new { suggestion.AdminEmailSentAtUtc, suggestion.SubmittedAtUtc });

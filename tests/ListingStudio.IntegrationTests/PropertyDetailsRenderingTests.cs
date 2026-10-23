@@ -78,7 +78,7 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("External listing research", content, StringComparison.Ordinal);
         Assert.Contains("Zillow home link", content, StringComparison.Ordinal);
         Assert.Contains("Suggest a future feature", content, StringComparison.Ordinal);
-        Assert.Contains("This feature is required for the currently active campaign", content, StringComparison.Ordinal);
+        Assert.Contains("This feature is required in order to continue my campaign", content, StringComparison.Ordinal);
     }
 
     [Fact]

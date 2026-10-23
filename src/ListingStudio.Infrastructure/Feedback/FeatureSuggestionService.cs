@@ -62,6 +62,7 @@ public sealed class FeatureSuggestionService(
             propertyId,
             userId,
             input.Comment,
+            input.Type,
             input.RequiredForActiveCampaign,
             campaignId,
             timeProvider.GetUtcNow(),
@@ -71,6 +72,7 @@ public sealed class FeatureSuggestionService(
         return new FeatureSuggestionReceipt(
             suggestion.Id,
             suggestion.PropertyId,
+            suggestion.Type,
             suggestion.RequiredForActiveCampaign,
             suggestion.CampaignGenerationJobId,
             suggestion.SubmittedAtUtc);

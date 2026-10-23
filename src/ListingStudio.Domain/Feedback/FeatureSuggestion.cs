@@ -4,6 +4,12 @@ using ListingStudio.Domain.Properties;
 
 namespace ListingStudio.Domain.Feedback;
 
+public enum FeatureSuggestionType
+{
+    FeatureRequest,
+    ErrorReport,
+}
+
 public sealed class FeatureSuggestion
 {
     public const int MaximumCommentLength = 2_000;
@@ -19,6 +25,7 @@ public sealed class FeatureSuggestion
         Guid? propertyId,
         string submittedByUserId,
         string comment,
+        FeatureSuggestionType type,
         bool requiredForActiveCampaign,
         Guid? campaignGenerationJobId,
         string? pagePath,
@@ -41,11 +48,17 @@ public sealed class FeatureSuggestion
                 nameof(campaignGenerationJobId));
         }
 
+        if (!Enum.IsDefined(type))
+        {
+            throw new ArgumentOutOfRangeException(nameof(type));
+        }
+
         Id = Guid.NewGuid();
         OrganizationId = organizationId;
         PropertyId = propertyId;
         SubmittedByUserId = Required(submittedByUserId, 450, nameof(submittedByUserId));
         Comment = Required(comment, MaximumCommentLength, nameof(comment));
+        Type = type;
         RequiredForActiveCampaign = requiredForActiveCampaign;
         CampaignGenerationJobId = campaignGenerationJobId;
         PagePath = Optional(pagePath, MaximumPagePathLength);
@@ -62,6 +75,8 @@ public sealed class FeatureSuggestion
     public string SubmittedByUserId { get; private set; } = string.Empty;
 
     public string Comment { get; private set; } = string.Empty;
+
+    public FeatureSuggestionType Type { get; private set; }
 
     public bool RequiredForActiveCampaign { get; private set; }
 
@@ -91,6 +106,7 @@ public sealed class FeatureSuggestion
         Guid? propertyId,
         string submittedByUserId,
         string comment,
+        FeatureSuggestionType type,
         bool requiredForActiveCampaign,
         Guid? campaignGenerationJobId,
         DateTimeOffset submittedAtUtc,
@@ -100,6 +116,7 @@ public sealed class FeatureSuggestion
             propertyId,
             submittedByUserId,
             comment,
+            type,
             requiredForActiveCampaign,
             campaignGenerationJobId,
             pagePath,

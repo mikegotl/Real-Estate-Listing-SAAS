@@ -4,6 +4,7 @@ using ListingStudio.Application.Email;
 using ListingStudio.Application.Feedback;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Feedback;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Infrastructure.Administration;
 using ListingStudio.Infrastructure.Configuration;
@@ -31,19 +32,19 @@ public sealed class FeatureSuggestionTests(PostgreSqlWebApplicationFixture fixtu
         var general = await service.SubmitAsync(
             owner.UserId,
             owner.PropertyId,
-            new FeatureSuggestionInput("Add branded closing animations.", false));
+            new FeatureSuggestionInput("Add branded closing animations.", FeatureSuggestionType.FeatureRequest, false));
         Assert.NotNull(general);
         Assert.False(general.RequiredForActiveCampaign);
         Assert.Null(general.CampaignGenerationJobId);
         Assert.Null(await service.SubmitAsync(
             outsider.UserId,
             owner.PropertyId,
-            new FeatureSuggestionInput("Cross-tenant attempt.", false)));
+            new FeatureSuggestionInput("Cross-tenant attempt.", FeatureSuggestionType.ErrorReport, false)));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.SubmitAsync(
             owner.UserId,
             owner.PropertyId,
-            new FeatureSuggestionInput("Needed for this campaign.", true)));
+            new FeatureSuggestionInput("Needed for this campaign.", FeatureSuggestionType.FeatureRequest, true)));
 
         var property = await dbContext.Properties.AsNoTracking()
             .SingleAsync(candidate => candidate.Id == owner.PropertyId);
@@ -60,9 +61,10 @@ public sealed class FeatureSuggestionTests(PostgreSqlWebApplicationFixture fixtu
         var required = await service.SubmitAsync(
             owner.UserId,
             owner.PropertyId,
-            new FeatureSuggestionInput("Needed for this campaign.", true));
+            new FeatureSuggestionInput("Needed for this campaign.", FeatureSuggestionType.FeatureRequest, true));
         Assert.NotNull(required);
         Assert.True(required.RequiredForActiveCampaign);
+        Assert.Equal(FeatureSuggestionType.FeatureRequest, required.Type);
         Assert.Equal(campaign.Id, required.CampaignGenerationJobId);
 
         var stored = await dbContext.FeatureSuggestions.AsNoTracking()
@@ -85,16 +87,17 @@ public sealed class FeatureSuggestionTests(PostgreSqlWebApplicationFixture fixtu
         var receipt = await service.SubmitAsync(
             owner.UserId,
             null,
-            new FeatureSuggestionInput("The billing page needs annual plans.", false, "/billing"));
+            new FeatureSuggestionInput("The billing page needs annual plans.", FeatureSuggestionType.ErrorReport, false, "/billing"));
         Assert.NotNull(receipt);
         Assert.Null(receipt.PropertyId);
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.SubmitAsync(
             owner.UserId,
             null,
-            new FeatureSuggestionInput("Campaign without a property.", true)));
+            new FeatureSuggestionInput("Campaign without a property.", FeatureSuggestionType.FeatureRequest, true)));
 
         var stored = await dbContext.FeatureSuggestions.AsNoTracking().SingleAsync(item => item.Id == receipt.Id);
         Assert.Null(stored.PropertyId);
+        Assert.Equal(FeatureSuggestionType.ErrorReport, stored.Type);
         Assert.Equal("/billing", stored.PagePath);
         Assert.Null(stored.AdminEmailSentAtUtc);
     }
@@ -119,7 +122,11 @@ public sealed class FeatureSuggestionTests(PostgreSqlWebApplicationFixture fixtu
         var receipt = await services.GetRequiredService<IFeatureSuggestionService>().SubmitAsync(
             owner.UserId,
             owner.PropertyId,
-            new FeatureSuggestionInput("Please add drone shots.", false, $"/properties/{owner.PropertyId}"));
+            new FeatureSuggestionInput(
+                "The export button returns an error.",
+                FeatureSuggestionType.ErrorReport,
+                false,
+                $"/properties/{owner.PropertyId}"));
         Assert.NotNull(receipt);
 
         // With no platform admin yet, the comment waits without using an attempt.
@@ -155,12 +162,69 @@ public sealed class FeatureSuggestionTests(PostgreSqlWebApplicationFixture fixtu
         Assert.Equal(adminEmails.Order(StringComparer.OrdinalIgnoreCase), message.BlindCopyRecipients);
         Assert.DoesNotContain(owner.Email, message.BlindCopyRecipients);
         Assert.Equal(owner.Email, message.ReplyTo);
-        Assert.Contains("Please add drone shots.", message.TextBody, StringComparison.Ordinal);
+        Assert.Equal(OutboundEmailPriority.Normal, message.Priority);
+        Assert.Contains("error report", message.Subject, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Type: Error report", message.TextBody, StringComparison.Ordinal);
+        Assert.Contains("The export button returns an error.", message.TextBody, StringComparison.Ordinal);
         Assert.Contains("321 Feedback Lane, Raleigh, NC 27601", message.TextBody, StringComparison.Ordinal);
         Assert.Contains($"https://studio.example.com/properties/{owner.PropertyId}", message.TextBody, StringComparison.Ordinal);
         var stored = await dbContext.FeatureSuggestions.AsNoTracking().SingleAsync(item => item.Id == receipt.Id);
         Assert.NotNull(stored.AdminEmailSentAtUtc);
         Assert.Equal(2, stored.AdminEmailAttemptCount);
+    }
+
+    [Fact]
+    public async Task CampaignBlockingCommentsAreSentWithHighPriority()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("priority-comment");
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var dbContext = services.GetRequiredService<ApplicationDbContext>();
+        await dbContext.FeatureSuggestions.ExecuteUpdateAsync(setters => setters
+            .SetProperty(item => item.AdminEmailSentAtUtc, fixture.Factory.TimeProvider.GetUtcNow()));
+
+        var property = await dbContext.Properties.AsNoTracking()
+            .SingleAsync(candidate => candidate.Id == owner.PropertyId);
+        var campaign = CampaignGenerationJob.Create(
+            property.OrganizationId,
+            owner.PropertyId,
+            owner.UserId,
+            new string('b', 64),
+            CampaignOutputSelection.LegacyStandard,
+            fixture.Factory.TimeProvider.GetUtcNow());
+        dbContext.CampaignGenerationJobs.Add(campaign);
+        await dbContext.SaveChangesAsync();
+
+        var receipt = await services.GetRequiredService<IFeatureSuggestionService>().SubmitAsync(
+            owner.UserId,
+            owner.PropertyId,
+            new FeatureSuggestionInput(
+                "Add the missing MLS disclosure before rendering.",
+                FeatureSuggestionType.FeatureRequest,
+                true,
+                $"/properties/{owner.PropertyId}?tab=campaign"));
+        Assert.NotNull(receipt);
+
+        var adminEmail = $"priority-admin-{Guid.NewGuid():N}@example.com";
+        Assert.True((await services.GetRequiredService<IAccountRegistrationService>().RegisterAsync(
+            new RegisterAccountCommand(adminEmail, "Password123", $"Priority Admin {Guid.NewGuid():N}"))).Succeeded);
+        Assert.True(await services.GetRequiredService<PlatformAdminRoleBootstrapper>().GrantAsync(adminEmail));
+
+        var sender = new RecordingEmailSender();
+        var processor = new FeatureSuggestionEmailProcessor(
+            dbContext,
+            sender,
+            Options.Create(new FeatureSuggestionEmailOptions { AppBaseUrl = "https://studio.example.com" }),
+            fixture.Factory.TimeProvider);
+
+        var result = await processor.ProcessNextAsync();
+
+        Assert.Equal(FeatureSuggestionEmailOutcome.Sent, result?.Outcome);
+        var message = Assert.Single(sender.Sent);
+        Assert.Equal(OutboundEmailPriority.High, message.Priority);
+        Assert.StartsWith("[HIGH PRIORITY]", message.Subject, StringComparison.Ordinal);
+        Assert.Contains("feature request", message.Subject, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cannot continue the active campaign", message.TextBody, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<OwnerProperty> CreateOwnerAndPropertyAsync(string prefix)
