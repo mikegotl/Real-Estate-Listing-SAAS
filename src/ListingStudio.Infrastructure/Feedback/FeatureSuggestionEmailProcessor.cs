@@ -128,12 +128,18 @@ public sealed class FeatureSuggestionEmailProcessor(
         IReadOnlyList<string> recipients)
     {
         var from = details.SubmitterEmail ?? "a user without an email address";
+        var typeLabel = suggestion.Type switch
+        {
+            Domain.Feedback.FeatureSuggestionType.ErrorReport => "Error report",
+            _ => "Feature request",
+        };
         var subject = suggestion.RequiredForActiveCampaign
-            ? $"Listing Studio comment from {details.OrganizationName} (needed for an active campaign)"
-            : $"Listing Studio comment from {details.OrganizationName}";
+            ? $"[HIGH PRIORITY] Listing Studio {typeLabel.ToLowerInvariant()} from {details.OrganizationName}"
+            : $"Listing Studio {typeLabel.ToLowerInvariant()} from {details.OrganizationName}";
 
         var body = new StringBuilder()
-            .AppendLine(CultureInfo.InvariantCulture, $"{from} ({details.OrganizationName}) sent a comment:")
+            .AppendLine(CultureInfo.InvariantCulture, $"{from} ({details.OrganizationName}) sent a {typeLabel.ToLowerInvariant()}:")
+            .AppendLine(CultureInfo.InvariantCulture, $"Type: {typeLabel}")
             .AppendLine()
             .AppendLine(suggestion.Comment)
             .AppendLine()
@@ -145,7 +151,7 @@ public sealed class FeatureSuggestionEmailProcessor(
 
         if (suggestion.RequiredForActiveCampaign)
         {
-            body.AppendLine("They marked it as required for the campaign that is running now.");
+            body.AppendLine("HIGH PRIORITY: They cannot continue the active campaign until this is addressed.");
         }
 
         var page = PageLink(suggestion.PagePath);
@@ -158,7 +164,12 @@ public sealed class FeatureSuggestionEmailProcessor(
             .AppendLine()
             .AppendLine("You get this email because you are a Listing Studio platform admin. Reply to answer the sender.");
 
-        return new OutboundEmail(recipients, subject, body.ToString(), details.SubmitterEmail);
+        return new OutboundEmail(
+            recipients,
+            subject,
+            body.ToString(),
+            details.SubmitterEmail,
+            suggestion.RequiredForActiveCampaign ? OutboundEmailPriority.High : OutboundEmailPriority.Normal);
     }
 
     private string? PageLink(string? pagePath)

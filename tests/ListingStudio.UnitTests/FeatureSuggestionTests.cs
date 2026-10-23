@@ -17,11 +17,13 @@ public sealed class FeatureSuggestionTests
             Guid.NewGuid(),
             "agent-id",
             "  Add a floor-plan overlay.  ",
+            FeatureSuggestionType.FeatureRequest,
             requiredForActiveCampaign: true,
             campaignId,
             Now);
 
         Assert.Equal("Add a floor-plan overlay.", suggestion.Comment);
+        Assert.Equal(FeatureSuggestionType.FeatureRequest, suggestion.Type);
         Assert.True(suggestion.RequiredForActiveCampaign);
         Assert.Equal(campaignId, suggestion.CampaignGenerationJobId);
     }
@@ -30,33 +32,36 @@ public sealed class FeatureSuggestionTests
     public void CreateRejectsMissingCommentAndInconsistentCampaignLink()
     {
         Assert.Throws<ArgumentException>(() => FeatureSuggestion.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "agent-id", " ", false, null, Now));
+            Guid.NewGuid(), Guid.NewGuid(), "agent-id", " ", FeatureSuggestionType.FeatureRequest, false, null, Now));
         Assert.Throws<ArgumentException>(() => FeatureSuggestion.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "agent-id", "Needed now", true, null, Now));
+            Guid.NewGuid(), Guid.NewGuid(), "agent-id", "Needed now", FeatureSuggestionType.FeatureRequest, true, null, Now));
         Assert.Throws<ArgumentException>(() => FeatureSuggestion.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "agent-id", "General idea", false, Guid.NewGuid(), Now));
+            Guid.NewGuid(), Guid.NewGuid(), "agent-id", "General idea", FeatureSuggestionType.FeatureRequest, false, Guid.NewGuid(), Now));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FeatureSuggestion.Create(
+            Guid.NewGuid(), Guid.NewGuid(), "agent-id", "Bad type", (FeatureSuggestionType)99, false, null, Now));
     }
 
     [Fact]
     public void GeneralCommentNeedsNoPropertyButACampaignLinkDoes()
     {
         var general = FeatureSuggestion.Create(
-            Guid.NewGuid(), null, "agent-id", "The billing page is confusing.", false, null, Now, " /billing ");
+            Guid.NewGuid(), null, "agent-id", "The billing page is confusing.", FeatureSuggestionType.ErrorReport, false, null, Now, " /billing ");
 
         Assert.Null(general.PropertyId);
         Assert.Equal("/billing", general.PagePath);
+        Assert.Equal(FeatureSuggestionType.ErrorReport, general.Type);
         Assert.True(general.AdminEmailPending);
         Assert.Throws<ArgumentException>(() => FeatureSuggestion.Create(
-            Guid.NewGuid(), null, "agent-id", "Needed now", true, Guid.NewGuid(), Now));
+            Guid.NewGuid(), null, "agent-id", "Needed now", FeatureSuggestionType.FeatureRequest, true, Guid.NewGuid(), Now));
         Assert.Throws<ArgumentException>(() => FeatureSuggestion.Create(
-            Guid.NewGuid(), Guid.Empty, "agent-id", "Empty property id", false, null, Now));
+            Guid.NewGuid(), Guid.Empty, "agent-id", "Empty property id", FeatureSuggestionType.FeatureRequest, false, null, Now));
     }
 
     [Fact]
     public void AdminEmailBacksOffAfterFailuresAndStopsAfterTheLastAttempt()
     {
         var suggestion = FeatureSuggestion.Create(
-            Guid.NewGuid(), Guid.NewGuid(), "agent-id", "Add a floor-plan overlay.", false, null, Now);
+            Guid.NewGuid(), Guid.NewGuid(), "agent-id", "Add a floor-plan overlay.", FeatureSuggestionType.FeatureRequest, false, null, Now);
 
         Assert.True(suggestion.RecordAdminEmailFailure(Now));
         Assert.Equal(Now.AddMinutes(1), suggestion.AdminEmailNextAttemptAtUtc);
@@ -77,7 +82,7 @@ public sealed class FeatureSuggestionTests
     public void DeferringForMissingAdminsDoesNotUseAnAttempt()
     {
         var suggestion = FeatureSuggestion.Create(
-            Guid.NewGuid(), null, "agent-id", "Hello", false, null, Now);
+            Guid.NewGuid(), null, "agent-id", "Hello", FeatureSuggestionType.ErrorReport, false, null, Now);
 
         suggestion.DeferAdminEmail(Now.AddHours(1));
         Assert.Equal(0, suggestion.AdminEmailAttemptCount);

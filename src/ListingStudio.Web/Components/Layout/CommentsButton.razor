@@ -1,5 +1,7 @@
 @using System.Text.RegularExpressions
+@using ListingStudio.Application.Campaigns
 @using ListingStudio.Application.Feedback
+@using ListingStudio.Domain.Campaigns
 @using ListingStudio.Domain.Feedback
 @implements IDisposable
 @inject IServiceScopeFactory ScopeFactory
@@ -9,7 +11,7 @@
 
 <div class="comments-menu">
     <button type="button" class="comments-trigger" aria-expanded="@(open ? "true" : "false")"
-            aria-label="Send a comment" @onclick="Toggle">
+            aria-label="Send a comment" @onclick="ToggleAsync">
         <MudIcon Icon="@Icons.Material.Filled.RateReview" Size="Size.Small" />
         <span>Comments</span>
     </button>
@@ -35,17 +37,44 @@
             {
                 <div class="comments-body">
                     <p class="comments-help">
-                        Report a problem, ask a question or suggest a feature.
+                        Report an error or request a feature.
                         @if (propertyId is not null)
                         {
                             <span>Your comment is linked to this property.</span>
                         }
                     </p>
+                    <label class="comments-field-label" for="comment-type">Comment type</label>
+                    <select id="comment-type" class="comments-select" @bind="commentType" disabled="@submitting">
+                        <option value="@FeatureSuggestionType.FeatureRequest">Feature request</option>
+                        <option value="@FeatureSuggestionType.ErrorReport">Error report</option>
+                    </select>
                     <textarea class="comments-text" rows="5" aria-label="Your comment"
                               maxlength="@FeatureSuggestion.MaximumCommentLength"
                               placeholder="What would you like us to know?"
                               disabled="@submitting"
                               @bind="comment" @bind:event="oninput"></textarea>
+                    @if (propertyId is not null)
+                    {
+                        <label class="comments-priority-option">
+                            <input type="checkbox" @bind="requiredForActiveCampaign"
+                                   disabled="@(submitting || checkingCampaign || !activeCampaignAvailable)" />
+                            <span>@CampaignRequirementLabel</span>
+                        </label>
+                        <small class="comments-priority-help">
+                            @if (checkingCampaign)
+                            {
+                                <text>Checking for an active campaign...</text>
+                            }
+                            else if (activeCampaignAvailable)
+                            {
+                                <text>Checked comments are emailed to the team as high priority.</text>
+                            }
+                            else
+                            {
+                                <text>There is no queued or running campaign for this property.</text>
+                            }
+                        </small>
+                    }
                     <div class="comments-actions">
                         <small>@(comment?.Length ?? 0) / @FeatureSuggestion.MaximumCommentLength</small>
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
@@ -73,9 +102,17 @@
     private bool open;
     private bool submitting;
     private bool sent;
+    private bool checkingCampaign;
+    private bool activeCampaignAvailable;
+    private bool requiredForActiveCampaign;
     private string? comment;
     private string? error;
     private Guid? propertyId;
+    private FeatureSuggestionType commentType = FeatureSuggestionType.FeatureRequest;
+
+    private string CampaignRequirementLabel => commentType == FeatureSuggestionType.ErrorReport
+        ? "This error must be resolved in order to continue my campaign"
+        : "This feature is required in order to continue my campaign";
 
     protected override void OnInitialized()
     {
@@ -85,8 +122,16 @@
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
     {
-        ReadLocation();
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(async () =>
+        {
+            ReadLocation();
+            if (open)
+            {
+                await LoadCampaignAvailabilityAsync();
+            }
+
+            StateHasChanged();
+        });
     }
 
     // On a property's pages the comment is linked to that property, so admins know what the user was looking at.
@@ -94,6 +139,8 @@
     {
         var match = PropertyPath.Match(Navigation.ToBaseRelativePath(Navigation.Uri));
         propertyId = match.Success ? Guid.Parse(match.Groups["id"].Value) : null;
+        activeCampaignAvailable = false;
+        requiredForActiveCampaign = false;
     }
 
     private string PagePath()
@@ -102,10 +149,14 @@
         return path.Length <= FeatureSuggestion.MaximumPagePathLength ? path : path[..FeatureSuggestion.MaximumPagePathLength];
     }
 
-    private void Toggle()
+    private async Task ToggleAsync()
     {
         open = !open;
         error = null;
+        if (open)
+        {
+            await LoadCampaignAvailabilityAsync();
+        }
     }
 
     private void Close() => open = false;
@@ -114,6 +165,36 @@
     {
         sent = false;
         error = null;
+        commentType = FeatureSuggestionType.FeatureRequest;
+        requiredForActiveCampaign = false;
+    }
+
+    private async Task LoadCampaignAvailabilityAsync()
+    {
+        activeCampaignAvailable = false;
+        requiredForActiveCampaign = false;
+        if (propertyId is null)
+        {
+            return;
+        }
+
+        checkingCampaign = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var campaign = await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
+                .GetLatestAsync(userId, propertyId.Value);
+            activeCampaignAvailable = campaign?.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running;
+        }
+        catch (InvalidOperationException exception)
+        {
+            Logger.LogWarning(exception, "Campaign availability could not be loaded for a comment");
+        }
+        finally
+        {
+            checkingCampaign = false;
+        }
     }
 
     private async Task SubmitAsync()
@@ -130,20 +211,23 @@
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             await using var scope = ScopeFactory.CreateAsyncScope();
             var service = scope.ServiceProvider.GetRequiredService<IFeatureSuggestionService>();
-            var input = new FeatureSuggestionInput(comment, RequiredForActiveCampaign: false, PagePath());
+            var input = new FeatureSuggestionInput(comment, commentType, requiredForActiveCampaign, PagePath());
             // A property id from another organization's link is not linked; the comment is still saved as general.
             var receipt = await service.SubmitAsync(userId, propertyId, input)
                 ?? await service.SubmitAsync(userId, null, input);
             if (receipt is not null)
             {
                 comment = null;
+                requiredForActiveCampaign = false;
                 sent = true;
             }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             Logger.LogWarning(exception, "A comment could not be saved");
-            error = "Your comment could not be sent. Please try again.";
+            error = exception is InvalidOperationException
+                ? exception.Message
+                : "Your comment could not be sent. Please try again.";
         }
         finally
         {

@@ -184,10 +184,13 @@ cross-organization property or campaign references are rejected by both applicat
 foreign keys.
 
 The header's Comments button sends the same kind of comment from any signed-in page. On a property's pages it is linked
-to that property; elsewhere it is saved without one. Every comment records the page it came from. The Worker's
+to that property; elsewhere it is saved without one. The user must classify each comment as a feature request or error
+report. On property pages, a queued or running campaign also enables a campaign-blocking checkbox; the server validates
+the campaign again before accepting that flag. Every comment records the page it came from. The Worker's
 `CommentEmailWorker` emails each comment once to every user in the `PlatformAdmin` role, blind copied, with the sender
-as Reply-To. The send state lives on the comment row (sent time, attempts, next attempt), so restarts neither lose nor
-repeat an email, failures back off for up to eight attempts, and comments wait while no admin has an email address.
+as Reply-To. Campaign-blocking comments are prefixed as high priority and carry SMTP high-importance and urgent-priority
+headers. The send state lives on the comment row (sent time, attempts, next attempt), so restarts neither lose nor repeat
+an email, failures back off for up to eight attempts, and comments wait while no admin has an email address.
 Email goes through the provider-neutral `IOutboundEmailSender`; the SMTP adapter stays off until `Email:Smtp:Host` and
 `Email:Smtp:FromAddress` are set, and comments saved before then are emailed once it is configured.
 

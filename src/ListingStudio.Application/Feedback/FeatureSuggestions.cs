@@ -4,12 +4,14 @@ namespace ListingStudio.Application.Feedback;
 
 public sealed record FeatureSuggestionInput(
     string Comment,
+    FeatureSuggestionType Type,
     bool RequiredForActiveCampaign,
     string? PagePath = null);
 
 public sealed record FeatureSuggestionReceipt(
     Guid Id,
     Guid? PropertyId,
+    FeatureSuggestionType Type,
     bool RequiredForActiveCampaign,
     Guid? CampaignGenerationJobId,
     DateTimeOffset SubmittedAtUtc);
