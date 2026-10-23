@@ -1,0 +1,155 @@
+@using System.Text.RegularExpressions
+@using ListingStudio.Application.Feedback
+@using ListingStudio.Domain.Feedback
+@implements IDisposable
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject ILogger<CommentsButton> Logger
+
+<div class="comments-menu">
+    <button type="button" class="comments-trigger" aria-expanded="@(open ? "true" : "false")"
+            aria-label="Send a comment" @onclick="Toggle">
+        <MudIcon Icon="@Icons.Material.Filled.RateReview" Size="Size.Small" />
+        <span>Comments</span>
+    </button>
+
+    @if (open)
+    {
+        <div class="comments-panel" role="dialog" aria-label="Send a comment">
+            <div class="notification-panel-header">
+                <strong>Send a comment</strong>
+                <button type="button" class="notification-text-button" @onclick="Close">Close</button>
+            </div>
+            @if (sent)
+            {
+                <div class="comments-body">
+                    <p class="comments-sent">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success" />
+                        Thanks, your comment was sent to the Listing Studio team.
+                    </p>
+                    <button type="button" class="notification-text-button" @onclick="StartAnother">Send another</button>
+                </div>
+            }
+            else
+            {
+                <div class="comments-body">
+                    <p class="comments-help">
+                        Report a problem, ask a question or suggest a feature.
+                        @if (propertyId is not null)
+                        {
+                            <span>Your comment is linked to this property.</span>
+                        }
+                    </p>
+                    <textarea class="comments-text" rows="5" aria-label="Your comment"
+                              maxlength="@FeatureSuggestion.MaximumCommentLength"
+                              placeholder="What would you like us to know?"
+                              disabled="@submitting"
+                              @bind="comment" @bind:event="oninput"></textarea>
+                    <div class="comments-actions">
+                        <small>@(comment?.Length ?? 0) / @FeatureSuggestion.MaximumCommentLength</small>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Send"
+                                   Disabled="@(submitting || string.IsNullOrWhiteSpace(comment))"
+                                   OnClick="SubmitAsync">
+                            @(submitting ? "Sending..." : "Send")
+                        </MudButton>
+                    </div>
+                    @if (error is not null)
+                    {
+                        <p class="comments-error" role="alert">@error</p>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly Regex PropertyPath = new(
+        "^properties/(?<id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})([/?#]|$)",
+        RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
+
+    private bool open;
+    private bool submitting;
+    private bool sent;
+    private string? comment;
+    private string? error;
+    private Guid? propertyId;
+
+    protected override void OnInitialized()
+    {
+        ReadLocation();
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        ReadLocation();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    // On a property's pages the comment is linked to that property, so admins know what the user was looking at.
+    private void ReadLocation()
+    {
+        var match = PropertyPath.Match(Navigation.ToBaseRelativePath(Navigation.Uri));
+        propertyId = match.Success ? Guid.Parse(match.Groups["id"].Value) : null;
+    }
+
+    private string PagePath()
+    {
+        var path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        return path.Length <= FeatureSuggestion.MaximumPagePathLength ? path : path[..FeatureSuggestion.MaximumPagePathLength];
+    }
+
+    private void Toggle()
+    {
+        open = !open;
+        error = null;
+    }
+
+    private void Close() => open = false;
+
+    private void StartAnother()
+    {
+        sent = false;
+        error = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            return;
+        }
+
+        submitting = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<IFeatureSuggestionService>();
+            var input = new FeatureSuggestionInput(comment, RequiredForActiveCampaign: false, PagePath());
+            // A property id from another organization's link is not linked; the comment is still saved as general.
+            var receipt = await service.SubmitAsync(userId, propertyId, input)
+                ?? await service.SubmitAsync(userId, null, input);
+            if (receipt is not null)
+            {
+                comment = null;
+                sent = true;
+            }
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            Logger.LogWarning(exception, "A comment could not be saved");
+            error = "Your comment could not be sent. Please try again.";
+        }
+        finally
+        {
+            submitting = false;
+        }
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

@@ -32,6 +32,8 @@ using ListingStudio.Application.Leads;
 using ListingStudio.Infrastructure.Leads;
 using ListingStudio.Application.Feedback;
 using ListingStudio.Infrastructure.Feedback;
+using ListingStudio.Application.Email;
+using ListingStudio.Infrastructure.Email;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -114,6 +116,20 @@ public static class ServiceCollectionExtensions
                 "NeighborhoodInsights:RequestTimeoutSeconds must be between 2 and 60 seconds.")
             .Validate(options => options.PlaceTypes.Length is >= 1 and <= 50,
                 "NeighborhoodInsights:PlaceTypes must contain between 1 and 50 supported place types.");
+        services.AddOptions<SmtpEmailOptions>()
+            .Bind(configuration.GetSection(SmtpEmailOptions.SectionName))
+            .Validate(options => options.Port is > 0 and <= 65_535,
+                "Email:Smtp:Port must be a valid port.")
+            .Validate(options => options.TimeoutSeconds is >= 5 and <= 120,
+                "Email:Smtp:TimeoutSeconds must be between 5 and 120.")
+            .Validate(options => string.IsNullOrWhiteSpace(options.FromAddress)
+                    || MimeKit.MailboxAddress.TryParse(options.FromAddress, out _),
+                "Email:Smtp:FromAddress must be an email address.");
+        services.AddOptions<FeatureSuggestionEmailOptions>()
+            .Bind(configuration.GetSection(FeatureSuggestionEmailOptions.SectionName))
+            .Validate(options => string.IsNullOrWhiteSpace(options.AppBaseUrl)
+                    || Uri.TryCreate(options.AppBaseUrl, UriKind.Absolute, out _),
+                "Email:Comments:AppBaseUrl must be an absolute URL.");
 
         services.AddDbContext<ApplicationDbContext>((provider, options) =>
         {
@@ -181,6 +197,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserNotificationService, UserNotificationService>();
         services.AddScoped<ILeadGenerationService, LeadGenerationService>();
         services.AddScoped<IFeatureSuggestionService, FeatureSuggestionService>();
+        services.AddScoped<IFeatureSuggestionEmailProcessor, FeatureSuggestionEmailProcessor>();
+        services.AddSingleton<IOutboundEmailSender, SmtpOutboundEmailSender>();
         services.AddScoped<BillingService>();
         services.AddScoped<IBillingService>(provider => provider.GetRequiredService<BillingService>());
         services.AddScoped<ICampaignBillingGate>(provider => provider.GetRequiredService<BillingService>());

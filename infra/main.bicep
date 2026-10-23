@@ -100,6 +100,25 @@ param elevenLabsApiKey string = ''
 ])
 param voiceProvider string = 'OpenAI'
 
+@description('SMTP server for outgoing email, such as smtp.gmail.com. Comment emails to platform admins stay off while empty.')
+param smtpHost string = ''
+
+@description('SMTP port. 587 uses STARTTLS and 465 uses implicit TLS.')
+param smtpPort int = 587
+
+@description('SMTP user name, usually the sending mailbox.')
+param smtpUsername string = ''
+
+@secure()
+@description('SMTP password or app password.')
+param smtpPassword string = ''
+
+@description('Sender address for outgoing email.')
+param smtpFromAddress string = ''
+
+@description('Public site address used in links inside emails. Defaults to the web app address.')
+param appBaseUrl string = ''
+
 @description('Immutable Web image reference, normally the ACR image tagged with the Git commit SHA.')
 param webImage string = ''
 
@@ -405,6 +424,14 @@ resource googlePlacesApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01'
   name: 'google-places-api-key'
   properties: {
     value: googlePlacesApiKey
+  }
+}
+
+resource smtpPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(smtpPassword)) {
+  parent: keyVault
+  name: 'smtp-password'
+  properties: {
+    value: smtpPassword
   }
 }
 
@@ -738,6 +765,43 @@ var providerKeyVaultSecrets = concat(databaseKeyVaultSecrets, !empty(elevenLabsA
   }
 ] : [])
 
+// Only the Worker sends email, so only it gets the SMTP password.
+var workerKeyVaultSecrets = concat(providerKeyVaultSecrets, !empty(smtpHost) && !empty(smtpPassword) ? [
+  {
+    name: 'smtp-password'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/smtp-password'
+    identity: runtimeIdentity.id
+  }
+] : [])
+
+var workerEmailEnvironment = empty(smtpHost) ? [] : concat([
+  {
+    name: 'Email__Smtp__Host'
+    value: smtpHost
+  }
+  {
+    name: 'Email__Smtp__Port'
+    value: string(smtpPort)
+  }
+  {
+    name: 'Email__Smtp__Username'
+    value: smtpUsername
+  }
+  {
+    name: 'Email__Smtp__FromAddress'
+    value: smtpFromAddress
+  }
+  {
+    name: 'Email__Comments__AppBaseUrl'
+    value: !empty(appBaseUrl) ? appBaseUrl : (deployApplications ? 'https://${webApp!.properties.configuration.ingress.fqdn}' : '')
+  }
+], !empty(smtpPassword) ? [
+  {
+    name: 'Email__Smtp__Password'
+    secretRef: 'smtp-password'
+  }
+] : [])
+
 var webKeyVaultSecrets = concat(providerKeyVaultSecrets, googleAuthenticationEnabled ? [
   {
     name: 'google-authentication-client-secret'
@@ -884,7 +948,7 @@ resource workerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicat
     configuration: {
       activeRevisionsMode: 'Single'
       registries: registryConfiguration
-      secrets: providerKeyVaultSecrets
+      secrets: workerKeyVaultSecrets
     }
     template: {
       containers: [
@@ -896,7 +960,7 @@ resource workerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicat
               name: 'OTEL_SERVICE_NAME'
               value: 'listingstudio-worker'
             }
-          ])
+          ], workerEmailEnvironment)
           probes: [
             {
               type: 'Startup'

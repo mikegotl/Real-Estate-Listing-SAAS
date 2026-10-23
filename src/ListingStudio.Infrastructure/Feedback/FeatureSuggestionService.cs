@@ -12,7 +12,7 @@ public sealed class FeatureSuggestionService(
 {
     public async Task<FeatureSuggestionReceipt?> SubmitAsync(
         string userId,
-        Guid propertyId,
+        Guid? propertyId,
         FeatureSuggestionInput input,
         CancellationToken cancellationToken = default)
     {
@@ -23,17 +23,25 @@ public sealed class FeatureSuggestionService(
             .Where(member => member.UserId == userId)
             .Select(member => member.OrganizationId)
             .SingleAsync(cancellationToken);
-        var propertyExists = await dbContext.Properties.AsNoTracking().AnyAsync(
-            property => property.Id == propertyId && property.OrganizationId == organizationId,
-            cancellationToken);
-        if (!propertyExists)
+        if (propertyId is not null)
         {
-            return null;
+            var propertyExists = await dbContext.Properties.AsNoTracking().AnyAsync(
+                property => property.Id == propertyId && property.OrganizationId == organizationId,
+                cancellationToken);
+            if (!propertyExists)
+            {
+                return null;
+            }
         }
 
         Guid? campaignId = null;
         if (input.RequiredForActiveCampaign)
         {
+            if (propertyId is null)
+            {
+                throw new InvalidOperationException("Only a comment sent from a property can be linked to its active campaign.");
+            }
+
             campaignId = await dbContext.CampaignGenerationJobs.AsNoTracking()
                 .Where(job => job.OrganizationId == organizationId
                     && job.PropertyId == propertyId
@@ -56,7 +64,8 @@ public sealed class FeatureSuggestionService(
             input.Comment,
             input.RequiredForActiveCampaign,
             campaignId,
-            timeProvider.GetUtcNow());
+            timeProvider.GetUtcNow(),
+            input.PagePath);
         dbContext.FeatureSuggestions.Add(suggestion);
         await dbContext.SaveChangesAsync(cancellationToken);
         return new FeatureSuggestionReceipt(
