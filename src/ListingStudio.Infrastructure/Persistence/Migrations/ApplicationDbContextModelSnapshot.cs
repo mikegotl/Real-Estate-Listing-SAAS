@@ -624,6 +624,15 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AdminEmailAttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("AdminEmailNextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("AdminEmailSentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("CampaignGenerationJobId")
                         .HasColumnType("uuid");
 
@@ -635,7 +644,11 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("PropertyId")
+                    b.Property<string>("PagePath")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid?>("PropertyId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("RequiredForActiveCampaign")
@@ -652,6 +665,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("SubmittedByUserId");
+
+                    b.HasIndex("AdminEmailSentAtUtc", "SubmittedAtUtc");
 
                     b.HasIndex("CampaignGenerationJobId", "OrganizationId");
 
@@ -2410,8 +2425,7 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("PropertyId", "OrganizationId")
                         .HasPrincipalKey("Id", "OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("CampaignGenerationJob");
 

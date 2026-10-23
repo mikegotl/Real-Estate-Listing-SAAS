@@ -183,6 +183,14 @@ campaign reference. General suggestions remain available when no campaign is act
 cross-organization property or campaign references are rejected by both application queries and composite database
 foreign keys.
 
+The header's Comments button sends the same kind of comment from any signed-in page. On a property's pages it is linked
+to that property; elsewhere it is saved without one. Every comment records the page it came from. The Worker's
+`CommentEmailWorker` emails each comment once to every user in the `PlatformAdmin` role, blind copied, with the sender
+as Reply-To. The send state lives on the comment row (sent time, attempts, next attempt), so restarts neither lose nor
+repeat an email, failures back off for up to eight attempts, and comments wait while no admin has an email address.
+Email goes through the provider-neutral `IOutboundEmailSender`; the SMTP adapter stays off until `Email:Smtp:Host` and
+`Email:Smtp:FromAddress` are set, and comments saved before then are emailed once it is configured.
+
 ## Production deployment slice
 
 Web and Worker publish as separate non-root .NET 10 containers with FFmpeg/ffprobe installed from the runtime distribution. The Worker hosts an internal HTTP health surface alongside its background services. Both hosts expose process liveness and dependency readiness; readiness verifies PostgreSQL connectivity and executes the configured FFmpeg binary with a bounded timeout. Production console logs use structured JSON, while the Azure Monitor OpenTelemetry distro exports correlated telemetry to workspace-backed Application Insights when its runtime connection string is present.

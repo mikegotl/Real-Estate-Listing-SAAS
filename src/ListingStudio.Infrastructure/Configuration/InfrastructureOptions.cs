@@ -106,3 +106,29 @@ public sealed class NeighborhoodInsightsOptions
         "hospital", "restaurant", "cafe", "shopping_mall", "transit_station",
     ];
 }
+
+/// <summary>
+/// Outgoing email over SMTP, which works with Gmail, Microsoft 365, SendGrid, Azure Communication Services and most
+/// other providers. Email stays off until Host and FromAddress are set.
+/// </summary>
+public sealed class SmtpEmailOptions
+{
+    public const string SectionName = "Email:Smtp";
+    public string Host { get; init; } = string.Empty;
+    public int Port { get; init; } = 587;
+    public string Username { get; init; } = string.Empty;
+    public string Password { get; init; } = string.Empty;
+    public string FromAddress { get; init; } = string.Empty;
+    public string FromName { get; init; } = "Listing Studio";
+    public int TimeoutSeconds { get; init; } = 30;
+
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(FromAddress);
+}
+
+public sealed class FeatureSuggestionEmailOptions
+{
+    public const string SectionName = "Email:Comments";
+
+    /// <summary>The site's public address, used for the links in comment emails. Links are left out when empty.</summary>
+    public string AppBaseUrl { get; init; } = string.Empty;
+}

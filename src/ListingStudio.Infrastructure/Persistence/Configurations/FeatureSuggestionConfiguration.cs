@@ -15,7 +15,9 @@ public sealed class FeatureSuggestionConfiguration : IEntityTypeConfiguration<Fe
         builder.Property(suggestion => suggestion.Comment)
             .HasMaxLength(FeatureSuggestion.MaximumCommentLength)
             .IsRequired();
+        builder.Property(suggestion => suggestion.PagePath).HasMaxLength(FeatureSuggestion.MaximumPagePathLength);
         builder.HasIndex(suggestion => new { suggestion.OrganizationId, suggestion.SubmittedAtUtc });
+        builder.HasIndex(suggestion => new { suggestion.AdminEmailSentAtUtc, suggestion.SubmittedAtUtc });
         builder.HasIndex(suggestion => new { suggestion.CampaignGenerationJobId, suggestion.OrganizationId });
 
         builder.HasOne(suggestion => suggestion.Organization)
@@ -26,6 +28,7 @@ public sealed class FeatureSuggestionConfiguration : IEntityTypeConfiguration<Fe
             .WithMany()
             .HasForeignKey(suggestion => new { suggestion.PropertyId, suggestion.OrganizationId })
             .HasPrincipalKey(property => new { property.Id, property.OrganizationId })
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(suggestion => suggestion.CampaignGenerationJob)
             .WithMany()

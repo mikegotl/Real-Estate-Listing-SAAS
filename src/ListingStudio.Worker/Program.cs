@@ -59,6 +59,13 @@ builder.Services
         "PhotoFixes:PollIntervalSeconds must be between 1 and 300.")
     .ValidateOnStart();
 builder.Services
+    .AddOptions<CommentEmailWorkerOptions>()
+    .Bind(builder.Configuration.GetSection(CommentEmailWorkerOptions.SectionName))
+    .Validate(
+        options => options.PollIntervalSeconds is >= 1 and <= 300,
+        "Email:Comments:PollIntervalSeconds must be between 1 and 300.")
+    .ValidateOnStart();
+builder.Services
     .AddOptions<OpenAIOptions>()
     .Validate(
         options => !clutterRemovalEnabled || !string.IsNullOrWhiteSpace(options.ApiKey),
@@ -80,6 +87,7 @@ builder.Services.AddHostedService<PropertyVideoFrameExtractionWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
 builder.Services.AddHostedService<PhotoFixWorker>();
+builder.Services.AddHostedService<CommentEmailWorker>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 

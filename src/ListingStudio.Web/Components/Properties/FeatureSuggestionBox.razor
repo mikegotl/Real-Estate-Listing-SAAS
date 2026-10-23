@@ -75,7 +75,7 @@
             var receipt = await Service.SubmitAsync(
                 userId,
                 PropertyId,
-                new FeatureSuggestionInput(comment, requiredForActiveCampaign));
+                new FeatureSuggestionInput(comment, requiredForActiveCampaign, $"/properties/{PropertyId}?tab=campaign"));
             if (receipt is null)
             {
                 Snackbar.Add("This property is no longer available to your organization.", Severity.Error);
