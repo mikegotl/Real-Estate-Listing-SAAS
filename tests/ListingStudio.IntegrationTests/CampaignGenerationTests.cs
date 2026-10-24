@@ -336,7 +336,86 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     [Fact]
     public async Task FinishedWalkthroughClipReachesTheRendererBetweenItsTwoPhotos()
     {
-        var owner = await CreateOwnerAndPropertyAsync("campaign-walkthrough");
+        var (owner, front, foyer) = await CreatePropertyWithFinishedWalkthroughClipAsync("campaign-walkthrough");
+        var walkthroughInputsBefore = fixture.Factory.VideoRenderer.WalkthroughInputCount;
+        var walkthroughShotsBefore = fixture.Factory.VideoRenderer.WalkthroughShotCount;
+
+        var completed = await GenerateTwoPhotoCampaignAsync(owner, front, foyer);
+
+        Assert.True(fixture.Factory.VideoRenderer.WalkthroughInputCount > walkthroughInputsBefore);
+        // The short-form cut uses the same clip as a shot of its own.
+        Assert.True(fixture.Factory.VideoRenderer.WalkthroughShotCount > walkthroughShotsBefore);
+        Assert.Contains(
+            await DeliverableSpecificationsAsync(completed.Id),
+            json => json.Contains("\"generatedClip\"", StringComparison.Ordinal));
+    }
+
+    private async Task<CampaignGenerationResult> GenerateTwoPhotoCampaignAsync(
+        OwnerProperty owner,
+        Guid front,
+        Guid foyer,
+        CampaignCreativeOptions? creativeOptions = null)
+    {
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(request => CreateTwoPhotoEditorialPlan(request, front, foyer));
+        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        fixture.Factory.VoiceProvider.Enqueue(CreateSegmentedVoiceResult);
+        const CampaignOutputSelection outputs = CampaignOutputSelection.YouTubeTour | CampaignOutputSelection.TikTok;
+        CampaignGenerationResult queued;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+            queued = creativeOptions is null
+                ? (await service.EnqueueAsync(owner.UserId, owner.PropertyId, outputs))!
+                : (await service.EnqueueAsync(
+                    owner.UserId,
+                    owner.PropertyId,
+                    outputs,
+                    creativeOptions,
+                    CampaignNarrationPreferences.Default))!;
+        }
+
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+        Assert.All(completed.Deliverables, deliverable =>
+            Assert.Equal(CampaignDeliverableStatus.Rendered, deliverable.Status));
+        return completed;
+    }
+
+    private async Task<string[]> DeliverableSpecificationsAsync(Guid jobId)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().CampaignDeliverables.AsNoTracking()
+            .Where(deliverable => deliverable.CampaignGenerationJobId == jobId)
+            .Select(deliverable => deliverable.SpecificationJson)
+            .ToArrayAsync();
+    }
+
+    [Fact]
+    public async Task WalkthroughMotionOffLeavesOutTheAiWalkthroughClips()
+    {
+        var (owner, front, foyer) = await CreatePropertyWithFinishedWalkthroughClipAsync("campaign-walkthrough-off");
+        var walkthroughInputsBefore = fixture.Factory.VideoRenderer.WalkthroughInputCount;
+        var walkthroughShotsBefore = fixture.Factory.VideoRenderer.WalkthroughShotCount;
+        var photosOnly = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements & ~CampaignVideoElement.WalkthroughMotion,
+        };
+
+        var completed = await GenerateTwoPhotoCampaignAsync(owner, front, foyer, photosOnly);
+
+        Assert.Equal(walkthroughInputsBefore, fixture.Factory.VideoRenderer.WalkthroughInputCount);
+        Assert.Equal(walkthroughShotsBefore, fixture.Factory.VideoRenderer.WalkthroughShotCount);
+        Assert.DoesNotContain(
+            await DeliverableSpecificationsAsync(completed.Id),
+            json => json.Contains("\"generatedClip\"", StringComparison.Ordinal));
+    }
+
+    private async Task<(OwnerProperty Owner, Guid Front, Guid Foyer)> CreatePropertyWithFinishedWalkthroughClipAsync(
+        string name)
+    {
+        var owner = await CreateOwnerAndPropertyAsync(name);
         var front = await UploadAsync(owner);
         Guid foyer;
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
@@ -356,30 +435,26 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.Equal(WalkthroughTransitionStatus.Completed, (await processor.ProcessNextAsync())!.Status);
         }
 
-        var walkthroughInputsBefore = fixture.Factory.VideoRenderer.WalkthroughInputCount;
-        var walkthroughShotsBefore = fixture.Factory.VideoRenderer.WalkthroughShotCount;
-        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
-        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
-        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
-        fixture.Factory.VideoDirector.Enqueue(request => CreateTwoPhotoEditorialPlan(request, front, foyer));
-        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        return (owner, front, foyer);
+    }
+
+    [Fact]
+    public async Task RecommendedOutputsRenderTheVerticalVideoOnce()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-recommended-outputs");
+        await UploadAsync(owner);
+        QueueSuccessfulProviders();
         fixture.Factory.VoiceProvider.Enqueue(CreateSegmentedVoiceResult);
 
-        var queued = await EnqueueAsync(owner, CampaignOutputSelection.YouTubeTour | CampaignOutputSelection.TikTok);
+        var queued = await EnqueueAsync(owner, CampaignOutputSelectionPolicy.Recommended);
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
-        Assert.All(completed.Deliverables, deliverable =>
-            Assert.Equal(CampaignDeliverableStatus.Rendered, deliverable.Status));
-        Assert.True(fixture.Factory.VideoRenderer.WalkthroughInputCount > walkthroughInputsBefore);
-        // The short-form cut uses the same clip as a shot of its own.
-        Assert.True(fixture.Factory.VideoRenderer.WalkthroughShotCount > walkthroughShotsBefore);
-        await using var verificationScope = fixture.Factory.Services.CreateAsyncScope();
-        var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var specifications = await dbContext.CampaignDeliverables.AsNoTracking()
-            .Where(deliverable => deliverable.CampaignGenerationJobId == queued.Id)
-            .Select(deliverable => deliverable.SpecificationJson)
-            .ToArrayAsync();
-        Assert.Contains(specifications, json => json.Contains("\"generatedClip\"", StringComparison.Ordinal));
+        // TikTok, Reels and Shorts share one edit, so it is rendered once.
+        Assert.Collection(
+            completed.Deliverables.OrderBy(item => item.Kind),
+            item => AssertPlatformCut(item, CampaignOutputKind.TikTok, 30, "9:16"),
+            item => AssertPlatformCut(item, CampaignOutputKind.YouTubeTour, 60, "16:9"),
+            item => AssertPlatformCut(item, CampaignOutputKind.FacebookFeed, 30, "16:9"));
     }
 
     [Fact]
@@ -395,10 +470,16 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             return CreateSegmentedVoiceResult(request);
         });
 
-        var queued = await EnqueueAsync(owner, CampaignOutputSelectionPolicy.Recommended);
+        // Campaigns created before the shared vertical video can still ask for each vertical output.
+        const CampaignOutputSelection everyPlatform = CampaignOutputSelection.TikTok
+            | CampaignOutputSelection.InstagramReel
+            | CampaignOutputSelection.YouTubeShort
+            | CampaignOutputSelection.YouTubeTour
+            | CampaignOutputSelection.FacebookFeed;
+        var queued = await EnqueueAsync(owner, everyPlatform);
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
-        Assert.Equal(CampaignOutputSelectionPolicy.Recommended, completed.RequestedOutputs);
+        Assert.Equal(everyPlatform, completed.RequestedOutputs);
         Assert.Equal(5, completed.Deliverables.Count);
         Assert.Collection(
             completed.Deliverables.OrderBy(item => item.Kind),

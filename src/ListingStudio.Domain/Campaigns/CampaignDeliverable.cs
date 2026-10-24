@@ -31,14 +31,18 @@ public enum CampaignOutputSelection
 
 public static class CampaignOutputSelectionPolicy
 {
+    /// <summary>
+    /// TikTok, Reels and Shorts share one vertical edit, so new campaigns render it once as the TikTok output. The
+    /// Instagram Reel and YouTube Short selections remain for campaigns created before that.
+    /// </summary>
     public const CampaignOutputSelection Recommended = CampaignOutputSelection.TikTok
-        | CampaignOutputSelection.InstagramReel
-        | CampaignOutputSelection.YouTubeShort
         | CampaignOutputSelection.YouTubeTour
         | CampaignOutputSelection.FacebookFeed;
 
     public const CampaignOutputSelection All = CampaignOutputSelection.LegacyStandard
         | Recommended
+        | CampaignOutputSelection.InstagramReel
+        | CampaignOutputSelection.YouTubeShort
         | CampaignOutputSelection.FullNarratedTour;
 
     public static void Validate(CampaignOutputSelection selection)
