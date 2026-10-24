@@ -8,7 +8,8 @@ namespace ListingStudio.Video.Processing;
 
 public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> options) : IPropertyVideoTranscoder
 {
-    public const string CurrentEnhancementVersion = "ffmpeg-stabilize-hdr-bright-v2";
+    public const string CurrentEnhancementVersion = "ffmpeg-stabilize-hdr-bright-v3";
+    private const int MaximumEnhancementTimeoutSeconds = 7_200;
 
     public string EnhancementVersion => CurrentEnhancementVersion;
 
@@ -46,6 +47,11 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             var outputPath = Path.Combine(directory, "enhanced.mp4");
             await CopyToFileAsync(content, inputPath, cancellationToken);
             var source = await ProbeFileAsync(inputPath, cancellationToken);
+            var enhancementTimeoutSeconds = CalculateEnhancementTimeoutSeconds(
+                options.Value.EnhancementTimeoutSeconds,
+                source.DurationMs,
+                source.Width,
+                source.Height);
 
             await FfmpegProcess.RunAsync(
                 options.Value.ExecutablePath,
@@ -57,14 +63,14 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
                     "-vf", "vidstabdetect=shakiness=6:accuracy=15:stepsize=6:mincontrast=0.3:result=transforms.trf",
                     "-f", "null", NullOutput,
                 ],
-                options.Value.EnhancementTimeoutSeconds,
+                enhancementTimeoutSeconds,
                 cancellationToken);
 
             await FfmpegProcess.RunAsync(
                 options.Value.ExecutablePath,
                 directory,
                 BuildEnhancementArguments(inputPath, outputPath, source.IsHdr),
-                options.Value.EnhancementTimeoutSeconds,
+                enhancementTimeoutSeconds,
                 cancellationToken);
 
             if (!File.Exists(outputPath) || new FileInfo(outputPath).Length <= 0)
@@ -116,12 +122,38 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             "-i", inputPath,
             "-map", "0:v:0", "-map", "0:a?",
             "-vf", filters,
-            "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+            "-c:v", "libx264", "-preset", "faster", "-crf", "20",
             "-pix_fmt", "yuv420p", "-fps_mode", "cfr",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             "-movflags", "+faststart", "-max_muxing_queue_size", "1024",
             outputPath,
         ];
+    }
+
+    /// <summary>
+    /// Keeps the configured value as a floor, then allows more time for longer and higher-resolution uploads. Video
+    /// enhancement performs two independent FFmpeg passes; this timeout applies to each pass rather than the whole job.
+    /// </summary>
+    public static int CalculateEnhancementTimeoutSeconds(
+        int configuredMinimumSeconds,
+        int durationMs,
+        int width,
+        int height)
+    {
+        if (configuredMinimumSeconds is < 60 or > MaximumEnhancementTimeoutSeconds)
+        {
+            throw new ArgumentOutOfRangeException(nameof(configuredMinimumSeconds));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(durationMs);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+
+        const double fullHdPixels = 1_920d * 1_080d;
+        var durationSeconds = Math.Ceiling(durationMs / 1_000d);
+        var resolutionFactor = Math.Max(1d, width * (double)height / fullHdPixels);
+        var scaledSeconds = checked((int)Math.Ceiling((durationSeconds * 20d * resolutionFactor) + 300d));
+        return Math.Min(MaximumEnhancementTimeoutSeconds, Math.Max(configuredMinimumSeconds, scaledSeconds));
     }
 
     private async Task<PropertyVideoMetadata> ProbeFileAsync(
