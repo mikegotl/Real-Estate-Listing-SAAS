@@ -607,8 +607,19 @@ public sealed partial class CampaignGenerationProcessor(
                 candidate.SourceVideoId,
                 candidate.SourceVideoTimestampMs))
             .ToArrayAsync(cancellationToken);
-        var videoClips = await FindVideoClipsAsync(job, propertyVideos, cancellationToken);
-        var walkthroughClips = await FindWalkthroughClipsAsync(job, photos, cancellationToken);
+        IReadOnlyList<ShortFormVideoClip> videoClips = [];
+        IReadOnlyList<ShortFormWalkthroughClip> walkthroughClips = [];
+        if (options.Elements.HasFlag(CampaignVideoElement.WalkthroughMotion))
+        {
+            videoClips = await FindVideoClipsAsync(job, propertyVideos, cancellationToken);
+            walkthroughClips = await FindWalkthroughClipsAsync(job, photos, cancellationToken);
+        }
+        else
+        {
+            // Without walk-through motion every shot is a still, including room photos taken from a video.
+            photos = photos.Select(photo => photo with { SourceVideoId = null, SourceVideoTimestampMs = null }).ToArray();
+        }
+
         var soundtrack = CampaignCreativeDirector.ResolveSoundtrack(options.Soundtrack, yearBuilt);
         var beatMs = 60_000 / CampaignCreativeDirector.BeatsPerMinute(
             soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
@@ -1473,6 +1484,11 @@ public sealed partial class CampaignGenerationProcessor(
         string directory,
         CancellationToken cancellationToken)
     {
+        if (!job.CreativeElements.HasFlag(CampaignVideoElement.WalkthroughMotion))
+        {
+            return [];
+        }
+
         var pairs = specification.Scenes.Zip(specification.Scenes.Skip(1))
             .Where(pair => pair.First.VisualSource.Kind == VisualSourceKind.PropertyMedia
                 && pair.Second.VisualSource.Kind == VisualSourceKind.PropertyMedia

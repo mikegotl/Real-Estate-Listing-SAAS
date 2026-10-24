@@ -88,6 +88,10 @@
             <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
                 @TemplateDescription(selectedMarketingTemplate)
             </MudAlert>
+            @if (templateNote is not null)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3" data-testid="template-note">@templateNote</MudText>
+            }
             @if (selectedMarketingTemplate == CampaignMarketingTemplate.PriceDrop)
             {
                 <MudGrid Spacing="2" Class="mb-3">
@@ -142,26 +146,13 @@
                     </MudText>
                 }
             }
-            <MudText Typo="Typo.subtitle2" Class="mt-2">TikTok, Reels and Shorts</MudText>
+            <MudText Typo="Typo.subtitle2" Class="mt-2">Sound</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
-                Short videos open with the price and location, cut on the music beat, and end on your contact card.
+                The music plays in every video you selected.
             </MudText>
-            <MudGrid Spacing="2">
+            <MudGrid Spacing="2" Class="mb-3">
                 <MudItem xs="12" sm="6">
-                    <MudSelect T="CampaignPace" Label="Style" @bind-Value="selectedPace" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
-                        <MudSelectItem Value="CampaignPace.Fast">Fast cuts on the beat</MudSelectItem>
-                        <MudSelectItem Value="CampaignPace.Cinematic">Cinematic glide</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudSelect T="CampaignVoiceoverMode" Label="Voiceover" @bind-Value="selectedVoiceover" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
-                        <MudSelectItem Value="CampaignVoiceoverMode.ShortHook">Short voiceover (30 seconds)</MudSelectItem>
-                        <MudSelectItem Value="CampaignVoiceoverMode.None">Music and text only (30 seconds)</MudSelectItem>
-                        <MudSelectItem Value="CampaignVoiceoverMode.Full">Full tour voiceover (60 seconds)</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudSelect T="CampaignSoundtrack" Label="Music" @bind-Value="selectedSoundtrack" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                    <MudSelect T="CampaignSoundtrack" Label="Music" Value="selectedSoundtrack" ValueChanged="SetSoundtrack" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
                         <MudSelectItem Value="CampaignSoundtrack.AutoByHomeEra">Choose for the home's era</MudSelectItem>
                         <MudSelectItem Value="CampaignSoundtrack.UpbeatLifestyle">Upbeat lifestyle</MudSelectItem>
                         <MudSelectItem Value="CampaignSoundtrack.ModernAmbient">Modern ambient</MudSelectItem>
@@ -190,6 +181,25 @@
                         </MudText>
                     }
                 </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.subtitle2" Class="mt-2">TikTok, Reels and Shorts</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                Short videos open with the price and location, cut on the music beat, and end on your contact card.
+            </MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignPace" Label="Style" @bind-Value="selectedPace" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        <MudSelectItem Value="CampaignPace.Fast">Fast cuts on the beat</MudSelectItem>
+                        <MudSelectItem Value="CampaignPace.Cinematic">Cinematic glide</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignVoiceoverMode" Label="Voiceover" @bind-Value="selectedVoiceover" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        <MudSelectItem Value="CampaignVoiceoverMode.ShortHook">Short voiceover (30 seconds)</MudSelectItem>
+                        <MudSelectItem Value="CampaignVoiceoverMode.None">Music and text only (30 seconds)</MudSelectItem>
+                        <MudSelectItem Value="CampaignVoiceoverMode.Full">Full tour voiceover (60 seconds)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
                 <MudItem xs="12">
                     <MudCheckBox T="bool"
                                  Value="@IsCreativeElementSelected(CampaignVideoElement.AgentContact)"
@@ -203,26 +213,19 @@
             <MudGrid Spacing="2">
                 @foreach (var option in CreativeElementOptions)
                 {
-                    var unavailable = option.Element == CampaignVideoElement.KitchenIslandOrbit && !kitchenOrbitEligible;
                     <MudItem xs="12" sm="6">
                         <MudCheckBox T="bool"
                                      Value="@IsCreativeElementSelected(option.Element)"
                                      ValueChanged="@(value => SetCreativeElement(option.Element, value))"
-                                     Disabled="@(busy || IsReadOnly || unavailable)"
+                                     Disabled="@(busy || IsReadOnly)"
                                      Label="@option.Name" />
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">@option.Details</MudText>
                     </MudItem>
                 }
             </MudGrid>
-            @if (!kitchenOrbitEligible)
-            {
-                <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-2">
-                    Kitchen island turnaround becomes available after analysis verifies an island and at least three kitchen viewpoints.
-                </MudText>
-            }
             <MudGrid Spacing="2" Class="mt-2">
                 <MudItem xs="12" sm="6">
-                    <MudSelect T="CampaignCaptionStyle" Label="Caption look" @bind-Value="selectedCaptionStyle" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                    <MudSelect T="CampaignCaptionStyle" Label="Caption look" Value="selectedCaptionStyle" ValueChanged="SetCaptionStyle" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
                         <MudSelectItem Value="CampaignCaptionStyle.Pop">Poppy social captions</MudSelectItem>
                         <MudSelectItem Value="CampaignCaptionStyle.Classic">Classic captions</MudSelectItem>
                     </MudSelect>
@@ -464,7 +467,6 @@
     private int mediaCount;
     private int failedAnalysisCount;
     private bool longFormAvailable;
-    private bool kitchenOrbitEligible;
     private AgentPortraitItem? portrait;
     private CampaignVideoElement selectedCreativeElements = CampaignCreativeOptions.SocialDefault.Elements;
     private CampaignSoundtrack selectedSoundtrack = CampaignCreativeOptions.SocialDefault.Soundtrack;
@@ -478,6 +480,9 @@
     private CampaignVoiceAccent selectedVoiceAccent = CampaignNarrationPreferences.Default.VoiceAccent;
     private bool selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
     private bool selectedAgentAvatarConsent;
+    private bool soundtrackChosen;
+    private bool captionStyleChosen;
+    private string? templateNote;
     private CampaignPace selectedPace = CampaignCreativeOptions.SocialDefault.Pace;
     private CampaignVoiceoverMode selectedVoiceover = CampaignCreativeOptions.SocialDefault.Voiceover;
     private string? selectedOpenHouseText;
@@ -495,6 +500,9 @@
             loadedPropertyId = PropertyId;
             selectionInitialized = false;
             selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
+            soundtrackChosen = false;
+            captionStyleChosen = false;
+            templateNote = null;
             job = null;
             statusLoaded = false;
             reportedStatus = null;
@@ -517,11 +525,12 @@
             {
                 if (job is not null && job.RequestedOutputs != CampaignOutputSelection.LegacyStandard)
                 {
-                    selectedOutputs = job.RequestedOutputs;
+                    selectedOutputs = SharedVerticalSelection(job.RequestedOutputs);
                 }
                 if (job is not null)
                 {
-                    selectedCreativeElements = job.CreativeOptions.Elements;
+                    // Kitchen island turnaround is hidden until it has a shot of its own.
+                    selectedCreativeElements = job.CreativeOptions.Elements & ~CampaignVideoElement.KitchenIslandOrbit;
                     selectedSoundtrack = job.CreativeOptions.Soundtrack;
                     selectedCaptionStyle = job.CreativeOptions.CaptionStyle;
                     selectedMarketingTemplate = job.CreativeOptions.MarketingTemplate;
@@ -549,14 +558,6 @@
                 .Where(item => !item.IsInGallery)
                 .ToArray();
             mediaCount = media.Length;
-            var kitchenViews = media.Where(item => string.Equals(item.WalkthroughStop, "Kitchen", StringComparison.OrdinalIgnoreCase)
-                || item.Analysis?.Category == PropertyMediaCategory.Kitchen).ToArray();
-            kitchenOrbitEligible = kitchenViews.Length >= 3
-                && kitchenViews.Any(item => item.Analysis?.Description.Contains("island", StringComparison.OrdinalIgnoreCase) == true);
-            if (!kitchenOrbitEligible)
-            {
-                selectedCreativeElements &= ~CampaignVideoElement.KitchenIslandOrbit;
-            }
             portrait = await AgentPortraitService.GetLatestAsync(userId, pollingCancellation.Token);
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             error = null;
@@ -724,9 +725,7 @@
 
     private static readonly OutputOption[] OutputOptions =
     [
-        new(CampaignOutputSelection.TikTok, "TikTok", "Vertical 1080 × 1920 · 30 seconds (60 with the full voiceover) · price hook, beat-cut edit, contact card."),
-        new(CampaignOutputSelection.InstagramReel, "Instagram Reel", "Vertical 1080 × 1920 · the same beat-cut edit as TikTok, with Reel-safe text placement."),
-        new(CampaignOutputSelection.YouTubeShort, "YouTube Short", "Vertical 1080 × 1920 · the same beat-cut edit as TikTok."),
+        new(CampaignOutputSelection.TikTok, "Vertical video for TikTok, Reels and Shorts", "Vertical 1080 × 1920 · 30 seconds (60 with the full voiceover) · price hook, beat-cut edit, contact card. One file to post on all three."),
         new(CampaignOutputSelection.YouTubeTour, "YouTube property tour", "Horizontal 1920 × 1080 · approximately 60 seconds · logical walkthrough order."),
         new(CampaignOutputSelection.FacebookFeed, "Facebook Feed", "Horizontal 1920 × 1080 · approximately 30 seconds · feed-ready highlights with the long social caption as post copy."),
         new(CampaignOutputSelection.FullNarratedTour, "Full narrated tour", "Horizontal 1920 × 1080 · duration follows the complete accepted script."),
@@ -781,9 +780,73 @@
             template == CampaignMarketingTemplate.OpenHouse ? "-" : null,
             template == CampaignMarketingTemplate.OpenHouse);
         selectedCreativeElements = preset.Elements;
-        selectedSoundtrack = preset.Soundtrack;
-        selectedCaptionStyle = preset.CaptionStyle;
+        var kept = new List<string>();
+        if (soundtrackChosen)
+        {
+            kept.Add("your music");
+        }
+        else
+        {
+            selectedSoundtrack = preset.Soundtrack;
+        }
+
+        if (captionStyleChosen)
+        {
+            kept.Add("your caption look");
+        }
+        else
+        {
+            selectedCaptionStyle = preset.CaptionStyle;
+        }
+
+        templateNote = $"{TemplateName(template)} set the on-screen elements"
+            + (soundtrackChosen ? string.Empty : $", music ({SoundtrackName(selectedSoundtrack)})")
+            + (captionStyleChosen ? string.Empty : $", caption look ({CaptionStyleName(selectedCaptionStyle)})")
+            + (kept.Count == 0 ? "." : $" and kept {string.Join(" and ", kept)}.");
     }
+
+    private void SetSoundtrack(CampaignSoundtrack soundtrack)
+    {
+        selectedSoundtrack = soundtrack;
+        soundtrackChosen = true;
+    }
+
+    private void SetCaptionStyle(CampaignCaptionStyle captionStyle)
+    {
+        selectedCaptionStyle = captionStyle;
+        captionStyleChosen = true;
+    }
+
+    /// <summary>
+    /// TikTok, Reels and Shorts are one edit, so a campaign that asked for any of them makes the single vertical video.
+    /// </summary>
+    private static CampaignOutputSelection SharedVerticalSelection(CampaignOutputSelection selection)
+    {
+        const CampaignOutputSelection vertical = CampaignOutputSelection.TikTok
+            | CampaignOutputSelection.InstagramReel
+            | CampaignOutputSelection.YouTubeShort;
+        return (selection & vertical) == 0
+            ? selection
+            : (selection & ~vertical) | CampaignOutputSelection.TikTok;
+    }
+
+    private static string SoundtrackName(CampaignSoundtrack soundtrack) => soundtrack switch
+    {
+        CampaignSoundtrack.AutoByHomeEra => "chosen for the home's era",
+        CampaignSoundtrack.UpbeatLifestyle => "Upbeat lifestyle",
+        CampaignSoundtrack.ModernAmbient => "Modern ambient",
+        CampaignSoundtrack.HeritageWarm => "Heritage warm",
+        CampaignSoundtrack.AddInApp => "added in the app",
+        CampaignSoundtrack.None => "no music",
+        _ => Display(soundtrack),
+    };
+
+    private static string CaptionStyleName(CampaignCaptionStyle captionStyle) => captionStyle switch
+    {
+        CampaignCaptionStyle.Pop => "poppy",
+        CampaignCaptionStyle.Classic => "classic",
+        _ => Display(captionStyle),
+    };
 
     private void SetCreativeElement(CampaignVideoElement element, bool selected)
     {
@@ -803,18 +866,17 @@
             selectedAgentAvatarConsent = false;
         }
 
-        if (element == CampaignVideoElement.KitchenIslandOrbit && selected)
-        {
-            selectedCreativeElements |= CampaignVideoElement.WalkthroughMotion;
-        }
     }
 
     private static string SelectedOutputNames(CampaignOutputSelection selection) => string.Join(", ",
-        OutputOptions.Where(option => selection.HasFlag(option.Selection)).Select(option => option.Name));
+        Enum.GetValues<CampaignOutputSelection>()
+            .Where(item => item is not CampaignOutputSelection.None and not CampaignOutputSelection.LegacyStandard
+                && selection.HasFlag(item))
+            .Select(item => OutputName(Enum.Parse<CampaignOutputKind>(item.ToString()))));
 
     private static string OutputName(CampaignOutputKind kind) => kind switch
     {
-        CampaignOutputKind.TikTok => "TikTok",
+        CampaignOutputKind.TikTok => "Vertical video for TikTok, Reels and Shorts",
         CampaignOutputKind.InstagramReel => "Instagram Reel",
         CampaignOutputKind.YouTubeShort => "YouTube Short",
         CampaignOutputKind.YouTubeTour => "YouTube property tour",
@@ -838,8 +900,7 @@
         new(CampaignVideoElement.PropertyFacts, "Property facts", "Verified facts only, shown as compact feature callouts."),
         new(CampaignVideoElement.NarrationCaptions, "Narration captions", "Short, timed caption bursts designed for mobile viewing."),
         new(CampaignVideoElement.NeighborhoodHighlights, "Neighborhood highlights", "Approved neighborhood facts and licensed images."),
-        new(CampaignVideoElement.WalkthroughMotion, "Walkthrough motion", "Use enhanced walkthrough footage and available room-to-room transitions."),
-        new(CampaignVideoElement.KitchenIslandOrbit, "Kitchen island turnaround", "Use three or more verified kitchen viewpoints to build a grounded multi-angle turn."),
+        new(CampaignVideoElement.WalkthroughMotion, "Use walkthrough video and AI walk-through clips", "Play your walkthrough videos and finished AI walk-through clips. Turn this off for photos only."),
         new(CampaignVideoElement.AgentPortrait, "Agent photo on closing card", "Place the uploaded agent photo beside the final call to action."),
         new(CampaignVideoElement.AgentAvatar, "AI agent presenter", "Show the approved profile headshot during the opening and closing while the selected AI voice provides the tour narration."),
         new(CampaignVideoElement.ClosingCallToAction, "Closing call to action", "End with the campaign's verified contact call to action."),
