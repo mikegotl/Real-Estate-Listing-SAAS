@@ -7,6 +7,47 @@ namespace ListingStudio.UnitTests;
 public sealed class FfmpegPropertyVideoTranscoderTests
 {
     [Theory]
+    [InlineData(1_800, 86_000, 1_920, 1_080, 2_020)]
+    [InlineData(1_800, 199_000, 1_920, 1_080, 4_280)]
+    [InlineData(1_800, 300_000, 3_840, 2_160, 7_200)]
+    [InlineData(7_200, 10_000, 1_280, 720, 7_200)]
+    public void EnhancementTimeoutScalesWithDurationAndResolution(
+        int configuredMinimum,
+        int durationMs,
+        int width,
+        int height,
+        int expected)
+    {
+        Assert.Equal(
+            expected,
+            FfmpegPropertyVideoTranscoder.CalculateEnhancementTimeoutSeconds(
+                configuredMinimum,
+                durationMs,
+                width,
+                height));
+    }
+
+    [Theory]
+    [InlineData(59, 1_000, 1_920, 1_080)]
+    [InlineData(7_201, 1_000, 1_920, 1_080)]
+    [InlineData(1_800, 0, 1_920, 1_080)]
+    [InlineData(1_800, 1_000, 0, 1_080)]
+    [InlineData(1_800, 1_000, 1_920, 0)]
+    public void EnhancementTimeoutRejectsInvalidInputs(
+        int configuredMinimum,
+        int durationMs,
+        int width,
+        int height)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            FfmpegPropertyVideoTranscoder.CalculateEnhancementTimeoutSeconds(
+                configuredMinimum,
+                durationMs,
+                width,
+                height));
+    }
+
+    [Theory]
     [InlineData(300, 60, 300)]
     [InlineData(300, 736, 2_268)]
     [InlineData(300, 900, 2_760)]
@@ -35,6 +76,7 @@ public sealed class FfmpegPropertyVideoTranscoderTests
         Assert.DoesNotContain("zscale", filters, StringComparison.Ordinal);
         Assert.Contains("fps=30", filters, StringComparison.Ordinal);
         Assert.Equal("libx264", arguments[arguments.IndexOf("-c:v") + 1]);
+        Assert.Equal("faster", arguments[arguments.IndexOf("-preset") + 1]);
         Assert.Equal("aac", arguments[arguments.IndexOf("-c:a") + 1]);
         Assert.Contains("+faststart", arguments);
     }
