@@ -15,6 +15,7 @@ using ListingStudio.Web.Components;
 using ListingStudio.Web.Components.Account;
 using ListingStudio.Web.Authentication;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using MudBlazor.Services;
 using Microsoft.AspNetCore.Antiforgery;
@@ -143,10 +144,98 @@ app.MapPost("/Account/ExternalLogin", async (
 
 app.MapPost("/Account/Logout", async (
     SignInManager<ApplicationUser> signInManager,
-    HttpContext context) =>
+    IPlatformAdminImpersonationAudit impersonationAudit,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
 {
+    var impersonatorId = PlatformAdminImpersonation.ImpersonatorUserId(context.User);
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (impersonatorId is not null && userId is not null)
+    {
+        await impersonationAudit.RecordStopAsync(impersonatorId, userId, "signed-out", cancellationToken);
+    }
+
     await signInManager.SignOutAsync();
     return Results.LocalRedirect("~/");
+}).RequireAuthorization();
+
+app.MapPost("/admin/impersonation/start", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    IPlatformAdminImpersonationAudit impersonationAudit,
+    UserManager<ApplicationUser> userManager,
+    SignInManager<ApplicationUser> signInManager,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken) =>
+{
+    await antiforgery.ValidateRequestAsync(context);
+    var administratorId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (administratorId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var form = await context.Request.ReadFormAsync(cancellationToken);
+    var targetUserId = form["userId"].ToString();
+    var searchQuery = form["q"].ToString();
+    if (string.IsNullOrWhiteSpace(targetUserId))
+    {
+        return Results.BadRequest("A user is required.");
+    }
+
+    var result = await impersonationAudit.AuthorizeStartAsync(administratorId, targetUserId, cancellationToken);
+    var target = result.Succeeded ? await userManager.FindByIdAsync(result.Target!.UserId) : null;
+    var administrator = await userManager.FindByIdAsync(administratorId);
+    if (target is null || administrator is null)
+    {
+        return Results.LocalRedirect(
+            $"/admin/users?q={Uri.EscapeDataString(searchQuery)}&error={result.Failure}");
+    }
+
+    // A short, non-renewable session cookie: closing the browser or waiting an hour ends the impersonation.
+    await signInManager.SignInWithClaimsAsync(
+        target,
+        new AuthenticationProperties
+        {
+            IsPersistent = false,
+            AllowRefresh = false,
+            ExpiresUtc = timeProvider.GetUtcNow().Add(PlatformAdminImpersonation.MaximumDuration),
+        },
+        [
+            new Claim(PlatformAdminImpersonation.ImpersonatorUserIdClaim, administrator.Id),
+            new Claim(
+                PlatformAdminImpersonation.ImpersonatorEmailClaim,
+                administrator.Email ?? administrator.UserName ?? "platform administrator"),
+        ]);
+    return Results.LocalRedirect(LocalReturnUrl(form["returnUrl"]));
+}).RequireAuthorization(PlatformAdministration.Policy);
+
+app.MapPost("/admin/impersonation/stop", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    IPlatformAdminImpersonationAudit impersonationAudit,
+    UserManager<ApplicationUser> userManager,
+    SignInManager<ApplicationUser> signInManager,
+    CancellationToken cancellationToken) =>
+{
+    await antiforgery.ValidateRequestAsync(context);
+    var administratorId = PlatformAdminImpersonation.ImpersonatorUserId(context.User);
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (administratorId is null || userId is null)
+    {
+        return Results.LocalRedirect("~/");
+    }
+
+    var stillAdministrator = await impersonationAudit.RecordStopAsync(administratorId, userId, "stopped", cancellationToken);
+    var administrator = stillAdministrator ? await userManager.FindByIdAsync(administratorId) : null;
+    if (administrator is null)
+    {
+        await signInManager.SignOutAsync();
+        return Results.LocalRedirect("/Account/Login");
+    }
+
+    await signInManager.SignInAsync(administrator, isPersistent: false);
+    return Results.LocalRedirect("/admin/users");
 }).RequireAuthorization();
 
 app.MapGet("/property-media/{mediaId:guid}", async (
@@ -434,6 +523,12 @@ app.MapPost("/billing/checkout", async (
     CancellationToken cancellationToken) =>
 {
     await antiforgery.ValidateRequestAsync(context);
+    if (PlatformAdminImpersonation.IsImpersonating(context.User))
+    {
+        // Administrators can look at a customer's workspace but must not start or change their payments.
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
     var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
     if (userId is null)
     {
@@ -465,6 +560,12 @@ app.MapPost("/billing/portal", async (
     CancellationToken cancellationToken) =>
 {
     await antiforgery.ValidateRequestAsync(context);
+    if (PlatformAdminImpersonation.IsImpersonating(context.User))
+    {
+        // Administrators can look at a customer's workspace but must not start or change their payments.
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
     var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
     if (userId is null)
     {

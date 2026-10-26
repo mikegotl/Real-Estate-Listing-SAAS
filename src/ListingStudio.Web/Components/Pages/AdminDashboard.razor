@@ -21,6 +21,8 @@
         <MudText Typo="Typo.body1">Aggregate operational signals only. Customer content and secrets are never shown here.</MudText>
     </div>
     <div class="admin-actions">
+        <MudButton Href="/admin/users" Variant="Variant.Filled" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.PersonSearch">Find users</MudButton>
         <MudButton Href="/admin/audit" Variant="Variant.Outlined" Color="Color.Inherit">Audit log</MudButton>
         <MudButton Variant="Variant.Outlined" Color="Color.Warning" Disabled="resetting"
                    StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetMetricsAsync">

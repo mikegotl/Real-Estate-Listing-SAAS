@@ -115,6 +115,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("ActorReference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("ActorType")
                         .IsRequired()
                         .HasMaxLength(50)

@@ -37,7 +37,8 @@ public sealed record AdminAuditRow(
     string Action,
     string ActorType,
     string TargetReference,
-    string Outcome);
+    string Outcome,
+    string? ActorReference = null);
 
 public sealed record PlatformAdminDashboard(
     AdminDateRange Range,

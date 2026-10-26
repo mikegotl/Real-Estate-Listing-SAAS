@@ -166,6 +166,24 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPlatformAdminDashboardService, PlatformAdminDashboardService>();
         services.AddScoped<IPlatformAdminMetricsResetService, PlatformMetricsResetService>();
         services.AddScoped<PlatformAdminRoleBootstrapper>();
+        services.AddScoped<IPlatformAdminAccountDirectory, PlatformAdminAccountDirectory>();
+        services.AddScoped<IPlatformAdminImpersonationAudit, PlatformAdminImpersonationAudit>();
+        // Identity rebuilds the cookie principal when it revalidates the security stamp; keep the impersonation
+        // claims so an admin session does not silently turn into a plain customer session.
+        services.Configure<SecurityStampValidatorOptions>(options => options.OnRefreshingPrincipal = context =>
+        {
+            var impersonationClaims = context.CurrentPrincipal?.Claims
+                .Where(claim => claim.Type is PlatformAdminImpersonation.ImpersonatorUserIdClaim
+                    or PlatformAdminImpersonation.ImpersonatorEmailClaim)
+                .Select(claim => new System.Security.Claims.Claim(claim.Type, claim.Value))
+                .ToList() ?? [];
+            if (impersonationClaims.Count > 0 && context.NewPrincipal?.Identity is System.Security.Claims.ClaimsIdentity identity)
+            {
+                identity.AddClaims(impersonationClaims);
+            }
+
+            return Task.CompletedTask;
+        });
         services.AddSingleton<OperationalEventRecorder>();
         services.AddSingleton<IAiUsagePropertyContext, AiUsagePropertyContext>();
         services.AddSingleton<IOperationalEventRecorder>(provider =>

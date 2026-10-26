@@ -1,0 +1,43 @@
+@using System.Security.Claims
+
+@if (impersonatedEmail is not null)
+{
+    <div class="impersonation-banner" role="alert">
+        <MudIcon Icon="@Icons.Material.Filled.SupervisorAccount" Size="Size.Small" />
+        <p>
+            <strong>You are viewing Listing Studio as @impersonatedEmail.</strong>
+            <span>
+                Changes you make are saved to their account.
+                <span class="impersonation-detail">Signed in as administrator @administratorEmail. Ends automatically after @((int)PlatformAdminImpersonation.MaximumDuration.TotalMinutes) minutes.</span>
+            </span>
+        </p>
+        <form action="/admin/impersonation/stop" method="post">
+            <AntiforgeryToken />
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Dark" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Logout">Stop impersonating</MudButton>
+        </form>
+    </div>
+}
+
+@code {
+    private string? impersonatedEmail;
+    private string? administratorEmail;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthenticationState is null)
+        {
+            return;
+        }
+
+        var user = (await AuthenticationState).User;
+        if (PlatformAdminImpersonation.IsImpersonating(user))
+        {
+            impersonatedEmail = user.Identity?.Name ?? "another user";
+            administratorEmail = user.FindFirstValue(PlatformAdminImpersonation.ImpersonatorEmailClaim);
+        }
+    }
+}

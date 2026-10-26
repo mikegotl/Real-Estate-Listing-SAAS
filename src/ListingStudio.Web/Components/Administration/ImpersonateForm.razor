@@ -1,0 +1,26 @@
+<form action="/admin/impersonation/start" method="post" class="admin-impersonate-form">
+    <AntiforgeryToken />
+    <input type="hidden" name="userId" value="@UserId" />
+    <input type="hidden" name="q" value="@Query" />
+    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+    <MudButton ButtonType="ButtonType.Submit" Size="Size.Small"
+               Variant="@(Primary ? Variant.Filled : Variant.Outlined)" Color="Color.Primary"
+               EndIcon="@Icons.Material.Filled.OpenInNew">@Label</MudButton>
+</form>
+
+@code {
+    [Parameter, EditorRequired]
+    public string UserId { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Query { get; set; }
+
+    [Parameter, EditorRequired]
+    public string ReturnUrl { get; set; } = "/auth";
+
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool Primary { get; set; }
+}
