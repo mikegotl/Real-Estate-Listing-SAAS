@@ -107,7 +107,7 @@ jobs:
       OPENAI_STORY_ESTIMATED_COST_USD: ${{ vars.OPENAI_STORY_ESTIMATED_COST_USD || '0' }}
       OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD: ${{ vars.OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD || '0' }}
       OPENAI_SPEECH_ESTIMATED_COST_USD: ${{ vars.OPENAI_SPEECH_ESTIMATED_COST_USD || '0' }}
-      VOICE_ESTIMATED_COST_USD: ${{ vars.VOICE_ESTIMATED_COST_USD || '0' }}
+      ELEVENLABS_ESTIMATED_COST_PER_THOUSAND_CHARACTERS_USD: ${{ vars.ELEVENLABS_ESTIMATED_COST_PER_THOUSAND_CHARACTERS_USD || '0.08' }}
       PHOTO_FIX_ESTIMATED_COST_USD: ${{ vars.PHOTO_FIX_ESTIMATED_COST_USD || '0' }}
       AGENT_PORTRAIT_ESTIMATED_COST_USD: ${{ vars.AGENT_PORTRAIT_ESTIMATED_COST_USD || '0' }}
       AGENT_PORTRAIT_ENHANCEMENT_ENABLED: ${{ vars.AGENT_PORTRAIT_ENHANCEMENT_ENABLED || 'true' }}
@@ -140,7 +140,7 @@ jobs:
             OPENAI_STORY_ESTIMATED_COST_USD
             OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD
             OPENAI_SPEECH_ESTIMATED_COST_USD
-            VOICE_ESTIMATED_COST_USD
+            ELEVENLABS_ESTIMATED_COST_PER_THOUSAND_CHARACTERS_USD
             PHOTO_FIX_ESTIMATED_COST_USD
             AGENT_PORTRAIT_ESTIMATED_COST_USD
             AI_VIDEO_ESTIMATED_COST_USD
@@ -185,7 +185,7 @@ jobs:
               openAiStoryEstimatedCostUsd="$OPENAI_STORY_ESTIMATED_COST_USD" \
               openAiVideoDirectionEstimatedCostUsd="$OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD" \
               openAiSpeechEstimatedCostUsd="$OPENAI_SPEECH_ESTIMATED_COST_USD" \
-              voiceEstimatedCostUsd="$VOICE_ESTIMATED_COST_USD" \
+              elevenLabsEstimatedCostPerThousandCharactersUsd="$ELEVENLABS_ESTIMATED_COST_PER_THOUSAND_CHARACTERS_USD" \
               photoFixEstimatedCostUsd="$PHOTO_FIX_ESTIMATED_COST_USD" \
               agentPortraitEstimatedCostUsd="$AGENT_PORTRAIT_ESTIMATED_COST_USD" \
               aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \
@@ -261,7 +261,7 @@ jobs:
               openAiStoryEstimatedCostUsd="$OPENAI_STORY_ESTIMATED_COST_USD" \
               openAiVideoDirectionEstimatedCostUsd="$OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD" \
               openAiSpeechEstimatedCostUsd="$OPENAI_SPEECH_ESTIMATED_COST_USD" \
-              voiceEstimatedCostUsd="$VOICE_ESTIMATED_COST_USD" \
+              elevenLabsEstimatedCostPerThousandCharactersUsd="$ELEVENLABS_ESTIMATED_COST_PER_THOUSAND_CHARACTERS_USD" \
               photoFixEstimatedCostUsd="$PHOTO_FIX_ESTIMATED_COST_USD" \
               agentPortraitEstimatedCostUsd="$AGENT_PORTRAIT_ESTIMATED_COST_USD" \
               aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \

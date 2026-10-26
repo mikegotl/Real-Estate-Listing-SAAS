@@ -59,7 +59,11 @@ public sealed class VoiceOptions
         "Speak with a warm, polished, trustworthy real-estate narration style at a natural pace.";
     public int MaxRetryAttempts { get; init; } = 3;
     public int RetryBaseDelayMilliseconds { get; init; } = 250;
-    public decimal EstimatedCostUsd { get; init; }
+    /// <summary>
+    /// Estimated public API price for 1,000 billable ElevenLabs characters. The usage recorder applies this rate to
+    /// ElevenLabs' character-cost response header, with the submitted text length as a fallback.
+    /// </summary>
+    public decimal EstimatedCostPerThousandCharactersUsd { get; init; } = 0.08m;
 }
 
 /// <summary>Photo fixes on the Media tab. Brightness and color always runs locally; Remove clutter is a paid AI edit.</summary>

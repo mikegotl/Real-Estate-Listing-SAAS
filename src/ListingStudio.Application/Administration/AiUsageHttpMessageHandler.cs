@@ -8,7 +8,9 @@ public sealed class AiUsageHttpMessageHandler(
     string model,
     string operation,
     decimal estimatedCostPerCallUsd,
-    Func<HttpRequestMessage, bool>? shouldRecord = null) : DelegatingHandler
+    Func<HttpRequestMessage, bool>? shouldRecord = null,
+    Func<HttpRequestMessage, HttpResponseMessage?, CancellationToken, ValueTask<decimal>>? estimateCost = null)
+    : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -47,6 +49,9 @@ public sealed class AiUsageHttpMessageHandler(
         {
             if (recordUsage)
             {
+                var estimatedCostUsd = estimateCost is null
+                    ? estimatedCostPerCallUsd
+                    : await estimateCost(request, response, CancellationToken.None);
                 await recorder.RecordAsync(
                     new AiCallObservation(
                         provider,
@@ -54,7 +59,7 @@ public sealed class AiUsageHttpMessageHandler(
                         operation,
                         response?.IsSuccessStatusCode == true,
                         Stopwatch.GetElapsedTime(started),
-                        estimatedCostPerCallUsd,
+                        estimatedCostUsd,
                         failureCategory),
                     CancellationToken.None);
             }

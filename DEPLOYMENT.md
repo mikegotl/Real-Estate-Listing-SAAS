@@ -111,7 +111,7 @@ The protected `production` GitHub environment also supplies the approved externa
 - Secrets: `OPENAI_API_KEY`, `GOOGLE_AUTH_CLIENT_SECRET`, `GOOGLE_PLACES_API_KEY`, `HIGGSFIELD_API_KEY`, and `HIGGSFIELD_API_SECRET`.
 - Variables: `OPENAI_MODEL` and `GOOGLE_AUTH_CLIENT_ID`.
 
-The production workflow enables media analysis, Google sign-in, Google Places neighborhood insights, and Higgsfield walk-through clips after verifying that every required value is present. Narration uses ElevenLabs when the `ELEVENLABS_API_KEY` environment secret is set (stored in Key Vault as `elevenlabs-api-key`) and falls back to OpenAI, reusing `OPENAI_API_KEY`, when it is not. Set `VOICE_ESTIMATED_COST_USD` to the ElevenLabs cost of one narration request (about $0.10 per 1,000 characters on Multilingual v2). ElevenLabs voices are chosen per campaign voice accent; the defaults are ElevenLabs premade voices, and a native-speaker voice from the ElevenLabs library can be set per accent with `Voice__ElevenLabsVoices__<Accent>` (for example `Voice__ElevenLabsVoices__Castilian`). Register the production Google OAuth callback `https://<web-host>/signin-google` before deployment.
+The production workflow enables media analysis, Google sign-in, Google Places neighborhood insights, and Higgsfield walk-through clips after verifying that every required value is present. Narration uses ElevenLabs when the `ELEVENLABS_API_KEY` environment secret is set (stored in Key Vault as `elevenlabs-api-key`) and falls back to OpenAI, reusing `OPENAI_API_KEY`, when it is not. ElevenLabs usage is estimated from the provider's `character-cost` response header and the configured public API rate; set `ELEVENLABS_ESTIMATED_COST_PER_THOUSAND_CHARACTERS_USD` if the effective rate differs from the default of $0.08 for Multilingual v2. ElevenLabs voices are chosen per campaign voice accent; the defaults are ElevenLabs premade voices, and a native-speaker voice from the ElevenLabs library can be set per accent with `Voice__ElevenLabsVoices__<Accent>` (for example `Voice__ElevenLabsVoices__Castilian`). Register the production Google OAuth callback `https://<web-host>/signin-google` before deployment.
 
 User comments are emailed to every platform admin when SMTP is configured on the `production` environment: variables `SMTP_HOST`, `SMTP_PORT` (default 587; 465 uses implicit TLS), `SMTP_USERNAME`, `SMTP_FROM_ADDRESS` and optionally `APP_BASE_URL` (the public site address for links; defaults to the web app's Azure address), plus the secret `SMTP_PASSWORD` (stored in Key Vault as `smtp-password` and given to the Worker only). For Gmail use `smtp.gmail.com`, port 587, the Gmail address as user name and sender, and an app password. Without `SMTP_HOST` no email is sent and comments wait.
 
@@ -126,7 +126,7 @@ non-secret variables on the protected GitHub `production` environment:
 | `OPENAI_STORY_ESTIMATED_COST_USD` | Property story generation |
 | `OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD` | Video direction generation |
 | `OPENAI_SPEECH_ESTIMATED_COST_USD` | OpenAI narration |
-| `VOICE_ESTIMATED_COST_USD` | Alternate configured voice provider |
+| `ELEVENLABS_ESTIMATED_COST_PER_THOUSAND_CHARACTERS_USD` | ElevenLabs narration, based on billable characters |
 | `PHOTO_FIX_ESTIMATED_COST_USD` | OpenAI photo fix |
 | `AGENT_PORTRAIT_ESTIMATED_COST_USD` | OpenAI agent headshot enhancement |
 | `AI_VIDEO_ESTIMATED_COST_USD` | Generic AI video generation |

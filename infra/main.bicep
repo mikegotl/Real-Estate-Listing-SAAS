@@ -37,8 +37,8 @@ param openAiSpeechEstimatedCostUsd string = '0'
 @description('Estimated USD cost for one OpenAI campaign localization request.')
 param openAiLocalizationEstimatedCostUsd string = '0'
 
-@description('Estimated USD cost for one request to the configured voice provider.')
-param voiceEstimatedCostUsd string = '0'
+@description('Estimated USD cost per 1,000 billable ElevenLabs narration characters.')
+param elevenLabsEstimatedCostPerThousandCharactersUsd string = '0.08'
 
 @description('Estimated USD cost for one OpenAI photo-fix request.')
 param photoFixEstimatedCostUsd string = '0'
@@ -625,8 +625,8 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
     value: openAiLocalizationEstimatedCostUsd
   }
   {
-    name: 'Voice__EstimatedCostUsd'
-    value: voiceEstimatedCostUsd
+    name: 'Voice__EstimatedCostPerThousandCharactersUsd'
+    value: elevenLabsEstimatedCostPerThousandCharactersUsd
   }
   {
     name: 'PhotoFixes__EstimatedCostUsd'
