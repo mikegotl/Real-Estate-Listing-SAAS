@@ -17,6 +17,7 @@ public sealed class CampaignDeliverableConfiguration : IEntityTypeConfiguration<
         builder.Property(deliverable => deliverable.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(deliverable => deliverable.AssetPath).HasMaxLength(1_024);
         builder.Property(deliverable => deliverable.ContentType).HasMaxLength(100);
+        builder.Property(deliverable => deliverable.Version).HasDefaultValue(1).IsRequired();
         builder.HasIndex(deliverable => deliverable.AssetPath).IsUnique();
         builder.HasIndex(deliverable => new
         {

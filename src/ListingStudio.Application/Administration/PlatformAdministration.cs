@@ -40,6 +40,26 @@ public sealed record AdminAuditRow(
     string Outcome,
     string? ActorReference = null);
 
+/// <summary>
+/// One request a user made in a campaign video's chat, with the assistant's answer, the edits it proposed and what
+/// became of them, and whether the user said the rendered change fixed it, kept for product review.
+/// </summary>
+public sealed record AdminVideoChatRequestRow(
+    DateTimeOffset OccurredAtUtc,
+    string? UserEmail,
+    string? WorkspaceName,
+    string? PropertyAddress,
+    string Video,
+    int VideoVersion,
+    string Request,
+    string? AssistantReply,
+    IReadOnlyList<string> ProposedChanges,
+    string Outcome,
+    string? OutcomeDetail,
+    bool? FixConfirmed = null,
+    string? FixFeedback = null,
+    DateTimeOffset? FixConfirmedAtUtc = null);
+
 public sealed record PlatformAdminDashboard(
     AdminDateRange Range,
     DateTimeOffset? MetricsResetAtUtc,
@@ -67,6 +87,11 @@ public interface IPlatformAdminDashboardService
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AdminAuditRow>> GetAuditEventsAsync(
+        AdminDateRange range,
+        int maximumResults = 200,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AdminVideoChatRequestRow>> GetVideoChatRequestsAsync(
         AdminDateRange range,
         int maximumResults = 200,
         CancellationToken cancellationToken = default);

@@ -1125,15 +1125,48 @@ public sealed partial class CampaignGenerationProcessor(
             throw new InvalidOperationException("The campaign references unresolved brand or music assets.");
         }
 
-        var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-campaign-{jobId:N}-{kind}-{Guid.NewGuid():N}");
+        var renderPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{kind.ToString().ToLowerInvariant()}.mp4";
+        await RenderAndStoreAsync(
+            job,
+            specification,
+            deliverable.VideoNarrationId,
+            kind.ToString(),
+            renderPath,
+            async fileSize =>
+            {
+                dbContext.ChangeTracker.Clear();
+                var tracked = await dbContext.CampaignDeliverables.SingleAsync(candidate =>
+                    candidate.CampaignGenerationJobId == jobId && candidate.Kind == kind,
+                    cancellationToken);
+                tracked.MarkRendered(renderPath, "video/mp4", fileSize, timeProvider.GetUtcNow());
+                await dbContext.SaveChangesAsync(cancellationToken);
+            },
+            cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Renders a plan to a temporary file, stores it at the asset path and then runs the commit; a commit that fails
+    /// removes the stored file again.
+    /// </summary>
+    private async Task RenderAndStoreAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        Guid narrationId,
+        string label,
+        string assetPath,
+        Func<long, Task> commit,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-campaign-{job.Id:N}-{label}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-        var outputPath = Path.Combine(directory, $"{kind.ToString().ToLowerInvariant()}.mp4");
+        var outputPath = Path.Combine(directory, $"{label.ToLowerInvariant()}.mp4");
         try
         {
             var mediaAssets = await MaterializeMediaAsync(job, specification, directory, cancellationToken);
             var narrationAsset = await MaterializeNarrationAsync(
                 job,
-                deliverable.VideoNarrationId,
+                narrationId,
                 directory,
                 cancellationToken);
             var generatedClips = await MaterializeGeneratedClipsAsync(
@@ -1175,26 +1208,24 @@ public sealed partial class CampaignGenerationProcessor(
                     propertyVideos,
                     walkthroughTransitions),
                 cancellationToken);
-            var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{kind.ToString().ToLowerInvariant()}.mp4";
             var stored = false;
             try
             {
-                await using var content = new FileStream(
+                long fileSize;
+                await using (var content = new FileStream(
                     outputPath,
                     FileMode.Open,
                     FileAccess.Read,
                     FileShare.Read,
                     81_920,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan);
-                var fileSize = content.Length;
-                await campaignAssetStorage.StoreAsync(assetPath, content, "video/mp4", cancellationToken);
+                    FileOptions.Asynchronous | FileOptions.SequentialScan))
+                {
+                    fileSize = content.Length;
+                    await campaignAssetStorage.StoreAsync(assetPath, content, "video/mp4", cancellationToken);
+                }
+
                 stored = true;
-                dbContext.ChangeTracker.Clear();
-                deliverable = await dbContext.CampaignDeliverables.SingleAsync(candidate =>
-                    candidate.CampaignGenerationJobId == jobId && candidate.Kind == kind,
-                    cancellationToken);
-                deliverable.MarkRendered(assetPath, "video/mp4", fileSize, timeProvider.GetUtcNow());
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await commit(fileSize);
             }
             catch
             {
@@ -1213,8 +1244,6 @@ public sealed partial class CampaignGenerationProcessor(
                 Directory.Delete(directory, recursive: true);
             }
         }
-
-        return true;
     }
 
     private Task<bool> RenderLongFormAsync(Guid jobId, CancellationToken cancellationToken) =>

@@ -78,6 +78,9 @@ public sealed class BackgroundWorkerResilienceTests
                 1,
                 null));
         }
+
+        public Task<CampaignVideoRevisionRunResult?> ProcessNextRevisionAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<CampaignVideoRevisionRunResult?>(null);
     }
 
     private sealed class MediaProcessorState

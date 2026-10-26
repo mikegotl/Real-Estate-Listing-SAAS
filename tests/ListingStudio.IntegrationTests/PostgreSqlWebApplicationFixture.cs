@@ -84,6 +84,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeCampaignLocalizationService CampaignLocalizationService { get; } = new();
 
+    public FakeCampaignVideoChatAssistant VideoChatAssistant { get; } = new();
+
     public FakeVideoRenderer VideoRenderer { get; } = new();
 
     public FakeAiVideoProvider AiVideoProvider { get; } = new();
@@ -138,6 +140,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IVoiceProvider>(VoiceProvider);
             services.RemoveAll<ICampaignLocalizationService>();
             services.AddSingleton<ICampaignLocalizationService>(CampaignLocalizationService);
+            services.RemoveAll<ICampaignVideoChatAssistant>();
+            services.AddSingleton<ICampaignVideoChatAssistant>(VideoChatAssistant);
             services.RemoveAll<IVideoRenderer>();
             services.AddSingleton<IVideoRenderer>(VideoRenderer);
             services.RemoveAll<IAiVideoProvider>();
@@ -327,6 +331,8 @@ public sealed class FakeVideoRenderer : IVideoRenderer
 
     public int CallCount => callCount;
 
+    public VideoRenderRequest? LastRequest { get; private set; }
+
     /// <summary>AI walk-through clips supplied as short-form shots of their own.</summary>
     public int WalkthroughShotCount => walkthroughShotCount;
 
@@ -346,6 +352,7 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     {
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref callCount);
+        LastRequest = request;
         Interlocked.Add(ref generatedClipInputCount, request.GeneratedClips?.Count ?? 0);
         Interlocked.Add(ref walkthroughInputCount, request.WalkthroughTransitions?.Count ?? 0);
         Assert.All(request.WalkthroughTransitions ?? [], transition => Assert.True(File.Exists(transition.FilePath)));
@@ -521,6 +528,25 @@ public sealed class FakeCampaignLocalizationService : ICampaignLocalizationServi
             .Select(segment => new CampaignLocalizedSegment(segment.Id, segment.Text))
             .ToArray();
         return Task.FromResult(new CampaignLocalizedCopy(original, original));
+    }
+}
+
+public sealed class FakeCampaignVideoChatAssistant : ICampaignVideoChatAssistant
+{
+    private readonly ConcurrentQueue<Func<CampaignVideoChatRequest, CampaignVideoChatReply>> outcomes = new();
+
+    public CampaignVideoChatRequest? LastRequest { get; private set; }
+
+    public void Enqueue(Func<CampaignVideoChatRequest, CampaignVideoChatReply> factory) => outcomes.Enqueue(factory);
+
+    public Task<CampaignVideoChatReply> ReplyAsync(
+        CampaignVideoChatRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LastRequest = request;
+        Assert.True(outcomes.TryDequeue(out var outcome), "A fake video chat reply must be queued.");
+        return Task.FromResult(outcome(request));
     }
 }
 

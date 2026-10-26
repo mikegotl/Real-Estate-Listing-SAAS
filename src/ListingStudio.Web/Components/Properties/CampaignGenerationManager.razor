@@ -394,19 +394,27 @@
                             </MudText>
                             @if (deliverable.Status == CampaignDeliverableStatus.Rendered)
                             {
-                                <video controls
+                                <video @key="@($"{deliverable.Kind}-{deliverable.Version}")"
+                                       controls
                                        preload="metadata"
                                        style="width: 100%; margin-top: 1rem; border-radius: 4px;"
                                        aria-label="@($"Preview {deliverable.Kind} video")">
-                                    <source src="@PreviewUrl(job.Id, deliverable.Kind)" type="video/mp4" />
+                                    <source src="@PreviewUrl(job.Id, deliverable.Kind, deliverable.Version)" type="video/mp4" />
                                     Your browser does not support MP4 video playback.
                                 </video>
-                                <MudButton Href="@DownloadUrl(job.Id, deliverable.Kind)"
+                                <MudButton Href="@DownloadUrl(job.Id, deliverable.Kind, deliverable.Version)"
                                            Variant="Variant.Outlined"
                                            Color="Color.Primary"
                                            Class="mt-3">
                                     Download MP4
                                 </MudButton>
+                                @if (!IsReadOnly)
+                                {
+                                    <CampaignVideoChatPanel JobId="job.Id"
+                                                            Kind="deliverable.Kind"
+                                                            VideoName="@OutputName(deliverable.Kind)"
+                                                            VersionChanged="LoadAsync" />
+                                }
                             }
                             else
                             {
@@ -714,11 +722,12 @@
         await base.DisposeAsyncCore();
     }
 
-    private static string DownloadUrl(Guid jobId, CampaignOutputKind kind) =>
-        $"/campaigns/{jobId}/deliverables/{kind}?download=true";
+    // The version keeps the browser from playing or saving a cached copy of an earlier version of the video.
+    private static string DownloadUrl(Guid jobId, CampaignOutputKind kind, int version) =>
+        $"/campaigns/{jobId}/deliverables/{kind}?download=true&v={version}";
 
-    private static string PreviewUrl(Guid jobId, CampaignOutputKind kind) =>
-        $"/campaigns/{jobId}/deliverables/{kind}";
+    private static string PreviewUrl(Guid jobId, CampaignOutputKind kind, int version) =>
+        $"/campaigns/{jobId}/deliverables/{kind}?v={version}";
 
     private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
         index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
