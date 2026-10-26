@@ -192,6 +192,10 @@ public static class FfmpegCommandBuilder
             walkthroughInputs);
         arguments.AddRange(
         [
+            // Campaign edits can have several full-HD inputs, transitions, captions, and logos alive in the
+            // filter graph at once. Bound FFmpeg's parallelism so vertical renders do not exhaust the Worker's
+            // container memory while still allowing the encoder to make steady progress.
+            "-filter_complex_threads", "1",
             "-filter_complex", BuildFilterGraph(
                 request,
                 sceneAssets,
@@ -201,7 +205,8 @@ public static class FfmpegCommandBuilder
             "-map", "[vout]",
             "-map", "[aout]",
             "-c:v", VideoEncoder,
-            "-preset", "medium",
+            "-preset", "faster",
+            "-threads", "1",
             "-crf", "20",
             "-pix_fmt", "yuv420p",
             "-r", request.Specification.Output.FrameRate.ToString(CultureInfo.InvariantCulture),

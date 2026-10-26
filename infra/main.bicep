@@ -995,8 +995,10 @@ resource workerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicat
             }
           ]
           resources: {
-            cpu: json('1.0')
-            memory: '2Gi'
+            // FFmpeg campaign renders can hold several full-HD inputs and transition buffers concurrently.
+            // Use the supported 2 vCPU / 4 GiB pair so the OS does not kill vertical renders under memory pressure.
+            cpu: json('2.0')
+            memory: '4Gi'
           }
         }
       ]
