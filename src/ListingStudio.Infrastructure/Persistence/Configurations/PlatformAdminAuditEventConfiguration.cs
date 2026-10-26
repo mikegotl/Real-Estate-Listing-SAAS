@@ -14,6 +14,7 @@ public sealed class PlatformAdminAuditEventConfiguration : IEntityTypeConfigurat
         builder.Property(item => item.ActorType).HasMaxLength(50).IsRequired();
         builder.Property(item => item.TargetReference).HasMaxLength(64).IsRequired();
         builder.Property(item => item.Outcome).HasMaxLength(32).IsRequired();
+        builder.Property(item => item.ActorReference).HasMaxLength(64);
         builder.HasIndex(item => item.OccurredAtUtc);
     }
 }

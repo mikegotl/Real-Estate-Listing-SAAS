@@ -151,7 +151,8 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
                 item.Action,
                 item.ActorType,
                 item.TargetReference,
-                item.Outcome))
+                item.Outcome,
+                item.ActorReference))
             .ToListAsync(cancellationToken);
     }
 }

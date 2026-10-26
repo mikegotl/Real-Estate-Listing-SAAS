@@ -1,0 +1,158 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = PlatformAdministration.Policy)]
+@attribute [StreamRendering]
+@inject IPlatformAdminAccountDirectory AccountDirectory
+
+<PageTitle>Find users</PageTitle>
+
+<div class="section-row admin-page-heading">
+    <div>
+        <span class="eyebrow">CUSTOMER SUPPORT</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Find users</MudText>
+        <MudText Typo="Typo.body1">Search by email, user name or workspace name, then open a workspace or property as that user.</MudText>
+    </div>
+    <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
+</div>
+
+<form method="get" action="/admin/users" class="admin-user-search" role="search">
+    <label for="admin-user-query" class="visually-hidden">Email, user name or workspace</label>
+    <input id="admin-user-query" name="q" type="search" value="@Q" autocomplete="off" autofocus
+           placeholder="Email, user name or workspace" minlength="@IPlatformAdminAccountDirectory.MinimumQueryLength" maxlength="256" />
+    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Search">Search</MudButton>
+</form>
+
+@if (ErrorMessage is not null)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">@ErrorMessage</MudAlert>
+}
+
+@if (string.IsNullOrWhiteSpace(Q) || Q.Trim().Length < IPlatformAdminAccountDirectory.MinimumQueryLength)
+{
+    <p class="admin-empty">Type at least @IPlatformAdminAccountDirectory.MinimumQueryLength characters to search.</p>
+}
+else if (result is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (result.Accounts.Count == 0)
+{
+    <p class="admin-empty">No users match "@result.Query".</p>
+}
+else
+{
+    <p class="property-count">
+        @result.Accounts.Count @(result.Accounts.Count == 1 ? "user" : "users")@(result.HasMore ? " shown. Refine the search to see more." : string.Empty)
+    </p>
+    <div class="admin-user-list">
+        @foreach (var account in result.Accounts)
+        {
+            <MudPaper Elevation="0" Class="admin-panel admin-user-card">
+                <header class="admin-user-head">
+                    <div>
+                        <MudText Typo="Typo.h5" HtmlTag="h2">@account.Email</MudText>
+                        <p class="admin-user-meta">
+                            @if (!string.Equals(account.UserName, account.Email, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <span>User name @account.UserName</span>
+                            }
+                            <span>@(account.LastSuccessfulSignInAtUtc is { } signedIn ? $"Last sign-in {signedIn.ToLocalTime():MMM d, yyyy h:mm tt}" : "No recorded sign-in")</span>
+                            @if (account.IsPlatformAdmin)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined">Platform admin</MudChip>
+                            }
+                        </p>
+                    </div>
+                    @if (!account.IsPlatformAdmin)
+                    {
+                        <ImpersonateForm UserId="@account.UserId" Query="@result.Query" ReturnUrl="/auth"
+                                         Label="Open workspace as user" Primary="true" />
+                    }
+                </header>
+
+                @if (account.Workspaces.Count == 0)
+                {
+                    <p class="admin-empty">This user does not belong to a workspace.</p>
+                }
+                @foreach (var workspace in account.Workspaces)
+                {
+                    <section class="admin-workspace">
+                        <h3>
+                            @workspace.Name
+                            <small>@workspace.Role · @workspace.Properties.Count @(workspace.Properties.Count == 1 ? "property" : "properties")</small>
+                        </h3>
+                        @if (workspace.Properties.Count == 0)
+                        {
+                            <p class="admin-empty">No properties yet.</p>
+                        }
+                        else
+                        {
+                            <div class="admin-table-wrap">
+                                <table class="admin-table">
+                                    <thead><tr><th>Property</th><th>Status</th><th>Updated</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+                                    <tbody>
+                                        @foreach (var property in workspace.Properties)
+                                        {
+                                            <tr>
+                                                <td><strong>@property.Address1</strong><br /><span class="admin-user-meta">@property.City, @property.State @property.ZipCode</span></td>
+                                                <td>@(property.IsArchived ? "Archived" : PropertyDisplay.Name(property.ListingStatus))</td>
+                                                <td>@property.UpdatedAtUtc.ToLocalTime().ToString("MMM d, yyyy")</td>
+                                                <td class="admin-table-action">
+                                                    @if (!account.IsPlatformAdmin)
+                                                    {
+                                                        <ImpersonateForm UserId="@account.UserId" Query="@result.Query"
+                                                                         ReturnUrl="@($"/properties/{property.Id}")" Label="Open property" />
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </section>
+                }
+                @if (account.IsPlatformAdmin)
+                {
+                    <p class="admin-empty">Other platform administrators cannot be impersonated.</p>
+                }
+            </MudPaper>
+        }
+    </div>
+}
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-6">
+    Opening a workspace or property signs you in as that user for up to
+    @((int)PlatformAdminImpersonation.MaximumDuration.TotalMinutes) minutes. Each start and stop is written to the
+    <MudLink Href="/admin/audit">audit log</MudLink>. Billing changes are blocked while you are impersonating.
+</MudAlert>
+
+@code {
+    private AdminAccountSearchResult? result;
+
+    [SupplyParameterFromQuery]
+    public string? Q { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    private string? ErrorMessage => Enum.TryParse<ImpersonationStartFailure>(Error, out var failure)
+        ? failure switch
+        {
+            ImpersonationStartFailure.UserNotFound => "That user no longer exists.",
+            ImpersonationStartFailure.SelfImpersonation => "You cannot impersonate your own account.",
+            ImpersonationStartFailure.TargetIsPlatformAdmin => "Other platform administrators cannot be impersonated.",
+            ImpersonationStartFailure.NotPlatformAdmin => "Your account no longer has platform administrator access.",
+            _ => null,
+        }
+        : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        result = null;
+        if (!string.IsNullOrWhiteSpace(Q) && Q.Trim().Length >= IPlatformAdminAccountDirectory.MinimumQueryLength)
+        {
+            result = await AccountDirectory.SearchAsync(Q);
+        }
+    }
+}

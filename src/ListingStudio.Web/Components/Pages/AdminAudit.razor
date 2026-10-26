@@ -10,7 +10,7 @@
     <div>
         <span class="eyebrow">PLATFORM SECURITY</span>
         <MudText Typo="Typo.h3" HtmlTag="h1">Administrator audit log</MudText>
-        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes.</MudText>
+        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes and user impersonation.</MudText>
     </div>
     <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
 </div>
@@ -24,11 +24,11 @@ else
     <MudPaper Elevation="0" Class="admin-panel">
         <div class="admin-table-wrap">
             <table class="admin-table">
-                <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Target reference</th><th>Outcome</th></tr></thead>
+                <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Actor reference</th><th>Target reference</th><th>Outcome</th></tr></thead>
                 <tbody>
                     @foreach (var item in events)
                     {
-                        <tr><td>@item.OccurredAtUtc.ToLocalTime().ToString("g")</td><td>@item.Action</td><td>@item.ActorType</td><td><code>@item.TargetReference[..12]</code></td><td>@item.Outcome</td></tr>
+                        <tr><td>@item.OccurredAtUtc.ToLocalTime().ToString("g")</td><td>@item.Action</td><td>@item.ActorType</td><td>@if (item.ActorReference is { } actor){<code>@actor[..12]</code>}</td><td><code>@item.TargetReference[..12]</code></td><td>@item.Outcome</td></tr>
                     }
                 </tbody>
             </table>
