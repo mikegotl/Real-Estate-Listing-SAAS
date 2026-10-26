@@ -71,7 +71,8 @@ public sealed class OpenAIPhotoClutterRemover(
             form.Add(new StringContent(configuration.Quality), "quality");
         }
 
-        if (!string.IsNullOrWhiteSpace(configuration.InputFidelity))
+        if (SupportsInputFidelity(configuration.ImageModel)
+            && !string.IsNullOrWhiteSpace(configuration.InputFidelity))
         {
             form.Add(new StringContent(configuration.InputFidelity), "input_fidelity");
         }
@@ -125,6 +126,9 @@ public sealed class OpenAIPhotoClutterRemover(
 
     private static string Size(PhotoClutterRemovalRequest request) =>
         $"{request.Width.ToString(CultureInfo.InvariantCulture)}x{request.Height.ToString(CultureInfo.InvariantCulture)}";
+
+    private static bool SupportsInputFidelity(string model) =>
+        !model.StartsWith("gpt-image-2", StringComparison.OrdinalIgnoreCase);
 
     private static ByteArrayContent Png(byte[] content)
     {

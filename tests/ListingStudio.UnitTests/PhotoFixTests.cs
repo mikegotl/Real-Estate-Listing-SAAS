@@ -317,9 +317,9 @@ public sealed class OpenAIPhotoClutterRemoverTests
         Assert.Equal(EditedPng, result);
         Assert.Equal(new Uri("https://api.openai.test/v1/images/edits"), handler.RequestUri);
         Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-api-key"), handler.Authorization);
-        Assert.Equal("gpt-image-test", handler.Fields["model"]);
+        Assert.Equal("gpt-image-2.5-flare", handler.Fields["model"]);
         Assert.Equal("1536x1024", handler.Fields["size"]);
-        Assert.Equal("high", handler.Fields["input_fidelity"]);
+        Assert.DoesNotContain("input_fidelity", handler.Fields);
         Assert.Equal("png", handler.Fields["output_format"]);
         Assert.Contains("Do not repair, renovate, restyle or improve", handler.Fields["prompt"], StringComparison.Ordinal);
         Assert.Contains("do not add any object", handler.Fields["prompt"], StringComparison.Ordinal);
@@ -359,7 +359,7 @@ public sealed class OpenAIPhotoClutterRemoverTests
         Options.Create(new PhotoFixOptions
         {
             RemoveClutterEnabled = true,
-            ImageModel = "gpt-image-test",
+            ImageModel = "gpt-image-2.5-flare",
             ImageEditsEndpoint = "https://api.openai.test/v1/images/edits",
         }));
 

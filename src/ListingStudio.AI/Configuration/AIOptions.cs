@@ -73,14 +73,14 @@ public sealed class PhotoFixOptions
     /// <summary>Off until the owner approves paid identity-preserving edits for agent-owned photos.</summary>
     public bool AgentPortraitEnhancementEnabled { get; init; }
 
-    public string ImageModel { get; init; } = "gpt-image-1";
+    public string ImageModel { get; init; } = "gpt-image-2.5-flare";
 
     public string ImageEditsEndpoint { get; init; } = "https://api.openai.com/v1/images/edits";
 
     public string Quality { get; init; } = "high";
 
-    /// <summary>Asks the model to keep the input's details; leave empty for a model that does not take it.</summary>
-    public string InputFidelity { get; init; } = "high";
+    /// <summary>Legacy opt-in for models that accept input_fidelity; GPT Image 2 and 2.5 always omit it.</summary>
+    public string InputFidelity { get; init; } = string.Empty;
 
     public int RequestTimeoutSeconds { get; init; } = 240;
 

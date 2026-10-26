@@ -4,6 +4,7 @@ using System.Text;
 using ListingStudio.AI.Campaigns;
 using ListingStudio.AI.Configuration;
 using ListingStudio.Application.Campaigns;
+using ListingStudio.Application.Properties;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -28,7 +29,24 @@ public sealed class OpenAIAgentPortraitEnhancerTests
         Assert.Equal("Bearer", handler.Authorization?.Scheme);
         Assert.Equal("test-key", handler.Authorization?.Parameter);
         Assert.Contains("preserve the person's identity exactly", handler.RequestBody, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("input_fidelity", handler.RequestBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("input_fidelity", handler.RequestBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExplainsWhenTheConfiguredImageModelIsUnavailable()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"error":{"code":"model_not_found"}}"""),
+        };
+        response.Headers.Add("x-request-id", "req-retired-model");
+        var provider = Create(new CaptureHandler(response), enabled: true);
+
+        var exception = await Assert.ThrowsAsync<PhotoFixRejectedException>(() => provider.EnhanceAsync(
+            new AgentPortraitEnhancementRequest([9, 8, 7], "image/jpeg", 100, 120)));
+
+        Assert.Contains("configured OpenAI image model is unavailable", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("req-retired-model", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -43,7 +61,7 @@ public sealed class OpenAIAgentPortraitEnhancerTests
         Options.Create(new PhotoFixOptions
         {
             AgentPortraitEnhancementEnabled = enabled,
-            ImageModel = "gpt-image-1",
+            ImageModel = "gpt-image-2.5-flare",
             ImageEditsEndpoint = "https://api.openai.test/v1/images/edits",
             InputFidelity = "high",
         }));
