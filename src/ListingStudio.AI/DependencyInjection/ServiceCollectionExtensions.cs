@@ -21,7 +21,10 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAI(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<OpenAIOptions>().Bind(configuration.GetSection(OpenAIOptions.SectionName));
-        services.AddOptions<VoiceOptions>().Bind(configuration.GetSection(VoiceOptions.SectionName));
+        services.AddOptions<VoiceOptions>()
+            .Bind(configuration.GetSection(VoiceOptions.SectionName))
+            .Validate(options => options.EstimatedCostPerThousandCharactersUsd is >= 0 and <= 100,
+                "Voice:EstimatedCostPerThousandCharactersUsd must be between 0 and 100.");
         services.AddOptions<PhotoFixOptions>()
             .Bind(configuration.GetSection(PhotoFixOptions.SectionName))
             .Validate(options => options.RequestTimeoutSeconds is >= 30 and <= 900,
@@ -73,7 +76,13 @@ public static class ServiceCollectionExtensions
                     "ElevenLabs",
                     voice.ModelId,
                     "narration",
-                    voice.EstimatedCostUsd);
+                    0,
+                    estimateCost: (request, response, cancellationToken) =>
+                        ElevenLabsUsageCostEstimator.EstimateAsync(
+                            request,
+                            response,
+                            voice.EstimatedCostPerThousandCharactersUsd,
+                            cancellationToken));
             });
         services.AddHttpClient<OpenAIVoiceProvider>()
             .AddHttpMessageHandler(provider =>
