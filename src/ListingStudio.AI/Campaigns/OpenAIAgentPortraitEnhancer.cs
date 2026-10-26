@@ -63,7 +63,8 @@ public sealed class OpenAIAgentPortraitEnhancer(
             form.Add(new StringContent(configuration.Quality), "quality");
         }
 
-        if (!string.IsNullOrWhiteSpace(configuration.InputFidelity))
+        if (SupportsInputFidelity(configuration.ImageModel)
+            && !string.IsNullOrWhiteSpace(configuration.InputFidelity))
         {
             form.Add(new StringContent(configuration.InputFidelity), "input_fidelity");
         }
@@ -90,11 +91,18 @@ public sealed class OpenAIAgentPortraitEnhancer(
         {
             if (!response.IsSuccessStatusCode)
             {
+                var errorCode = await ErrorCodeAsync(response, timeout.Token);
                 var requestId = response.Headers.TryGetValues("x-request-id", out var values)
                     ? values.FirstOrDefault()
                     : null;
                 var suffix = requestId is null ? string.Empty : $" (request {requestId})";
                 var status = (int)response.StatusCode;
+                if (errorCode is "model_not_found" or "invalid_model")
+                {
+                    throw new PhotoFixRejectedException(
+                        $"The configured OpenAI image model is unavailable{suffix}. Please try again after the site is updated.");
+                }
+
                 throw status is 400 or 401 or 403 or 404 or 413 or 422
                     ? new PhotoFixRejectedException($"OpenAI declined the headshot edit with HTTP {status}{suffix}.")
                     : new HttpRequestException(
@@ -122,6 +130,30 @@ public sealed class OpenAIAgentPortraitEnhancer(
             }
 
             return Convert.FromBase64String(encoded);
+        }
+    }
+
+    private static bool SupportsInputFidelity(string model) =>
+        !model.StartsWith("gpt-image-2", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<string?> ErrorCodeAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            return json.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.Object
+                && error.TryGetProperty("code", out var code)
+                && code.ValueKind == JsonValueKind.String
+                    ? code.GetString()
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 }
