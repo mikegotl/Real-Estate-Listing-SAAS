@@ -79,6 +79,22 @@ public sealed class ShortFormEditorTests
     }
 
     [Fact]
+    public void ShortHookCanBeReducedToOnlyTheGroundedCallToAction()
+    {
+        var master = Master();
+        var copy = ShortFormCopyBuilder.Build(
+            master,
+            CampaignCreativeOptions.SocialDefault,
+            "Raleigh",
+            "NC",
+            ShortFormVoiceoverDetail.CallToActionOnly);
+
+        var line = Assert.Single(copy.VoiceoverLines);
+        Assert.Equal("story.closingCta", line.GroundingKey);
+        Assert.Equal("Book your private showing today.", line.Text);
+    }
+
+    [Fact]
     public void FullVoiceoverKeepsTheTourNarrationInASixtySecondEdit()
     {
         var edit = Create(CampaignCreativeOptions.SocialDefault with { Voiceover = CampaignVoiceoverMode.Full }, beatMs: 500);

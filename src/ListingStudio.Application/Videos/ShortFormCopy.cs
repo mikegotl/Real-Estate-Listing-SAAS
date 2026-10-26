@@ -13,6 +13,13 @@ public sealed record ShortFormCopy(
     IReadOnlyList<NarrationSegment>? KeptNarration,
     IReadOnlyList<FactBinding> AddedFactBindings);
 
+public enum ShortFormVoiceoverDetail
+{
+    HighlightRich,
+    Essential,
+    CallToActionOnly,
+}
+
 public static class ShortFormCopyBuilder
 {
     public const string CityStateKey = "property.cityState";
@@ -32,16 +39,16 @@ public static class ShortFormCopyBuilder
         voiceover == CampaignVoiceoverMode.Full ? RequestedDuration.Hero60 : RequestedDuration.Feature30;
 
     /// <param name="master">The master plan with its narration already in the spoken language.</param>
-    /// <param name="shortVoiceover">
-    /// When false, a short-hook voiceover keeps only the opening and closing lines (used to retry a voiceover that
-    /// ran long in the spoken language).
+    /// <param name="voiceoverDetail">
+    /// Controls how aggressively a short-hook voiceover is reduced when the spoken result is longer than the
+    /// platform video. The on-screen copy is unaffected.
     /// </param>
     public static ShortFormCopy Build(
         VideoProductionSpecification master,
         CampaignCreativeOptions options,
         string? city,
         string? state,
-        bool shortVoiceover = true)
+        ShortFormVoiceoverDetail voiceoverDetail = ShortFormVoiceoverDetail.HighlightRich)
     {
         ArgumentNullException.ThrowIfNull(master);
         ArgumentNullException.ThrowIfNull(options);
@@ -135,7 +142,7 @@ public static class ShortFormCopyBuilder
                 kept = master.Audio.NarrationSegments;
                 break;
             case CampaignVoiceoverMode.ShortHook:
-                voiceover.AddRange(ShortHook(bindings, (int)DurationFor(options.Voiceover), shortVoiceover));
+                voiceover.AddRange(ShortHook(bindings, (int)DurationFor(options.Voiceover), voiceoverDetail));
                 break;
         }
 
@@ -146,19 +153,19 @@ public static class ShortFormCopyBuilder
     private static List<GroundedText> ShortHook(
         Dictionary<string, FactBinding> bindings,
         int durationSeconds,
-        bool includeHighlights)
+        ShortFormVoiceoverDetail detail)
     {
         var budget = (int)((durationSeconds - 2) * WordsPerSecond);
         var opening = Line("story.openingHook");
         var closing = Line("story.closingCta");
         var lines = new List<GroundedText>();
         var used = Words(opening) + Words(closing);
-        if (opening is not null)
+        if (opening is not null && detail != ShortFormVoiceoverDetail.CallToActionOnly)
         {
             lines.Add(opening);
         }
 
-        if (includeHighlights)
+        if (detail == ShortFormVoiceoverDetail.HighlightRich)
         {
             for (var index = 1; bindings.ContainsKey($"story.highlight.{index}"); index++)
             {
