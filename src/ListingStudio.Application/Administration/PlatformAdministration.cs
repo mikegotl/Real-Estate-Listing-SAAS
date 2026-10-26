@@ -42,7 +42,7 @@ public sealed record AdminAuditRow(
 
 /// <summary>
 /// One request a user made in a campaign video's chat, with the assistant's answer, the edits it proposed and what
-/// became of them, kept for product review.
+/// became of them, and whether the user said the rendered change fixed it, kept for product review.
 /// </summary>
 public sealed record AdminVideoChatRequestRow(
     DateTimeOffset OccurredAtUtc,
@@ -55,7 +55,10 @@ public sealed record AdminVideoChatRequestRow(
     string? AssistantReply,
     IReadOnlyList<string> ProposedChanges,
     string Outcome,
-    string? OutcomeDetail);
+    string? OutcomeDetail,
+    bool? FixConfirmed = null,
+    string? FixFeedback = null,
+    DateTimeOffset? FixConfirmedAtUtc = null);
 
 public sealed record PlatformAdminDashboard(
     AdminDateRange Range,

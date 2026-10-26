@@ -24,7 +24,7 @@ else
     <MudPaper Elevation="0" Class="admin-panel">
         <div class="admin-table-wrap">
             <table class="admin-table">
-                <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Actor reference</th><th>Target reference</th><th>Outcome</th></tr></thead>
+                <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Actor reference</th><th>Target reference</th><th>Outcome</th><th>Did it fix it?</th></tr></thead>
                 <tbody>
                     @foreach (var item in events)
                     {
@@ -39,7 +39,7 @@ else
 <section class="admin-video-chat" aria-labelledby="video-chat-heading">
     <MudText Typo="Typo.h5" HtmlTag="h2" id="video-chat-heading" Class="mt-8 mb-1">Video chat change requests</MudText>
     <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-        What users typed in the chat beside a campaign video, what the AI answered, the changes it proposed and whether they were rendered. Use these to decide which adjustments should become permanent campaign features. Last 90 days, newest first.
+        What users typed in the chat beside a campaign video, what the AI answered, the changes it proposed, whether they were rendered and whether the user said the new video fixed it. Use these to decide which adjustments should become permanent campaign features. Last 90 days, newest first.
     </MudText>
     @if (chatRequests is null)
     {
@@ -51,10 +51,15 @@ else
     }
     else
     {
+        <MudText Typo="Typo.body2" Class="mb-2">
+            @chatRequests.Count(item => item.FixConfirmed == true) confirmed fixed ·
+            @chatRequests.Count(item => item.FixConfirmed == false) said not fixed ·
+            @chatRequests.Count(item => item.FixConfirmed is null && item.Outcome.StartsWith("Rendered", StringComparison.Ordinal)) rendered but not answered
+        </MudText>
         <MudPaper Elevation="0" Class="admin-panel">
             <div class="admin-table-wrap">
                 <table class="admin-table admin-video-chat-table">
-                    <thead><tr><th>Time</th><th>User</th><th>Property</th><th>Video</th><th>Request</th><th>AI reply</th><th>Proposed changes</th><th>Outcome</th></tr></thead>
+                    <thead><tr><th>Time</th><th>User</th><th>Property</th><th>Video</th><th>Request</th><th>AI reply</th><th>Proposed changes</th><th>Outcome</th><th>Did it fix it?</th></tr></thead>
                     <tbody>
                         @foreach (var item in chatRequests)
                         {
@@ -81,6 +86,28 @@ else
                                     }
                                 </td>
                                 <td>@item.Outcome@if (item.OutcomeDetail is { } detail){<br /><span class="mud-text-secondary">@detail</span>}</td>
+                                <td class="admin-chat-text">
+                                    @switch (item.FixConfirmed)
+                                    {
+                                        case true:
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Yes, it worked</MudChip>
+                                            break;
+                                        case false:
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">No, not fixed</MudChip>
+                                            break;
+                                        default:
+                                            <span class="mud-text-secondary">@(item.Outcome.StartsWith("Rendered", StringComparison.Ordinal) ? "Not answered" : "")</span>
+                                            break;
+                                    }
+                                    @if (item.FixFeedback is { } feedback)
+                                    {
+                                        <br /><span>“@feedback”</span>
+                                    }
+                                    @if (item.FixConfirmedAtUtc is { } answeredAt)
+                                    {
+                                        <br /><span class="mud-text-secondary">@answeredAt.ToLocalTime().ToString("g")</span>
+                                    }
+                                </td>
                             </tr>
                         }
                     </tbody>

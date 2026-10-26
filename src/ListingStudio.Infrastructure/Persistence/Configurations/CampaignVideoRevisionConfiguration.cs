@@ -31,6 +31,7 @@ public sealed class CampaignVideoRevisionConfiguration : IEntityTypeConfiguratio
         builder.Property(revision => revision.EditsJson).HasColumnType("jsonb").IsRequired();
         builder.Property(revision => revision.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(revision => revision.LastError).HasMaxLength(500);
+        builder.Property(revision => revision.FixFeedback).HasMaxLength(CampaignVideoRevision.MaximumFeedbackLength);
         builder.Property(revision => revision.PreviousSpecificationJson).HasColumnType("jsonb");
         builder.Property(revision => revision.PreviousAssetPath).HasMaxLength(1_024);
         builder.Property(revision => revision.PreviousContentType).HasMaxLength(100);

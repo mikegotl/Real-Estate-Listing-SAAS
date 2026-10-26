@@ -215,7 +215,10 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
                 answer?.Text,
                 proposal?.Changes ?? [],
                 outcome,
-                detail);
+                detail,
+                revision?.FixConfirmed,
+                revision?.FixFeedback,
+                revision?.FixConfirmedAtUtc);
         }).ToArray();
     }
 

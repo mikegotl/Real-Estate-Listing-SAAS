@@ -332,6 +332,29 @@ public sealed class CampaignVideoEditorTests
         Assert.Throws<InvalidOperationException>(() => revision.Undo(deliverable, now));
     }
 
+    [Fact]
+    public void FixConfirmationIsOnlyTakenForARenderedChangeAndTheLatestAnswerWins()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var deliverable = CampaignDeliverable.Create(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            CampaignOutputKind.YouTubeTour, RequestedDuration.Hero60, VideoAspectRatio.Landscape16By9, "{\"v\":1}", now);
+        deliverable.MarkRendered("original.mp4", "video/mp4", 10, now);
+        var revision = CampaignVideoRevision.Create(deliverable, Guid.NewGuid(), "user-1", "{\"edits\":[]}", now);
+        Assert.Throws<InvalidOperationException>(() => revision.ConfirmFix(true, null, now));
+        revision.Begin(now, TimeSpan.FromMinutes(5));
+        revision.Complete(deliverable, "{\"v\":2}", Guid.NewGuid(), "revised.mp4", "video/mp4", 20, 2, now);
+
+        revision.ConfirmFix(false, "   ", now);
+        Assert.False(revision.FixConfirmed);
+        Assert.Null(revision.FixFeedback);
+
+        revision.ConfirmFix(true, new string('a', CampaignVideoRevision.MaximumFeedbackLength + 50), now.AddMinutes(1));
+        Assert.True(revision.FixConfirmed);
+        Assert.Equal(CampaignVideoRevision.MaximumFeedbackLength, revision.FixFeedback!.Length);
+        Assert.Equal(now.AddMinutes(1), revision.FixConfirmedAtUtc);
+    }
+
     private static VideoProductionSpecification CreateSpecification()
     {
         var narration = new NarrationSegment[]

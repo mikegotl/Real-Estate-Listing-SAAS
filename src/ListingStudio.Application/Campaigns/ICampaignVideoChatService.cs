@@ -30,6 +30,16 @@ public interface ICampaignVideoChatService
         Guid messageId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Records the user's answer to "Did this fix it?" for the change an assistant message proposed.</summary>
+    Task<CampaignVideoChat?> ConfirmFixAsync(
+        string userId,
+        Guid jobId,
+        CampaignOutputKind kind,
+        Guid messageId,
+        bool worked,
+        string? feedback,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Puts the video back to the version before its latest change.</summary>
     Task<CampaignVideoChat?> UndoAsync(
         string userId,
@@ -54,7 +64,9 @@ public sealed record CampaignVideoChatEntry(
     string Text,
     IReadOnlyList<string> ProposedChanges,
     CampaignVideoChatProposalState Proposal,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    bool? FixConfirmed = null,
+    string? FixFeedback = null);
 
 public enum CampaignVideoChatProposalState
 {

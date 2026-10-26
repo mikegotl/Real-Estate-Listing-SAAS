@@ -121,6 +121,8 @@ public sealed class CampaignVideoRevision
     /// <summary>Renders a user can request per video for free; failed renders do not count.</summary>
     public const int FreeRendersPerVideo = 5;
 
+    public const int MaximumFeedbackLength = 1_000;
+
     private CampaignVideoRevision()
     {
     }
@@ -198,6 +200,13 @@ public sealed class CampaignVideoRevision
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
     public DateTimeOffset? CompletedAtUtc { get; private set; }
+
+    /// <summary>The user's answer to "Did this fix it?" once the change was rendered; null until they answer.</summary>
+    public bool? FixConfirmed { get; private set; }
+
+    public string? FixFeedback { get; private set; }
+
+    public DateTimeOffset? FixConfirmedAtUtc { get; private set; }
 
     public static CampaignVideoRevision Create(
         CampaignDeliverable deliverable,
@@ -319,6 +328,26 @@ public sealed class CampaignVideoRevision
             BaseVersion,
             now);
         Status = CampaignVideoRevisionStatus.Undone;
+        UpdatedAtUtc = now;
+    }
+
+    /// <summary>Records whether the rendered change fixed what the user asked for. The latest answer wins.</summary>
+    public void ConfirmFix(bool worked, string? feedback, DateTimeOffset now)
+    {
+        if (Status is not (CampaignVideoRevisionStatus.Completed or CampaignVideoRevisionStatus.Undone))
+        {
+            throw new InvalidOperationException("Only a rendered change can be confirmed.");
+        }
+
+        var normalized = string.IsNullOrWhiteSpace(feedback) ? null : feedback.Trim();
+        if (normalized is { Length: > MaximumFeedbackLength })
+        {
+            normalized = normalized[..MaximumFeedbackLength];
+        }
+
+        FixConfirmed = worked;
+        FixFeedback = normalized;
+        FixConfirmedAtUtc = now;
         UpdatedAtUtc = now;
     }
 

@@ -201,6 +201,35 @@ public sealed partial class CampaignVideoChatService(
         return await ToChatAsync(deliverable, cancellationToken);
     }
 
+    public async Task<CampaignVideoChat?> ConfirmFixAsync(
+        string userId,
+        Guid jobId,
+        CampaignOutputKind kind,
+        Guid messageId,
+        bool worked,
+        string? feedback,
+        CancellationToken cancellationToken = default)
+    {
+        var deliverable = await FindAsync(userId, jobId, kind, cancellationToken);
+        if (deliverable is null)
+        {
+            return null;
+        }
+
+        var revision = await dbContext.CampaignVideoRevisions
+            .Where(candidate => candidate.OrganizationId == deliverable.OrganizationId
+                && candidate.CampaignDeliverableId == deliverable.Id
+                && candidate.ChatMessageId == messageId
+                && (candidate.Status == CampaignVideoRevisionStatus.Completed
+                    || candidate.Status == CampaignVideoRevisionStatus.Undone))
+            .OrderByDescending(candidate => candidate.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Those changes haven't been rendered yet.");
+        revision.ConfirmFix(worked, feedback, timeProvider.GetUtcNow());
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return await ToChatAsync(deliverable, cancellationToken);
+    }
+
     public async Task<CampaignVideoChat?> UndoAsync(
         string userId,
         Guid jobId,
@@ -288,6 +317,7 @@ public sealed partial class CampaignVideoChatService(
             messages.Select(message =>
             {
                 var proposal = message.EditsJson is null ? null : CampaignVideoEditing.Deserialize(message.EditsJson);
+                byMessage.TryGetValue(message.Id, out var rendered);
                 var state = proposal is null
                     ? CampaignVideoChatProposalState.None
                     : byMessage.TryGetValue(message.Id, out var revision)
@@ -309,7 +339,9 @@ public sealed partial class CampaignVideoChatService(
                     message.Text,
                     proposal?.Changes ?? [],
                     state,
-                    message.CreatedAtUtc);
+                    message.CreatedAtUtc,
+                    rendered?.FixConfirmed,
+                    rendered?.FixFeedback);
             }).ToArray());
     }
 

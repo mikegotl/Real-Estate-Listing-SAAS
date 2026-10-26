@@ -77,6 +77,39 @@
                                         break;
                                     case CampaignVideoChatProposalState.Rendered:
                                         <MudChip T="string" Size="Size.Small" Color="Color.Success">Rendered</MudChip>
+                                        @if (message.FixConfirmed is null || editingConfirmations.Contains(message.Id))
+                                        {
+                                            <div class="video-chat-confirm" role="group" aria-label="Did this fix it?">
+                                                <MudText Typo="Typo.body2" Class="mb-1"><strong>Did this fix it?</strong> Watch the new version above, then let us know.</MudText>
+                                                <MudTextField T="string"
+                                                              Value="@confirmNotes.GetValueOrDefault(message.Id)"
+                                                              ValueChanged="value => confirmNotes[message.Id] = value"
+                                                              Label="Anything to add? (optional)"
+                                                              Variant="Variant.Outlined"
+                                                              Margin="Margin.Dense"
+                                                              MaxLength="CampaignVideoRevision.MaximumFeedbackLength"
+                                                              Immediate="true"
+                                                              Disabled="busy" />
+                                                <div class="video-chat-confirm-actions">
+                                                    <MudButton Variant="Variant.Filled"
+                                                               Color="Color.Success"
+                                                               Size="Size.Small"
+                                                               StartIcon="@Icons.Material.Filled.ThumbUp"
+                                                               Disabled="busy"
+                                                               OnClick="() => ConfirmAsync(message.Id, true)">
+                                                        Yes, it's fixed
+                                                    </MudButton>
+                                                    <MudButton Variant="Variant.Outlined"
+                                                               Color="Color.Primary"
+                                                               Size="Size.Small"
+                                                               StartIcon="@Icons.Material.Filled.ThumbDown"
+                                                               Disabled="busy"
+                                                               OnClick="() => ConfirmAsync(message.Id, false)">
+                                                        No, not yet
+                                                    </MudButton>
+                                                </div>
+                                            </div>
+                                        }
                                         break;
                                     case CampaignVideoChatProposalState.Undone:
                                         <MudChip T="string" Size="Size.Small">Undone</MudChip>
@@ -84,6 +117,20 @@
                                     case CampaignVideoChatProposalState.Outdated:
                                         <MudText Typo="Typo.caption" Class="mud-text-secondary">The video has changed since. Ask again to apply this.</MudText>
                                         break;
+                                }
+                                @if (message.FixConfirmed is { } worked && !editingConfirmations.Contains(message.Id))
+                                {
+                                    <MudText Typo="Typo.caption" Class="video-chat-confirmed">
+                                        @(worked ? "You said this fixed it. Thanks!" : "You said this didn't fix it. Tell me what's still wrong and I'll try again.")
+                                        @if (message.FixFeedback is { } note)
+                                        {
+                                            <span> “@note”</span>
+                                        }
+                                        @if (message.Proposal == CampaignVideoChatProposalState.Rendered)
+                                        {
+                                            <MudLink Typo="Typo.caption" Class="ml-1" OnClick="() => EditConfirmation(message)">Change answer</MudLink>
+                                        }
+                                    </MudText>
                                 }
                             }
                         </div>
@@ -171,6 +218,8 @@
     private bool sending;
     private bool polling;
     private string? draft;
+    private readonly Dictionary<Guid, string?> confirmNotes = [];
+    private readonly HashSet<Guid> editingConfirmations = [];
     private string? error;
 
     private string RendersLeftText => chat!.RendersLeft switch
@@ -240,6 +289,23 @@
     }
 
     private Task RenderAsync(Guid messageId) => MutateAsync(userId => Service.RenderAsync(userId, JobId, Kind, messageId, disposal.Token));
+
+    private async Task ConfirmAsync(Guid messageId, bool worked)
+    {
+        var note = confirmNotes.GetValueOrDefault(messageId);
+        await MutateAsync(userId => Service.ConfirmFixAsync(userId, JobId, Kind, messageId, worked, note, disposal.Token));
+        if (error is null)
+        {
+            editingConfirmations.Remove(messageId);
+            confirmNotes.Remove(messageId);
+        }
+    }
+
+    private void EditConfirmation(CampaignVideoChatEntry message)
+    {
+        editingConfirmations.Add(message.Id);
+        confirmNotes[message.Id] = message.FixFeedback;
+    }
 
     private Task UndoAsync() => MutateAsync(userId => Service.UndoAsync(userId, JobId, Kind, disposal.Token));
 

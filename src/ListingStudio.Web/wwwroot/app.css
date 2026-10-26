@@ -683,5 +683,8 @@ a.stage-pill:hover { text-decoration: underline; }
 .video-chat-message.assistant { align-self: flex-start; background: #F1EEE6; }
 .video-chat-message.user { align-self: flex-end; background: rgba(226, 192, 141, .35); }
 .video-chat-changes { font-size: .82rem; margin: 6px 0; padding-left: 1.1rem; }
+.video-chat-confirm { background: rgba(255,255,255,.7); border: 1px solid rgba(20,40,70,.12); border-radius: 8px; margin-top: 8px; padding: 8px 10px; }
+.video-chat-confirm-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.video-chat-confirmed { display: block; margin-top: 6px; }
 .video-chat-input { align-items: flex-start; display: flex; flex-direction: column; gap: 6px; }
 .video-chat-input .mud-input-control { width: 100%; }

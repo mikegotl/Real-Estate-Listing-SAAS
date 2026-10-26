@@ -713,6 +713,16 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<bool?>("FixConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("FixConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FixFeedback")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");

@@ -915,6 +915,18 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.True(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UserNotifications
                 .AnyAsync(notification => notification.UserId == owner.UserId && notification.Title == "Video updated"));
 
+            var renderedMessageId = chat.Messages[^1].Id;
+            Assert.Null(chat.Messages[^1].FixConfirmed);
+            chat = (await service.ConfirmFixAsync(
+                owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour, renderedMessageId, false, "Music is still too slow"))!;
+            Assert.False(chat.Messages[^1].FixConfirmed);
+            chat = (await service.ConfirmFixAsync(
+                owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour, renderedMessageId, true, "  Looks right now  "))!;
+            Assert.True(chat.Messages[^1].FixConfirmed);
+            Assert.Equal("Looks right now", chat.Messages[^1].FixFeedback);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.ConfirmFixAsync(
+                owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour, chat.Messages[^2].Id, true, null));
+
             chat = (await service.UndoAsync(owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour))!;
             Assert.Equal(1, chat.Version);
             Assert.False(chat.CanUndo);
@@ -938,6 +950,9 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.StartsWith("I'll open on the other photo", row.AssistantReply, StringComparison.Ordinal);
             Assert.StartsWith("123 Main Street", row.PropertyAddress, StringComparison.Ordinal);
             Assert.NotNull(row.UserEmail);
+            Assert.True(row.FixConfirmed);
+            Assert.Equal("Looks right now", row.FixFeedback);
+            Assert.NotNull(row.FixConfirmedAtUtc);
         }
     }
 
