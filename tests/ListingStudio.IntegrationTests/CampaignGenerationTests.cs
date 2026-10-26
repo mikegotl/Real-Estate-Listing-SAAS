@@ -504,6 +504,49 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Contains("\"hookTitle\"", tikTok.SpecificationJson, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ShortFormNarrationOverrunReducesTheScriptBeforeFallingBackToMusicOnly()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-short-narration-overrun");
+        await UploadAsync(owner);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        var shortVoiceCalls = 0;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            fixture.Factory.VoiceProvider.Enqueue(request =>
+            {
+                shortVoiceCalls++;
+                var spokenMs = 31_000;
+                return new VoiceGenerationResult(
+                    [1, 2, 3, 4],
+                    "audio/mpeg",
+                    ".mp3",
+                    spokenMs,
+                    new VoiceTimingMetadata(
+                        [new VoiceCharacterTiming("A", 0, spokenMs)],
+                        request.Segments.Select(segment =>
+                            new VoiceSegmentTiming(segment.Id, 0, spokenMs)).ToArray()));
+            });
+        }
+
+        var queued = await EnqueueAsync(owner, CampaignOutputSelectionPolicy.Recommended);
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        Assert.Equal(3, shortVoiceCalls);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var vertical = await db.CampaignDeliverables.AsNoTracking()
+            .SingleAsync(item => item.CampaignGenerationJobId == queued.Id
+                && item.Kind == CampaignOutputKind.TikTok);
+        var specification = JsonSerializer.Deserialize<VideoProductionSpecification>(
+            vertical.SpecificationJson,
+            VideoSpecificationJson.Options)!;
+        Assert.Empty(specification.Audio.NarrationSegments);
+    }
+
     private static VoiceGenerationResult CreateSegmentedVoiceResult(VoiceGenerationRequest request) => new(
         [1, 2, 3, 4],
         "audio/mpeg",

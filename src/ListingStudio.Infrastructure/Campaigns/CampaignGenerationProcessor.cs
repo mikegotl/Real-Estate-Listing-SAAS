@@ -625,18 +625,24 @@ public sealed partial class CampaignGenerationProcessor(
             soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
                 ? null
                 : CampaignCreativeDirector.SoundtrackAssetId(soundtrack));
-        VideoProductionSpecification Edit(bool withHighlights) => ShortFormEditor.Create(new ShortFormEditRequest(
-            master,
-            photos,
-            propertyVideos,
-            ShortFormCopyBuilder.DurationFor(options.Voiceover),
-            beatMs,
-            options.Pace,
-            ShortFormCopyBuilder.Build(master, options, location.City, location.State, withHighlights),
-            videoClips,
-            walkthroughClips));
+        VideoProductionSpecification Edit(
+            ShortFormVoiceoverDetail detail,
+            CampaignCreativeOptions? editOptions = null)
+        {
+            editOptions ??= options;
+            return ShortFormEditor.Create(new ShortFormEditRequest(
+                master,
+                photos,
+                propertyVideos,
+                ShortFormCopyBuilder.DurationFor(editOptions.Voiceover),
+                beatMs,
+                editOptions.Pace,
+                ShortFormCopyBuilder.Build(master, editOptions, location.City, location.State, detail),
+                videoClips,
+                walkthroughClips));
+        }
 
-        var edit = Edit(withHighlights: true);
+        var edit = Edit(ShortFormVoiceoverDetail.HighlightRich);
         if (options.Voiceover != CampaignVoiceoverMode.ShortHook || edit.Audio.NarrationSegments.Count == 0)
         {
             // The full voiceover keeps the master's segments and timing, so its audio is reused as is; with no
@@ -647,16 +653,38 @@ public sealed partial class CampaignGenerationProcessor(
         }
 
         var localized = await GetOrCreateShortFormLocalizationAsync(job, edit, cancellationToken);
-        VideoNarrationResult narration;
-        try
+        VideoNarrationResult? narration = null;
+        var attemptedScripts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var detail in Enum.GetValues<ShortFormVoiceoverDetail>())
         {
-            narration = await GenerateShortFormNarrationAsync(job, edit, localized, cancellationToken);
+            edit = Edit(detail);
+            var scriptFingerprint = string.Join(
+                '\n',
+                edit.Audio.NarrationSegments.Select(segment => $"{segment.Id}\0{segment.Text}"));
+            if (!attemptedScripts.Add(scriptFingerprint))
+            {
+                continue;
+            }
+
+            try
+            {
+                narration = await GenerateShortFormNarrationAsync(job, edit, localized, cancellationToken);
+                break;
+            }
+            catch (InvalidDataException exception) when (NarrationRunsPastVideo(exception))
+            {
+                // Try a shorter grounded script. If even the CTA cannot fit, the platform cut remains useful with
+                // its music, captions and end card instead of failing the entire campaign.
+            }
         }
-        catch (InvalidDataException) when (edit.Audio.NarrationSegments.Count > 2)
+
+        if (narration is null)
         {
-            // The voiceover ran long in the spoken language: keep only the opening hook and the call to action.
-            edit = Edit(withHighlights: false);
-            narration = await GenerateShortFormNarrationAsync(job, edit, localized, cancellationToken);
+            var silentOptions = options with { Voiceover = CampaignVoiceoverMode.None };
+            edit = Edit(ShortFormVoiceoverDetail.HighlightRich, silentOptions);
+            return new ShortFormDeliverable(
+                masterNarrationId,
+                CampaignCreativeDirector.Apply(edit, silentOptions, yearBuilt, masterCaptionText, masterTiming));
         }
 
         var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
@@ -678,6 +706,9 @@ public sealed partial class CampaignGenerationProcessor(
                 localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text),
                 narration.Timing));
     }
+
+    private static bool NarrationRunsPastVideo(InvalidDataException exception) =>
+        exception.Message.Contains("runs past the end of the video", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The newest finished AI walk-through clip for each pair of consecutive storyboard photos, the same clips the
