@@ -43,6 +43,17 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildBoundsFfmpegParallelismForContainerMemorySafety()
+    {
+        var command = FfmpegCommandBuilder.Build(CreateRequest());
+        var arguments = command.Arguments.ToList();
+
+        Assert.Equal("1", arguments[arguments.IndexOf("-filter_complex_threads") + 1]);
+        Assert.Equal("faster", arguments[arguments.IndexOf("-preset") + 1]);
+        Assert.Equal("1", arguments[arguments.IndexOf("-threads") + 1]);
+    }
+
+    [Fact]
     public void BuildStartsEachNarrationSegmentWithItsSceneAndNeverOverlapsAnOverrun()
     {
         var request = CreateRequest() with
