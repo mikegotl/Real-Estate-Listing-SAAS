@@ -826,6 +826,121 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.True(await campaigns.CancelAsync(owner.UserId, replacement.Id));
     }
 
+    [Fact]
+    public async Task VideoChatRendersOnlyThatVideoKeepsTheOldVersionForUndoAndIsLoggedForAdmins()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-video-chat");
+        await UploadAsync(owner);
+        var second = await UploadAsync(owner);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        QueueSuccessfulProviders();
+        var queued = await EnqueueAsync(owner, CampaignOutputSelection.YouTubeTour | CampaignOutputSelection.FacebookFeed);
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+        var originalSpecifications = await DeliverableSpecificationsAsync(completed.Id);
+
+        fixture.Factory.VideoChatAssistant.Enqueue(request =>
+        {
+            Assert.Equal("YouTube tour", request.VideoName);
+            Assert.Contains(request.ListingPhotos, photo => photo.Id == second);
+            Assert.Equal("Use the other photo first and switch to upbeat music", request.Conversation[^1].Text);
+            return new CampaignVideoChatReply(
+                "I'll open on the other photo and switch to the upbeat track.",
+                [
+                    new CampaignVideoEdit(CampaignVideoEditKind.SwapShot, Shot: 1, PhotoId: second),
+                    new CampaignVideoEdit(CampaignVideoEditKind.ChangeMusic, Music: CampaignSoundtrack.UpbeatLifestyle),
+                    new CampaignVideoEdit(CampaignVideoEditKind.RemoveText, TextId: "not-in-this-video"),
+                ]);
+        });
+
+        CampaignVideoChat chat;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<ICampaignVideoChatService>();
+            chat = (await service.SendAsync(
+                owner.UserId,
+                completed.Id,
+                CampaignOutputKind.YouTubeTour,
+                "Use the other photo first and switch to upbeat music"))!;
+            var stranger = await CreateOwnerAndPropertyAsync("campaign-video-chat-stranger");
+            Assert.Null(await service.GetAsync(stranger.UserId, completed.Id, CampaignOutputKind.YouTubeTour));
+        }
+
+        var proposal = chat.Messages[^1];
+        Assert.Equal(CampaignVideoChatRole.Assistant, proposal.Role);
+        Assert.Equal(2, proposal.ProposedChanges.Count);
+        Assert.Contains("couldn't do all of it", proposal.Text, StringComparison.Ordinal);
+        Assert.Equal(CampaignVideoChatProposalState.Ready, proposal.Proposal);
+        Assert.Equal(CampaignVideoRevision.FreeRendersPerVideo, chat.RendersLeft);
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<ICampaignVideoChatService>();
+            chat = (await service.RenderAsync(owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour, proposal.Id))!;
+            Assert.Equal(CampaignVideoRevisionStatus.Queued, chat.ActiveRevisionStatus);
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.RenderAsync(owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour, proposal.Id));
+        }
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var run = await scope.ServiceProvider.GetRequiredService<ICampaignGenerationProcessor>()
+                .ProcessNextRevisionAsync();
+            Assert.NotNull(run);
+            Assert.True(run.Succeeded, run.Error);
+        }
+
+        var rendered = fixture.Factory.VideoRenderer.LastRequest!.Specification;
+        Assert.Equal(second, rendered.Scenes[0].VisualSource.PropertyMediaId);
+        Assert.Equal(CampaignCreativeDirector.UpbeatLifestyleAssetId, rendered.Audio.Music.AssetId);
+        var afterRender = await DeliverableSpecificationsAsync(completed.Id);
+        // Only the video that was discussed changed.
+        Assert.Single(afterRender.Except(originalSpecifications));
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<ICampaignVideoChatService>();
+            chat = (await service.GetAsync(owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour))!;
+            Assert.Equal(2, chat.Version);
+            Assert.True(chat.CanUndo);
+            Assert.Equal(CampaignVideoRevision.FreeRendersPerVideo - 1, chat.RendersLeft);
+            Assert.Equal(CampaignVideoChatProposalState.Rendered, chat.Messages[^1].Proposal);
+            var campaign = await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
+                .GetAsync(owner.UserId, completed.Id);
+            Assert.Equal(2, campaign!.Deliverables.Single(item => item.Kind == CampaignOutputKind.YouTubeTour).Version);
+            Assert.Equal(1, campaign.Deliverables.Single(item => item.Kind == CampaignOutputKind.FacebookFeed).Version);
+            var download = await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
+                .OpenDeliverableAsync(owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour);
+            Assert.NotNull(download);
+            await download.Content.DisposeAsync();
+            Assert.True(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UserNotifications
+                .AnyAsync(notification => notification.UserId == owner.UserId && notification.Title == "Video updated"));
+
+            chat = (await service.UndoAsync(owner.UserId, completed.Id, CampaignOutputKind.YouTubeTour))!;
+            Assert.Equal(1, chat.Version);
+            Assert.False(chat.CanUndo);
+            Assert.Equal(CampaignVideoChatProposalState.Undone, chat.Messages[^1].Proposal);
+        }
+
+        Assert.Equal(
+            originalSpecifications.Order(StringComparer.Ordinal),
+            (await DeliverableSpecificationsAsync(completed.Id)).Order(StringComparer.Ordinal));
+
+        fixture.Factory.TimeProvider.Advance(TimeSpan.FromMinutes(1));
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var admin = scope.ServiceProvider.GetRequiredService<Application.Administration.IPlatformAdminDashboardService>();
+            var rows = await admin.GetVideoChatRequestsAsync(
+                Application.Administration.AdminDateRange.LastDays(90, fixture.Factory.TimeProvider));
+            var row = Assert.Single(rows, item => item.Request == "Use the other photo first and switch to upbeat music");
+            Assert.Equal("YouTube tour", row.Video);
+            Assert.Equal("Rendered, then undone", row.Outcome);
+            Assert.Equal(2, row.ProposedChanges.Count);
+            Assert.StartsWith("I'll open on the other photo", row.AssistantReply, StringComparison.Ordinal);
+            Assert.StartsWith("123 Main Street", row.PropertyAddress, StringComparison.Ordinal);
+            Assert.NotNull(row.UserEmail);
+        }
+    }
+
     private async Task<CampaignGenerationResult> ProcessUntilAsync(
         OwnerProperty owner,
         Guid jobId,

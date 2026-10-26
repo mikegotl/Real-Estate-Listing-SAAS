@@ -421,7 +421,8 @@ public sealed class CampaignGenerationService(
                 (int)item.RequestedDuration,
                 item.AspectRatio == Domain.Videos.VideoAspectRatio.Landscape16By9 ? "16:9" : "9:16",
                 item.FileSize,
-                item.RenderedAtUtc))
+                item.RenderedAtUtc,
+                item.Version))
             .ToArray();
         return new CampaignGenerationResult(
             job.Id,

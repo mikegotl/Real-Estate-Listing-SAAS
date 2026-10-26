@@ -1,0 +1,330 @@
+@inherits OwningComponentBase<ICampaignVideoChatService>
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<CampaignVideoChatPanel> Logger
+
+<div class="video-chat">
+    @if (!open)
+    {
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.ChatBubbleOutline"
+                   Class="mt-2 video-chat-toggle"
+                   OnClick="OpenAsync">
+            Chat to change this video
+        </MudButton>
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="video-chat-panel mt-3" aria-label="@($"Chat about the {VideoName}")">
+            <div class="video-chat-header">
+                <div>
+                    <MudText Typo="Typo.subtitle2" HtmlTag="h3">Change this video</MudText>
+                    @if (chat is not null)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            Version @chat.Version · @RendersLeftText
+                        </MudText>
+                    }
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close"
+                               Size="Size.Small"
+                               aria-label="Close chat"
+                               OnClick="() => open = false" />
+            </div>
+
+            @if (chat is null)
+            {
+                <MudProgressLinear Indeterminate="true" Class="my-3" />
+            }
+            else
+            {
+                <div class="video-chat-messages" role="log" aria-live="polite">
+                    @if (chat.Messages.Count == 0)
+                    {
+                        <div class="video-chat-message assistant">
+                            <MudText Typo="Typo.body2">
+                                Tell me what you'd change, like "cut the garage shot", "start on the kitchen", "quieter music" or "use a British voice". I'll suggest the edits, and nothing changes until you press Render.
+                            </MudText>
+                        </div>
+                    }
+                    @foreach (var message in chat.Messages)
+                    {
+                        <div class="video-chat-message @(message.Role == CampaignVideoChatRole.User ? "user" : "assistant")">
+                            <MudText Typo="Typo.body2">@message.Text</MudText>
+                            @if (message.ProposedChanges.Count > 0)
+                            {
+                                <ul class="video-chat-changes">
+                                    @foreach (var change in message.ProposedChanges)
+                                    {
+                                        <li>@change</li>
+                                    }
+                                </ul>
+                                @switch (message.Proposal)
+                                {
+                                    case CampaignVideoChatProposalState.Ready:
+                                    case CampaignVideoChatProposalState.Failed:
+                                        <MudButton Variant="Variant.Filled"
+                                                   Color="Color.Primary"
+                                                   Size="Size.Small"
+                                                   StartIcon="@Icons.Material.Filled.Movie"
+                                                   Disabled="@(busy || chat.RendersLeft == 0 || chat.ActiveRevisionStatus is not null)"
+                                                   OnClick="() => RenderAsync(message.Id)">
+                                            @(message.Proposal == CampaignVideoChatProposalState.Failed ? "Try rendering again" : "Render these changes")
+                                        </MudButton>
+                                        break;
+                                    case CampaignVideoChatProposalState.Rendering:
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Info">Rendering…</MudChip>
+                                        break;
+                                    case CampaignVideoChatProposalState.Rendered:
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Rendered</MudChip>
+                                        break;
+                                    case CampaignVideoChatProposalState.Undone:
+                                        <MudChip T="string" Size="Size.Small">Undone</MudChip>
+                                        break;
+                                    case CampaignVideoChatProposalState.Outdated:
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">The video has changed since. Ask again to apply this.</MudText>
+                                        break;
+                                }
+                            }
+                        </div>
+                    }
+                    @if (sending)
+                    {
+                        <div class="video-chat-message assistant">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" /> <MudText Typo="Typo.caption" Inline="true">Thinking…</MudText>
+                        </div>
+                    }
+                </div>
+
+                @if (chat.ActiveRevisionStatus is not null)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                        Updating the video. This usually takes a few minutes; you can leave this page.
+                    </MudAlert>
+                    <MudProgressLinear Indeterminate="true" Class="mb-2" />
+                }
+                else if (chat.LastRevisionError is not null)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
+                        The last update didn't work, so the video is unchanged. @chat.LastRevisionError
+                    </MudAlert>
+                }
+
+                @if (error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@error</MudAlert>
+                }
+
+                <div class="video-chat-input">
+                    <MudTextField T="string"
+                                  @bind-Value="draft"
+                                  Label="What should change?"
+                                  Placeholder="e.g. Drop the garage shot and make the music quieter"
+                                  Variant="Variant.Outlined"
+                                  Lines="2"
+                                  MaxLength="ICampaignVideoChatService.MaximumMessageLength"
+                                  Immediate="true"
+                                  Disabled="@(busy || sending)"
+                                  OnKeyDown="OnKeyDownAsync" />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Send"
+                               Disabled="@(busy || sending || string.IsNullOrWhiteSpace(draft))"
+                               OnClick="SendAsync">
+                        Send
+                    </MudButton>
+                </div>
+                @if (chat.CanUndo)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Undo"
+                               Class="mt-1"
+                               Disabled="busy"
+                               OnClick="UndoAsync">
+                        Undo last change
+                    </MudButton>
+                }
+            }
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid JobId { get; set; }
+
+    [Parameter, EditorRequired]
+    public CampaignOutputKind Kind { get; set; }
+
+    [Parameter]
+    public string VideoName { get; set; } = "video";
+
+    /// <summary>Raised when the video's version changes, so the card shows the new render.</summary>
+    [Parameter]
+    public EventCallback VersionChanged { get; set; }
+
+    private readonly CancellationTokenSource disposal = new();
+    private CampaignVideoChat? chat;
+    private bool open;
+    private bool busy;
+    private bool sending;
+    private bool polling;
+    private string? draft;
+    private string? error;
+
+    private string RendersLeftText => chat!.RendersLeft switch
+    {
+        0 => "no free updates left",
+        1 => "1 free update left",
+        var count => $"{count} free updates left",
+    };
+
+    private async Task OpenAsync()
+    {
+        open = true;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await SetChatAsync(await Service.GetAsync(userId, JobId, Kind, disposal.Token));
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Loading the video chat for campaign {JobId} {Kind} failed", JobId, Kind);
+            error = "The chat could not be loaded. Try again in a moment.";
+        }
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args is { Key: "Enter", ShiftKey: false } && !string.IsNullOrWhiteSpace(draft))
+        {
+            await SendAsync();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        var text = draft?.Trim();
+        if (string.IsNullOrWhiteSpace(text) || sending)
+        {
+            return;
+        }
+
+        sending = true;
+        error = null;
+        draft = null;
+        StateHasChanged();
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await SetChatAsync(await Service.SendAsync(userId, JobId, Kind, text, disposal.Token));
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+            draft = text;
+        }
+        finally
+        {
+            sending = false;
+        }
+    }
+
+    private Task RenderAsync(Guid messageId) => MutateAsync(userId => Service.RenderAsync(userId, JobId, Kind, messageId, disposal.Token));
+
+    private Task UndoAsync() => MutateAsync(userId => Service.UndoAsync(userId, JobId, Kind, disposal.Token));
+
+    private async Task MutateAsync(Func<string, Task<CampaignVideoChat?>> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await SetChatAsync(await action(userId));
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task SetChatAsync(CampaignVideoChat? next)
+    {
+        if (next is null)
+        {
+            error = "This video is no longer available.";
+            return;
+        }
+
+        var versionChanged = chat is not null && chat.Version != next.Version;
+        chat = next;
+        if (versionChanged)
+        {
+            await VersionChanged.InvokeAsync();
+        }
+
+        if (chat.ActiveRevisionStatus is not null)
+        {
+            StartPolling();
+        }
+    }
+
+    private void StartPolling()
+    {
+        if (polling)
+        {
+            return;
+        }
+
+        polling = true;
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(disposal.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadAsync();
+                    StateHasChanged();
+                });
+                if (chat?.ActiveRevisionStatus is null)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            polling = false;
+        }
+    }
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await disposal.CancelAsync();
+        disposal.Dispose();
+        await base.DisposeAsyncCore();
+    }
+}

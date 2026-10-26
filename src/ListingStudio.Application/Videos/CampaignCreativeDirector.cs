@@ -42,19 +42,7 @@ public static class CampaignCreativeDirector
                 TransitionIn = new TransitionPlan(TransitionKind.Cut, 0),
             }).ToArray();
         }
-        var soundtrack = ResolveSoundtrack(options.Soundtrack, yearBuilt);
-        var music = soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
-            ? new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)
-            : new MusicPlan(
-                SoundtrackAssetId(soundtrack),
-                SoundtrackMood(soundtrack),
-                0,
-                (int)source.RequestedDuration * 1_000,
-                // Music carries a video with no voiceover, so it plays louder there.
-                source.Audio.NarrationSegments.Count == 0 ? 0 : -16,
-                900,
-                1_400,
-                -13);
+        var music = MusicFor(ResolveSoundtrack(options.Soundtrack, yearBuilt), source);
         var usesPortrait = options.Elements.HasFlag(CampaignVideoElement.AgentPortrait)
             || options.Elements.HasFlag(CampaignVideoElement.AgentAvatar);
         var portraitAssetId = usesPortrait && options.AgentPortraitId is { } portraitId
@@ -123,6 +111,46 @@ public static class CampaignCreativeDirector
             Audio = source.Audio with { Music = music },
             Scenes = scenes,
         };
+    }
+
+    /// <summary>The music plan for a soundtrack over the whole program, or silence for none.</summary>
+    public static MusicPlan MusicFor(CampaignSoundtrack soundtrack, VideoProductionSpecification specification) =>
+        soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp or CampaignSoundtrack.AutoByHomeEra
+            ? new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)
+            : new MusicPlan(
+                SoundtrackAssetId(soundtrack),
+                SoundtrackMood(soundtrack),
+                0,
+                (int)specification.RequestedDuration * 1_000,
+                // Music carries a video with no voiceover, so it plays louder there.
+                specification.Audio.NarrationSegments.Count == 0 ? 0 : -16,
+                900,
+                1_400,
+                -13);
+
+    /// <summary>
+    /// Drops a video's captions and places them again from new voice timing, for a voiceover that was re-recorded.
+    /// </summary>
+    public static VideoProductionSpecification ReplaceCaptions(
+        VideoProductionSpecification source,
+        CampaignCaptionStyle style,
+        IReadOnlyDictionary<string, string>? captionTextBySegmentId,
+        VoiceTimingMetadata? narrationTiming)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var scenes = source.Scenes
+            .Select(scene => scene with
+            {
+                TextOverlays = scene.TextOverlays.Where(overlay => !CampaignVideoEditor.IsCaption(overlay)).ToArray(),
+            })
+            .ToArray();
+        AddCaptions(
+            source,
+            CampaignCreativeOptions.SocialDefault with { CaptionStyle = style },
+            scenes,
+            captionTextBySegmentId,
+            narrationTiming);
+        return source with { Scenes = scenes };
     }
 
     private static void ApplyPriceDropHook(

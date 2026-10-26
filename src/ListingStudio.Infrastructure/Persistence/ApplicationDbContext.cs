@@ -50,6 +50,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
 
+    public DbSet<CampaignVideoChatMessage> CampaignVideoChatMessages => Set<CampaignVideoChatMessage>();
+
+    public DbSet<CampaignVideoRevision> CampaignVideoRevisions => Set<CampaignVideoRevision>();
+
     public DbSet<AgentPortrait> AgentPortraits => Set<AgentPortrait>();
 
     public DbSet<OrganizationBillingAccount> OrganizationBillingAccounts => Set<OrganizationBillingAccount>();

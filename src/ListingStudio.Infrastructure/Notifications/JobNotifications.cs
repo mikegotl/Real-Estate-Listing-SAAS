@@ -173,6 +173,20 @@ public static class JobNotificationText
         WithReason($"The campaign for {property} stopped while {StageActivity(stage)}. You can resume it on the Campaign tab.", error),
         JobNotifications.CampaignTab);
 
+    public static JobNotificationContent CampaignVideoUpdated(string property, string video) => new(
+        UserNotificationKind.Campaign,
+        UserNotificationOutcome.Succeeded,
+        "Video updated",
+        $"Your changes to the {video} for {property} are ready to review.",
+        JobNotifications.CampaignTab);
+
+    public static JobNotificationContent CampaignVideoUpdateFailed(string property, string video, string? error) => new(
+        UserNotificationKind.Campaign,
+        UserNotificationOutcome.Failed,
+        "Video update failed",
+        WithReason($"The {video} for {property} could not be updated, so it is unchanged.", error),
+        JobNotifications.CampaignTab);
+
     private static string Clips(int count) => count == 1 ? "The walk-through clip" : $"All {count} walk-through clips";
 
     private static string WithReason(string sentence, string? error) =>

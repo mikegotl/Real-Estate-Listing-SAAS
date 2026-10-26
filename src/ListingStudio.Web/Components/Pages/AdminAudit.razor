@@ -10,7 +10,7 @@
     <div>
         <span class="eyebrow">PLATFORM SECURITY</span>
         <MudText Typo="Typo.h3" HtmlTag="h1">Administrator audit log</MudText>
-        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes and user impersonation.</MudText>
+        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes and user impersonation, plus every change users asked for in campaign video chats.</MudText>
     </div>
     <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
 </div>
@@ -36,9 +36,68 @@ else
     </MudPaper>
 }
 
+<section class="admin-video-chat" aria-labelledby="video-chat-heading">
+    <MudText Typo="Typo.h5" HtmlTag="h2" id="video-chat-heading" Class="mt-8 mb-1">Video chat change requests</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        What users typed in the chat beside a campaign video, what the AI answered, the changes it proposed and whether they were rendered. Use these to decide which adjustments should become permanent campaign features. Last 90 days, newest first.
+    </MudText>
+    @if (chatRequests is null)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (chatRequests.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No video chat requests yet.</MudText>
+    }
+    else
+    {
+        <MudPaper Elevation="0" Class="admin-panel">
+            <div class="admin-table-wrap">
+                <table class="admin-table admin-video-chat-table">
+                    <thead><tr><th>Time</th><th>User</th><th>Property</th><th>Video</th><th>Request</th><th>AI reply</th><th>Proposed changes</th><th>Outcome</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in chatRequests)
+                        {
+                            <tr>
+                                <td>@item.OccurredAtUtc.ToLocalTime().ToString("g")</td>
+                                <td>@(item.UserEmail ?? "Unknown")@if (item.WorkspaceName is { } workspace){<br /><span class="mud-text-secondary">@workspace</span>}</td>
+                                <td>@(item.PropertyAddress ?? "Unknown")</td>
+                                <td>@item.Video<br /><span class="mud-text-secondary">version @item.VideoVersion</span></td>
+                                <td class="admin-chat-text">@item.Request</td>
+                                <td class="admin-chat-text">@item.AssistantReply</td>
+                                <td>
+                                    @if (item.ProposedChanges.Count == 0)
+                                    {
+                                        <span class="mud-text-secondary">None</span>
+                                    }
+                                    else
+                                    {
+                                        <ul class="admin-chat-changes">
+                                            @foreach (var change in item.ProposedChanges)
+                                            {
+                                                <li>@change</li>
+                                            }
+                                        </ul>
+                                    }
+                                </td>
+                                <td>@item.Outcome@if (item.OutcomeDetail is { } detail){<br /><span class="mud-text-secondary">@detail</span>}</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </MudPaper>
+    }
+</section>
+
 @code {
     private IReadOnlyList<AdminAuditRow>? events;
+    private IReadOnlyList<AdminVideoChatRequestRow>? chatRequests;
 
-    protected override async Task OnInitializedAsync() =>
-        events = await DashboardService.GetAuditEventsAsync(AdminDateRange.LastDays(90, TimeProvider));
+    protected override async Task OnInitializedAsync()
+    {
+        var range = AdminDateRange.LastDays(90, TimeProvider);
+        events = await DashboardService.GetAuditEventsAsync(range);
+        chatRequests = await DashboardService.GetVideoChatRequestsAsync(range, 300);
+    }
 }

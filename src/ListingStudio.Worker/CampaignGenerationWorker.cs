@@ -37,6 +37,12 @@ public sealed partial class CampaignGenerationWorker(
                         result.WillRetry,
                         result.AttemptNumber);
                 }
+
+                var revision = await processor.ProcessNextRevisionAsync(stoppingToken);
+                if (revision is not null)
+                {
+                    LogRevisionProcessed(revision.RevisionId, revision.Succeeded, revision.WillRetry, revision.AttemptNumber);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -74,6 +80,11 @@ public sealed partial class CampaignGenerationWorker(
         bool stageCompleted,
         bool willRetry,
         int attemptNumber);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Campaign video revision {RevisionId} processed; success {Succeeded}, retry {WillRetry}, attempt {AttemptNumber}")]
+    private partial void LogRevisionProcessed(Guid revisionId, bool succeeded, bool willRetry, int attemptNumber);
 
     [LoggerMessage(
         Level = LogLevel.Error,

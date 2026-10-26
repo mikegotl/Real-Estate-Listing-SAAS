@@ -96,7 +96,8 @@ public sealed record CampaignDeliverableResult(
     int DurationSeconds,
     string AspectRatio,
     long? FileSize,
-    DateTimeOffset? RenderedAtUtc);
+    DateTimeOffset? RenderedAtUtc,
+    int Version = 1);
 
 public sealed record CampaignDownload(
     Stream Content,

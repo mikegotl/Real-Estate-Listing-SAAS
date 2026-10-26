@@ -67,6 +67,9 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<ICampaignLocalizationService, OpenAICampaignLocalizationService>()
             .AddHttpMessageHandler(provider => OpenAiHandler(
                 provider, "campaign-localization", options => options.LocalizationEstimatedCostUsd));
+        services.AddHttpClient<ICampaignVideoChatAssistant, OpenAICampaignVideoChatAssistant>()
+            .AddHttpMessageHandler(provider => OpenAiHandler(
+                provider, "campaign-video-chat", options => options.VideoChatEstimatedCostUsd));
         services.AddHttpClient<ElevenLabsVoiceProvider>()
             .AddHttpMessageHandler(provider =>
             {

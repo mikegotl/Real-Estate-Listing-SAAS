@@ -427,6 +427,8 @@ h1:focus { outline: none; }
 .admin-workspace h3 { font-size: 1rem; margin: 0 0 8px; }
 .admin-workspace h3 small { color: var(--ls-muted); font-size: .78rem; font-weight: 500; margin-left: 8px; }
 .admin-table-action { text-align: right !important; white-space: nowrap; }
+.admin-chat-text { min-width: 220px; max-width: 360px; white-space: pre-wrap; }
+.admin-chat-changes { margin: 0; padding-left: 1.1rem; min-width: 200px; }
 .admin-impersonate-form { margin: 0; }
 .impersonation-banner { align-items: center; background: var(--ls-accent-light); border-bottom: 1px solid var(--ls-accent); color: var(--ls-night); display: flex; gap: 12px; padding: 10px 24px; position: sticky; top: 72px; z-index: 5; }
 .impersonation-banner p { display: flex; flex: 1; flex-direction: column; font-size: .88rem; margin: 0; }
@@ -672,3 +674,14 @@ a.stage-pill:hover { text-decoration: underline; }
     .attention-list li .mud-button-root { grid-column: 2; justify-self: start; }
     .property-toolbar .property-search { max-width: none; }
 }
+
+/* Chat beside each finished campaign video */
+.video-chat-panel { padding: 12px; }
+.video-chat-header { align-items: flex-start; display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.video-chat-messages { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; margin-bottom: 10px; }
+.video-chat-message { border-radius: 10px; max-width: 92%; padding: 8px 10px; }
+.video-chat-message.assistant { align-self: flex-start; background: #F1EEE6; }
+.video-chat-message.user { align-self: flex-end; background: rgba(226, 192, 141, .35); }
+.video-chat-changes { font-size: .82rem; margin: 6px 0; padding-left: 1.1rem; }
+.video-chat-input { align-items: flex-start; display: flex; flex-direction: column; gap: 6px; }
+.video-chat-input .mud-input-control { width: 100%; }

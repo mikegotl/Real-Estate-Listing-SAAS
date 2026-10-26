@@ -93,6 +93,7 @@ public sealed class CampaignDeliverable
         AspectRatio = aspectRatio;
         SpecificationJson = Required(specificationJson, 500_000, nameof(specificationJson));
         Status = CampaignDeliverableStatus.Planned;
+        Version = 1;
         CreatedAtUtc = now;
     }
 
@@ -125,6 +126,9 @@ public sealed class CampaignDeliverable
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public DateTimeOffset? RenderedAtUtc { get; private set; }
+
+    /// <summary>Which version of the video this is: 1 as the campaign rendered it, higher after chat revisions.</summary>
+    public int Version { get; private set; } = 1;
 
     public CampaignGenerationJob CampaignGenerationJob { get; private set; } = null!;
 
@@ -171,6 +175,37 @@ public sealed class CampaignDeliverable
         ContentType = Required(contentType, 100, nameof(contentType));
         FileSize = fileSize;
         Status = CampaignDeliverableStatus.Rendered;
+        RenderedAtUtc = now;
+    }
+
+    /// <summary>Swaps in another render of this video, from a chat revision or an undo of one.</summary>
+    public void ApplyRevision(
+        string specificationJson,
+        Guid videoNarrationId,
+        string assetPath,
+        string contentType,
+        long fileSize,
+        int version,
+        DateTimeOffset now)
+    {
+        if (Status != CampaignDeliverableStatus.Rendered)
+        {
+            throw new InvalidOperationException("Only a finished video can be revised.");
+        }
+
+        if (videoNarrationId == Guid.Empty)
+        {
+            throw new ArgumentException("A narration identity is required.", nameof(videoNarrationId));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(version);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fileSize);
+        SpecificationJson = Required(specificationJson, 500_000, nameof(specificationJson));
+        VideoNarrationId = videoNarrationId;
+        AssetPath = Required(assetPath, 1_024, nameof(assetPath));
+        ContentType = Required(contentType, 100, nameof(contentType));
+        FileSize = fileSize;
+        Version = version;
         RenderedAtUtc = now;
     }
 
