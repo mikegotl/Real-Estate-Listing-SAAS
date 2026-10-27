@@ -5,6 +5,7 @@
 @inject IPropertyNarrationScriptService NarrationScriptService
 @inject IAgentPortraitService AgentPortraitService
 @inject IAgentProfileService AgentProfileService
+@inject IAgentAvatarVideoService AgentAvatarVideoService
 @inject IServiceScopeFactory ScopeFactory
 @inject ILogger<CampaignGenerationManager> Logger
 @inject IJSRuntime JSRuntime
@@ -343,8 +344,14 @@
                              Disabled="@(busy || IsReadOnly)"
                              Label="I confirm this is my photo and I consent to its use as an AI presenter in this campaign" />
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
-                    The current presenter uses your approved portrait during the opening and closing while the selected AI voice narrates.
-                    It does not clone your voice or claim that the portrait is lip-synced.
+                    @if (AgentAvatarVideoService.IsEnabled)
+                    {
+                        <span>Listing Studio will create short lip-synced opening and closing clips from your approved portrait and the selected AI narration. If the presenter provider is unavailable, the campaign continues with your static portrait.</span>
+                    }
+                    else
+                    {
+                        <span>Lip-sync is not enabled in this environment. The campaign will safely use your approved static portrait during the opening and closing while the selected AI voice narrates.</span>
+                    }
                 </MudAlert>
             }
             <MudCheckBox T="bool"
@@ -1097,7 +1104,7 @@
         new(CampaignVideoElement.NeighborhoodHighlights, "Neighborhood highlights", "Approved neighborhood facts and licensed images."),
         new(CampaignVideoElement.WalkthroughMotion, "Use walkthrough video and AI walk-through clips", "Play your walkthrough videos and finished AI walk-through clips. Turn this off for photos only."),
         new(CampaignVideoElement.AgentPortrait, "Agent photo on closing card", "Place the uploaded agent photo beside the final call to action."),
-        new(CampaignVideoElement.AgentAvatar, "AI agent presenter", "Show the approved profile headshot during the opening and closing while the selected AI voice provides the tour narration."),
+        new(CampaignVideoElement.AgentAvatar, "AI agent presenter", "Create short lip-synced opening and closing clips from the approved profile headshot, with a static-photo fallback."),
         new(CampaignVideoElement.ClosingCallToAction, "Closing call to action", "End with the campaign's verified contact call to action."),
     ];
 

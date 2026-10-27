@@ -2142,6 +2142,109 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("PropertyStories", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Videos.AgentAvatarVideo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AgentPortraitId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AssetPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("EstimatedCostUsd")
+                        .HasPrecision(12, 6)
+                        .HasColumnType("numeric(12,6)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("GenerationVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("IntroDurationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("IntroTimelineStartMs")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("OutroDurationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("OutroTimelineStartMs")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ProviderMetadataJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ProviderRequestId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SourceFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("VideoNarrationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetPath")
+                        .IsUnique();
+
+                    b.HasIndex("AgentPortraitId", "OrganizationId");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "CreatedAtUtc");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "SourceFingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("VideoNarrationId", "PropertyId", "OrganizationId");
+
+                    b.ToTable("AgentAvatarVideos", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Videos.GeneratedVideoClip", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3011,6 +3114,44 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Videos.AgentAvatarVideo", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Campaigns.AgentPortrait", "AgentPortrait")
+                        .WithMany()
+                        .HasForeignKey("AgentPortraitId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Videos.VideoNarration", "VideoNarration")
+                        .WithMany()
+                        .HasForeignKey("VideoNarrationId", "PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "PropertyId", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AgentPortrait");
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Property");
+
+                    b.Navigation("VideoNarration");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Videos.GeneratedVideoClip", b =>

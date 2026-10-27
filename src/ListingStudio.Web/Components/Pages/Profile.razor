@@ -5,6 +5,7 @@
 @inject IAgentPortraitService AgentPortraitService
 @inject IAgentProfileService AgentProfileService
 @inject IAgentAvatarPreviewService AgentAvatarPreviewService
+@inject IAgentAvatarVideoService AgentAvatarVideoService
 
 <PageTitle>Agent profile</PageTitle>
 
@@ -110,7 +111,14 @@
                              Color="Color.Primary"
                              Label="Include my agent presenter in new campaign videos by default. I confirm this is my photo and consent to this use." />
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
-                    This presenter treatment does not clone your voice or make the photo lip-sync. You can still change it for an individual campaign.
+                    @if (AgentAvatarVideoService.IsEnabled)
+                    {
+                        <span>New campaigns use short, lip-synced opening and closing clips generated from this approved photo and the selected AI narration. The campaign keeps a static-photo fallback if the provider is unavailable.</span>
+                    }
+                    else
+                    {
+                        <span>Lip-sync is not enabled in this environment, so campaigns safely use the existing static-photo presenter. You can still change it for an individual campaign.</span>
+                    }
                 </MudAlert>
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Primary"
@@ -125,7 +133,7 @@
                     <MudPaper Outlined="true" Class="pa-3 mt-3 avatar-preview-window">
                         <MudText Typo="Typo.subtitle2">Presenter preview</MudText>
                         <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
-                            Silent six-second layout preview. Campaign narration and music are added when the campaign is generated.
+                            Silent six-second layout preview. A paid lip-sync preview is not generated here; enabled campaigns create only the short final presenter clips they need.
                         </MudText>
                         <video @key="portrait.Id"
                                src="@AvatarPreviewUrl"

@@ -40,6 +40,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<GeneratedVideoClip> GeneratedVideoClips => Set<GeneratedVideoClip>();
 
+    public DbSet<AgentAvatarVideo> AgentAvatarVideos => Set<AgentAvatarVideo>();
+
     public DbSet<WalkthroughTransition> WalkthroughTransitions => Set<WalkthroughTransition>();
 
     public DbSet<WalkthroughStopDirection> WalkthroughStopDirections => Set<WalkthroughStopDirection>();
