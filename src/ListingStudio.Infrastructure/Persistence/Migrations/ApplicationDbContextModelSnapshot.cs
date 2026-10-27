@@ -1285,6 +1285,9 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
 
+                    b.Property<DateTimeOffset?>("NarrationSourceChosenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
@@ -1303,6 +1306,9 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool?>("UseRoomNarration")
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("YearBuilt")
                         .HasColumnType("integer");
@@ -1854,6 +1860,46 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("WalkthroughStopDirections", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Properties.WalkthroughStopNarration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Stop")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "Stop")
+                        .IsUnique();
+
+                    b.ToTable("WalkthroughStopNarrations", (string)null);
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Properties.WalkthroughTransition", b =>
@@ -2791,6 +2837,26 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Properties.WalkthroughStopDirection", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Properties.WalkthroughStopNarration", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
                         .WithMany()

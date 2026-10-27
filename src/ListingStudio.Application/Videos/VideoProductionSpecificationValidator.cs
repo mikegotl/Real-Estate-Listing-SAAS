@@ -250,6 +250,42 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
 
         AddIf(actual.Any(segment => expected.All(item => item.Key != segment.GroundingKey)),
             "Accepted narration cannot include generated or non-script narration.", errors);
+        ValidateRoomNarrationPlacement(input, specification, expected, errors);
+    }
+
+    /// <summary>
+    /// Room-by-room narration is written for the room the tour walks into, so each room's first passage must start
+    /// while a photo of that room is on screen.
+    /// </summary>
+    private static void ValidateRoomNarrationPlacement(
+        VideoDirectionRequest input,
+        VideoProductionSpecification specification,
+        IReadOnlyList<AcceptedNarrationScriptSegment> expected,
+        List<string> errors)
+    {
+        var stopsByMedia = input.Media.ToDictionary(media => media.MediaId, media => media.WalkthroughStop);
+        var placed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var segment in expected)
+        {
+            if (segment.WalkthroughStop is not { } stop || !placed.Add(stop))
+            {
+                continue;
+            }
+
+            var narration = specification.Audio.NarrationSegments.FirstOrDefault(item => item.GroundingKey == segment.Key);
+            if (narration is null)
+            {
+                continue;
+            }
+
+            var scene = specification.Scenes.FirstOrDefault(candidate => narration.StartMs >= candidate.StartMs
+                && narration.StartMs < candidate.StartMs + candidate.DurationMs);
+            var mediaId = scene?.VisualSource.PropertyMediaId ?? scene?.VisualSource.FallbackPropertyMediaId;
+            var shownStop = mediaId is { } id ? stopsByMedia.GetValueOrDefault(id) : null;
+            AddIf(!string.Equals(shownStop, stop, StringComparison.OrdinalIgnoreCase),
+                $"Narration {segment.Key} is written for the {stop} stop: start it on a scene showing a {stop} photo.",
+                errors);
+        }
     }
 
     private static void ValidateMotion(

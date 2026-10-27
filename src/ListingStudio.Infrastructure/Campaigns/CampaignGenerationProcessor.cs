@@ -13,6 +13,7 @@ using ListingStudio.Domain.Videos;
 using ListingStudio.Infrastructure.Configuration;
 using ListingStudio.Infrastructure.Notifications;
 using ListingStudio.Infrastructure.Persistence;
+using ListingStudio.Infrastructure.Properties;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -409,21 +410,20 @@ public sealed partial class CampaignGenerationProcessor(
             .ToArrayAsync(cancellationToken);
         var derivatives = derivativeGenerator.Generate(
             new CampaignDerivativeRequest(specification, media, propertyVideos));
-        var acceptedScript = await dbContext.PropertyNarrationScripts.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.OrganizationId == job.OrganizationId
-                && candidate.PropertyId == job.PropertyId
-                && candidate.MarketingUseAccepted,
-                cancellationToken);
+        var acceptedScript = await UserNarrationSource.LoadAsync(
+            dbContext,
+            job.OrganizationId,
+            job.PropertyId,
+            cancellationToken);
         VideoProductionPlanResult? longFormPlan = null;
         VideoNarrationResult? longFormNarration = null;
         CampaignLocalizedCopy? longFormLocalized = null;
         var needsLongForm = job.RequestedOutputs == CampaignOutputSelection.LegacyStandard
             || job.RequestedOutputs.HasFlag(CampaignOutputSelection.FullNarratedTour);
         if (needsLongForm
-            && acceptedScript is not null
-            && NarrationScriptPolicy.RequiresLongForm(acceptedScript.ExtractedText))
+            && acceptedScript is { RequiresLongForm: true })
         {
-            var durationSeconds = NarrationScriptPolicy.EstimateLongFormDurationSeconds(acceptedScript.ExtractedText);
+            var durationSeconds = NarrationScriptPolicy.EstimateLongFormDurationSeconds(acceptedScript.Text);
             longFormPlan = await productionPlanService.GenerateAsync(
                 job.RequestedByUserId,
                 job.PropertyId,

@@ -159,6 +159,8 @@
                             Show @(stop.Shots.Count == 1 ? "its shot" : $"its {stop.Shots.Count} shots")
                         </MudButton>
                     </div>
+
+                    @NarrationEditor((chosen, previous))
                 </div>
             </aside>
         }
@@ -179,6 +181,11 @@
                             <span class="@($"walkthrough-route-direction {(space.IsAssumed ? "is-assumed" : "")}")">@WalkthroughMap.Describe(space.Direction!.Value)</span>
                         }
                     </span>
+                    @if (Narration.TextFor(space.Name) is not null)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.RecordVoiceOver" Size="Size.Small" Class="walkthrough-route-narrated"
+                                 aria-label="Has narration" title="Has room narration" />
+                    }
                 </button>
             </li>
         }
@@ -226,6 +233,18 @@
 
     [Parameter]
     public int FocusRequest { get; set; }
+
+    /// <summary>The agent's room-by-room narration and whether campaign videos use it.</summary>
+    [Parameter]
+    public RoomNarrationOverview Narration { get; set; } = RoomNarrationOverview.Empty;
+
+    /// <summary>Raised with a stop and its new narration (null removes it). Returns once the narration is saved.</summary>
+    [Parameter]
+    public EventCallback<(string Stop, string? Text)> NarrationChanged { get; set; }
+
+    private string? editingNarrationStop;
+    private string? narrationDraft;
+    private bool savingNarration;
 
     private int handledFocusRequest;
     private IReadOnlyList<WalkthroughMapSpace> spaces = [];
@@ -394,6 +413,119 @@
     {
         playing = null;
         playingLabel = null;
+    }
+
+    private RenderFragment NarrationEditor((WalkthroughMapSpace Space, WalkthroughMapSpace? Previous) context) => __builder =>
+    {
+        var space = context.Space;
+        var saved = Narration.TextFor(space.Name);
+        var editing = string.Equals(editingNarrationStop, space.Name, StringComparison.OrdinalIgnoreCase);
+        var label = context.Previous is null ? "Opening narration" : $"Narration as the tour walks into the {space.Name.ToLowerInvariant()}";
+        if (IsReadOnly && saved is null)
+        {
+            return;
+        }
+
+        <div class="map-narration" data-testid="room-narration">
+            @if (!editing)
+            {
+                <button type="button" class="@($"map-narration-toggle {(saved is null ? "" : "has-text")}")" aria-expanded="false"
+                        disabled="@IsReadOnly" @onclick="@(() => StartNarration(space.Name, saved))">
+                    <MudIcon Icon="@Icons.Material.Filled.RecordVoiceOver" Size="Size.Small" />
+                    <span>@(saved is null ? (context.Previous is null ? "Add opening narration" : "Add narration for this room") : label)</span>
+                    @if (!IsReadOnly)
+                    {
+                        <MudIcon Icon="@(saved is null ? Icons.Material.Filled.Add : Icons.Material.Filled.Edit)" Size="Size.Small" Class="map-narration-toggle-end" />
+                    }
+                </button>
+                @if (saved is not null)
+                {
+                    <p class="map-narration-text">“@saved”</p>
+                }
+            }
+            else
+            {
+                <label class="map-narration-label" for="room-narration-text">@label</label>
+                <MudTextField T="string" id="room-narration-text" @bind-Value="narrationDraft" Lines="4" Variant="Variant.Outlined"
+                              Immediate="true" MaxLength="WalkthroughStopNarration.MaximumTextLength"
+                              Counter="WalkthroughStopNarration.MaximumTextLength" Disabled="savingNarration"
+                              Placeholder="@(context.Previous is null
+                                  ? "What should the voice say as the video opens on the front of the home?"
+                                  : $"What should the voice say as the video walks into the {space.Name.ToLowerInvariant()}?")" />
+                <span class="map-narration-meta">@NarrationWords(narrationDraft) · @SpokenSeconds(narrationDraft)</span>
+                <div class="map-narration-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="savingNarration"
+                               OnClick="@(() => SaveNarrationAsync(space.Name, narrationDraft))">Save narration</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Disabled="savingNarration"
+                               OnClick="CancelNarration">Cancel</MudButton>
+                    @if (saved is not null)
+                    {
+                        <MudSpacer />
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="savingNarration"
+                                   OnClick="@(() => SaveNarrationAsync(space.Name, null))">Remove</MudButton>
+                    }
+                </div>
+            }
+            @if (Narration.HasNarration && (saved is not null || editing))
+            {
+                <p class="map-narration-status">
+                    @if (Narration.IsInUse)
+                    {
+                        <text>Campaign videos read your room narration in place of the AI script (@Narration.WordCount words so far).</text>
+                    }
+                    else
+                    {
+                        <text>Campaign videos use the AI script for now. Switch to room-by-room narration on the Campaign tab.</text>
+                    }
+                </p>
+                @if (Narration.IsInUse && Narration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit)
+                {
+                    <p class="map-narration-status is-warning">
+                        Over @IPropertyNarrationScriptService.ShortFormWordLimit words fits only the full narrated tour. The
+                        60-second videos fall back to the AI script until it is shorter.
+                    </p>
+                }
+            }
+        </div>
+    };
+
+    private void StartNarration(string stop, string? saved)
+    {
+        editingNarrationStop = stop;
+        narrationDraft = saved;
+    }
+
+    private void CancelNarration()
+    {
+        editingNarrationStop = null;
+        narrationDraft = null;
+    }
+
+    private async Task SaveNarrationAsync(string stop, string? text)
+    {
+        savingNarration = true;
+        try
+        {
+            await NarrationChanged.InvokeAsync((stop, string.IsNullOrWhiteSpace(text) ? null : text));
+            CancelNarration();
+        }
+        finally
+        {
+            savingNarration = false;
+        }
+    }
+
+    private static string NarrationWords(string? text)
+    {
+        var words = NarrationScriptPolicy.CountWords(text ?? string.Empty);
+        return words == 1 ? "1 word" : $"{words} words";
+    }
+
+    // About 145 spoken words a minute, the pace the long-form planner assumes.
+    private static string SpokenSeconds(string? text)
+    {
+        var seconds = (int)Math.Ceiling(NarrationScriptPolicy.CountWords(text ?? string.Empty) * 60m / 145);
+        return $"about {seconds} s spoken";
     }
 
     private async Task SetDirectionAsync(string stop, WalkthroughDirection direction)

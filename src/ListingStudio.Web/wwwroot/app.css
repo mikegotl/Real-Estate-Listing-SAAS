@@ -520,6 +520,21 @@ h1:focus { outline: none; }
 .walkthrough-route-number { align-items: center; background: var(--ls-primary); border-radius: 999px; color: var(--ls-on-night); display: inline-flex; flex: none; font-size: .72rem; font-weight: 750; height: 22px; justify-content: center; width: 22px; }
 .walkthrough-route-direction { color: var(--ls-muted); display: block; font-size: .74rem; }
 .walkthrough-route-direction.is-assumed { font-style: italic; }
+.walkthrough-route-narrated { color: var(--ls-accent); margin-left: 2px; }
+.map-narration { border-top: 1px solid var(--ls-line); display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; }
+.map-narration-toggle { align-items: center; background: var(--ls-accent-soft); border: 1px dashed var(--ls-accent); border-radius: 12px; color: var(--ls-ink); cursor: pointer; display: flex; font: inherit; font-size: .84rem; font-weight: 600; gap: 8px; padding: 8px 10px; text-align: left; width: 100%; }
+.map-narration-toggle .mud-icon-root { color: var(--ls-accent-strong); flex: none; }
+.map-narration-toggle.has-text { border-style: solid; }
+.map-narration-toggle:hover, .map-narration-toggle:focus-visible { border-color: var(--ls-primary); }
+.map-narration-toggle:focus-visible { outline: 2px solid var(--ls-primary); outline-offset: 2px; }
+.map-narration-toggle:disabled { cursor: default; }
+.map-narration-toggle-end { margin-left: auto; }
+.map-narration-text { color: var(--ls-ink); font-size: .86rem; line-height: 1.45; margin: 0; white-space: pre-line; }
+.map-narration-label { font-size: .84rem; font-weight: 650; }
+.map-narration-meta { color: var(--ls-muted); font-size: .74rem; }
+.map-narration-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
+.map-narration-status { color: var(--ls-muted); font-size: .76rem; margin: 0; }
+.map-narration-status.is-warning { color: var(--ls-accent-strong); font-weight: 600; }
 .address-lookup-help { color: var(--ls-muted); display: block; margin: 6px 2px 0; }
 
 /* Property details */

@@ -3,6 +3,7 @@
 @inject IPropertyMediaService MediaService
 @inject IPropertyNarrationScriptService NarrationScriptService
 @inject IAgentPortraitService AgentPortraitService
+@inject IServiceScopeFactory ScopeFactory
 @inject ILogger<CampaignGenerationManager> Logger
 
 <MudPaper Class="pa-6 mt-6">
@@ -53,7 +54,7 @@
                             @if (unavailable)
                             {
                                 <MudText Typo="Typo.caption" Color="Color.Info">
-                                    Accept a narration script longer than @IPropertyNarrationScriptService.ShortFormWordLimit words to enable this format.
+                                    Accept a narration script, or use room-by-room narration, longer than @IPropertyNarrationScriptService.ShortFormWordLimit words to enable this format.
                                 </MudText>
                             }
                         </MudPaper>
@@ -144,6 +145,41 @@
                     <MudText Typo="Typo.caption" Color="Color.Error" Class="mb-3">
                         Enter the open house day and time and confirm them before generating this template.
                     </MudText>
+                }
+            }
+            @if (roomNarration.HasNarration)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-2">Voiceover script</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                    You wrote narration for @(roomNarration.NarratedStopCount == 1 ? "1 room" : $"{roomNarration.NarratedStopCount} rooms")
+                    on the walkthrough map (@roomNarration.WordCount words). Choose what the voice reads in the tour videos.
+                </MudText>
+                <MudSelect T="bool" Label="Narration" Value="roomNarration.IsInUse" ValueChanged="ChooseNarrationSourceAsync"
+                           Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly || choosingNarration)" Class="mb-2"
+                           data-testid="narration-source">
+                    <MudSelectItem Value="true">Room-by-room narration from the walkthrough map</MudSelectItem>
+                    <MudSelectItem Value="false">AI-generated script from the property story</MudSelectItem>
+                </MudSelect>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                    @if (roomNarration.IsInUse)
+                    {
+                        <text>
+                            Your words are read exactly as written, each starting as the tour reaches that room. The 30-second
+                            short voiceover for TikTok, Reels and Shorts is still written from the property story.
+                        </text>
+                    }
+                    else
+                    {
+                        <text>The tour videos read the AI script. Your room narration stays saved on the map.</text>
+                    }
+                </MudText>
+                @if (roomNarration.IsInUse && roomNarration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                        At @roomNarration.WordCount words your narration is too long for a 60-second video, so those use the
+                        AI script. Choose the full narrated tour to hear all of it, or shorten it to
+                        @IPropertyNarrationScriptService.ShortFormWordLimit words.
+                    </MudAlert>
                 }
             }
             <MudText Typo="Typo.subtitle2" Class="mt-2">Sound</MudText>
@@ -489,6 +525,8 @@
     private bool selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
     private bool selectedAgentAvatarConsent;
     private bool soundtrackChosen;
+    private RoomNarrationOverview roomNarration = RoomNarrationOverview.Empty;
+    private bool choosingNarration;
     private bool captionStyleChosen;
     private string? templateNote;
     private CampaignPace selectedPace = CampaignCreativeOptions.SocialDefault.Pace;
@@ -527,8 +565,10 @@
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
             var script = await NarrationScriptService.GetAsync(userId, PropertyId, pollingCancellation.Token);
-            longFormAvailable = script is { MarketingUseAccepted: true }
-                && NarrationScriptPolicy.RequiresLongForm(script.ExtractedText);
+            roomNarration = await LoadRoomNarrationAsync(userId, pollingCancellation.Token);
+            longFormAvailable = roomNarration.IsInUse
+                ? roomNarration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
+                : script is { MarketingUseAccepted: true } && NarrationScriptPolicy.RequiresLongForm(script.ExtractedText);
             if (!selectionInitialized)
             {
                 if (job is not null && job.RequestedOutputs != CampaignOutputSelection.LegacyStandard)
@@ -579,6 +619,34 @@
         {
             Logger.LogWarning(exception, "Refreshing campaign status for property {PropertyId} failed", PropertyId);
             refreshError = "Campaign status could not be refreshed. Listing Studio will keep trying.";
+        }
+    }
+
+    // Room narration uses its own scope, so a choice made while the status poll runs never shares its DbContext.
+    private async Task<RoomNarrationOverview> LoadRoomNarrationAsync(string userId, CancellationToken cancellationToken)
+    {
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IRoomNarrationService>()
+            .GetAsync(userId, PropertyId, cancellationToken);
+    }
+
+    private async Task ChooseNarrationSourceAsync(bool useRoomNarration)
+    {
+        choosingNarration = true;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using (var scope = ScopeFactory.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<IRoomNarrationService>()
+                    .ChooseSourceAsync(userId, PropertyId, useRoomNarration);
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            choosingNarration = false;
         }
     }
 

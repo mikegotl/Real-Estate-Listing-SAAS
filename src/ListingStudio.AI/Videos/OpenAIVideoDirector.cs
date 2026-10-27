@@ -27,8 +27,10 @@ public sealed class OpenAIVideoDirector(
         tourStop. Property walkthrough videos are listed in the agent's tourOrder. Use them in that order when they
         are relevant, beginning with FrontExterior when supplied, and do not jump backward in the route without a
         narration reason. Choose a valid start point whose scene window fits inside the supplied video duration.
-        Property-video scenes must not request still-image motion. When no accepted script is present, direct
-        narration from other grounded bindings.
+        Property-video scenes must not request still-image motion. When an accepted script segment carries a
+        walkthroughStop, the agent wrote it for that room: show that stop's photos in walkthrough order and start the
+        first segment for each stop on a scene showing a photo from that stop, and give the room enough screen time
+        for its passage. When no accepted script is present, direct narration from other grounded bindings.
 
         Media is listed in the agent's walkthrough storyboard order. When media items carry a walkthroughStop, sequence
         the photo scenes in that order so the tour moves continuously through the home: open on the exterior front,
@@ -49,7 +51,7 @@ public sealed class OpenAIVideoDirector(
 
     private static readonly JsonElement OutputSchema = VideoSchemaContract.EditorialSchema;
 
-    public string DirectorVersion => "openai-video-director-v1.6";
+    public string DirectorVersion => "openai-video-director-v1.7";
 
     public async Task<DirectedEditorialPlan> DirectAsync(
         VideoDirectionRequest request,

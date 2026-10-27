@@ -11,6 +11,7 @@ using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Stories;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Infrastructure.Persistence;
+using ListingStudio.Infrastructure.Properties;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -108,15 +109,12 @@ public sealed partial class VideoProductionPlanService(
                 insight.CheckedAtUtc,
                 insight.Id))
             .ToArrayAsync(cancellationToken);
-        var narrationScript = await dbContext.PropertyNarrationScripts
-            .AsNoTracking()
-            .SingleOrDefaultAsync(script => script.OrganizationId == organizationId
-                && script.PropertyId == propertyId
-                && script.MarketingUseAccepted,
-                cancellationToken);
-        if (narrationScript is not null
-            && NarrationScriptPolicy.RequiresLongForm(narrationScript.ExtractedText)
-            && duration == RequestedDuration.Hero60)
+        var narrationScript = await UserNarrationSource.LoadAsync(
+            dbContext,
+            organizationId,
+            propertyId,
+            cancellationToken);
+        if (narrationScript is { RequiresLongForm: true } && duration == RequestedDuration.Hero60)
         {
             narrationScript = null;
         }
@@ -452,7 +450,7 @@ public sealed partial class VideoProductionPlanService(
         PropertyStory story,
         string organizationName,
         IReadOnlyList<ApprovedNeighborhoodFact> approvedNeighborhoodFacts,
-        PropertyNarrationScript? narrationScript,
+        UserNarration? narrationScript,
         IReadOnlyList<PropertyVideo> walkthroughVideos,
         RequestedDuration duration,
         VideoAspectRatio aspectRatio)
@@ -507,16 +505,7 @@ public sealed partial class VideoProductionPlanService(
             organizationName,
             approvedNeighborhoodFacts,
             narrationScript);
-        var acceptedScript = narrationScript is null
-            ? null
-            : new AcceptedNarrationScriptInput(
-                narrationScript.Id,
-                narrationScript.MarketingUseAcceptedAtUtc!.Value,
-                SplitAcceptedScript(narrationScript.ExtractedText)
-                    .Select((text, index) => new AcceptedNarrationScriptSegment(
-                        $"acceptedScript.segment.{index + 1}",
-                        text))
-                    .ToArray());
+        var acceptedScript = narrationScript?.ToDirectionInput();
         var videos = walkthroughVideos.Select(video => new VideoWalkthroughInput(
             video.Id,
             video.OriginalFilename,
@@ -549,7 +538,7 @@ public sealed partial class VideoProductionPlanService(
         PropertyStoryContent story,
         string organizationName,
         IReadOnlyList<ApprovedNeighborhoodFact> approvedNeighborhoodFacts,
-        PropertyNarrationScript? narrationScript)
+        UserNarration? narrationScript)
     {
         var address = string.Join(", ", new[]
         {
@@ -603,78 +592,17 @@ public sealed partial class VideoProductionPlanService(
 
         if (narrationScript is not null)
         {
-            var segments = SplitAcceptedScript(narrationScript.ExtractedText);
-            for (var index = 0; index < segments.Count; index++)
+            foreach (var segment in narrationScript.Segments)
             {
                 facts.Add(new FactBinding(
-                    $"acceptedScript.segment.{index + 1}",
-                    segments[index],
+                    segment.Key,
+                    segment.Text,
                     FactSource.AcceptedScript,
-                    narrationScript.Id.ToString("D")));
+                    narrationScript.SourceReference(segment)));
             }
         }
 
         return facts;
-    }
-
-    private static List<string> SplitAcceptedScript(string text)
-    {
-        const int targetLength = 260;
-        var sentences = text
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .SelectMany(paragraph => System.Text.RegularExpressions.Regex.Split(
-                paragraph,
-                @"(?<=[.!?])\s+"))
-            .Where(sentence => !string.IsNullOrWhiteSpace(sentence))
-            .Select(sentence => sentence.Trim())
-            .ToArray();
-        var result = new List<string>();
-        var current = new StringBuilder();
-        foreach (var sentence in sentences.SelectMany(value => SplitLongScriptSegment(value, targetLength)))
-        {
-            if (current.Length > 0 && current.Length + 1 + sentence.Length > targetLength)
-            {
-                result.Add(current.ToString());
-                current.Clear();
-            }
-
-            if (current.Length > 0)
-            {
-                current.Append(' ');
-            }
-
-            current.Append(sentence);
-        }
-
-        if (current.Length > 0)
-        {
-            result.Add(current.ToString());
-        }
-
-        return result;
-    }
-
-    private static IEnumerable<string> SplitLongScriptSegment(string value, int maximumLength)
-    {
-        var remaining = value.Trim();
-        while (remaining.Length > maximumLength)
-        {
-            var split = remaining[..maximumLength].LastIndexOf(' ');
-            if (split < maximumLength / 2)
-            {
-                split = maximumLength;
-            }
-
-            yield return remaining[..split].Trim();
-            remaining = remaining[split..].TrimStart();
-        }
-
-        if (remaining.Length > 0)
-        {
-            yield return remaining;
-        }
     }
 
     private static PropertyMediaObservation ToObservation(PropertyMedia media, PropertyMediaAnalysis analysis) => new(

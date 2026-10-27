@@ -44,6 +44,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<WalkthroughStopDirection> WalkthroughStopDirections => Set<WalkthroughStopDirection>();
 
+    public DbSet<WalkthroughStopNarration> WalkthroughStopNarrations => Set<WalkthroughStopNarration>();
+
     public DbSet<PropertyPhotoFix> PropertyPhotoFixes => Set<PropertyPhotoFix>();
 
     public DbSet<CampaignGenerationJob> CampaignGenerationJobs => Set<CampaignGenerationJob>();
