@@ -32,6 +32,7 @@ public sealed partial class CampaignGenerationProcessor(
     IGeneratedVideoClipService generatedVideoClipService,
     IVideoRenderer videoRenderer,
     ICampaignSoundtrackService campaignSoundtrackService,
+    IPhotoImageCodec photoImageCodec,
     IPropertyMediaStorage propertyMediaStorage,
     IPropertyVideoClipFinder videoClipFinder,
     ICampaignAssetStorage campaignAssetStorage,
@@ -1707,13 +1708,103 @@ public sealed partial class CampaignGenerationProcessor(
         job = await dbContext.CampaignGenerationJobs.SingleAsync(candidate => candidate.Id == jobId, cancellationToken);
         job.SetSocialCopy(content.SocialCaptionLong, content.SocialCaptionShort);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (job.RequestedOutputs.HasFlag(CampaignOutputSelection.FacebookStillPost))
+        {
+            await RenderStillPostsAsync(jobId, content.SocialCaptionLong, cancellationToken);
+        }
+
         return true;
+    }
+
+    private async Task RenderStillPostsAsync(
+        Guid jobId,
+        string caption,
+        CancellationToken cancellationToken)
+    {
+        var job = await GetJobAsync(jobId, cancellationToken);
+        var formats = new[]
+        {
+            (CampaignStillPostKind.FacebookSquare, Width: 1080, Height: 1080),
+            (CampaignStillPostKind.FacebookPortrait, Width: 1080, Height: 1350),
+        };
+        var rendered = await dbContext.CampaignStillPosts.AsNoTracking()
+            .Where(candidate => candidate.CampaignGenerationJobId == jobId
+                && candidate.OrganizationId == job.OrganizationId
+                && candidate.Status == CampaignStillPostStatus.Rendered)
+            .Select(candidate => candidate.Kind)
+            .ToArrayAsync(cancellationToken);
+        var missing = formats.Where(format => !rendered.Contains(format.Item1)).ToArray();
+        if (missing.Length == 0)
+        {
+            return;
+        }
+
+        var hero = await dbContext.PropertyMedia.AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId
+                && !candidate.IsInGallery)
+            .OrderByDescending(candidate => candidate.HeroScore ?? 0)
+            .ThenBy(candidate => candidate.DisplayOrder)
+            .ThenBy(candidate => candidate.Id)
+            .FirstAsync(cancellationToken);
+        byte[] image;
+        await using (var source = await propertyMediaStorage.OpenReadAsync(hero.BlobPath, cancellationToken)
+            ?? throw new FileNotFoundException("The property photo selected for the still post could not be opened."))
+        using (var buffer = new MemoryStream())
+        {
+            await source.CopyToAsync(buffer, cancellationToken);
+            image = buffer.ToArray();
+        }
+
+        var decoded = await photoImageCodec.DecodeAsync(
+            image,
+            hero.MimeType,
+            2_400,
+            2_400,
+            PhotoScaling.ShrinkToFit,
+            cancellationToken);
+        foreach (var format in missing)
+        {
+            var post = CampaignStillPost.Create(
+                job.Id,
+                job.OrganizationId,
+                job.PropertyId,
+                format.Item1,
+                format.Width,
+                format.Height,
+                caption,
+                timeProvider.GetUtcNow());
+            var jpeg = await photoImageCodec.EncodeJpegAsync(
+                CampaignStillPostComposer.Compose(decoded, format.Width, format.Height),
+                cancellationToken);
+            var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/still-{format.Item1.ToString().ToLowerInvariant()}-{post.Id:N}.jpg";
+            var stored = false;
+            try
+            {
+                await using var contentStream = new MemoryStream(jpeg, writable: false);
+                await campaignAssetStorage.StoreAsync(assetPath, contentStream, "image/jpeg", cancellationToken);
+                stored = true;
+                post.MarkRendered(assetPath, "image/jpeg", jpeg.Length, timeProvider.GetUtcNow());
+                dbContext.CampaignStillPosts.Add(post);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                if (stored)
+                {
+                    await campaignAssetStorage.DeleteAsync(assetPath, CancellationToken.None);
+                }
+
+                throw;
+            }
+        }
     }
 
     private async Task<bool> FinalizeAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var job = await dbContext.CampaignGenerationJobs.AsNoTracking()
             .Include(candidate => candidate.Deliverables)
+            .Include(candidate => candidate.StillPosts)
             .SingleAsync(candidate => candidate.Id == jobId, cancellationToken);
         var requiredKinds = RequiredKinds(job.RequestedOutputs);
         var deliverableCountIsValid = job.RequestedOutputs == CampaignOutputSelection.LegacyStandard
@@ -1725,7 +1816,10 @@ public sealed partial class CampaignGenerationProcessor(
             || requiredKinds.Any(kind => job.Deliverables.All(candidate => candidate.Kind != kind))
             || job.Deliverables.Any(candidate => candidate.Status != CampaignDeliverableStatus.Rendered)
             || string.IsNullOrWhiteSpace(job.SocialCaptionLong)
-            || string.IsNullOrWhiteSpace(job.SocialCaptionShort))
+            || string.IsNullOrWhiteSpace(job.SocialCaptionShort)
+            || (job.RequestedOutputs.HasFlag(CampaignOutputSelection.FacebookStillPost)
+                && (job.StillPosts.Count != 2
+                    || job.StillPosts.Any(candidate => candidate.Status != CampaignStillPostStatus.Rendered))))
         {
             throw new InvalidOperationException("The campaign is missing required deliverables or social copy.");
         }

@@ -627,6 +627,72 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("CampaignGenerationJobs", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignStillPost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AssetPath")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<Guid>("CampaignGenerationJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Caption")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("ContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RenderedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetPath")
+                        .IsUnique();
+
+                    b.HasIndex("CampaignGenerationJobId", "PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "CampaignGenerationJobId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("CampaignStillPosts", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoChatMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2322,6 +2388,11 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IncludeAvatarInCampaigns")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<DateTimeOffset?>("LastSuccessfulSignInAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -2617,6 +2688,18 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("Property");
 
                     b.Navigation("VideoNarration");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignStillPost", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Campaigns.CampaignGenerationJob", "CampaignGenerationJob")
+                        .WithMany("StillPosts")
+                        .HasForeignKey("CampaignGenerationJobId", "PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "PropertyId", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CampaignGenerationJob");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoRevision", b =>
@@ -3071,6 +3154,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignGenerationJob", b =>
                 {
                     b.Navigation("Deliverables");
+
+                    b.Navigation("StillPosts");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Leads.PropertyLead", b =>

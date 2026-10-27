@@ -8,6 +8,7 @@ using ListingStudio.Video.Health;
 using ListingStudio.Application.Properties;
 using ListingStudio.Video.Processing;
 using ListingStudio.Application.Administration;
+using ListingStudio.Application.Campaigns;
 using Microsoft.Extensions.Options;
 
 namespace ListingStudio.Video.DependencyInjection;
@@ -30,6 +31,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPropertyVideoFrameExtractor, FfmpegPropertyVideoFrameExtractor>();
         services.AddSingleton<IPropertyVideoClipFinder, FfmpegPropertyVideoClipFinder>();
         services.AddSingleton<IPhotoImageCodec, FfmpegPhotoImageCodec>();
+        services.AddSingleton<IAgentAvatarPreviewRenderer, FfmpegAgentAvatarPreviewRenderer>();
         services.AddHealthChecks()
             .AddCheck<FfmpegHealthCheck>("ffmpeg", tags: ["ready"]);
         services.AddHttpClient<IAiVideoProvider, HttpAiVideoProvider>(client =>

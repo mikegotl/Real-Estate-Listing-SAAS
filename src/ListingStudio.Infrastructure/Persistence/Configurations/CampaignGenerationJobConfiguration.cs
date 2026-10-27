@@ -147,5 +147,6 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
             .HasPrincipalKey(narration => new { narration.Id, narration.PropertyId, narration.OrganizationId })
             .OnDelete(DeleteBehavior.Restrict);
         builder.Navigation(job => job.Deliverables).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(job => job.StillPosts).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

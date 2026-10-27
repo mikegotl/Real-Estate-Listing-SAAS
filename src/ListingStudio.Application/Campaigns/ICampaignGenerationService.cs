@@ -55,6 +55,12 @@ public interface ICampaignGenerationService
         Guid jobId,
         CampaignOutputKind kind,
         CancellationToken cancellationToken = default);
+
+    Task<CampaignDownload?> OpenStillPostAsync(
+        string userId,
+        Guid jobId,
+        CampaignStillPostKind kind,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record CampaignGenerationResult(
@@ -74,7 +80,8 @@ public sealed record CampaignGenerationResult(
     string? SocialCaptionLong,
     string? SocialCaptionShort,
     IReadOnlyList<CampaignStageResult> Stages,
-    IReadOnlyList<CampaignDeliverableResult> Deliverables);
+    IReadOnlyList<CampaignDeliverableResult> Deliverables,
+    IReadOnlyList<CampaignStillPostResult> StillPosts);
 
 public sealed record CampaignStageResult(
     CampaignGenerationStage Stage,
@@ -98,6 +105,15 @@ public sealed record CampaignDeliverableResult(
     long? FileSize,
     DateTimeOffset? RenderedAtUtc,
     int Version = 1);
+
+public sealed record CampaignStillPostResult(
+    CampaignStillPostKind Kind,
+    CampaignStillPostStatus Status,
+    int Width,
+    int Height,
+    string Caption,
+    long? FileSize,
+    DateTimeOffset? RenderedAtUtc);
 
 public sealed record CampaignDownload(
     Stream Content,
