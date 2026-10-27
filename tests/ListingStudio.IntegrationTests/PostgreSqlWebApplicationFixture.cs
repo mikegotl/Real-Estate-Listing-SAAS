@@ -100,6 +100,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakePhotoClutterRemover PhotoClutterRemover { get; } = new();
 
+    public FakeAgentAvatarPreviewRenderer AgentAvatarPreviewRenderer { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -154,8 +156,29 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IPhotoImageCodec>(PhotoImageCodec);
             services.RemoveAll<IPhotoClutterRemover>();
             services.AddSingleton<IPhotoClutterRemover>(PhotoClutterRemover);
+            services.RemoveAll<IAgentAvatarPreviewRenderer>();
+            services.AddSingleton<IAgentAvatarPreviewRenderer>(AgentAvatarPreviewRenderer);
             additionalServices?.Invoke(services);
         });
+    }
+}
+
+public sealed class FakeAgentAvatarPreviewRenderer : IAgentAvatarPreviewRenderer
+{
+    private int callCount;
+
+    public int CallCount => callCount;
+
+    public Task<byte[]> RenderAsync(
+        byte[] portrait,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Assert.NotEmpty(portrait);
+        Assert.StartsWith("image/", contentType, StringComparison.Ordinal);
+        Interlocked.Increment(ref callCount);
+        return Task.FromResult<byte[]>([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109, 1, 2, 3, 4]);
     }
 }
 

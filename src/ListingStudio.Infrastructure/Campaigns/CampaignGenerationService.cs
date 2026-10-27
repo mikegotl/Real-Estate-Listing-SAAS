@@ -360,9 +360,38 @@ public sealed class CampaignGenerationService(
             : new CampaignDownload(content, deliverable.ContentType, $"listing-studio-{kind.ToString().ToLowerInvariant()}.mp4");
     }
 
+    public async Task<CampaignDownload?> OpenStillPostAsync(
+        string userId,
+        Guid jobId,
+        CampaignStillPostKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        var post = await dbContext.CampaignStillPosts
+            .AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.CampaignGenerationJobId == jobId
+                && candidate.OrganizationId == organizationId
+                && candidate.Kind == kind
+                && candidate.Status == CampaignStillPostStatus.Rendered,
+                cancellationToken);
+        if (post?.AssetPath is null || post.ContentType is null)
+        {
+            return null;
+        }
+
+        var content = await assetStorage.OpenReadAsync(post.AssetPath, cancellationToken);
+        return content is null
+            ? null
+            : new CampaignDownload(
+                content,
+                post.ContentType,
+                $"listing-studio-{kind.ToString().ToLowerInvariant()}.jpg");
+    }
+
     private IQueryable<CampaignGenerationJob> Query(Guid organizationId) => dbContext.CampaignGenerationJobs
         .AsNoTracking()
         .Include(candidate => candidate.Deliverables)
+        .Include(candidate => candidate.StillPosts)
         .Where(candidate => candidate.OrganizationId == organizationId);
 
     private async Task<Guid> GetOrganizationIdAsync(string userId, CancellationToken cancellationToken)
@@ -427,6 +456,17 @@ public sealed class CampaignGenerationService(
                 item.RenderedAtUtc,
                 item.Version))
             .ToArray();
+        var stillPosts = job.StillPosts
+            .OrderBy(item => item.Kind)
+            .Select(item => new CampaignStillPostResult(
+                item.Kind,
+                item.Status,
+                item.Width,
+                item.Height,
+                item.Caption,
+                item.FileSize,
+                item.RenderedAtUtc))
+            .ToArray();
         return new CampaignGenerationResult(
             job.Id,
             job.PropertyId,
@@ -449,7 +489,8 @@ public sealed class CampaignGenerationService(
             job.SocialCaptionLong,
             job.SocialCaptionShort,
             stages,
-            deliverables);
+            deliverables,
+            stillPosts);
     }
 
     private static CampaignStageStatus StageStatus(

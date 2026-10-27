@@ -402,6 +402,31 @@ app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
             enableRangeProcessing: true);
 }).RequireAuthorization();
 
+app.MapGet("/campaigns/{jobId:guid}/still-posts/{kind}", async (
+    Guid jobId,
+    CampaignStillPostKind kind,
+    bool? download,
+    HttpContext context,
+    ICampaignGenerationService campaignService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var post = await campaignService.OpenStillPostAsync(userId, jobId, kind, cancellationToken);
+    if (post is null)
+    {
+        return Results.NotFound();
+    }
+
+    return download is true
+        ? Results.Stream(post.Content, post.ContentType, post.FileName)
+        : Results.Stream(post.Content, post.ContentType);
+}).RequireAuthorization();
+
 // A 15-second sample of a library soundtrack for the Campaign tab's music preview.
 app.MapGet("/campaigns/soundtracks/{soundtrack}", async (
     CampaignSoundtrack soundtrack,
@@ -451,6 +476,24 @@ app.MapGet("/agent-portraits/{portraitId:guid}", async (
     return portrait is null
         ? Results.NotFound()
         : Results.Stream(portrait.Content, portrait.ContentType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
+app.MapGet("/agent-portraits/{portraitId:guid}/avatar-preview", async (
+    Guid portraitId,
+    HttpContext context,
+    IAgentAvatarPreviewService previewService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var preview = await previewService.OpenReadAsync(userId, portraitId, cancellationToken);
+    return preview is null
+        ? Results.NotFound()
+        : Results.Stream(preview.Content, preview.ContentType, enableRangeProcessing: true);
 }).RequireAuthorization();
 
 app.MapGet("/public/listings/{publicSlug}/cover", async (

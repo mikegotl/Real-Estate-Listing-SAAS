@@ -173,6 +173,10 @@ public sealed class CampaignGenerationJob
 
     private readonly List<CampaignDeliverable> deliverables = [];
 
+    public IReadOnlyCollection<CampaignStillPost> StillPosts => stillPosts;
+
+    private readonly List<CampaignStillPost> stillPosts = [];
+
     public static CampaignGenerationJob Create(
         Guid organizationId,
         Guid propertyId,

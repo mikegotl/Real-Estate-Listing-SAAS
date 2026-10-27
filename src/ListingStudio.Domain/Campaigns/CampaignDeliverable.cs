@@ -27,6 +27,7 @@ public enum CampaignOutputSelection
     YouTubeTour = 1 << 4,
     FullNarratedTour = 1 << 5,
     FacebookFeed = 1 << 6,
+    FacebookStillPost = 1 << 7,
 }
 
 public static class CampaignOutputSelectionPolicy
@@ -37,7 +38,8 @@ public static class CampaignOutputSelectionPolicy
     /// </summary>
     public const CampaignOutputSelection Recommended = CampaignOutputSelection.TikTok
         | CampaignOutputSelection.YouTubeTour
-        | CampaignOutputSelection.FacebookFeed;
+        | CampaignOutputSelection.FacebookFeed
+        | CampaignOutputSelection.FacebookStillPost;
 
     public const CampaignOutputSelection All = CampaignOutputSelection.LegacyStandard
         | Recommended

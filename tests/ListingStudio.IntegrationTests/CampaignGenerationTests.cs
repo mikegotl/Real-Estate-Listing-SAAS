@@ -116,6 +116,20 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.Equal("image/jpeg", content.ContentType);
         await content.Content.DisposeAsync();
         Assert.Null(await portraits.OpenReadAsync(outsider.UserId, saved.Id));
+
+        var profile = scope.ServiceProvider.GetRequiredService<IAgentProfileService>();
+        Assert.False((await profile.GetAsync(owner.UserId)).IncludeAvatarInCampaigns);
+        Assert.True((await profile.SetAvatarDefaultAsync(owner.UserId, true)).IncludeAvatarInCampaigns);
+        Assert.True((await profile.GetAsync(owner.UserId)).IncludeAvatarInCampaigns);
+
+        var previews = scope.ServiceProvider.GetRequiredService<IAgentAvatarPreviewService>();
+        Assert.True(await previews.PrepareAsync(owner.UserId, saved.Id));
+        Assert.False(await previews.PrepareAsync(outsider.UserId, saved.Id));
+        var preview = await previews.OpenReadAsync(owner.UserId, saved.Id);
+        Assert.NotNull(preview);
+        Assert.Equal("video/mp4", preview.ContentType);
+        await preview.Content.DisposeAsync();
+        Assert.Null(await previews.OpenReadAsync(outsider.UserId, saved.Id));
     }
 
     [Fact]
@@ -455,6 +469,41 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             item => AssertPlatformCut(item, CampaignOutputKind.TikTok, 30, "9:16"),
             item => AssertPlatformCut(item, CampaignOutputKind.YouTubeTour, 60, "16:9"),
             item => AssertPlatformCut(item, CampaignOutputKind.FacebookFeed, 30, "16:9"));
+        Assert.Collection(
+            completed.StillPosts.OrderBy(item => item.Kind),
+            item => AssertStillPost(item, CampaignStillPostKind.FacebookSquare, 1080, 1080),
+            item => AssertStillPost(item, CampaignStillPostKind.FacebookPortrait, 1080, 1350));
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+        var post = await campaigns.OpenStillPostAsync(
+            owner.UserId,
+            queued.Id,
+            CampaignStillPostKind.FacebookSquare);
+        Assert.NotNull(post);
+        Assert.Equal("image/jpeg", post.ContentType);
+        Assert.EndsWith(".jpg", post.FileName, StringComparison.Ordinal);
+        await post.Content.DisposeAsync();
+
+        var outsider = await CreateOwnerAndPropertyAsync("campaign-still-post-outsider");
+        Assert.Null(await campaigns.OpenStillPostAsync(
+            outsider.UserId,
+            queued.Id,
+            CampaignStillPostKind.FacebookSquare));
+    }
+
+    private static void AssertStillPost(
+        CampaignStillPostResult post,
+        CampaignStillPostKind kind,
+        int width,
+        int height)
+    {
+        Assert.Equal(kind, post.Kind);
+        Assert.Equal(CampaignStillPostStatus.Rendered, post.Status);
+        Assert.Equal(width, post.Width);
+        Assert.Equal(height, post.Height);
+        Assert.True(post.FileSize > 0);
+        Assert.False(string.IsNullOrWhiteSpace(post.Caption));
     }
 
     [Fact]

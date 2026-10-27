@@ -1,10 +1,13 @@
 @inherits OwningComponentBase<ICampaignGenerationService>
+@using Microsoft.JSInterop
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IPropertyMediaService MediaService
 @inject IPropertyNarrationScriptService NarrationScriptService
 @inject IAgentPortraitService AgentPortraitService
+@inject IAgentProfileService AgentProfileService
 @inject IServiceScopeFactory ScopeFactory
 @inject ILogger<CampaignGenerationManager> Logger
+@inject IJSRuntime JSRuntime
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
@@ -462,6 +465,57 @@
             </MudGrid>
         }
 
+        @if (job.StillPosts.Count > 0)
+        {
+            <MudText Typo="Typo.h6" Class="mb-2">Still-image posts</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Download either feed-ready crop, or use Share on a supported phone to choose Facebook or another installed app.
+            </MudText>
+            @if (shareMessage is not null)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">@shareMessage</MudAlert>
+            }
+            <MudGrid Spacing="2" Class="mb-4">
+                @foreach (var post in job.StillPosts)
+                {
+                    <MudItem xs="12" md="6">
+                        <MudPaper Outlined="true" Class="pa-4">
+                            <MudText Typo="Typo.h6">@StillPostName(post.Kind)</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                @post.Width × @post.Height · JPEG
+                            </MudText>
+                            @if (post.Status == CampaignStillPostStatus.Rendered)
+                            {
+                                <img src="@StillPostUrl(job.Id, post.Kind)"
+                                     alt="@($"Preview {StillPostName(post.Kind)}")"
+                                     style="width: 100%; margin-top: 1rem; border-radius: 4px;" />
+                                <MudStack Row="true" Spacing="2" Class="mt-3" Style="flex-wrap: wrap;">
+                                    <MudButton Href="@StillPostDownloadUrl(job.Id, post.Kind)"
+                                               Variant="Variant.Outlined"
+                                               Color="Color.Primary">
+                                        Download JPEG
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined"
+                                               OnClick="@(() => CopyCaptionAsync(post.Caption))">
+                                        Copy caption
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               OnClick="@(() => ShareStillPostAsync(post))">
+                                        Share
+                                    </MudButton>
+                                </MudStack>
+                            }
+                            else
+                            {
+                                <MudProgressLinear Indeterminate="true" Class="mt-3" />
+                            }
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+
         @if (job.Status == CampaignGenerationStatus.Completed)
         {
             <MudText Class="mud-text-secondary" Typo="Typo.overline">Short social caption</MudText>
@@ -508,6 +562,7 @@
     private bool pollingStarted;
     private string? error;
     private string? refreshError;
+    private string? shareMessage;
     private int mediaCount;
     private int failedAnalysisCount;
     private bool longFormAvailable;
@@ -565,6 +620,8 @@
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
             var script = await NarrationScriptService.GetAsync(userId, PropertyId, pollingCancellation.Token);
+            var profile = await AgentProfileService.GetAsync(userId, pollingCancellation.Token);
+            portrait = await AgentPortraitService.GetLatestAsync(userId, pollingCancellation.Token);
             roomNarration = await LoadRoomNarrationAsync(userId, pollingCancellation.Token);
             longFormAvailable = roomNarration.IsInUse
                 ? roomNarration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
@@ -596,6 +653,21 @@
                     selectedLocalizeAgentCard = job.NarrationPreferences.LocalizeAgentCard;
                 }
 
+                if (job?.Status is null or CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
+                {
+                    if (profile.IncludeAvatarInCampaigns && portrait is not null)
+                    {
+                        selectedCreativeElements &= ~CampaignVideoElement.AgentPortrait;
+                        selectedCreativeElements |= CampaignVideoElement.AgentAvatar;
+                        selectedAgentAvatarConsent = true;
+                    }
+                    else
+                    {
+                        selectedCreativeElements &= ~CampaignVideoElement.AgentAvatar;
+                        selectedAgentAvatarConsent = false;
+                    }
+                }
+
                 selectionInitialized = true;
             }
             if (!longFormAvailable)
@@ -606,7 +678,6 @@
                 .Where(item => !item.IsInGallery)
                 .ToArray();
             mediaCount = media.Length;
-            portrait = await AgentPortraitService.GetLatestAsync(userId, pollingCancellation.Token);
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             error = null;
             refreshError = null;
@@ -797,6 +868,43 @@
     private static string PreviewUrl(Guid jobId, CampaignOutputKind kind, int version) =>
         $"/campaigns/{jobId}/deliverables/{kind}?v={version}";
 
+    private static string StillPostUrl(Guid jobId, CampaignStillPostKind kind) =>
+        $"/campaigns/{jobId}/still-posts/{kind}";
+
+    private static string StillPostDownloadUrl(Guid jobId, CampaignStillPostKind kind) =>
+        $"/campaigns/{jobId}/still-posts/{kind}?download=true";
+
+    private async Task CopyCaptionAsync(string caption)
+    {
+        var copied = await JSRuntime.InvokeAsync<bool>("listingStudioCampaign.copyText", caption);
+        shareMessage = copied
+            ? "Caption copied."
+            : "Copy is unavailable in this browser. Select the caption text below instead.";
+    }
+
+    private async Task ShareStillPostAsync(CampaignStillPostResult post)
+    {
+        try
+        {
+            var result = await JSRuntime.InvokeAsync<string>(
+                "listingStudioCampaign.shareStillPost",
+                StillPostUrl(job!.Id, post.Kind),
+                post.Caption,
+                $"listing-studio-{post.Kind.ToString().ToLowerInvariant()}.jpg");
+            shareMessage = result switch
+            {
+                "shared" => "The image was sent to your device's share menu.",
+                "copied" => "This browser cannot share image files, so the caption was copied. Download the JPEG and attach it to your Facebook post.",
+                _ => "Sharing is unavailable in this browser. Download the JPEG and copy the caption instead.",
+            };
+        }
+        catch (JSException exception)
+        {
+            Logger.LogInformation(exception, "Still-post sharing was dismissed or unavailable.");
+            shareMessage = "Sharing was cancelled or is unavailable. The JPEG and caption are still ready to download and copy.";
+        }
+    }
+
     private static string Display(Enum value) => string.Concat(value.ToString().Select((character, index) =>
         index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
 
@@ -805,6 +913,7 @@
         new(CampaignOutputSelection.TikTok, "Vertical video for TikTok, Reels and Shorts", "Vertical 1080 × 1920 · 30 seconds (60 with the full voiceover) · price hook, beat-cut edit, contact card. One file to post on all three."),
         new(CampaignOutputSelection.YouTubeTour, "YouTube property tour", "Horizontal 1920 × 1080 · approximately 60 seconds · logical walkthrough order."),
         new(CampaignOutputSelection.FacebookFeed, "Facebook Feed", "Horizontal 1920 × 1080 · approximately 30 seconds · feed-ready highlights with the long social caption as post copy."),
+        new(CampaignOutputSelection.FacebookStillPost, "Facebook still-image post", "Two feed-ready JPEGs · square 1080 × 1080 and portrait 1080 × 1350 · includes generated post copy."),
         new(CampaignOutputSelection.FullNarratedTour, "Full narrated tour", "Horizontal 1920 × 1080 · duration follows the complete accepted script."),
     ];
 
@@ -949,7 +1058,16 @@
         Enum.GetValues<CampaignOutputSelection>()
             .Where(item => item is not CampaignOutputSelection.None and not CampaignOutputSelection.LegacyStandard
                 && selection.HasFlag(item))
-            .Select(item => OutputName(Enum.Parse<CampaignOutputKind>(item.ToString()))));
+            .Select(item => item == CampaignOutputSelection.FacebookStillPost
+                ? "Facebook still-image post"
+                : OutputName(Enum.Parse<CampaignOutputKind>(item.ToString()))));
+
+    private static string StillPostName(CampaignStillPostKind kind) => kind switch
+    {
+        CampaignStillPostKind.FacebookSquare => "Facebook square post",
+        CampaignStillPostKind.FacebookPortrait => "Facebook portrait post",
+        _ => Display(kind),
+    };
 
     private static string OutputName(CampaignOutputKind kind) => kind switch
     {
