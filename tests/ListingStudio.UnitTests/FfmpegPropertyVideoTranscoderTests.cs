@@ -61,6 +61,23 @@ public sealed class FfmpegPropertyVideoTranscoderTests
             FfmpegVideoRenderer.CalculateRenderTimeoutSeconds(configuredMinimum, duration));
     }
 
+    [Theory]
+    [InlineData(300, 30, 360)]
+    [InlineData(300, 60, 660)]
+    [InlineData(300, 736, 3_600)]
+    public void RenderTimeoutAllowsForLipSyncedPresenterCompositing(
+        int configuredMinimum,
+        int duration,
+        int expected)
+    {
+        Assert.Equal(
+            expected,
+            FfmpegVideoRenderer.CalculateRenderTimeoutSeconds(
+                configuredMinimum,
+                duration,
+                hasAgentPresenter: true));
+    }
+
     [Fact]
     public void EnhancementCommandStabilizesCadenceBrightnessAndColor()
     {

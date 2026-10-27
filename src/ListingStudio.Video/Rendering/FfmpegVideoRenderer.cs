@@ -36,7 +36,8 @@ public sealed class FfmpegVideoRenderer(
         var command = FfmpegCommandBuilder.Build(normalizedRequest, brandingOptions.Value);
         var renderTimeoutSeconds = CalculateRenderTimeoutSeconds(
             configuration.RenderTimeoutSeconds,
-            (int)request.Specification.RequestedDuration);
+            (int)request.Specification.RequestedDuration,
+            request.AgentPresenter is not null);
 
         using var process = new Process
         {
@@ -155,7 +156,8 @@ public sealed class FfmpegVideoRenderer(
 
     public static int CalculateRenderTimeoutSeconds(
         int configuredMinimumSeconds,
-        int requestedDurationSeconds)
+        int requestedDurationSeconds,
+        bool hasAgentPresenter = false)
     {
         if (configuredMinimumSeconds is < 1 or > 3_600)
         {
@@ -168,11 +170,16 @@ public sealed class FfmpegVideoRenderer(
         }
 
         // Long-form exports can take longer than their playback duration when filters,
-        // overlays, and software H.264 encoding are used. Keep the configured value as
-        // the floor for short edits and allow three times the program length plus setup.
+        // overlays, and software H.264 encoding are used. A lip-synced presenter adds a
+        // second full-frame video pipeline and timed overlays; that work is deliberately
+        // single-threaded in the Worker to stay within its memory limit, so budget more
+        // wall-clock time without relaxing the one-hour safety cap.
+        var secondsPerProgramSecond = hasAgentPresenter ? 10 : 3;
         return Math.Min(
             3_600,
-            Math.Max(configuredMinimumSeconds, checked((requestedDurationSeconds * 3) + 60)));
+            Math.Max(
+                configuredMinimumSeconds,
+                checked((requestedDurationSeconds * secondsPerProgramSecond) + 60)));
     }
 
     private static void Kill(Process process)
