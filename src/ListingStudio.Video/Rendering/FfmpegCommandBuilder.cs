@@ -89,6 +89,7 @@ public static class FfmpegCommandBuilder
         ValidateMediaViewports(scenes, sceneAssets, request.Specification.Output);
         ValidateNarration(request.Specification, request.Narration);
         var brandAssets = ValidateBranding(request, brandingTemplate);
+        var agentPresenter = ValidateAgentPresenter(request);
         ValidateMusic(request);
         var neighborhoodOverlays = CreateNeighborhoodOverlays(request.Specification, neighborhoodAssets);
 
@@ -176,6 +177,13 @@ public static class FfmpegCommandBuilder
             ]);
         }
 
+        int? agentPresenterInput = null;
+        if (agentPresenter is not null)
+        {
+            agentPresenterInput = nextInput++;
+            arguments.AddRange(["-i", agentPresenter.FilePath]);
+        }
+
         var walkthroughInputs = new Dictionary<int, int>();
         foreach (var (sceneIndex, walkthrough) in walkthroughs.OrderBy(entry => entry.Key))
         {
@@ -188,6 +196,7 @@ public static class FfmpegCommandBuilder
             musicInput,
             logoInputs,
             neighborhoodInputs,
+            agentPresenterInput,
             walkthroughs,
             walkthroughInputs);
         arguments.AddRange(
@@ -288,6 +297,7 @@ public static class FfmpegCommandBuilder
             neighborhoodOverlays,
             "videoTimeline");
         current = BuildBrandingFilters(request, filters, inputs.LogoInputs, brandingTemplate, current);
+        current = BuildAgentPresenterFilters(request, filters, inputs.AgentPresenterInput, current);
         var videoFilters = new List<string>();
         if (brandingTemplate.VideoFadeInMs > 0)
         {
@@ -615,6 +625,11 @@ public static class FfmpegCommandBuilder
         for (var overlayIndex = 0; overlayIndex < logoOverlays.Length; overlayIndex++)
         {
             var (scene, overlay) = logoOverlays[overlayIndex];
+            if (request.AgentPresenter?.AssetId == overlay.AssetId)
+            {
+                continue;
+            }
+
             var input = logoInputs[overlayIndex];
             var box = ToPixelBox(overlay.Box, output);
             var logo = $"logo{filterNumber}";
@@ -627,6 +642,81 @@ public static class FfmpegCommandBuilder
             filters.Add(
                 $"[{current}][{logo}]overlay=x={box.X}+({box.Width}-w)/2:y={box.Y}+({box.Height}-h)/2"
                 + $":enable='between(t,{Seconds(startMs)},{Seconds(endMs)})':eof_action=repeat[{next}]");
+            current = next;
+        }
+
+        return current;
+    }
+
+    private static string BuildAgentPresenterFilters(
+        VideoRenderRequest request,
+        List<string> filters,
+        int? input,
+        string sourceLabel)
+    {
+        var presenter = request.AgentPresenter;
+        if (presenter is null)
+        {
+            return sourceLabel;
+        }
+
+        var output = request.Specification.Output;
+        var vertical = request.Specification.AspectRatio == VideoAspectRatio.Vertical9By16;
+        var segments = new List<(int SourceStartMs, int TimelineStartMs, int DurationMs, PixelBox Box)>
+        {
+            (
+                0,
+                presenter.IntroTimelineStartMs,
+                presenter.IntroDurationMs,
+                ToPixelBox(
+                    vertical
+                        ? new NormalizedRect(0.56m, 0.43m, 0.36m, 0.42m)
+                        : new NormalizedRect(0.72m, 0.50m, 0.22m, 0.38m),
+                    output)),
+        };
+        if (presenter.OutroDurationMs > 0)
+        {
+            segments.Add((
+                presenter.IntroDurationMs,
+                presenter.OutroTimelineStartMs,
+                presenter.OutroDurationMs,
+                ToPixelBox(
+                    vertical
+                        ? new NormalizedRect(0.68m, 0.66m, 0.24m, 0.24m)
+                        : new NormalizedRect(0.78m, 0.60m, 0.16m, 0.28m),
+                    output)));
+        }
+
+        var sources = new string[segments.Count];
+        if (segments.Count == 1)
+        {
+            sources[0] = $"{input}:v";
+        }
+        else
+        {
+            for (var index = 0; index < sources.Length; index++)
+            {
+                sources[index] = $"agentPresenterSource{index}";
+            }
+
+            filters.Add($"[{input}:v]split={sources.Length}{string.Concat(sources.Select(source => $"[{source}]"))}");
+        }
+
+        var current = sourceLabel;
+        for (var index = 0; index < segments.Count; index++)
+        {
+            var segment = segments[index];
+            var prepared = $"agentPresenter{index}";
+            var next = $"agentPresenterShown{index}";
+            filters.Add(
+                $"[{sources[index]}]trim=start={Seconds(segment.SourceStartMs)}:end={Seconds(segment.SourceStartMs + segment.DurationMs)},"
+                + $"setpts=PTS-STARTPTS+{Seconds(segment.TimelineStartMs)}/TB,"
+                + $"scale=w={segment.Box.Width}:h={segment.Box.Height}:force_original_aspect_ratio=increase:flags=lanczos,"
+                + $"crop={segment.Box.Width}:{segment.Box.Height},format=rgba[{prepared}]");
+            filters.Add(
+                $"[{current}][{prepared}]overlay=x={segment.Box.X}:y={segment.Box.Y}"
+                + $":enable='between(t,{Seconds(segment.TimelineStartMs)},{Seconds(segment.TimelineStartMs + segment.DurationMs)})'"
+                + $":eof_action=pass:shortest=0[{next}]");
             current = next;
         }
 
@@ -915,6 +1005,34 @@ public static class FfmpegCommandBuilder
         {
             throw new ArgumentException("The supplied music asset or mix plan is invalid.", nameof(request));
         }
+    }
+
+    private static VideoRenderAgentPresenterAsset? ValidateAgentPresenter(VideoRenderRequest request)
+    {
+        var presenter = request.AgentPresenter;
+        if (presenter is null)
+        {
+            return null;
+        }
+
+        var programMs = (int)request.Specification.RequestedDuration * 1_000;
+        if (string.IsNullOrWhiteSpace(presenter.AssetId)
+            || presenter.AssetId != request.Specification.Brand.SecondaryLogo
+            || !File.Exists(presenter.FilePath)
+            || presenter.Width <= 0
+            || presenter.Height <= 0
+            || presenter.IntroTimelineStartMs < 0
+            || presenter.IntroDurationMs <= 0
+            || presenter.IntroTimelineStartMs + presenter.IntroDurationMs > programMs
+            || presenter.OutroTimelineStartMs < 0
+            || presenter.OutroDurationMs < 0
+            || presenter.OutroTimelineStartMs + presenter.OutroDurationMs > programMs
+            || presenter.IntroDurationMs + presenter.OutroDurationMs > 15_000)
+        {
+            throw new ArgumentException("The agent presenter asset or timing is invalid.", nameof(request));
+        }
+
+        return presenter;
     }
 
     /// <summary>
@@ -1242,6 +1360,7 @@ public static class FfmpegCommandBuilder
         int? MusicInput,
         IReadOnlyList<int> LogoInputs,
         IReadOnlyList<int> NeighborhoodInputs,
+        int? AgentPresenterInput,
         IReadOnlyDictionary<int, SceneWalkthrough> Walkthroughs,
         IReadOnlyDictionary<int, int> WalkthroughInputs);
 

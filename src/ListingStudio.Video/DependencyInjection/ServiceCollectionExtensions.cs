@@ -19,6 +19,23 @@ public static class ServiceCollectionExtensions
     {
         services.AddOptions<AIVideoOptions>().Bind(configuration.GetSection(AIVideoOptions.SectionName));
         services.AddOptions<HiggsfieldOptions>().Bind(configuration.GetSection(HiggsfieldOptions.SectionName));
+        services.AddOptions<HeyGenOptions>()
+            .Bind(configuration.GetSection(HeyGenOptions.SectionName))
+            .Validate(options => !options.Enabled
+                || (Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri)
+                    && uri.Scheme == Uri.UriSchemeHttps
+                    && !string.IsNullOrWhiteSpace(options.ApiKey)
+                    && !string.IsNullOrWhiteSpace(options.Model)
+                    && options.Resolution == "720p"),
+                "Enabled HeyGen presenter generation requires an HTTPS URL, API key, model, and 720p output.")
+            .Validate(options => options.IntroMaximumSeconds is >= 1 and <= 10
+                    && options.OutroMaximumSeconds is >= 0 and <= 10
+                    && options.IntroMaximumSeconds + options.OutroMaximumSeconds <= 15
+                    && options.PollIntervalSeconds is >= 1 and <= 60
+                    && options.RequestTimeoutSeconds is >= 60 and <= 3_600
+                    && options.MaxOutputMegabytes is >= 1 and <= 500
+                    && options.EstimatedCostPerMinuteUsd is >= 0 and <= 100,
+                "HeyGen presenter cost and processing limits are outside supported bounds.");
         services.AddOptions<FfmpegOptions>()
             .Bind(configuration.GetSection(FfmpegOptions.SectionName))
             .Validate(options => options.EnhancementTimeoutSeconds is >= 60 and <= 7_200,
@@ -32,6 +49,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPropertyVideoClipFinder, FfmpegPropertyVideoClipFinder>();
         services.AddSingleton<IPhotoImageCodec, FfmpegPhotoImageCodec>();
         services.AddSingleton<IAgentAvatarPreviewRenderer, FfmpegAgentAvatarPreviewRenderer>();
+        services.AddSingleton<IAgentAvatarNarrationExcerptRenderer, FfmpegAgentAvatarNarrationExcerptRenderer>();
         services.AddHealthChecks()
             .AddCheck<FfmpegHealthCheck>("ffmpeg", tags: ["ready"]);
         services.AddHttpClient<IAiVideoProvider, HttpAiVideoProvider>(client =>
@@ -62,6 +80,25 @@ public static class ServiceCollectionExtensions
                             request.RequestUri?.AbsolutePath.Trim('/'),
                             video.Model.Trim('/'),
                             StringComparison.OrdinalIgnoreCase));
+            });
+        services.AddHttpClient<IAgentAvatarVideoProvider, HeyGenAgentAvatarVideoProvider>(client =>
+            client.Timeout = Timeout.InfiniteTimeSpan)
+            .AddHttpMessageHandler(provider =>
+            {
+                var video = provider.GetRequiredService<IOptions<HeyGenOptions>>().Value;
+                var maximumEstimatedCost = Math.Round(
+                    (video.IntroMaximumSeconds + video.OutroMaximumSeconds) / 60m
+                        * video.EstimatedCostPerMinuteUsd,
+                    6,
+                    MidpointRounding.AwayFromZero);
+                return new AiUsageHttpMessageHandler(
+                    provider.GetRequiredService<IAiUsageRecorder>(),
+                    "HeyGen",
+                    video.Model,
+                    "agent-avatar-video",
+                    maximumEstimatedCost,
+                    request => request.Method == HttpMethod.Post
+                        && string.Equals(request.RequestUri?.AbsolutePath, "/v3/videos", StringComparison.OrdinalIgnoreCase));
             });
         return services;
     }

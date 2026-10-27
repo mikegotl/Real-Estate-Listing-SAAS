@@ -30,6 +30,7 @@ public sealed partial class CampaignGenerationProcessor(
     IAiUsagePropertyContext aiUsagePropertyContext,
     ICampaignDerivativeGenerator derivativeGenerator,
     IGeneratedVideoClipService generatedVideoClipService,
+    IAgentAvatarVideoService agentAvatarVideoService,
     IVideoRenderer videoRenderer,
     ICampaignSoundtrackService campaignSoundtrackService,
     IPhotoImageCodec photoImageCodec,
@@ -1191,6 +1192,12 @@ public sealed partial class CampaignGenerationProcessor(
                 directory,
                 cancellationToken);
             var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
+            var agentPresenter = await MaterializeAgentPresenterAsync(
+                job,
+                narrationId,
+                specification,
+                directory,
+                cancellationToken);
             var music = await campaignSoundtrackService.MaterializeAsync(
                 specification.Audio.Music.AssetId,
                 (int)specification.RequestedDuration * 1_000,
@@ -1207,7 +1214,8 @@ public sealed partial class CampaignGenerationProcessor(
                     generatedClips,
                     neighborhoodAssets,
                     propertyVideos,
-                    walkthroughTransitions),
+                    walkthroughTransitions,
+                    agentPresenter),
                 cancellationToken);
             var stored = false;
             try
@@ -1258,6 +1266,39 @@ public sealed partial class CampaignGenerationProcessor(
         CancellationToken cancellationToken)
     {
         var job = await GetJobAsync(jobId, cancellationToken);
+        if (job.CreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
+            && job.AgentAvatarConsentConfirmed
+            && job.AgentPortraitId is { } portraitId
+            && agentAvatarVideoService.IsEnabled)
+        {
+            var narrationIds = await dbContext.CampaignDeliverables.AsNoTracking()
+                .Where(candidate => candidate.CampaignGenerationJobId == jobId)
+                .Select(candidate => candidate.VideoNarrationId)
+                .Distinct()
+                .ToArrayAsync(cancellationToken);
+            foreach (var narrationId in narrationIds)
+            {
+                try
+                {
+                    await agentAvatarVideoService.GetOrCreateAsync(
+                        job.OrganizationId,
+                        job.PropertyId,
+                        job.RequestedByUserId,
+                        portraitId,
+                        narrationId,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    LogAgentPresenterFallback(exception, job.Id, narrationId);
+                }
+            }
+        }
+
         if (job.CreativeElements.HasFlag(CampaignVideoElement.KitchenIslandOrbit))
         {
             var transitions = await dbContext.WalkthroughTransitions.AsNoTracking()
@@ -1342,6 +1383,54 @@ public sealed partial class CampaignGenerationProcessor(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    private async Task<VideoRenderAgentPresenterAsset?> MaterializeAgentPresenterAsync(
+        CampaignGenerationJob job,
+        Guid narrationId,
+        VideoProductionSpecification specification,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        if (!job.CreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
+            || !job.AgentAvatarConsentConfirmed
+            || job.AgentPortraitId is not { } portraitId
+            || specification.Brand.SecondaryLogo is null)
+        {
+            return null;
+        }
+
+        var presenter = await dbContext.AgentAvatarVideos.AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId
+                && candidate.AgentPortraitId == portraitId
+                && candidate.VideoNarrationId == narrationId)
+            .OrderByDescending(candidate => candidate.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (presenter is null)
+        {
+            return null;
+        }
+
+        await using var source = await campaignAssetStorage.OpenReadAsync(presenter.AssetPath, cancellationToken);
+        if (source is null)
+        {
+            LogAgentPresenterAssetUnavailable(job.Id, presenter.Id);
+            return null;
+        }
+
+        var path = Path.Combine(directory, $"agent-presenter-{presenter.Id:N}.mp4");
+        await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(target, cancellationToken);
+        return new VideoRenderAgentPresenterAsset(
+            specification.Brand.SecondaryLogo,
+            path,
+            presenter.Width,
+            presenter.Height,
+            presenter.IntroTimelineStartMs,
+            presenter.IntroDurationMs,
+            presenter.OutroTimelineStartMs,
+            presenter.OutroDurationMs);
     }
 
     private async Task<VideoRenderMediaAsset[]> MaterializeMediaAsync(
@@ -1947,6 +2036,16 @@ public sealed partial class CampaignGenerationProcessor(
         Level = LogLevel.Warning,
         Message = "Campaign {JobId} could not find short-form clips in property video {VideoId}")]
     private partial void LogVideoClipsUnavailable(Exception exception, Guid jobId, Guid videoId);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} could not generate lip-synced presenter for narration {NarrationId}; using the static agent portrait")]
+    private partial void LogAgentPresenterFallback(Exception exception, Guid jobId, Guid narrationId);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} could not open lip-synced presenter {PresenterId}; using the static agent portrait")]
+    private partial void LogAgentPresenterAssetUnavailable(Guid jobId, Guid presenterId);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

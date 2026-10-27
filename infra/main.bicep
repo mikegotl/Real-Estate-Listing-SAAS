@@ -52,6 +52,9 @@ param aiVideoEstimatedCostUsd string = '0'
 @description('Estimated USD cost for one Higgsfield video generation request.')
 param higgsfieldEstimatedCostPerCallUsd string = '0'
 
+@description('Estimated USD cost per generated minute of HeyGen Avatar IV presenter video.')
+param heyGenEstimatedCostPerMinuteUsd string = '2.31'
+
 @description('Enable OpenAI-backed property media analysis in the Web and Worker hosts.')
 param mediaAnalysisEnabled bool = false
 
@@ -75,6 +78,9 @@ param googlePlacesApiKey string = ''
 @description('Enable Higgsfield storyboard walk-through clips in the Web and Worker hosts.')
 param higgsfieldEnabled bool = false
 
+@description('Enable paid HeyGen lip-synced agent presenter clips. Remains off unless explicitly approved.')
+param heyGenEnabled bool = false
+
 @description('Enable the paid OpenAI Remove clutter photo fix on the Media tab. Requires openAiApiKey.')
 param photoClutterRemovalEnabled bool = false
 
@@ -92,6 +98,10 @@ param higgsfieldApiSecret string = ''
 @secure()
 @description('ElevenLabs API key. Required when voiceProvider is ElevenLabs.')
 param elevenLabsApiKey string = ''
+
+@secure()
+@description('HeyGen API key. Stored in Key Vault and used only when heyGenEnabled is true.')
+param heyGenApiKey string = ''
 
 @description('Narration provider. The deploy workflow selects ElevenLabs when an ElevenLabs API key is configured.')
 @allowed([
@@ -443,6 +453,14 @@ resource elevenLabsApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
   }
 }
 
+resource heyGenApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (heyGenEnabled && !empty(heyGenApiKey)) {
+  parent: keyVault
+  name: 'heygen-api-key'
+  properties: {
+    value: heyGenApiKey
+  }
+}
+
 resource higgsfieldApiKeySecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(higgsfieldApiKey)) {
   parent: keyVault
   name: 'higgsfield-api-key'
@@ -645,6 +663,10 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
     value: higgsfieldEstimatedCostPerCallUsd
   }
   {
+    name: 'HeyGen__EstimatedCostPerMinuteUsd'
+    value: heyGenEstimatedCostPerMinuteUsd
+  }
+  {
     name: 'MediaAnalysis__Enabled'
     value: string(mediaAnalysisEnabled)
   }
@@ -655,6 +677,10 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
   {
     name: 'Higgsfield__Enabled'
     value: string(higgsfieldEnabled)
+  }
+  {
+    name: 'HeyGen__Enabled'
+    value: string(heyGenEnabled && !empty(heyGenApiKey))
   }
   {
     name: 'PhotoFixes__RemoveClutterEnabled'
@@ -695,6 +721,11 @@ var providerSharedEnvironment = concat(sharedEnvironment, [
   {
     name: 'Higgsfield__ApiSecret'
     secretRef: 'higgsfield-api-secret'
+  }
+] : [], heyGenEnabled && !empty(heyGenApiKey) ? [
+  {
+    name: 'HeyGen__ApiKey'
+    secretRef: 'heygen-api-key'
   }
 ] : [])
 
@@ -761,6 +792,12 @@ var providerKeyVaultSecrets = concat(databaseKeyVaultSecrets, !empty(elevenLabsA
   {
     name: 'higgsfield-api-secret'
     keyVaultUrl: '${keyVault.properties.vaultUri}secrets/higgsfield-api-secret'
+    identity: runtimeIdentity.id
+  }
+] : [], heyGenEnabled && !empty(heyGenApiKey) ? [
+  {
+    name: 'heygen-api-key'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/heygen-api-key'
     identity: runtimeIdentity.id
   }
 ] : [])

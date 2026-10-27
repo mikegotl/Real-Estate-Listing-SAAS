@@ -68,6 +68,20 @@ public sealed record VideoRenderWalkthroughTransitionAsset(
     string FilePath,
     int DurationMs);
 
+/// <summary>
+/// A lip-synced agent presenter whose first and optional second source sections align with the campaign narration.
+/// The renderer ignores the clip's audio and keeps the campaign's original narration mix.
+/// </summary>
+public sealed record VideoRenderAgentPresenterAsset(
+    string AssetId,
+    string FilePath,
+    int Width,
+    int Height,
+    int IntroTimelineStartMs,
+    int IntroDurationMs,
+    int OutroTimelineStartMs,
+    int OutroDurationMs);
+
 public sealed record VideoRenderRequest(
     VideoProductionSpecification Specification,
     IReadOnlyList<VideoRenderMediaAsset> PropertyMedia,
@@ -78,7 +92,8 @@ public sealed record VideoRenderRequest(
     IReadOnlyList<VideoRenderGeneratedClipAsset>? GeneratedClips = null,
     IReadOnlyList<VideoRenderNeighborhoodAsset>? NeighborhoodAssets = null,
     IReadOnlyList<VideoRenderPropertyVideoAsset>? PropertyVideos = null,
-    IReadOnlyList<VideoRenderWalkthroughTransitionAsset>? WalkthroughTransitions = null);
+    IReadOnlyList<VideoRenderWalkthroughTransitionAsset>? WalkthroughTransitions = null,
+    VideoRenderAgentPresenterAsset? AgentPresenter = null);
 
 public sealed record VideoRenderResult(
     string OutputFilePath,

@@ -159,6 +159,93 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     }
 
     [Fact]
+    public async Task ConsentedAgentAvatarIsGeneratedOnceReusedAndTenantScoped()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("avatar-video-owner");
+        var outsider = await CreateOwnerAndPropertyAsync("avatar-video-outsider");
+        await UploadAsync(owner);
+        Guid portraitId;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = scope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using var upload = new MemoryStream(OnePixelPng);
+            portraitId = (await portraits.UploadAsync(
+                owner.UserId,
+                new AgentPortraitUpload("agent.png", "image/png", upload.Length, upload))).Id;
+        }
+
+        await using var factory = fixture.CreateFactory(_ => { });
+        factory.AgentAvatarVideoProvider.IsEnabled = true;
+        factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        factory.StoryGenerator.Enqueue(SafeStory);
+        factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        var options = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = portraitId,
+            AgentAvatarConsentConfirmed = true,
+        };
+        CampaignGenerationResult queued;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            queued = (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.YouTubeTour,
+                options,
+                CampaignNarrationPreferences.Default))!;
+        }
+
+        CampaignGenerationResult? completed = null;
+        for (var index = 0; index < 60; index++)
+        {
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ICampaignGenerationProcessor>().ProcessNextStageAsync();
+            }
+
+            factory.TimeProvider.Advance(TimeSpan.FromSeconds(10));
+            await using var readScope = factory.Services.CreateAsyncScope();
+            completed = await readScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
+                .GetAsync(owner.UserId, queued.Id);
+            if (completed?.Status == CampaignGenerationStatus.Completed)
+            {
+                break;
+            }
+        }
+
+        Assert.NotNull(completed);
+        Assert.Equal(CampaignGenerationStatus.Completed, completed.Status);
+        Assert.Equal(1, factory.AgentAvatarVideoProvider.CallCount);
+        Assert.Equal(1, factory.AgentAvatarNarrationExcerptRenderer.CallCount);
+        Assert.Equal(1, factory.VideoRenderer.AgentPresenterInputCount);
+
+        await using var verificationScope = factory.Services.CreateAsyncScope();
+        var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stored = await dbContext.AgentAvatarVideos.AsNoTracking()
+            .SingleAsync(candidate => candidate.OrganizationId == owner.OrganizationId);
+        var service = verificationScope.ServiceProvider.GetRequiredService<IAgentAvatarVideoService>();
+        var reused = await service.GetOrCreateAsync(
+            owner.OrganizationId,
+            owner.PropertyId,
+            owner.UserId,
+            portraitId,
+            stored.VideoNarrationId);
+        Assert.NotNull(reused);
+        Assert.True(reused.Reused);
+        Assert.Equal(1, factory.AgentAvatarVideoProvider.CallCount);
+
+        Assert.Null(await service.GetOrCreateAsync(
+            outsider.OrganizationId,
+            owner.PropertyId,
+            outsider.UserId,
+            portraitId,
+            stored.VideoNarrationId));
+        Assert.Equal(1, factory.AgentAvatarVideoProvider.CallCount);
+    }
+
+    [Fact]
     public async Task UploadToGenerateWaitAndDownloadIsDurableIdempotentAndTenantScoped()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-owner");

@@ -95,6 +95,9 @@ jobs:
       HIGGSFIELD_API_SECRET: ${{ secrets.HIGGSFIELD_API_SECRET }}
       # Optional: with this secret set, campaign narration uses ElevenLabs instead of OpenAI.
       ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      # Optional paid provider. Both the secret and explicit HEYGEN_ENABLED=true are required.
+      HEYGEN_API_KEY: ${{ secrets.HEYGEN_API_KEY }}
+      HEYGEN_ENABLED: ${{ vars.HEYGEN_ENABLED || 'false' }}
       VOICE_PROVIDER: ${{ secrets.ELEVENLABS_API_KEY != '' && 'ElevenLabs' || 'OpenAI' }}
       # Optional: with SMTP_HOST and SMTP_FROM_ADDRESS set, every user comment is emailed to the platform admins.
       SMTP_HOST: ${{ vars.SMTP_HOST }}
@@ -113,6 +116,7 @@ jobs:
       AGENT_PORTRAIT_ENHANCEMENT_ENABLED: ${{ vars.AGENT_PORTRAIT_ENHANCEMENT_ENABLED || 'true' }}
       AI_VIDEO_ESTIMATED_COST_USD: ${{ vars.AI_VIDEO_ESTIMATED_COST_USD || '0' }}
       HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD: ${{ vars.HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD || '0' }}
+      HEYGEN_ESTIMATED_COST_PER_MINUTE_USD: ${{ vars.HEYGEN_ESTIMATED_COST_PER_MINUTE_USD || '2.31' }}
 
     steps:
       - name: Check out repository
@@ -145,6 +149,7 @@ jobs:
             AGENT_PORTRAIT_ESTIMATED_COST_USD
             AI_VIDEO_ESTIMATED_COST_USD
             HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD
+            HEYGEN_ESTIMATED_COST_PER_MINUTE_USD
           )
           for name in "${pricing_values[@]}"; do
             if [[ ! "${!name}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -190,6 +195,7 @@ jobs:
               agentPortraitEstimatedCostUsd="$AGENT_PORTRAIT_ESTIMATED_COST_USD" \
               aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \
               higgsfieldEstimatedCostPerCallUsd="$HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD" \
+              heyGenEstimatedCostPerMinuteUsd="$HEYGEN_ESTIMATED_COST_PER_MINUTE_USD" \
               mediaAnalysisEnabled=true \
               googleAuthenticationEnabled=true \
               googleAuthenticationClientId="$GOOGLE_AUTH_CLIENT_ID" \
@@ -197,12 +203,14 @@ jobs:
               neighborhoodInsightsEnabled=true \
               googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
               higgsfieldEnabled=true \
+              heyGenEnabled="$HEYGEN_ENABLED" \
               photoClutterRemovalEnabled=true \
               agentPortraitEnhancementEnabled="$AGENT_PORTRAIT_ENHANCEMENT_ENABLED" \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
               voiceProvider="$VOICE_PROVIDER" \
               elevenLabsApiKey="$ELEVENLABS_API_KEY" \
+              heyGenApiKey="$HEYGEN_API_KEY" \
               smtpHost="$SMTP_HOST" \
               smtpPort="$SMTP_PORT" \
               smtpUsername="$SMTP_USERNAME" \
@@ -266,6 +274,7 @@ jobs:
               agentPortraitEstimatedCostUsd="$AGENT_PORTRAIT_ESTIMATED_COST_USD" \
               aiVideoEstimatedCostUsd="$AI_VIDEO_ESTIMATED_COST_USD" \
               higgsfieldEstimatedCostPerCallUsd="$HIGGSFIELD_ESTIMATED_COST_PER_CALL_USD" \
+              heyGenEstimatedCostPerMinuteUsd="$HEYGEN_ESTIMATED_COST_PER_MINUTE_USD" \
               mediaAnalysisEnabled=true \
               googleAuthenticationEnabled=true \
               googleAuthenticationClientId="$GOOGLE_AUTH_CLIENT_ID" \
@@ -273,12 +282,14 @@ jobs:
               neighborhoodInsightsEnabled=true \
               googlePlacesApiKey="$GOOGLE_PLACES_API_KEY" \
               higgsfieldEnabled=true \
+              heyGenEnabled="$HEYGEN_ENABLED" \
               photoClutterRemovalEnabled=true \
               agentPortraitEnhancementEnabled="$AGENT_PORTRAIT_ENHANCEMENT_ENABLED" \
               higgsfieldApiKey="$HIGGSFIELD_API_KEY" \
               higgsfieldApiSecret="$HIGGSFIELD_API_SECRET" \
               voiceProvider="$VOICE_PROVIDER" \
               elevenLabsApiKey="$ELEVENLABS_API_KEY" \
+              heyGenApiKey="$HEYGEN_API_KEY" \
               smtpHost="$SMTP_HOST" \
               smtpPort="$SMTP_PORT" \
               smtpUsername="$SMTP_USERNAME" \

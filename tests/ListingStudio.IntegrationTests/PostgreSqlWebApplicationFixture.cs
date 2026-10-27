@@ -102,6 +102,10 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeAgentAvatarPreviewRenderer AgentAvatarPreviewRenderer { get; } = new();
 
+    public FakeAgentAvatarVideoProvider AgentAvatarVideoProvider { get; } = new();
+
+    public FakeAgentAvatarNarrationExcerptRenderer AgentAvatarNarrationExcerptRenderer { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -158,8 +162,77 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IPhotoClutterRemover>(PhotoClutterRemover);
             services.RemoveAll<IAgentAvatarPreviewRenderer>();
             services.AddSingleton<IAgentAvatarPreviewRenderer>(AgentAvatarPreviewRenderer);
+            services.RemoveAll<IAgentAvatarVideoProvider>();
+            services.AddSingleton<IAgentAvatarVideoProvider>(AgentAvatarVideoProvider);
+            services.RemoveAll<IAgentAvatarNarrationExcerptRenderer>();
+            services.AddSingleton<IAgentAvatarNarrationExcerptRenderer>(AgentAvatarNarrationExcerptRenderer);
             additionalServices?.Invoke(services);
         });
+    }
+}
+
+public sealed class FakeAgentAvatarVideoProvider : IAgentAvatarVideoProvider
+{
+    private int callCount;
+
+    public bool IsEnabled { get; set; }
+
+    public string GenerationVersion => "fake-agent-avatar-v1";
+
+    public int MaximumIntroDurationMs => 6_000;
+
+    public int MaximumOutroDurationMs => 4_000;
+
+    public int CallCount => callCount;
+
+    public AgentAvatarVideoProviderRequest? LastRequest { get; private set; }
+
+    public Task<AgentAvatarVideoProviderResult> GenerateAsync(
+        AgentAvatarVideoProviderRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Assert.True(IsEnabled);
+        Assert.True(request.Portrait.CanRead);
+        Assert.True(request.Audio.CanRead);
+        LastRequest = request;
+        Interlocked.Increment(ref callCount);
+        return Task.FromResult(new AgentAvatarVideoProviderResult(
+            new MemoryStream([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109, 7, 8, 9]),
+            "video/mp4",
+            "fake-heygen",
+            "avatar-iv",
+            $"fake-avatar-{callCount}",
+            request.DurationMs,
+            720,
+            720,
+            0.04m,
+            new Dictionary<string, string> { ["mode"] = "test" }));
+    }
+}
+
+public sealed class FakeAgentAvatarNarrationExcerptRenderer : IAgentAvatarNarrationExcerptRenderer
+{
+    private int callCount;
+
+    public int CallCount => callCount;
+
+    public Task<AgentAvatarNarrationExcerpt> RenderAsync(
+        Stream narration,
+        string contentType,
+        IReadOnlyList<AgentAvatarNarrationExcerptPart> parts,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Assert.True(narration.CanRead);
+        Assert.Equal("audio/mpeg", contentType);
+        Assert.NotEmpty(parts);
+        Interlocked.Increment(ref callCount);
+        return Task.FromResult(new AgentAvatarNarrationExcerpt(
+            [1, 2, 3, 4],
+            "audio/mpeg",
+            ".mp3",
+            parts.Sum(part => part.DurationMs)));
     }
 }
 
@@ -351,6 +424,7 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     private int generatedClipInputCount;
     private int walkthroughInputCount;
     private int walkthroughShotCount;
+    private int agentPresenterInputCount;
 
     public int CallCount => callCount;
 
@@ -362,6 +436,8 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     public int GeneratedClipInputCount => generatedClipInputCount;
 
     public int WalkthroughInputCount => walkthroughInputCount;
+
+    public int AgentPresenterInputCount => agentPresenterInputCount;
 
     private readonly ConcurrentQueue<byte[]> results = new();
 
@@ -378,6 +454,11 @@ public sealed class FakeVideoRenderer : IVideoRenderer
         LastRequest = request;
         Interlocked.Add(ref generatedClipInputCount, request.GeneratedClips?.Count ?? 0);
         Interlocked.Add(ref walkthroughInputCount, request.WalkthroughTransitions?.Count ?? 0);
+        if (request.AgentPresenter is not null)
+        {
+            Assert.True(File.Exists(request.AgentPresenter.FilePath));
+            Interlocked.Increment(ref agentPresenterInputCount);
+        }
         Assert.All(request.WalkthroughTransitions ?? [], transition => Assert.True(File.Exists(transition.FilePath)));
         var walkthroughShots = (request.GeneratedClips ?? []).Where(clip => clip.FitToScene).ToArray();
         Assert.All(walkthroughShots, clip => Assert.True(File.Exists(clip.FilePath) && clip.Width > 0 && clip.LeadInMs > 0));
