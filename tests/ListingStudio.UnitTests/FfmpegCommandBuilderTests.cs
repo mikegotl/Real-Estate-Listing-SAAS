@@ -54,6 +54,56 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildUsesBothWorkerCoresForLipSyncedPresenterRenders()
+    {
+        var request = CreateBrandedRequest();
+        var portraitId = "agent-portrait:11111111111111111111111111111111";
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[0] = scenes[0] with
+        {
+            LogoOverlays = [new LogoOverlay(
+                portraitId,
+                0,
+                4_000,
+                new NormalizedRect(0.72m, 0.5m, 0.22m, 0.38m),
+                0.98m)],
+        };
+        scenes[^1] = scenes[^1] with
+        {
+            LogoOverlays = [new LogoOverlay(
+                portraitId,
+                3_000,
+                3_000,
+                new NormalizedRect(0.78m, 0.6m, 0.16m, 0.28m),
+                0.95m)],
+        };
+        request = request with
+        {
+            Specification = request.Specification with
+            {
+                Brand = request.Specification.Brand with { SecondaryLogo = portraitId },
+                Scenes = scenes,
+            },
+            BrandAssets = [new VideoRenderBrandAsset(portraitId, CreateFile("agent.jpg"), 800, 1_000)],
+            AgentPresenter = new VideoRenderAgentPresenterAsset(
+                portraitId,
+                CreateFile("lip-synced-presenter.mp4"),
+                720,
+                720,
+                500,
+                4_000,
+                9_000,
+                3_000),
+        };
+
+        var arguments = FfmpegCommandBuilder.Build(request).Arguments.ToList();
+
+        Assert.Equal("2", arguments[arguments.IndexOf("-filter_complex_threads") + 1]);
+        Assert.Equal("veryfast", arguments[arguments.IndexOf("-preset") + 1]);
+        Assert.Equal("2", arguments[arguments.IndexOf("-threads") + 1]);
+    }
+
+    [Fact]
     public void BuildStartsEachNarrationSegmentWithItsSceneAndNeverOverlapsAnOverrun()
     {
         var request = CreateRequest() with
