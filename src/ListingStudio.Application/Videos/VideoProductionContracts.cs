@@ -20,7 +20,11 @@ public sealed record VideoWalkthroughInput(
     int TourOrder,
     PropertyMediaCategory? TourStop);
 
-public sealed record AcceptedNarrationScriptSegment(string Key, string Text);
+/// <summary>
+/// One passage of a script the agent wrote. A passage from room-by-room narration names its walkthrough stop, and the
+/// video starts it while that stop is on screen.
+/// </summary>
+public sealed record AcceptedNarrationScriptSegment(string Key, string Text, string? WalkthroughStop = null);
 
 public sealed record AcceptedNarrationScriptInput(
     Guid ScriptId,

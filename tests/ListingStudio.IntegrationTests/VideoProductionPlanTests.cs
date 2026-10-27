@@ -360,6 +360,85 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
     }
 
     [Fact]
+    public async Task RoomNarrationReplacesTheAiScriptOnlyOnceTheAgentChoosesIt()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("room-narration-video-owner");
+        var outsider = await CreateOwnerAndPropertyAsync("room-narration-outsider");
+        await UploadAndAnalyzeAsync(owner);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        await GenerateStoryAsync(owner);
+        const string opening = "  Welcome   home. The front porch catches the morning sun.  ";
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var narrations = scope.ServiceProvider.GetRequiredService<IRoomNarrationService>();
+            Assert.True(await narrations.SetAsync(owner.UserId, owner.PropertyId, "exterior front", opening));
+            // A stop with no photos is kept but never spoken, since the video never shows it.
+            Assert.True(await narrations.SetAsync(owner.UserId, owner.PropertyId, "Kitchen", "The kitchen opens to the yard."));
+            Assert.False(await narrations.SetAsync(outsider.UserId, owner.PropertyId, "Exterior front", "Not mine."));
+
+            var overview = await narrations.GetAsync(owner.UserId, owner.PropertyId);
+            Assert.Null(overview.UseRoomNarration);
+            Assert.Equal(1, overview.NarratedStopCount);
+            Assert.Equal(9, overview.WordCount);
+            Assert.Equal("Welcome home. The front porch catches the morning sun.", overview.TextFor("Exterior front"));
+            Assert.False(overview.IsInUse);
+            Assert.Empty((await narrations.GetAsync(outsider.UserId, owner.PropertyId)).Narrations);
+        }
+
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        await using (var unchosenScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var generated = await unchosenScope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>()
+                .GenerateAsync(owner.UserId, owner.PropertyId, RequestedDuration.Hero60, VideoAspectRatio.Landscape16By9);
+            Assert.NotNull(generated);
+            Assert.Null(fixture.Factory.VideoDirector.LastRequest!.AcceptedNarrationScript);
+        }
+
+        await using (var chooseScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var narrations = chooseScope.ServiceProvider.GetRequiredService<IRoomNarrationService>();
+            Assert.False(await narrations.ChooseSourceAsync(outsider.UserId, owner.PropertyId, true));
+            Assert.True(await narrations.ChooseSourceAsync(owner.UserId, owner.PropertyId, true));
+            Assert.True((await narrations.GetAsync(owner.UserId, owner.PropertyId)).IsInUse);
+        }
+
+        fixture.Factory.VideoDirector.Enqueue(CreateAcceptedScriptEditorialPlan);
+        await using (var roomScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var plan = await roomScope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>()
+                .GenerateAsync(owner.UserId, owner.PropertyId, RequestedDuration.Hero60, VideoAspectRatio.Landscape16By9);
+            Assert.NotNull(plan);
+            Assert.False(plan.Reused);
+            var request = fixture.Factory.VideoDirector.LastRequest!;
+            var segment = Assert.Single(Assert.IsType<AcceptedNarrationScriptInput>(request.AcceptedNarrationScript).Segments);
+            Assert.Equal("roomNarration.segment.1", segment.Key);
+            Assert.Equal("Exterior front", segment.WalkthroughStop);
+            Assert.Equal("Welcome home. The front porch catches the morning sun.", segment.Text);
+            Assert.Contains(request.FactBindings, binding => binding.Key == segment.Key
+                && binding.Source == FactSource.AcceptedScript
+                && binding.SourceReference == "WalkthroughStopNarration:Exterior front");
+            var spoken = Assert.Single(plan.Specification.Audio.NarrationSegments);
+            Assert.Equal(segment.Text, spoken.Text);
+        }
+
+        await using (var backScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var narrations = backScope.ServiceProvider.GetRequiredService<IRoomNarrationService>();
+            Assert.True(await narrations.ChooseSourceAsync(owner.UserId, owner.PropertyId, false));
+            Assert.True(await narrations.SetAsync(owner.UserId, owner.PropertyId, "Kitchen", "  "));
+            Assert.Single((await narrations.GetAsync(owner.UserId, owner.PropertyId)).Narrations);
+        }
+
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        await using var aiScope = fixture.Factory.Services.CreateAsyncScope();
+        var aiPlan = await aiScope.ServiceProvider.GetRequiredService<IVideoProductionPlanService>()
+            .GenerateAsync(owner.UserId, owner.PropertyId, RequestedDuration.Hero60, VideoAspectRatio.Landscape16By9);
+        Assert.NotNull(aiPlan);
+        Assert.Contains(aiPlan.Specification.Audio.NarrationSegments, item => item.GroundingKey == "story.voiceover");
+    }
+
+    [Fact]
     public async Task IncludesEveryApprovedNeighborhoodFactInTheMasterPlan()
     {
         var owner = await CreateOwnerAndPropertyAsync("neighborhood-video-owner");

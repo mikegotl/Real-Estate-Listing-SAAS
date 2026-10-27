@@ -58,6 +58,14 @@ public sealed class ListingProperty
 
     public bool IsArchived => ArchivedAtUtc.HasValue;
 
+    /// <summary>
+    /// Whether campaign videos speak the agent's room-by-room narration (true) or the AI script from the property
+    /// story (false). Null until the agent has chosen.
+    /// </summary>
+    public bool? UseRoomNarration { get; private set; }
+
+    public DateTimeOffset? NarrationSourceChosenAtUtc { get; private set; }
+
     public Organization Organization { get; private set; } = null!;
 
     public ICollection<PropertyMedia> Media { get; } = [];
@@ -98,6 +106,13 @@ public sealed class ListingProperty
     {
         ArchivedAtUtc ??= DateTimeOffset.UtcNow;
         UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>Records which voiceover script the agent chose. It is not a listing edit, so UpdatedAtUtc stays.</summary>
+    public void ChooseNarrationSource(bool useRoomNarration, DateTimeOffset chosenAtUtc)
+    {
+        UseRoomNarration = useRoomNarration;
+        NarrationSourceChosenAtUtc = chosenAtUtc;
     }
 
     private void Apply(PropertyDetails details)

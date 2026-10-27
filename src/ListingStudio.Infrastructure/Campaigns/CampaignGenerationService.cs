@@ -8,6 +8,7 @@ using ListingStudio.Application.Billing;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Persistence;
+using ListingStudio.Infrastructure.Properties;
 using Microsoft.EntityFrameworkCore;
 
 namespace ListingStudio.Infrastructure.Campaigns;
@@ -164,20 +165,22 @@ public sealed class CampaignGenerationService(
                 candidate.VideoPhotoUploadedAtUtc,
             })
             .ToArrayAsync(cancellationToken);
-        var acceptedScript = await dbContext.PropertyNarrationScripts
-            .AsNoTracking()
-            .Where(script => script.OrganizationId == organizationId
-                && script.PropertyId == propertyId
-                && script.MarketingUseAccepted)
-            .Select(script => new
+        var userNarration = await UserNarrationSource.LoadAsync(
+            dbContext,
+            organizationId,
+            propertyId,
+            cancellationToken);
+        var acceptedScript = userNarration is null
+            ? null
+            : new
             {
-                script.Id,
-                script.ExtractedText,
-                script.MarketingUseAcceptedAtUtc,
-            })
-            .SingleOrDefaultAsync(cancellationToken);
+                Id = userNarration.SourceId,
+                userNarration.IsRoomNarration,
+                userNarration.Segments,
+                MarketingUseAcceptedAtUtc = userNarration.AcceptedAtUtc,
+            };
         if (requestedOutputs.HasFlag(CampaignOutputSelection.FullNarratedTour)
-            && (acceptedScript is null || !NarrationScriptPolicy.RequiresLongForm(acceptedScript.ExtractedText)))
+            && userNarration is not { RequiresLongForm: true })
         {
             throw new InvalidOperationException(
                 "A full narrated tour requires an accepted narration script longer than 145 words.");

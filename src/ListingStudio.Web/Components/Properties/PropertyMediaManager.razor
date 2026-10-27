@@ -371,7 +371,8 @@
                 <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
                                         DirectionChanged="SetStopDirectionAsync" ShowShots="ShowStopShotsAsync"
                                         SelectedStopChanged="HighlightStop" FocusStop="@mapFocusStop"
-                                        FocusRequest="mapFocusRequest" />
+                                        FocusRequest="mapFocusRequest" Narration="roomNarration"
+                                        NarrationChanged="SetStopNarrationAsync" />
             </div>
         }
     }
@@ -395,6 +396,7 @@
     private IReadOnlyList<PropertyMediaItem> unsorted = [];
     private Dictionary<Guid, int> sequence = [];
     private IReadOnlyList<WalkthroughStopDirectionItem> directions = [];
+    private RoomNarrationOverview roomNarration = RoomNarrationOverview.Empty;
     private IReadOnlyList<WalkthroughMapStopShots> MapStops = [];
     private readonly Dictionary<string, ElementReference> stopElements = new(StringComparer.OrdinalIgnoreCase);
     private string? highlightedStop;
@@ -729,6 +731,7 @@
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         media = [.. await Service.ListAsync(userId, PropertyId)];
         directions = await Service.ListStopDirectionsAsync(userId, PropertyId);
+        roomNarration = await RoomNarrations.GetAsync(userId, PropertyId);
         BuildStoryboard();
         await LoadTransitionsAsync(userId);
         await LoadPhotoFixesAsync(userId);
@@ -1094,6 +1097,52 @@
                 directions = await Service.ListStopDirectionsAsync(userId, PropertyId);
                 ShowMessage($"{change.Stop} is now {WalkthroughMap.Describe(change.Direction)} on the walkthrough map.", Severity.Success);
             }
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+    }
+
+    // Shares this component's scope: its calls never overlap the media service's, which run one at a time too.
+    private IRoomNarrationService RoomNarrations => ScopedServices.GetRequiredService<IRoomNarrationService>();
+
+    private async Task SetStopNarrationAsync((string Stop, string? Text) change)
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            if (!await RoomNarrations.SetAsync(userId, PropertyId, change.Stop, change.Text))
+            {
+                return;
+            }
+
+            roomNarration = await RoomNarrations.GetAsync(userId, PropertyId);
+            if (change.Text is not null && roomNarration.UseRoomNarration is null)
+            {
+                // Asked once, on the first narration saved: it replaces the AI script in every campaign video.
+                var useRoomNarration = await DialogService.ShowMessageBoxAsync(
+                    "Use your narration in place of the AI script?",
+                    "Campaign videos will read what you write for each room, in walkthrough order, instead of the "
+                    + "AI-written script from the property story. Rooms without narration play without a voiceover. "
+                    + "You can switch back at any time on the Campaign tab.",
+                    yesText: "Use my narration",
+                    noText: "Keep the AI script",
+                    cancelText: "Decide later");
+                if (useRoomNarration is { } choice)
+                {
+                    await RoomNarrations.ChooseSourceAsync(userId, PropertyId, choice);
+                    roomNarration = await RoomNarrations.GetAsync(userId, PropertyId);
+                }
+            }
+
+            ShowMessage(
+                change.Text is null
+                    ? $"Removed the narration for {change.Stop}."
+                    : roomNarration.IsInUse
+                        ? $"Saved the narration for {change.Stop}. Campaign videos will read it as the tour reaches that stop."
+                        : $"Saved the narration for {change.Stop}. Campaign videos use the AI script until you choose room-by-room narration on the Campaign tab.",
+                Severity.Success);
         }
         catch (ArgumentOutOfRangeException exception)
         {

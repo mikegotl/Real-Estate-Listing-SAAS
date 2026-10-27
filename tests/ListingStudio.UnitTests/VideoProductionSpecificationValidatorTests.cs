@@ -236,6 +236,75 @@ public sealed class VideoProductionSpecificationValidatorTests
     }
 
     [Fact]
+    public void RoomNarrationMustStartWhileItsRoomIsOnScreen()
+    {
+        var original = CreateInput();
+        var front = original.Media[0] with { WalkthroughStop = "Exterior front" };
+        var kitchenId = Guid.NewGuid();
+        var kitchen = front with
+        {
+            MediaId = kitchenId,
+            WalkthroughStop = "Kitchen",
+            Analysis = front.Analysis with { MediaId = kitchenId, DisplayOrder = 1 },
+        };
+        var script = new AcceptedNarrationScriptInput(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            [
+                new AcceptedNarrationScriptSegment("roomNarration.segment.1", "Welcome home.", "Exterior front"),
+                new AcceptedNarrationScriptSegment("roomNarration.segment.2", "The kitchen is bright.", "Kitchen"),
+            ]);
+        var input = original with
+        {
+            Media = [front, kitchen],
+            FactBindings =
+            [
+                .. original.FactBindings,
+                .. script.Segments.Select(segment => new FactBinding(
+                    segment.Key, segment.Text, FactSource.AcceptedScript, $"WalkthroughStopNarration:{segment.WalkthroughStop}")),
+            ],
+            AcceptedNarrationScript = script,
+        };
+        var specification = CreateSpecification(input);
+        var opening = specification.Scenes[0];
+        var half = opening.DurationMs / 2;
+        VideoProductionSpecification Narrate(int kitchenStartMs) => specification with
+        {
+            Audio = specification.Audio with
+            {
+                NarrationSegments =
+                [
+                    new NarrationSegment("room-1", 500, 2_000, script.Segments[0].Text, script.Segments[0].Key),
+                    new NarrationSegment("room-2", kitchenStartMs, 2_000, script.Segments[1].Text, script.Segments[1].Key),
+                ],
+            },
+            Scenes =
+            [
+                opening with { DurationMs = half, TextOverlays = [], NarrationSegmentIds = ["room-1"] },
+                opening with
+                {
+                    SceneNumber = 2,
+                    StartMs = half,
+                    DurationMs = opening.DurationMs - half,
+                    VisualSource = opening.VisualSource with { PropertyMediaId = kitchenId },
+                    TransitionIn = new TransitionPlan(TransitionKind.Crossfade, 500),
+                    TextOverlays = opening.TextOverlays
+                        .Select(overlay => overlay with { StartOffsetMs = Math.Max(0, overlay.StartOffsetMs - half) })
+                        .ToArray(),
+                    NarrationSegmentIds = ["room-2"],
+                },
+            ],
+        };
+
+        var valid = validator.Validate(input, Narrate(half + 300));
+        Assert.True(valid.IsValid, string.Join(Environment.NewLine, valid.Errors));
+
+        var early = validator.Validate(input, Narrate(3_000));
+        Assert.False(early.IsValid);
+        Assert.Contains(early.Errors, error => error.Contains("written for the Kitchen stop", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AcceptedScriptMustBeNarratedVerbatimInOrderAndCanUseApprovedWalkthroughVideo()
     {
         var original = CreateInput();
