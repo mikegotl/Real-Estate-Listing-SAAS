@@ -1,0 +1,27 @@
+<form action="/admin/users/testers" method="post" class="admin-impersonate-form">
+    <AntiforgeryToken />
+    <input type="hidden" name="userId" value="@UserId" />
+    <input type="hidden" name="isTester" value="@(IsTester ? "false" : "true")" />
+    <input type="hidden" name="q" value="@Query" />
+    <input type="hidden" name="testers" value="@(TestersView ? "true" : "false")" />
+    <MudButton ButtonType="ButtonType.Submit" Size="Size.Small" Variant="Variant.Outlined"
+               Color="@(IsTester ? Color.Default : Color.Secondary)"
+               StartIcon="@(IsTester ? Icons.Material.Filled.PersonRemove : Icons.Material.Filled.Science)">
+        @(IsTester ? "Remove from Testers" : "Add to Testers")
+    </MudButton>
+</form>
+
+@code {
+    [Parameter, EditorRequired]
+    public string UserId { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public bool IsTester { get; set; }
+
+    [Parameter]
+    public string? Query { get; set; }
+
+    /// <summary>True when the form sits on the Testers list, so the admin returns there instead of to a search.</summary>
+    [Parameter]
+    public bool TestersView { get; set; }
+}

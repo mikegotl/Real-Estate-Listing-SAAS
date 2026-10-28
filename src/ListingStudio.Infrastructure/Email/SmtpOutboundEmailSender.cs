@@ -20,7 +20,8 @@ public sealed class SmtpOutboundEmailSender(IOptions<SmtpEmailOptions> options) 
             throw new InvalidOperationException("Email:Smtp:Host and Email:Smtp:FromAddress must be set before sending email.");
         }
 
-        if (email.BlindCopyRecipients.Count == 0)
+        var toRecipients = email.ToRecipients ?? [];
+        if (email.BlindCopyRecipients.Count == 0 && toRecipients.Count == 0)
         {
             throw new ArgumentException("An email needs at least one recipient.", nameof(email));
         }
@@ -28,8 +29,17 @@ public sealed class SmtpOutboundEmailSender(IOptions<SmtpEmailOptions> options) 
         var from = new MailboxAddress(settings.FromName, settings.FromAddress);
         var message = new MimeMessage();
         message.From.Add(from);
-        // Recipients are blind copied so admins never see each other's addresses; the visible To is the sender.
-        message.To.Add(from);
+        if (toRecipients.Count == 0)
+        {
+            // Recipients are blind copied so admins never see each other's addresses; the visible To is the sender.
+            message.To.Add(from);
+        }
+
+        foreach (var recipient in toRecipients)
+        {
+            message.To.Add(MailboxAddress.Parse(recipient));
+        }
+
         foreach (var recipient in email.BlindCopyRecipients)
         {
             message.Bcc.Add(MailboxAddress.Parse(recipient));

@@ -15,7 +15,8 @@ public sealed record BillingOverview(
     int CampaignUsage,
     int AdditionalCampaignUsage,
     int ReservedCampaignUsage,
-    bool IsFreeTrial)
+    bool IsFreeTrial,
+    bool IsTester = false)
 {
     public int RemainingCampaignUsage => Math.Max(
         0,

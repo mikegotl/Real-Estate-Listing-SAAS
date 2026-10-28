@@ -110,7 +110,7 @@ param heyGenApiKey string = ''
 ])
 param voiceProvider string = 'OpenAI'
 
-@description('SMTP server for outgoing email, such as smtp.gmail.com. Comment emails to platform admins stay off while empty.')
+@description('SMTP server for outgoing email, such as smtp.gmail.com. Comment emails to platform admins and admin emails to users stay off while empty.')
 param smtpHost string = ''
 
 @description('SMTP port. 587 uses STARTTLS and 465 uses implicit TLS.')
