@@ -234,7 +234,8 @@ app.MapPost("/admin/users/testers", async (
     var notice = result.Failure switch
     {
         TesterChangeFailure.None when !result.Changed => "tester-unchanged",
-        TesterChangeFailure.None => isTester ? "tester-added" : "tester-removed",
+        TesterChangeFailure.None when isTester => result.WelcomeEmailQueued ? "tester-added-emailed" : "tester-added",
+        TesterChangeFailure.None => "tester-removed",
         _ => $"tester-{result.Failure}",
     };
     var returnQuery = string.Equals(form["testers"], "true", StringComparison.OrdinalIgnoreCase)

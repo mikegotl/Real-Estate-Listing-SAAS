@@ -37,6 +37,7 @@ public sealed class PlatformAdminTesterAccess(
         }
 
         var changed = false;
+        var welcomeEmailQueued = false;
         if (isTester && !await userManager.IsInRoleAsync(target, PlatformTesters.Role))
         {
             if (!await roleManager.RoleExistsAsync(PlatformTesters.Role))
@@ -46,6 +47,7 @@ public sealed class PlatformAdminTesterAccess(
 
             EnsureSucceeded(await userManager.AddToRoleAsync(target, PlatformTesters.Role));
             changed = true;
+            welcomeEmailQueued = QueueWelcomeEmail(administratorUserId, target);
         }
         else if (!isTester && await userManager.IsInRoleAsync(target, PlatformTesters.Role))
         {
@@ -59,7 +61,37 @@ public sealed class PlatformAdminTesterAccess(
             targetUserId,
             changed ? (isTester ? "added" : "removed") : "unchanged",
             cancellationToken);
-        return new TesterChangeResult(TesterChangeFailure.None, changed, target.Email ?? target.UserName);
+        return new TesterChangeResult(TesterChangeFailure.None, changed, target.Email ?? target.UserName, welcomeEmailQueued);
+    }
+
+    // Uses the admin email outbox, so the Worker sends it once SMTP is configured and it shows on Sent emails.
+    private bool QueueWelcomeEmail(string administratorUserId, ApplicationUser target)
+    {
+        var email = target.Email?.Trim();
+        if (string.IsNullOrEmpty(email)
+            || email.Length > AdminUserEmail.MaximumEmailLength
+            || !MimeKit.MailboxAddress.TryParse(email, out _))
+        {
+            return false;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        dbContext.AdminUserEmails.Add(AdminUserEmail.Create(
+            Guid.NewGuid(),
+            administratorUserId,
+            target.Id,
+            email,
+            PlatformTesters.WelcomeEmailSubject,
+            PlatformTesters.WelcomeEmailBody,
+            now));
+        dbContext.PlatformAdminAuditEvents.Add(PlatformAdminAuditEvent.Create(
+            AdminUserEmailAudit.QueueAction,
+            "platform-admin",
+            AuditPseudonym.For(target.Id),
+            "queued",
+            now,
+            AuditPseudonym.For(administratorUserId)));
+        return true;
     }
 
     private async Task RecordAsync(

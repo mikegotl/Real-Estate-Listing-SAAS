@@ -39,7 +39,7 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
 
         using var add = await PostTesterAsync(client, searchHtml, customer.UserId, isTester: true, marker);
         Assert.Equal(HttpStatusCode.Redirect, add.StatusCode);
-        Assert.Equal($"/admin/users?q={marker}&notice=tester-added", add.Headers.Location?.OriginalString);
+        Assert.Equal($"/admin/users?q={marker}&notice=tester-added-emailed", add.Headers.Location?.OriginalString);
 
         using var testers = await client.GetAsync("/admin/users?testers=true");
         testers.EnsureSuccessStatusCode();
@@ -58,7 +58,8 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
         Assert.DoesNotContain((await directory.ListTestersAsync()).Accounts, account => account.UserId == customer.UserId);
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var events = await dbContext.PlatformAdminAuditEvents.AsNoTracking()
-            .Where(item => item.TargetReference == AuditPseudonym.For(customer.UserId))
+            .Where(item => item.TargetReference == AuditPseudonym.For(customer.UserId)
+                && item.Action != AdminUserEmailAudit.QueueAction)
             .Select(item => new { item.Action, item.Outcome, item.ActorReference })
             .ToListAsync();
         Assert.Equal(
@@ -70,6 +71,15 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
             }.Order(),
             events.Select(item => (item.Action, item.Outcome)).Order());
         Assert.All(events, item => Assert.Equal(AuditPseudonym.For(admin.UserId), item.ActorReference));
+
+        // Adding sends one welcome email; removing and re-removing send nothing.
+        var welcome = Assert.Single(await dbContext.AdminUserEmails.AsNoTracking()
+            .Where(item => item.RecipientUserId == customer.UserId)
+            .ToListAsync());
+        Assert.Equal(PlatformTesters.WelcomeEmailSubject, welcome.Subject);
+        Assert.Equal(customer.Email, welcome.RecipientEmail);
+        Assert.Equal(admin.UserId, welcome.SentByUserId);
+        Assert.Null(welcome.SentAtUtc);
     }
 
     [Fact]

@@ -211,7 +211,8 @@ else
 
     private (Severity Severity, string Text)? NoticeMessage => Notice switch
     {
-        "tester-added" => (Severity.Success, "Added to Testers. They can now use the site for free."),
+        "tester-added-emailed" => (Severity.Success, "Added to Testers. They can now use the site for free, and a welcome email is queued (see Sent emails)."),
+        "tester-added" => (Severity.Success, "Added to Testers. They can now use the site for free. They have no email address, so no welcome email was sent."),
         "tester-removed" => (Severity.Success, "Removed from Testers. Their workspace's plan and allowance apply again."),
         "tester-unchanged" => (Severity.Info, "Nothing changed; the user was already in that state."),
         "tester-UserNotFound" => (Severity.Warning, "That user no longer exists."),
