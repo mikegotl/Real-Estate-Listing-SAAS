@@ -80,11 +80,21 @@ public sealed class PropertyMediaManagementTests(PostgreSqlWebApplicationFixture
             await mediaService.UploadAsync(
                 userId,
                 propertyId,
-                new PropertyMediaUpload($"photo-{index}.png", "image/png", content.Length, content));
+                new PropertyMediaUpload($"photo-{index}.png", "image/png", content.Length, content, "Kitchen"));
         }
 
-        var uploaded = await mediaService.ListAsync(userId, propertyId);
-        Assert.True(await mediaService.ReorderAsync(userId, propertyId, [uploaded[1].Id, uploaded[0].Id]));
+        await using (var held = new MemoryStream(OnePixelPng))
+        {
+            // Off the Tour Map, so it counts toward neither the photo total nor the cover.
+            await mediaService.UploadAsync(
+                userId,
+                propertyId,
+                new PropertyMediaUpload("held.png", "image/png", held.Length, held));
+        }
+
+        var uploaded = (await mediaService.ListAsync(userId, propertyId)).Where(item => item.IsOnTour).ToArray();
+        var heldId = Assert.Single(await mediaService.ListAsync(userId, propertyId), item => !item.IsOnTour).Id;
+        Assert.True(await mediaService.ReorderAsync(userId, propertyId, [heldId, uploaded[1].Id, uploaded[0].Id]));
         var failed = await dbContext.PropertyMedia.SingleAsync(media => media.Id == uploaded[0].Id);
         failed.BeginAnalysis(DateTimeOffset.UtcNow);
         failed.FailAnalysis("Vision request failed.", nextAttemptAtUtc: null);

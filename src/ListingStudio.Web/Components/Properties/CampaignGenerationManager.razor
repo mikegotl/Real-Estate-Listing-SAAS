@@ -25,7 +25,7 @@
         {
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
-                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None || !TemplateReady)"
+                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None || !TemplateReady || NoTourPhotos)"
                        OnClick="GenerateAsync">
                 @(job?.Status == CampaignGenerationStatus.Completed ? "Generate updated campaign" : "Generate campaign")
             </MudButton>
@@ -385,6 +385,14 @@
         </MudAlert>
     }
 
+    @if (NoTourPhotos && !IsReadOnly)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            Campaigns use only photos placed on the Tour Map. Place at least one photo in a stop on the
+            <a href="@($"/properties/{PropertyId}?tab=media")">Media tab</a> to generate a campaign.
+        </MudAlert>
+    }
+
     @if (mediaCount is > 0 and < 3)
     {
         <MudAlert Severity="Severity.Warning" Class="mb-4">
@@ -571,6 +579,7 @@
     private string? refreshError;
     private string? shareMessage;
     private int mediaCount;
+    private bool mediaLoaded;
     private int failedAnalysisCount;
     private bool longFormAvailable;
     private AgentPortraitItem? portrait;
@@ -682,9 +691,10 @@
                 selectedOutputs &= ~CampaignOutputSelection.FullNarratedTour;
             }
             var media = (await MediaService.ListAsync(userId, PropertyId, pollingCancellation.Token))
-                .Where(item => !item.IsInGallery)
+                .Where(item => item.IsOnTour)
                 .ToArray();
             mediaCount = media.Length;
+            mediaLoaded = true;
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             error = null;
             refreshError = null;
@@ -939,6 +949,8 @@
             : null;
 
     private bool IsCreativeElementSelected(CampaignVideoElement element) => selectedCreativeElements.HasFlag(element);
+
+    private bool NoTourPhotos => mediaLoaded && mediaCount == 0;
 
     private bool TemplateReady =>
         (selectedMarketingTemplate != CampaignMarketingTemplate.PriceDrop

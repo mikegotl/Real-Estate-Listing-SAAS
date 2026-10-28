@@ -115,7 +115,11 @@ public sealed record PropertyMediaItem(
     int? SourceVideoTimestampMs = null,
     PhotoFix AppliedFixes = PhotoFix.None,
     bool HasOriginal = false,
-    DateTimeOffset? EditedAtUtc = null);
+    DateTimeOffset? EditedAtUtc = null)
+{
+    /// <summary>Placed in a Tour Map stop, so campaigns, stories, clips and the listing cover may use it.</summary>
+    public bool IsOnTour => !IsInGallery && WalkthroughStop is not null;
+}
 
 public sealed record WalkthroughStopDirectionItem(string Stop, WalkthroughDirection Direction);
 

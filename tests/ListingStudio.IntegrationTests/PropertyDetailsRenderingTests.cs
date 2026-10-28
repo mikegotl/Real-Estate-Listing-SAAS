@@ -207,7 +207,12 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         response.EnsureSuccessStatusCode();
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("walkthrough-map-heading", content, StringComparison.Ordinal);
-        Assert.Contains("Each mapped room owns its approved photos", content, StringComparison.Ordinal);
+        Assert.Contains("Change the tour order with Move earlier and Move later", content, StringComparison.Ordinal);
+        // Exterior front and entry keep their places; only the kitchen can be dragged, and as a real "true".
+        Assert.Equal(1, CountOccurrences(content, "draggable=\"true\""));
+        Assert.Equal(2, CountOccurrences(content, "draggable=\"false\""));
+        Assert.DoesNotContain("draggable=\"\"", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("@*", content, StringComparison.Ordinal);
         Assert.Contains("Main level", content, StringComparison.Ordinal);
         Assert.Contains("Stop 1, Exterior front, where the walkthrough starts", content, StringComparison.Ordinal);
         Assert.Contains(
@@ -219,6 +224,80 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("<span class=\"media-nav-count\">3</span>", content, StringComparison.Ordinal);
         Assert.Contains("Not in tour", content, StringComparison.Ordinal);
         Assert.Contains("Where does the buyer go next?", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PhotosOffTheTourMapDoNotCountTowardTheListingOrCampaign()
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = HeaderAuthenticationHandler.SchemeName;
+                    options.DefaultChallengeScheme = HeaderAuthenticationHandler.SchemeName;
+                })
+                .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
+                    HeaderAuthenticationHandler.SchemeName,
+                    _ => { });
+        });
+        await using var scope = factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var properties = scope.ServiceProvider.GetRequiredService<IPropertyService>();
+        var mediaService = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        var registered = await registration.RegisterAsync(new RegisterAccountCommand(
+            $"held-owner-{Guid.NewGuid():N}@example.com",
+            "Password123",
+            $"Held Realty {Guid.NewGuid():N}"));
+        Assert.True(registered.Succeeded, string.Join(", ", registered.Errors));
+        var userId = registered.UserId!;
+        var propertyId = await properties.CreateAsync(userId, new PropertyInput(
+            "4 Held Court",
+            null,
+            "Dover",
+            "DE",
+            "19901",
+            410_000m,
+            3,
+            2m,
+            1_600,
+            0.1m,
+            1998,
+            PropertyType.SingleFamily,
+            "Held media regression property.",
+            ListingStatus.Draft));
+        await UploadAsync(mediaService, userId, propertyId, "unsorted.png", null);
+        await UploadAsync(mediaService, userId, propertyId, "spare.png", null, toGallery: true);
+
+        var summary = Assert.Single(await properties.ListAsync(userId), item => item.Id == propertyId);
+        Assert.Equal(0, summary.PhotoCount);
+        Assert.Null(summary.CoverMediaId);
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            HeaderAuthenticationHandler.SchemeName,
+            userId);
+        using var response = await client.GetAsync($"/properties/{propertyId}?tab=campaign");
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Campaigns use only photos placed on the Tour Map", content, StringComparison.Ordinal);
+        Assert.Contains("no-cover", content, StringComparison.Ordinal);
+
+        await UploadAsync(mediaService, userId, propertyId, "front.png", WalkthroughStoryboard.ExteriorFront);
+        summary = Assert.Single(await properties.ListAsync(userId), item => item.Id == propertyId);
+        Assert.Equal(1, summary.PhotoCount);
+        Assert.NotNull(summary.CoverMediaId);
+    }
+
+    private static int CountOccurrences(string content, string value)
+    {
+        var count = 0;
+        for (var index = content.IndexOf(value, StringComparison.Ordinal); index >= 0;
+             index = content.IndexOf(value, index + value.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     [Fact]

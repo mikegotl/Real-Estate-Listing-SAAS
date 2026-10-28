@@ -102,7 +102,8 @@ public sealed class LeadGenerationService(
         var hasCover = await dbContext.PropertyMedia.AsNoTracking().AnyAsync(media =>
             media.OrganizationId == listing.OrganizationId
             && media.PropertyId == listing.PropertyId
-            && !media.IsInGallery,
+            && !media.IsInGallery
+            && media.WalkthroughStop != null,
             cancellationToken);
         var hasVideo = await PublicVideoQuery(listing.OrganizationId, listing.PropertyId)
             .AnyAsync(cancellationToken);
@@ -357,7 +358,8 @@ public sealed class LeadGenerationService(
             .SelectMany(page => dbContext.PropertyMedia
                 .Where(candidate => candidate.OrganizationId == page.OrganizationId
                     && candidate.PropertyId == page.PropertyId
-                    && !candidate.IsInGallery)
+                    && !candidate.IsInGallery
+                    && candidate.WalkthroughStop != null)
                 .OrderBy(candidate => candidate.DisplayOrder)
                 .Take(1))
             .Select(candidate => new { candidate.BlobPath, candidate.MimeType })
