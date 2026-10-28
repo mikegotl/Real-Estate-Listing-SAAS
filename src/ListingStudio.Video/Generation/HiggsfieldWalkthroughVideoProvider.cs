@@ -53,6 +53,20 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         _ => throw new ArgumentOutOfRangeException(nameof(direction)),
     };
 
+    /// <summary>
+    /// The drone intro prompt. The clip starts on the real Exterior front photo and climbs away from it; the Worker
+    /// plays it backwards, so the buyer sees a descent that lands on the photo. Keeping the camera on the facade and
+    /// naming what not to invent limits how much of the roof, yard and street the model makes up.
+    /// </summary>
+    public static string AerialIntroPrompt(int heightFeet) => $"""
+        Real-estate aerial drone shot. The camera starts exactly on this photograph of the front of the house,
+        then smoothly rises and pulls back over the front yard toward the street, climbing to about {heightFeet} feet,
+        tilting down slightly so the house stays centered in frame.
+        Keep the facade, windows, doors, garage, colors, driveway and landscaping exactly as in the photograph.
+        Show only a little of the roof. Do not add a swimming pool, water, a view, solar panels, extra buildings,
+        people, moving cars or text. Steady, smooth, realistic drone footage. No camera shake.
+        """;
+
     private static string DirectionLine(string movement) =>
         $"\nDirection: the next space is {movement}";
 
@@ -73,6 +87,40 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         }
     }
 
+    public string AerialIntroGenerationVersion
+    {
+        get
+        {
+            var configuration = options.Value;
+            var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                $"{configuration.Model}\n{configuration.ClipDurationSeconds}\n{AerialIntroPrompt(0)}")))[..12].ToLowerInvariant();
+            return $"higgsfield/{configuration.GenerationVersion}/aerial-{identity}";
+        }
+    }
+
+    public async Task<string> SubmitAerialIntroAsync(
+        AerialIntroVideoSubmission submission,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        if (submission.HeightFeet is < 20 or > 400)
+        {
+            throw new ArgumentOutOfRangeException(nameof(submission), "The drone height must be between 20 and 400 feet.");
+        }
+
+        var configuration = EnsureEnabled();
+        var startUrl = await UploadAsync(configuration, submission.Frame, cancellationToken);
+        return await QueueAsync(
+            configuration,
+            new GenerationRequest(
+                AerialIntroPrompt(submission.HeightFeet),
+                startUrl,
+                null,
+                configuration.ClipDurationSeconds,
+                "off"),
+            cancellationToken);
+    }
+
     public async Task<string> SubmitAsync(
         WalkthroughVideoSubmission submission,
         CancellationToken cancellationToken = default)
@@ -81,11 +129,20 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         var configuration = EnsureEnabled();
         var startUrl = await UploadAsync(configuration, submission.StartFrame, cancellationToken);
         var endUrl = await UploadAsync(configuration, submission.EndFrame, cancellationToken);
+        return await QueueAsync(
+            configuration,
+            new GenerationRequest(PromptFor(submission.Direction), startUrl, endUrl, configuration.ClipDurationSeconds, "off"),
+            cancellationToken);
+    }
+
+    private async Task<string> QueueAsync(
+        HiggsfieldOptions configuration,
+        GenerationRequest request,
+        CancellationToken cancellationToken)
+    {
         using var message = new HttpRequestMessage(HttpMethod.Post, ApiUri(configuration, configuration.Model.Trim('/')))
         {
-            Content = JsonContent.Create(
-                new GenerationRequest(PromptFor(submission.Direction), startUrl, endUrl, configuration.ClipDurationSeconds, "off"),
-                options: SerializerOptions),
+            Content = JsonContent.Create(request, options: SerializerOptions),
         };
         var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
         return IsRequestId(queued?.RequestId)
@@ -315,7 +372,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     private sealed record GenerationRequest(
         [property: JsonPropertyName("prompt")] string Prompt,
         [property: JsonPropertyName("image_url")] string ImageUrl,
-        [property: JsonPropertyName("last_image_url")] string LastImageUrl,
+        [property: JsonPropertyName("last_image_url"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LastImageUrl,
         [property: JsonPropertyName("duration")] int Duration,
         [property: JsonPropertyName("sound")] string Sound);
 

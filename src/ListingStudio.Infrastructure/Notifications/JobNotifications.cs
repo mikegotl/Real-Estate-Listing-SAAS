@@ -130,6 +130,20 @@ public static class JobNotificationText
             JobNotifications.MediaTab);
     }
 
+    public static JobNotificationContent AerialIntroReady(string property) => new(
+        UserNotificationKind.AerialIntro,
+        UserNotificationOutcome.Succeeded,
+        "Drone intro ready to review",
+        $"The AI drone intro for {property} is ready. Watch it on the Exterior front stop and approve it before campaign videos use it.",
+        JobNotifications.MediaTab);
+
+    public static JobNotificationContent AerialIntroFailed(string property, string? error) => new(
+        UserNotificationKind.AerialIntro,
+        UserNotificationOutcome.Failed,
+        "Drone intro failed",
+        WithReason($"The AI drone intro for {property} could not be made. You can try again on the Exterior front stop.", error),
+        JobNotifications.MediaTab);
+
     public static JobNotificationContent PhotoFixesFinished(string property, int completed, int failed, string? lastError)
     {
         var total = completed + failed;

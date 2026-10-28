@@ -20,6 +20,17 @@ public interface IWalkthroughVideoProvider
         WalkthroughVideoSubmission submission,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Identifies the model and prompt for drone intros; a change marks existing intros out of date.</summary>
+    string AerialIntroGenerationVersion { get; }
+
+    /// <summary>
+    /// Asks for a rising pull-back that starts on the Exterior front photo and climbs to the requested height. The
+    /// finished clip is polled like a walk-through and played backwards so it lands on the photo.
+    /// </summary>
+    Task<string> SubmitAerialIntroAsync(
+        AerialIntroVideoSubmission submission,
+        CancellationToken cancellationToken = default);
+
     Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,
         CancellationToken cancellationToken = default);
@@ -36,6 +47,12 @@ public sealed record WalkthroughVideoSubmission(
     WalkthroughVideoFrame EndFrame,
     string IdempotencyKey,
     WalkthroughDirection? Direction = null);
+
+/// <summary>One drone intro to generate from the Exterior front photo, climbing to <see cref="HeightFeet"/>.</summary>
+public sealed record AerialIntroVideoSubmission(
+    WalkthroughVideoFrame Frame,
+    int HeightFeet,
+    string IdempotencyKey);
 
 public enum WalkthroughVideoState
 {

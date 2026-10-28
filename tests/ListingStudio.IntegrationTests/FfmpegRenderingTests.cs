@@ -5,6 +5,7 @@ using ListingStudio.Application.Audio;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Video.Configuration;
+using ListingStudio.Video.Processing;
 using ListingStudio.Video.Rendering;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -280,6 +281,105 @@ public sealed class FfmpegRenderingTests
             AssertColorNear(await SamplePixelAsync(executable, outputPath, 1.0), 30, 90, 200);
             AssertColorNear(await SamplePixelAsync(executable, outputPath, 6.9), 200, 40, 40);
             AssertColorNear(await SamplePixelAsync(executable, outputPath, 10.0), 200, 40, 40);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DroneIntroIsPlayedBackwardsLabeledAndOpensTheVideoOnTheFrontPhoto()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("RUN_FFMPEG_E2E"), "1", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-aerial-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            // The provider's pull-back starts on the front photo (green) and climbs away to the sky (blue).
+            var frontPath = Path.Combine(directory, "front.ppm");
+            var skyPath = Path.Combine(directory, "sky.ppm");
+            var pullBackPath = Path.Combine(directory, "pull-back.mp4");
+            var outputPath = Path.Combine(directory, "aerial-campaign.mp4");
+            await WriteSolidImageAsync(frontPath, 320, 180, 40, 170, 60);
+            await WriteSolidImageAsync(skyPath, 320, 180, 40, 70, 210);
+            var executable = Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
+            var probeExecutable = Environment.GetEnvironmentVariable("FFPROBE_PATH") ?? "ffprobe";
+            await RunFfmpegAsync(
+                executable,
+                "-loop", "1", "-framerate", "24", "-t", "5", "-i", frontPath,
+                "-loop", "1", "-framerate", "24", "-t", "5", "-i", skyPath,
+                "-filter_complex", "[0:v][1:v]xfade=transition=fade:duration=4:offset=0.5,scale=640:360,format=yuv420p",
+                "-t", "5", "-c:v", "libx264", "-an", pullBackPath);
+            var options = Options.Create(new FfmpegOptions
+            {
+                ExecutablePath = executable,
+                ProbeExecutablePath = probeExecutable,
+                RenderTimeoutSeconds = 180,
+            });
+
+            var editor = new FfmpegAerialIntroVideoEditor(options);
+            AerialIntroEditResult edited;
+            await using (var pullBack = File.OpenRead(pullBackPath))
+            {
+                edited = await editor.PrepareAsync(pullBack);
+            }
+
+            var introPath = Path.Combine(directory, "intro.mp4");
+            await using (edited.Content)
+            await using (var target = File.Create(introPath))
+            {
+                await edited.Content.CopyToAsync(target);
+            }
+
+            Assert.InRange(edited.DurationMs, 4_900, 5_100);
+            Assert.Equal(new FileInfo(introPath).Length, edited.FileSize);
+            // Reversed: it opens on the sky and descends onto the front photo.
+            AssertColorNear(await SamplePixelAsync(executable, introPath, 0.1), 40, 70, 210);
+            AssertColorNear(await SamplePixelAsync(executable, introPath, 4.9), 40, 170, 60);
+
+            var frontId = Guid.NewGuid();
+            var viewport = new NormalizedRect(0, 0, 1, 1);
+            var specification = CreateMasterSpecification(frontId) with
+            {
+                RequestedDuration = RequestedDuration.Teaser15,
+                FactBindings = [],
+                Audio = new AudioPlan([], new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0)),
+                Scenes =
+                [
+                    new VideoScene(
+                        1, 0, 15_000,
+                        new VisualSource(VisualSourceKind.PropertyMedia, frontId, null, null, null),
+                        new TransitionPlan(TransitionKind.Cut, 0),
+                        new MotionPlan(
+                            MotionKind.KenBurns, viewport, new NormalizedRect(0.05m, 0.05m, 0.9m, 0.9m),
+                            MotionEasing.EaseInOut),
+                        [], [], []),
+                ],
+            };
+            var renderer = new FfmpegVideoRenderer(options, Options.Create(new VideoBrandingTemplateOptions()));
+
+            var result = await renderer.RenderAsync(new VideoRenderRequest(
+                specification,
+                [new VideoRenderMediaAsset(frontId, frontPath, 320, 180)],
+                null,
+                [],
+                null,
+                outputPath,
+                AerialIntro: new VideoRenderAerialIntroAsset(frontId, introPath, edited.DurationMs)));
+
+            Assert.Equal(0, result.ExitCode);
+            using var probe = await ProbeAsync(probeExecutable, outputPath);
+            var duration = decimal.Parse(
+                probe.RootElement.GetProperty("format").GetProperty("duration").GetString()!,
+                System.Globalization.CultureInfo.InvariantCulture);
+            Assert.InRange(duration, 14.9m, 15.1m);
+            AssertColorNear(await SamplePixelAsync(executable, outputPath, 0.6), 40, 70, 210);
+            AssertColorNear(await SamplePixelAsync(executable, outputPath, 8.0), 40, 170, 60);
         }
         finally
         {

@@ -204,6 +204,14 @@ public sealed class CampaignGenerationService(
                 video.ProcessingCompletedAtUtc,
             })
             .ToArrayAsync(cancellationToken);
+        // Approving, replacing or removing the drone intro changes how the videos open, so it is part of the source.
+        var aerialIntro = await dbContext.AerialIntroClips
+            .AsNoTracking()
+            .Where(clip => clip.OrganizationId == organizationId
+                && clip.PropertyId == propertyId
+                && clip.ApprovedAtUtc != null)
+            .Select(clip => new { clip.Id, clip.PropertyMediaId, clip.SourceBlobPath, clip.ApprovedAtUtc })
+            .SingleOrDefaultAsync(cancellationToken);
         var fingerprint = CreateFingerprint(
             property.UpdatedAtUtc,
             media.Select(candidate => new
@@ -215,6 +223,7 @@ public sealed class CampaignGenerationService(
             neighborhoodFacts,
             acceptedScript,
             walkthroughVideos,
+            aerialIntro,
             requestedOutputs,
             creativeOptions,
             narrationPreferences,
@@ -412,6 +421,7 @@ public sealed class CampaignGenerationService(
         object neighborhoodFacts,
         object? acceptedScript,
         object walkthroughVideos,
+        object? aerialIntro,
         CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions,
         CampaignNarrationPreferences narrationPreferences,
@@ -425,6 +435,7 @@ public sealed class CampaignGenerationService(
             neighborhoodFacts,
             acceptedScript,
             walkthroughVideos,
+            aerialIntro,
             requestedOutputs,
             creativeOptions,
             narrationPreferences,

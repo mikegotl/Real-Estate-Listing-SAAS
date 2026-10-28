@@ -669,6 +669,86 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         Assert.DoesNotContain("scene0walk", graph, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildOpensWithTheDroneIntroThenHoldsTheFrontPhoto()
+    {
+        var request = CreateRequest();
+        var intro = CreateFile("aerial-5000.mp4");
+        request = request with
+        {
+            AerialIntro = new VideoRenderAerialIntroAsset(request.PropertyMedia[0].PropertyMediaId, intro, 5_000),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var input = arguments.IndexOf(intro);
+        Assert.Equal(["-ss", "0", "-t", "5", "-i"], arguments.GetRange(input - 5, 5));
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("setpts=1*(PTS-STARTPTS)", graph, StringComparison.Ordinal);
+        Assert.Contains("trim=duration=5,setpts=PTS-STARTPTS[scene0intro]", graph, StringComparison.Ordinal);
+        // The photo holds for the rest of the scene, including the crossfade into the next one.
+        Assert.Contains("[scene0still]trim=duration=2.5,setpts=PTS-STARTPTS[scene0body]", graph, StringComparison.Ordinal);
+        Assert.Contains("[scene0intro][scene0body]concat=n=2:v=1:a=0[scene0]", graph, StringComparison.Ordinal);
+        Assert.Contains("xfade=transition=fade:duration=0.5:offset=7", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildPlaysOnlyTheEndOfALongDroneIntroAtUpToDoubleSpeed()
+    {
+        var request = CreateRequest();
+        var intro = CreateFile("aerial-14000.mp4");
+        request = request with
+        {
+            AerialIntro = new VideoRenderAerialIntroAsset(request.PropertyMedia[0].PropertyMediaId, intro, 14_000),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var input = arguments.IndexOf(intro);
+        // Six seconds of scene time play the last twelve seconds of the descent, which land on the photo.
+        Assert.Equal(["-ss", "2", "-t", "12", "-i"], arguments.GetRange(input - 5, 5));
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("setpts=0.5*(PTS-STARTPTS)", graph, StringComparison.Ordinal);
+        Assert.Contains("trim=duration=6,setpts=PTS-STARTPTS[scene0intro]", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildFitsTheDroneIntroBeforeAWalkthroughOutOfTheFrontPhoto()
+    {
+        var (request, _) = CreateWalkthroughRequest(clipDurationMs: 5_000);
+        var intro = CreateFile("aerial-with-walk.mp4");
+        request = request with
+        {
+            AerialIntro = new VideoRenderAerialIntroAsset(request.PropertyMedia[0].PropertyMediaId, intro, 5_000),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var input = arguments.IndexOf(intro);
+        Assert.Equal(["-ss", "3", "-t", "2", "-i"], arguments.GetRange(input - 5, 5));
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("trim=duration=1,setpts=PTS-STARTPTS[scene0intro]", graph, StringComparison.Ordinal);
+        Assert.Contains("[scene0still]trim=duration=1,setpts=PTS-STARTPTS[scene0hold]", graph, StringComparison.Ordinal);
+        Assert.Contains("[scene0hold][scene0walk]concat=n=2:v=1:a=0[scene0body]", graph, StringComparison.Ordinal);
+        Assert.Contains("[scene0intro][scene0body]concat=n=2:v=1:a=0[scene0]", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildLeavesOutADroneIntroForAnotherPhoto()
+    {
+        var request = CreateRequest();
+        var intro = CreateFile("aerial-other.mp4");
+        request = request with { AerialIntro = new VideoRenderAerialIntroAsset(Guid.NewGuid(), intro, 5_000) };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        Assert.DoesNotContain(intro, command.Arguments);
+        Assert.DoesNotContain("scene0intro", command.Arguments[command.Arguments.ToList().IndexOf("-filter_complex") + 1], StringComparison.Ordinal);
+    }
+
     private (VideoRenderRequest Request, string ClipPath) CreateWalkthroughRequest(
         int clipDurationMs,
         bool reversed = false)

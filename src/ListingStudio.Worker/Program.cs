@@ -86,6 +86,7 @@ builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
 builder.Services.AddHostedService<PropertyVideoFrameExtractionWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
+builder.Services.AddHostedService<AerialIntroWorker>();
 builder.Services.AddHostedService<PhotoFixWorker>();
 builder.Services.AddHostedService<CommentEmailWorker>();
 builder.Services.AddHostedService<AdminUserEmailWorker>();

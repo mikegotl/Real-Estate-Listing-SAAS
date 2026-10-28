@@ -95,6 +95,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeWalkthroughVideoProvider WalkthroughVideoProvider { get; } = new();
 
+    public FakeAerialIntroVideoEditor AerialIntroVideoEditor { get; } = new();
+
     public FakeBillingProviderGateway BillingProvider { get; } = new();
 
     public FakePhotoImageCodec PhotoImageCodec { get; } = new();
@@ -159,6 +161,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IAiVideoProvider>(AiVideoProvider);
             services.RemoveAll<IWalkthroughVideoProvider>();
             services.AddSingleton<IWalkthroughVideoProvider>(WalkthroughVideoProvider);
+            services.RemoveAll<IAerialIntroVideoEditor>();
+            services.AddSingleton<IAerialIntroVideoEditor>(AerialIntroVideoEditor);
             services.RemoveAll<IBillingProviderGateway>();
             services.AddSingleton<IBillingProviderGateway>(BillingProvider);
             services.RemoveAll<IPhotoImageCodec>();
@@ -430,8 +434,12 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     private int walkthroughInputCount;
     private int walkthroughShotCount;
     private int agentPresenterInputCount;
+    private int aerialIntroInputCount;
 
     public int CallCount => callCount;
+
+    /// <summary>Renders that received the approved drone intro.</summary>
+    public int AerialIntroInputCount => aerialIntroInputCount;
 
     public VideoRenderRequest? LastRequest { get; private set; }
 
@@ -465,6 +473,13 @@ public sealed class FakeVideoRenderer : IVideoRenderer
             Interlocked.Increment(ref agentPresenterInputCount);
         }
         Assert.All(request.WalkthroughTransitions ?? [], transition => Assert.True(File.Exists(transition.FilePath)));
+        if (request.AerialIntro is not null)
+        {
+            Assert.True(File.Exists(request.AerialIntro.FilePath));
+            Assert.Equal(request.Specification.Scenes[0].VisualSource.PropertyMediaId, request.AerialIntro.PropertyMediaId);
+            Interlocked.Increment(ref aerialIntroInputCount);
+        }
+
         var walkthroughShots = (request.GeneratedClips ?? []).Where(clip => clip.FitToScene).ToArray();
         Assert.All(walkthroughShots, clip => Assert.True(File.Exists(clip.FilePath) && clip.Width > 0 && clip.LeadInMs > 0));
         Interlocked.Add(ref walkthroughShotCount, walkthroughShots.Length);
@@ -521,6 +536,23 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
             : Task.FromResult($"fake-{submission.IdempotencyKey}");
     }
 
+    public string AerialIntroGenerationVersion => "fake-aerial-v1";
+
+    /// <summary>The height each drone intro was last submitted with, keyed by intro ID.</summary>
+    public ConcurrentDictionary<Guid, int> SubmittedAerialHeights { get; } = new();
+
+    public Task<string> SubmitAerialIntroAsync(
+        AerialIntroVideoSubmission submission,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref submitCount);
+        SubmittedAerialHeights[Guid.ParseExact(submission.IdempotencyKey[..32], "N")] = submission.HeightFeet;
+        Assert.True(submission.Frame.Content.CanRead);
+        return submissionFailures.TryDequeue(out var failure)
+            ? Task.FromException<string>(failure)
+            : Task.FromResult($"fake-{submission.IdempotencyKey}");
+    }
+
     public Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,
         CancellationToken cancellationToken = default)
@@ -535,6 +567,23 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
             "fake-higgsfield",
             "fake-model",
             state == WalkthroughVideoState.Failed ? "The fake provider rejected the photos." : null));
+    }
+}
+
+/// <summary>Stands in for the FFmpeg reverse-and-label step, which needs a real MP4.</summary>
+public sealed class FakeAerialIntroVideoEditor : IAerialIntroVideoEditor
+{
+    public static byte[] IntroBytes { get; } = [0, 0, 0, 20, 102, 116, 121, 112, 97, 101, 114, 105];
+
+    public int CallCount { get; private set; }
+
+    public async Task<AerialIntroEditResult> PrepareAsync(Stream generatedClip, CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        using var buffer = new MemoryStream();
+        await generatedClip.CopyToAsync(buffer, cancellationToken);
+        Assert.Equal(FakeWalkthroughVideoProvider.ClipBytes, buffer.ToArray());
+        return new AerialIntroEditResult(new MemoryStream(IntroBytes), IntroBytes.Length, 5_000);
     }
 }
 

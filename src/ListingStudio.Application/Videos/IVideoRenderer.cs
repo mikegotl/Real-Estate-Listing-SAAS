@@ -69,6 +69,16 @@ public sealed record VideoRenderWalkthroughTransitionAsset(
     int DurationMs);
 
 /// <summary>
+/// The approved AI drone intro, which descends onto a listing photo. When the first scene shows that photo, the
+/// renderer opens the video with the end of the clip (sped up to at most double speed when the scene is short) and
+/// then holds the photo for the rest of the scene. The AI disclosure is already burned into the clip.
+/// </summary>
+public sealed record VideoRenderAerialIntroAsset(
+    Guid PropertyMediaId,
+    string FilePath,
+    int DurationMs);
+
+/// <summary>
 /// A lip-synced agent presenter whose first and optional second source sections align with the campaign narration.
 /// The renderer ignores the clip's audio and keeps the campaign's original narration mix.
 /// </summary>
@@ -93,7 +103,8 @@ public sealed record VideoRenderRequest(
     IReadOnlyList<VideoRenderNeighborhoodAsset>? NeighborhoodAssets = null,
     IReadOnlyList<VideoRenderPropertyVideoAsset>? PropertyVideos = null,
     IReadOnlyList<VideoRenderWalkthroughTransitionAsset>? WalkthroughTransitions = null,
-    VideoRenderAgentPresenterAsset? AgentPresenter = null);
+    VideoRenderAgentPresenterAsset? AgentPresenter = null,
+    VideoRenderAerialIntroAsset? AerialIntro = null);
 
 public sealed record VideoRenderResult(
     string OutputFilePath,

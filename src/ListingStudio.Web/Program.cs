@@ -326,6 +326,24 @@ app.MapGet("/walkthrough-transitions/{transitionId:guid}", async (
         : Results.Stream(clip.Content, clip.ContentType, enableRangeProcessing: true);
 }).RequireAuthorization();
 
+app.MapGet("/aerial-intros/{clipId:guid}", async (
+    Guid clipId,
+    HttpContext context,
+    IAerialIntroService aerialIntroService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var clip = await aerialIntroService.OpenReadAsync(userId, clipId, cancellationToken);
+    return clip is null
+        ? Results.NotFound()
+        : Results.Stream(clip.Content, clip.ContentType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
 app.MapGet("/property-videos/{videoId:guid}", async (
     Guid videoId,
     bool? enhanced,

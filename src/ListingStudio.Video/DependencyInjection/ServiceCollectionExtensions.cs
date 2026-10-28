@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPropertyVideoFrameExtractor, FfmpegPropertyVideoFrameExtractor>();
         services.AddSingleton<IPropertyVideoClipFinder, FfmpegPropertyVideoClipFinder>();
         services.AddSingleton<IPhotoImageCodec, FfmpegPhotoImageCodec>();
+        services.AddSingleton<IAerialIntroVideoEditor, FfmpegAerialIntroVideoEditor>();
         services.AddSingleton<IAgentAvatarPreviewRenderer, FfmpegAgentAvatarPreviewRenderer>();
         services.AddSingleton<IAgentAvatarNarrationExcerptRenderer, FfmpegAgentAvatarNarrationExcerptRenderer>();
         services.AddHealthChecks()
