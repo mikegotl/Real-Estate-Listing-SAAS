@@ -13,6 +13,8 @@ using Microsoft.Extensions.Options;
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.AI.Campaigns;
+using ListingStudio.Application.Help;
+using ListingStudio.AI.Help;
 
 namespace ListingStudio.AI.DependencyInjection;
 
@@ -70,6 +72,9 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<ICampaignVideoChatAssistant, OpenAICampaignVideoChatAssistant>()
             .AddHttpMessageHandler(provider => OpenAiHandler(
                 provider, "campaign-video-chat", options => options.VideoChatEstimatedCostUsd));
+        services.AddHttpClient<IHelpChatAssistant, OpenAIHelpChatAssistant>()
+            .AddHttpMessageHandler(provider => OpenAiHandler(
+                provider, "help-chat", options => options.HelpChatEstimatedCostUsd));
         services.AddHttpClient<ElevenLabsVoiceProvider>()
             .AddHttpMessageHandler(provider =>
             {

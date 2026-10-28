@@ -60,6 +60,16 @@ public sealed record AdminVideoChatRequestRow(
     string? FixFeedback = null,
     DateTimeOffset? FixConfirmedAtUtc = null);
 
+/// <summary>One question a user asked the site-wide Ask AI help chat, with the answer, kept for product review.</summary>
+public sealed record AdminHelpChatQuestionRow(
+    DateTimeOffset OccurredAtUtc,
+    string? UserEmail,
+    string? WorkspaceName,
+    string? PagePath,
+    string? PropertyAddress,
+    string Question,
+    string? AssistantReply);
+
 public sealed record PlatformAdminDashboard(
     AdminDateRange Range,
     DateTimeOffset? MetricsResetAtUtc,
@@ -92,6 +102,11 @@ public interface IPlatformAdminDashboardService
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AdminVideoChatRequestRow>> GetVideoChatRequestsAsync(
+        AdminDateRange range,
+        int maximumResults = 200,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AdminHelpChatQuestionRow>> GetHelpChatQuestionsAsync(
         AdminDateRange range,
         int maximumResults = 200,
         CancellationToken cancellationToken = default);

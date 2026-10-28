@@ -2,6 +2,7 @@ using ListingStudio.Application.Audio;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Billing;
 using ListingStudio.Application.Campaigns;
+using ListingStudio.Application.Help;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
@@ -979,6 +980,10 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.Equal("YouTube tour", request.VideoName);
             Assert.Contains(request.ListingPhotos, photo => photo.Id == second);
             Assert.Equal("Use the other photo first and switch to upbeat music", request.Conversation[^1].Text);
+            // The chat can explain how the video was made, not only change it.
+            Assert.Contains(request.Production!, note => note.Topic == "How it was edited"
+                && note.Detail.Contains("master tour plan", StringComparison.Ordinal));
+            Assert.Contains(request.Production!, note => note.Topic == "Voiceover words");
             return new CampaignVideoChatReply(
                 "I'll open on the other photo and switch to the upbeat track.",
                 [
@@ -1090,6 +1095,101 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.Equal("Looks right now", row.FixFeedback);
             Assert.NotNull(row.FixConfirmedAtUtc);
         }
+    }
+
+    [Fact]
+    public async Task HelpChatKnowsThePropertyListsItsFinishedVideosAndIsLoggedForAdmins()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("help-chat");
+        var stranger = await CreateOwnerAndPropertyAsync("help-chat-stranger");
+        await UploadAsync(owner);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        QueueSuccessfulProviders();
+        var queued = await EnqueueAsync(owner, CampaignOutputSelection.YouTubeTour | CampaignOutputSelection.FacebookFeed);
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<IHelpChatService>();
+            var videos = await service.GetVideosAsync(owner.UserId, owner.PropertyId);
+            Assert.Equal(
+                [CampaignOutputKind.YouTubeTour, CampaignOutputKind.FacebookFeed],
+                videos.Select(video => video.Kind).Order().ToArray());
+            Assert.All(videos, video => Assert.Equal(completed.Id, video.JobId));
+            Assert.Contains(videos, video => video.Name == "YouTube tour");
+            Assert.Empty(await service.GetVideosAsync(stranger.UserId, owner.PropertyId));
+
+            var empty = await service.GetAsync(owner.UserId);
+            Assert.Null(empty.ConversationId);
+            Assert.Empty(empty.Messages);
+
+            fixture.Factory.HelpChatAssistant.Enqueue(request =>
+            {
+                Assert.Equal("/properties/x?tab=campaign", request.PagePath);
+                Assert.StartsWith("123 Main Street", request.Property!.Address, StringComparison.Ordinal);
+                Assert.Equal("Completed", request.Property.LatestCampaignStatus);
+                Assert.Contains("YouTube tour", request.Property.FinishedVideos);
+                return "Pick the YouTube tour in the Ask about menu.";
+            });
+            var chat = await service.SendAsync(
+                owner.UserId, null, "  How was my YouTube video made?  ", "/properties/x?tab=campaign", owner.PropertyId);
+            Assert.NotNull(chat.ConversationId);
+            Assert.Equal(2, chat.Messages.Count);
+            Assert.Equal("How was my YouTube video made?", chat.Messages[0].Text);
+            Assert.Equal("Pick the YouTube tour in the Ask about menu.", chat.Messages[1].Text);
+            Assert.Equal(IHelpChatService.MaximumMessagesPerDay - 1, chat.MessagesLeftToday);
+
+            // Another workspace's property gives the assistant no context.
+            fixture.Factory.HelpChatAssistant.Enqueue(request =>
+            {
+                Assert.Null(request.Property);
+                Assert.Equal(3, request.Conversation.Count);
+                return "Open the property first.";
+            });
+            chat = await service.SendAsync(owner.UserId, chat.ConversationId, "And this one?", "/properties/y", stranger.PropertyId);
+            Assert.Equal(4, chat.Messages.Count);
+            Assert.Equal(chat.ConversationId, (await service.GetAsync(owner.UserId)).ConversationId);
+            Assert.Empty((await service.GetAsync(stranger.UserId)).Messages);
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.SendAsync(owner.UserId, chat.ConversationId, "   ", null, null));
+
+            fixture.Factory.TimeProvider.Advance(IHelpChatService.ConversationIdleTimeout + TimeSpan.FromMinutes(1));
+            Assert.Empty((await service.GetAsync(owner.UserId)).Messages);
+        }
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var admin = scope.ServiceProvider.GetRequiredService<Application.Administration.IPlatformAdminDashboardService>();
+            var rows = await admin.GetHelpChatQuestionsAsync(
+                Application.Administration.AdminDateRange.LastDays(90, fixture.Factory.TimeProvider));
+            var row = Assert.Single(rows, item => item.Question == "How was my YouTube video made?");
+            Assert.Equal("Pick the YouTube tour in the Ask about menu.", row.AssistantReply);
+            Assert.Equal("/properties/x?tab=campaign", row.PagePath);
+            Assert.StartsWith("123 Main Street", row.PropertyAddress, StringComparison.Ordinal);
+            Assert.NotNull(row.UserEmail);
+            var other = Assert.Single(rows, item => item.Question == "And this one?");
+            Assert.Null(other.PropertyAddress);
+            Assert.Equal("Open the property first.", other.AssistantReply);
+        }
+    }
+
+    [Fact]
+    public async Task HelpChatStopsAtTheDailyLimit()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("help-chat-limit");
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IHelpChatService>();
+        Guid? conversation = null;
+        for (var index = 0; index < IHelpChatService.MaximumMessagesPerDay; index++)
+        {
+            fixture.Factory.HelpChatAssistant.Enqueue(_ => "Answer.");
+            conversation = (await service.SendAsync(owner.UserId, conversation, $"Question {index}", "/auth", null)).ConversationId;
+        }
+
+        var limited = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SendAsync(owner.UserId, conversation, "One more", "/auth", null));
+        Assert.Contains("daily limit", limited.Message, StringComparison.Ordinal);
+        Assert.Equal(0, (await service.GetAsync(owner.UserId)).MessagesLeftToday);
     }
 
     private async Task<CampaignGenerationResult> ProcessUntilAsync(

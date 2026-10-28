@@ -34,6 +34,8 @@ using ListingStudio.Application.Feedback;
 using ListingStudio.Infrastructure.Feedback;
 using ListingStudio.Application.Email;
 using ListingStudio.Infrastructure.Email;
+using ListingStudio.Application.Help;
+using ListingStudio.Infrastructure.Help;
 
 namespace ListingStudio.Infrastructure.DependencyInjection;
 
@@ -214,6 +216,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
         services.AddScoped<ICampaignVideoChatService, CampaignVideoChatService>();
+        services.AddScoped<IHelpChatService, HelpChatService>();
         services.AddScoped<IAgentPortraitService, AgentPortraitService>();
         services.AddScoped<IAgentProfileService, AgentProfileService>();
         services.AddScoped<IAgentAvatarPreviewService, AgentAvatarPreviewService>();

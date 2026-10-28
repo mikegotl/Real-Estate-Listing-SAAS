@@ -9,6 +9,7 @@ using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Leads;
 using ListingStudio.Domain.Feedback;
+using ListingStudio.Domain.Help;
 using ListingStudio.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -87,6 +88,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<LeadActivity> LeadActivities => Set<LeadActivity>();
 
     public DbSet<FeatureSuggestion> FeatureSuggestions => Set<FeatureSuggestion>();
+
+    public DbSet<HelpChatMessage> HelpChatMessages => Set<HelpChatMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

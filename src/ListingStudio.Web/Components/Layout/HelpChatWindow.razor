@@ -1,0 +1,313 @@
+@using System.Text.RegularExpressions
+@using ListingStudio.Application.Help
+@using ListingStudio.Domain.Help
+@implements IDisposable
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject ILogger<HelpChatWindow> Logger
+
+@* The Ask AI window on every signed-in page. General questions go to the help assistant; on a property's pages the
+   finished campaign videos can be picked, which opens that video's own chat (questions about how it was made, and
+   changes rendered through the same free-update, undo and "Did this fix it?" flow as on the Campaign tab). *@
+<div class="help-chat">
+    @if (!open)
+    {
+        <button type="button" class="help-chat-launcher" aria-label="Ask AI for help" @onclick="OpenAsync">
+            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" />
+            <span>@(videos.Count > 0 ? "Ask AI about your videos" : "Ask AI")</span>
+        </button>
+    }
+    else
+    {
+        <section class="help-chat-window" role="dialog" aria-label="Ask AI">
+            <header class="help-chat-header">
+                <div>
+                    <strong><MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" /> Ask AI</strong>
+                    <small>Answers can be wrong. Nothing changes until you press Render.</small>
+                </div>
+                <button type="button" class="notification-text-button" @onclick="Close">Close</button>
+            </header>
+
+            @if (videos.Count > 0)
+            {
+                <div class="help-chat-topic">
+                    <label for="help-chat-topic">Ask about</label>
+                    <select id="help-chat-topic" class="help-chat-select" value="@topic" @onchange="OnTopicChanged">
+                        <option value="@GeneralTopic">Using Listing Studio</option>
+                        @foreach (var video in videos)
+                        {
+                            <option value="@TopicOf(video)">@video.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (SelectedVideo is { } selected)
+            {
+                <div class="help-chat-body">
+                    <CampaignVideoChatPanel JobId="selected.JobId" Kind="selected.Kind" VideoName="@selected.Name" Embedded="true" />
+                </div>
+            }
+            else
+            {
+                <div class="help-chat-body">
+                    <div class="video-chat-messages help-chat-messages" role="log" aria-live="polite">
+                        @if (chat is null)
+                        {
+                            <MudProgressLinear Indeterminate="true" Class="my-3" />
+                        }
+                        else
+                        {
+                            <div class="video-chat-message assistant">
+                                <MudText Typo="Typo.body2">
+                                    Hi! Ask me how to do anything in Listing Studio, like placing photos on the Tour Map, choosing music or getting a campaign started.
+                                </MudText>
+                            </div>
+                            @if (videos.Count > 0)
+                            {
+                                <div class="help-chat-videos">
+                                    <MudText Typo="Typo.body2"><strong>This property's videos are ready.</strong> Pick one to ask how it was made or to change it:</MudText>
+                                    <div class="help-chat-video-buttons">
+                                        @foreach (var video in videos)
+                                        {
+                                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                                       StartIcon="@Icons.Material.Filled.Movie"
+                                                       OnClick="() => topic = TopicOf(video)">@video.Name</MudButton>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @foreach (var message in chat.Messages)
+                            {
+                                <div class="video-chat-message help-chat-text @(message.Role == HelpChatRole.User ? "user" : "assistant")">
+                                    <MudText Typo="Typo.body2">@message.Text</MudText>
+                                </div>
+                            }
+                        }
+                        @if (sending)
+                        {
+                            <div class="video-chat-message assistant">
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" /> <MudText Typo="Typo.caption" Inline="true">Thinking…</MudText>
+                            </div>
+                        }
+                    </div>
+
+                    @if (error is not null)
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@error</MudAlert>
+                    }
+
+                    <div class="video-chat-input">
+                        <MudTextField T="string"
+                                      @bind-Value="draft"
+                                      Label="Ask a question"
+                                      Placeholder="e.g. How do I add a room to the tour?"
+                                      Variant="Variant.Outlined"
+                                      Lines="2"
+                                      MaxLength="IHelpChatService.MaximumMessageLength"
+                                      Immediate="true"
+                                      Disabled="@(sending || chat is null || chat.MessagesLeftToday == 0)"
+                                      OnKeyDown="OnKeyDownAsync" />
+                        <div class="help-chat-actions">
+                            @if (chat?.Messages.Count > 0)
+                            {
+                                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.RestartAlt"
+                                           Disabled="sending" OnClick="StartOver">New chat</MudButton>
+                            }
+                            else
+                            {
+                                <span></span>
+                            }
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Send"
+                                       Disabled="@(sending || chat is null || string.IsNullOrWhiteSpace(draft))"
+                                       OnClick="SendAsync">
+                                Send
+                            </MudButton>
+                        </div>
+                        @if (chat is { MessagesLeftToday: <= 10 } current)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@current.MessagesLeftToday questions left today</MudText>
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private const string GeneralTopic = "general";
+
+    private static readonly Regex PropertyPath = new(
+        "^properties/(?<id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})([/?#]|$)",
+        RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
+
+    private readonly CancellationTokenSource disposal = new();
+    private IReadOnlyList<HelpChatVideo> videos = [];
+    private HelpChat? chat;
+    private Guid? propertyId;
+    private string topic = GeneralTopic;
+    private bool open;
+    private bool sending;
+    private string? draft;
+    private string? error;
+
+    private HelpChatVideo? SelectedVideo => videos.FirstOrDefault(video => TopicOf(video) == topic);
+
+    private static string TopicOf(HelpChatVideo video) => $"{video.JobId:N}:{video.Kind}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        ReadLocation();
+        await LoadVideosAsync();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            var before = propertyId;
+            ReadLocation();
+            if (before != propertyId)
+            {
+                await LoadVideosAsync();
+                StateHasChanged();
+            }
+        });
+    }
+
+    // On a property's pages the assistant knows the property, and its finished videos can be picked.
+    private void ReadLocation()
+    {
+        var match = PropertyPath.Match(Navigation.ToBaseRelativePath(Navigation.Uri));
+        propertyId = match.Success ? Guid.Parse(match.Groups["id"].Value) : null;
+    }
+
+    private string PagePath()
+    {
+        var path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        return path.Length <= HelpChatMessage.MaximumPagePathLength ? path : path[..HelpChatMessage.MaximumPagePathLength];
+    }
+
+    private async Task LoadVideosAsync()
+    {
+        try
+        {
+            if (propertyId is not { } id)
+            {
+                videos = [];
+            }
+            else
+            {
+                var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+                await using var scope = ScopeFactory.CreateAsyncScope();
+                videos = await scope.ServiceProvider.GetRequiredService<IHelpChatService>()
+                    .GetVideosAsync(userId, id, disposal.Token);
+            }
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Loading the finished videos for the help chat failed");
+            videos = [];
+        }
+
+        if (SelectedVideo is null)
+        {
+            topic = GeneralTopic;
+        }
+    }
+
+    private async Task OpenAsync()
+    {
+        open = true;
+        error = null;
+        await LoadVideosAsync();
+        if (chat is null)
+        {
+            try
+            {
+                var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+                await using var scope = ScopeFactory.CreateAsyncScope();
+                chat = await scope.ServiceProvider.GetRequiredService<IHelpChatService>().GetAsync(userId, disposal.Token);
+            }
+            catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                Logger.LogWarning(exception, "Loading the help chat failed");
+                chat = new HelpChat(null, IHelpChatService.MaximumMessagesPerDay, []);
+                error = "The chat could not be loaded. Try again in a moment.";
+            }
+        }
+    }
+
+    private void Close() => open = false;
+
+    private void OnTopicChanged(ChangeEventArgs args) => topic = args.Value?.ToString() ?? GeneralTopic;
+
+    private void StartOver()
+    {
+        chat = chat is null ? null : new HelpChat(null, chat.MessagesLeftToday, []);
+        error = null;
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args is { Key: "Enter", ShiftKey: false } && !string.IsNullOrWhiteSpace(draft))
+        {
+            await SendAsync();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        var text = draft?.Trim();
+        if (string.IsNullOrWhiteSpace(text) || sending || chat is null)
+        {
+            return;
+        }
+
+        sending = true;
+        error = null;
+        draft = null;
+        // Show the question straight away; the saved conversation replaces it when the answer arrives.
+        var before = chat;
+        chat = chat with { Messages = [.. chat.Messages, new HelpChatEntry(Guid.NewGuid(), HelpChatRole.User, text, DateTimeOffset.UtcNow)] };
+        StateHasChanged();
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            chat = await scope.ServiceProvider.GetRequiredService<IHelpChatService>()
+                .SendAsync(userId, before.ConversationId, text, PagePath(), propertyId, disposal.Token);
+        }
+        catch (InvalidOperationException exception)
+        {
+            chat = before;
+            error = exception.Message;
+            draft = text;
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            sending = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        disposal.Cancel();
+        disposal.Dispose();
+    }
+}
