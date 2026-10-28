@@ -201,7 +201,13 @@ public sealed class FfmpegVideoRenderer(
     {
         var lines = standardError
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return lines.LastOrDefault() ?? "No diagnostic output was returned.";
+        if (lines.Length == 0)
+        {
+            return "No diagnostic output was returned.";
+        }
+
+        var diagnostic = string.Join(" | ", lines.TakeLast(12));
+        return diagnostic.Length <= 2_000 ? diagnostic : diagnostic[^2_000..];
     }
 
     private static void DeletePartialOutput(string outputPath)

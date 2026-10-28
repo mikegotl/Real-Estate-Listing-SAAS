@@ -1207,20 +1207,32 @@ public sealed partial class CampaignGenerationProcessor(
                 (int)specification.RequestedDuration * 1_000,
                 directory,
                 cancellationToken);
-            await videoRenderer.RenderAsync(
-                new VideoRenderRequest(
-                    specification,
-                    mediaAssets,
-                    narrationAsset,
-                    brandAssets,
-                    music,
-                    outputPath,
-                    generatedClips,
-                    neighborhoodAssets,
-                    propertyVideos,
-                    walkthroughTransitions,
-                    agentPresenter),
-                cancellationToken);
+            var renderRequest = new VideoRenderRequest(
+                specification,
+                mediaAssets,
+                narrationAsset,
+                brandAssets,
+                music,
+                outputPath,
+                generatedClips,
+                neighborhoodAssets,
+                propertyVideos,
+                walkthroughTransitions,
+                agentPresenter);
+            try
+            {
+                await videoRenderer.RenderAsync(renderRequest, cancellationToken);
+            }
+            catch (VideoRenderException exception) when (walkthroughTransitions.Length > 0)
+            {
+                // A provider-generated transition is optional polish. If FFmpeg cannot decode or compose one of
+                // those clips, preserve the approved tour-map photos and narration instead of failing the entire
+                // campaign. The retry is deterministic and never admits media outside the campaign allowlist.
+                LogWalkthroughRenderFallback(exception, job.Id, label, walkthroughTransitions.Length);
+                await videoRenderer.RenderAsync(
+                    renderRequest with { WalkthroughTransitions = [] },
+                    cancellationToken);
+            }
             var stored = false;
             try
             {
@@ -2036,6 +2048,15 @@ public sealed partial class CampaignGenerationProcessor(
         Level = LogLevel.Warning,
         Message = "Campaign {JobId} skipped walk-through transition {TransitionId} because its clip could not be opened")]
     private partial void LogWalkthroughUnavailable(Guid jobId, Guid transitionId);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} deliverable {Label} could not render {TransitionCount} walk-through transitions; retrying with approved tour-map photos")]
+    private partial void LogWalkthroughRenderFallback(
+        Exception exception,
+        Guid jobId,
+        string label,
+        int transitionCount);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

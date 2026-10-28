@@ -254,7 +254,7 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
 
         var arguments = command.Arguments.ToList();
         var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
-        Assert.Contains("scale=1080:1920", graph, StringComparison.Ordinal);
+        Assert.Contains("scale=1080:1920:flags=lanczos,setsar=1", graph, StringComparison.Ordinal);
     }
 
     [Fact]

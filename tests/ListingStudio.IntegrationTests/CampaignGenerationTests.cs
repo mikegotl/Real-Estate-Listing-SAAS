@@ -452,6 +452,24 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             json => json.Contains("\"generatedClip\"", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task FailedWalkthroughCompositionFallsBackToApprovedTourMapPhotos()
+    {
+        var (owner, front, foyer) = await CreatePropertyWithFinishedWalkthroughClipAsync(
+            "campaign-walkthrough-render-fallback");
+        var renderCallsBefore = fixture.Factory.VideoRenderer.CallCount;
+        var walkthroughInputsBefore = fixture.Factory.VideoRenderer.WalkthroughInputCount;
+        fixture.Factory.VideoRenderer.EnqueueFailure(new VideoRenderException("bad optional transition clip"));
+
+        var completed = await GenerateTwoPhotoCampaignAsync(owner, front, foyer);
+
+        Assert.Equal(CampaignGenerationStatus.Completed, completed.Status);
+        Assert.Equal(renderCallsBefore + 3, fixture.Factory.VideoRenderer.CallCount);
+        Assert.True(fixture.Factory.VideoRenderer.WalkthroughInputCount > walkthroughInputsBefore);
+        Assert.All(completed.Deliverables, deliverable =>
+            Assert.Equal(CampaignDeliverableStatus.Rendered, deliverable.Status));
+    }
+
     private async Task<CampaignGenerationResult> GenerateTwoPhotoCampaignAsync(
         OwnerProperty owner,
         Guid front,
