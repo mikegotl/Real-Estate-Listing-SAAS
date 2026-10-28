@@ -114,7 +114,8 @@ public sealed class CampaignGenerationService(
             .AsNoTracking()
             .Where(candidate => candidate.OrganizationId == organizationId
                 && candidate.PropertyId == propertyId
-                && !candidate.IsInGallery)
+                && !candidate.IsInGallery
+                && candidate.WalkthroughStop != null)
             .OrderBy(candidate => candidate.DisplayOrder)
             .Select(candidate => new
             {

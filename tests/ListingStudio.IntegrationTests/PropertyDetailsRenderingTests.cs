@@ -65,7 +65,7 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         response.EnsureSuccessStatusCode();
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("121 E 7th St", content, StringComparison.Ordinal);
-        Assert.Contains("Listing photos", content, StringComparison.Ordinal);
+        Assert.Contains("Plan the buyer", content, StringComparison.Ordinal);
         Assert.Contains("Marketing story", content, StringComparison.Ordinal);
         Assert.Contains("Campaign", content, StringComparison.Ordinal);
         Assert.Contains("$420,000", content, StringComparison.Ordinal);
@@ -193,8 +193,10 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
 
         await UploadAsync(mediaService, userId, propertyId, "front.png", WalkthroughStoryboard.ExteriorFront);
         var oneStop = await (await client.GetAsync($"/properties/{propertyId}?tab=media")).Content.ReadAsStringAsync();
-        Assert.DoesNotContain("walkthrough-map-heading", oneStop, StringComparison.Ordinal);
+        Assert.Contains("walkthrough-map-heading", oneStop, StringComparison.Ordinal);
+        Assert.Contains("Approved tour media", oneStop, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Media sections\"", oneStop, StringComparison.Ordinal);
+        Assert.Contains("Tour map", oneStop, StringComparison.Ordinal);
         Assert.DoesNotContain("getElementById('media-map')", oneStop, StringComparison.Ordinal);
 
         await UploadAsync(mediaService, userId, propertyId, "foyer.png", WalkthroughStoryboard.EntryFoyer);
@@ -205,8 +207,7 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         response.EnsureSuccessStatusCode();
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("walkthrough-map-heading", content, StringComparison.Ordinal);
-        Assert.Contains("Show Kitchen on the walkthrough map", content, StringComparison.Ordinal);
-        Assert.Contains("Show Exterior front on the walkthrough map", content, StringComparison.Ordinal);
+        Assert.Contains("Each mapped room owns its approved photos", content, StringComparison.Ordinal);
         Assert.Contains("Main level", content, StringComparison.Ordinal);
         Assert.Contains("Stop 1, Exterior front, where the walkthrough starts", content, StringComparison.Ordinal);
         Assert.Contains(
@@ -214,9 +215,10 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
             content,
             StringComparison.Ordinal);
         Assert.Contains("Stop 3, Kitchen, turn left from the previous stop", content, StringComparison.Ordinal);
-        Assert.Contains("getElementById('media-map')", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("getElementById('media-map')", content, StringComparison.Ordinal);
         Assert.Contains("<span class=\"media-nav-count\">3</span>", content, StringComparison.Ordinal);
-        Assert.Contains("Extra photos", content, StringComparison.Ordinal);
+        Assert.Contains("Not in tour", content, StringComparison.Ordinal);
+        Assert.Contains("Where does the buyer go next?", content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -278,6 +280,7 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("aria-label=\"Start media over\"", content, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Select spare-one.png\"", content, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Select spare-two.png\"", content, StringComparison.Ordinal);
+        Assert.Contains("Add to stop", content, StringComparison.Ordinal);
     }
 
     [Theory]

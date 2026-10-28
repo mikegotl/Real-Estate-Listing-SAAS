@@ -525,7 +525,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             foyer = await scope.ServiceProvider.GetRequiredService<IPropertyMediaService>().UploadAsync(
                 owner.UserId,
                 owner.PropertyId,
-                new PropertyMediaUpload("foyer.png", "image/png", content.Length, content));
+                new PropertyMediaUpload("foyer.png", "image/png", content.Length, content, WalkthroughStoryboard.EntryFoyer));
             var transitions = scope.ServiceProvider.GetRequiredService<IWalkthroughTransitionService>();
             Assert.Equal(1, await transitions.QueueAsync(owner.UserId, owner.PropertyId));
             var transitionId = Assert.Single(await transitions.ListAsync(owner.UserId, owner.PropertyId)).TransitionId!.Value;
@@ -1298,7 +1298,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         return await media.UploadAsync(
             owner.UserId,
             owner.PropertyId,
-            new PropertyMediaUpload("front.png", "image/png", content.Length, content));
+            new PropertyMediaUpload("front.png", "image/png", content.Length, content, WalkthroughStoryboard.ExteriorFront));
     }
 
     private async Task<OwnerProperty> CreateOwnerAndPropertyAsync(string prefix)

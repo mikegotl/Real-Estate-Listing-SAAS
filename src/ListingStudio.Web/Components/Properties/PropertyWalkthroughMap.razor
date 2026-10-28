@@ -4,13 +4,13 @@
 <section class="walkthrough-map" aria-labelledby="walkthrough-map-heading">
     <div class="walkthrough-map-header">
         <div>
-            <p class="storyboard-eyebrow">Walkthrough map</p>
-            <h3 id="walkthrough-map-heading">How the spaces connect</h3>
+            <p class="storyboard-eyebrow">Tour map</p>
+            <h3 id="walkthrough-map-heading">Plan the buyer's route</h3>
             <p class="stop-hint">
-                Drawn from the shot-by-shot order: each space sits in the direction a buyer walks from the one before it.
+                Each mapped room owns its approved photos, walking direction, fixes and narration.
                 @(IsReadOnly
                     ? "It is a schematic, not a floor plan."
-                    : "Select a space to set which way it lies from the previous stop. It is a schematic, not a floor plan.")
+                    : "Select a room to edit it. Drag the route cards on a larger screen to change the tour order, or use the direction buttons on any screen. It is a schematic, not a floor plan.")
             </p>
         </div>
         <ul class="walkthrough-map-legend" aria-label="Map legend">
@@ -154,11 +154,12 @@
                             <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.DirectionsWalk"
                                        OnClick="@(() => PlayInto(next.Index))">Walk on to @next.Name.ToLowerInvariant()</MudButton>
                         }
-                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PhotoLibrary"
-                                   OnClick="@(() => ShowShots.InvokeAsync(stop.Name))">
-                            Show @(stop.Shots.Count == 1 ? "its shot" : $"its {stop.Shots.Count} shots")
-                        </MudButton>
                     </div>
+
+                    @if (StopMedia is not null)
+                    {
+                        @StopMedia(stop.Name)
+                    }
 
                     @NarrationEditor((chosen, previous))
                 </div>
@@ -170,9 +171,19 @@
         @foreach (var space in spaces)
         {
             var current = space;
-            <li>
+            <li class="@(draggedStopIndex == space.Index ? "is-dragging" : null)"
+                draggable="@(!IsReadOnly && space.Index > 0)"
+                title="@(space.Index > 0 && !IsReadOnly ? "Drag to change this stop's place in the tour" : null)"
+                @ondragstart="@(() => BeginDrag(current.Index))"
+                @ondragover:preventDefault
+                @ondrop="@(() => DropAsync(current.Index))"
+                @ondragend="@(_ => EndDrag())">
                 <button type="button" class="@($"walkthrough-route-step {(space.Index == selectedIndex ? "is-selected" : "")}")"
                         @onclick="@(() => Select(current.Index))">
+                    @if (!IsReadOnly && space.Index > 0)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Size="Size.Small" Class="walkthrough-route-drag" aria-hidden="true" />
+                    }
                     <span class="walkthrough-route-number">@(space.Index + 1)</span>
                     <span>
                         <strong>@space.Name</strong>
@@ -219,9 +230,13 @@
     [Parameter]
     public EventCallback<(string Stop, WalkthroughDirection Direction)> DirectionChanged { get; set; }
 
-    /// <summary>Raised with a stop name when the agent asks to see that stop's shots in the storyboard.</summary>
+    /// <summary>The selected stop's photo editor, supplied by the media workspace.</summary>
     [Parameter]
-    public EventCallback<string> ShowShots { get; set; }
+    public RenderFragment<string>? StopMedia { get; set; }
+
+    /// <summary>Raised when a route card is dragged to a new place. The exterior opening stays first.</summary>
+    [Parameter]
+    public EventCallback<(int FromIndex, int ToIndex)> StopMoved { get; set; }
 
     /// <summary>Raised with the selected stop name so the storyboard can highlight it.</summary>
     [Parameter]
@@ -258,6 +273,7 @@
     private WalkthroughTransitionItem? playing;
     private string? playingLabel;
     private bool savingDirection;
+    private int? draggedStopIndex;
 
     private WalkthroughMapSpace? Selected => selectedIndex < spaces.Count ? spaces[selectedIndex] : null;
 
@@ -395,6 +411,28 @@
         selectedStop = spaces[index].Name;
         await SelectedStopChanged.InvokeAsync(selectedStop);
     }
+
+    private void BeginDrag(int index)
+    {
+        if (!IsReadOnly && index > 0)
+        {
+            draggedStopIndex = index;
+        }
+    }
+
+    private async Task DropAsync(int index)
+    {
+        var from = draggedStopIndex;
+        draggedStopIndex = null;
+        if (from is null || index <= 0 || from == index)
+        {
+            return;
+        }
+
+        await StopMoved.InvokeAsync((from.Value, index));
+    }
+
+    private void EndDrag() => draggedStopIndex = null;
 
     private async Task PlayInto(int index)
     {

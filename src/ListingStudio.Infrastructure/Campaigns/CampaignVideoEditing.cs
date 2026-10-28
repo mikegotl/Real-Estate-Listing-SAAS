@@ -36,7 +36,8 @@ internal static class CampaignVideoEditing
         var photos = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.OrganizationId == organizationId
                 && candidate.PropertyId == propertyId
-                && !candidate.IsInGallery)
+                && !candidate.IsInGallery
+                && candidate.WalkthroughStop != null)
             .OrderBy(candidate => candidate.DisplayOrder)
             .ThenBy(candidate => candidate.Id)
             .Select(candidate => new

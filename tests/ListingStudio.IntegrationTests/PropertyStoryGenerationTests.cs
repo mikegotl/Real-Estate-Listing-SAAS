@@ -217,7 +217,7 @@ public sealed class PropertyStoryGenerationTests(PostgreSqlWebApplicationFixture
         return await media.UploadAsync(
             owner.UserId,
             owner.PropertyId,
-            new PropertyMediaUpload("front.png", "image/png", content.Length, content));
+            new PropertyMediaUpload("front.png", "image/png", content.Length, content, WalkthroughStoryboard.ExteriorFront));
     }
 
     private async Task<OwnerProperty> CreateOwnerAndPropertyAsync(string prefix)
