@@ -1,0 +1,216 @@
+@page "/admin/email"
+@attribute [Authorize(Policy = PlatformAdministration.Policy)]
+@using System.Security.Claims
+@inject IAdminUserEmailService EmailService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Email users</PageTitle>
+
+<div class="section-row admin-page-heading">
+    <div>
+        <span class="eyebrow">CUSTOMER SUPPORT</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Email users</MudText>
+        <MudText Typo="Typo.body1">Write to one user or a selection from Find users. Each person gets their own copy, so nobody sees the other recipients.</MudText>
+    </div>
+    <MudButton Href="@BackLink" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Find users</MudButton>
+</div>
+
+@if (Sent is > 0)
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">
+        @Sent @(Sent == 1 ? "email" : "emails") queued.@(Skipped is > 0 ? $" {Skipped} selected {(Skipped == 1 ? "user has" : "users have")} no usable email address and {(Skipped == 1 ? "was" : "were")} skipped." : string.Empty)
+        The Worker sends them within a minute once SMTP is set up; the status below changes to Sent.
+    </MudAlert>
+}
+
+@if (recipients.Count > 0)
+{
+    <MudPaper Elevation="0" Class="admin-panel mb-6">
+        <EditForm Model="Input" method="post" OnSubmit="SendAsync" FormName="admin-email" class="admin-email-form">
+            <div>
+                <span class="admin-email-label">To (@usableCount of @recipients.Count selected @(recipients.Count == 1 ? "user" : "users") @(usableCount == 1 ? "has" : "have") an email address)</span>
+                <ul class="admin-email-recipients">
+                    @foreach (var recipient in recipients)
+                    {
+                        <li class="@(HasUsableEmail(recipient) ? null : "missing")">
+                            @(string.IsNullOrWhiteSpace(recipient.Email) ? $"{recipient.UserName} (no email, skipped)" : recipient.Email)
+                        </li>
+                    }
+                </ul>
+            </div>
+            <div>
+                <label for="admin-email-subject">Subject</label>
+                <InputText id="admin-email-subject" type="text" @bind-Value="Input.Subject" maxlength="@IAdminUserEmailService.MaximumSubjectLength" required />
+            </div>
+            <div>
+                <label for="admin-email-body">Message</label>
+                <InputTextArea id="admin-email-body" @bind-Value="Input.Body" maxlength="@IAdminUserEmailService.MaximumBodyLength" required />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Plain text. A short footer says it came from the Listing Studio team, and replies go to your email address.
+                </MudText>
+            </div>
+            @if (errorMessage is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">@errorMessage</MudAlert>
+            }
+            <div>
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Send"
+                           Disabled="@(usableCount == 0)">
+                    Send to @usableCount @(usableCount == 1 ? "user" : "users")
+                </MudButton>
+            </div>
+        </EditForm>
+    </MudPaper>
+}
+else if (To is { Length: > 0 })
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-6">Those users no longer exist.</MudAlert>
+}
+else if (Sent is null)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6">
+        Choose who to email on <MudLink Href="/admin/users">Find users</MudLink>: use Email on one user, tick several and
+        choose Email selected, or choose Email all shown.
+    </MudAlert>
+}
+
+<section aria-labelledby="sent-emails-heading">
+    <MudText Typo="Typo.h5" HtmlTag="h2" id="sent-emails-heading" Class="mb-1">Sent emails</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Every email an admin wrote to a user, newest first. Queued emails wait for the Worker, which sends nothing until
+        SMTP is configured in production; a failed email is retried up to 8 times.
+    </MudText>
+    @if (log is null)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (log.Count == 0)
+    {
+        <p class="admin-empty">No emails sent yet.</p>
+    }
+    else
+    {
+        <MudPaper Elevation="0" Class="admin-panel">
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Queued</th><th>From</th><th>To</th><th>Subject</th><th>Message</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in log)
+                        {
+                            <tr>
+                                <td>@item.QueuedAtUtc.ToLocalTime().ToString("g")</td>
+                                <td>@(item.SentByEmail ?? "Unknown admin")</td>
+                                <td>@item.RecipientEmail</td>
+                                <td>@item.Subject</td>
+                                <td class="admin-email-body">@item.Body</td>
+                                <td>
+                                    @switch (item.Status)
+                                    {
+                                        case AdminUserEmailStatus.Sent:
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Sent</MudChip>
+                                            <br /><span class="mud-text-secondary">@item.SentAtUtc?.ToLocalTime().ToString("g")</span>
+                                            break;
+                                        case AdminUserEmailStatus.Failed:
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip>
+                                            break;
+                                        default:
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Default">Queued</MudChip>
+                                            break;
+                                    }
+                                    @if (item.LastError is { } error && item.Status != AdminUserEmailStatus.Sent)
+                                    {
+                                        <br /><span class="mud-text-secondary">After @item.AttemptCount @(item.AttemptCount == 1 ? "try" : "tries"): @error</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </MudPaper>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<AdminEmailRecipient> recipients = [];
+    private IReadOnlyList<AdminUserEmailLogRow>? log;
+    private int usableCount;
+    private string? errorMessage;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "to")]
+    public string[]? To { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Q { get; set; }
+
+    [SupplyParameterFromQuery]
+    public int? Sent { get; set; }
+
+    [SupplyParameterFromQuery]
+    public int? Skipped { get; set; }
+
+    [SupplyParameterFromForm]
+    private EmailInput Input { get; set; } = default!;
+
+    private string BackLink => string.IsNullOrWhiteSpace(Q) ? "/admin/users" : $"/admin/users?q={Uri.EscapeDataString(Q)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        var ids = (To ?? []).Take(IAdminUserEmailService.MaximumRecipients + 1).ToList();
+        recipients = await EmailService.GetRecipientsAsync(ids);
+        usableCount = recipients.Count(HasUsableEmail);
+        if (ids.Count > IAdminUserEmailService.MaximumRecipients)
+        {
+            errorMessage = $"You can email up to {IAdminUserEmailService.MaximumRecipients} users at a time. Narrow the selection on Find users.";
+        }
+
+        log = await EmailService.GetLogAsync(200);
+    }
+
+    private async Task SendAsync()
+    {
+        var state = await AuthenticationState;
+        var administratorId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (administratorId is null)
+        {
+            errorMessage = "Sign in again to send email.";
+            return;
+        }
+
+        var result = await EmailService.QueueAsync(
+            administratorId,
+            new AdminUserEmailRequest(recipients.Select(recipient => recipient.UserId).ToList(), Input.Subject ?? string.Empty, Input.Body ?? string.Empty));
+        errorMessage = result.Failure switch
+        {
+            AdminUserEmailFailure.None => null,
+            AdminUserEmailFailure.NotPlatformAdmin => "Your account no longer has platform administrator access.",
+            AdminUserEmailFailure.NoRecipients => "None of the selected users has a usable email address.",
+            AdminUserEmailFailure.TooManyRecipients => $"You can email up to {IAdminUserEmailService.MaximumRecipients} users at a time.",
+            AdminUserEmailFailure.SubjectRequired => "Add a subject.",
+            AdminUserEmailFailure.SubjectTooLong => $"Keep the subject under {IAdminUserEmailService.MaximumSubjectLength} characters.",
+            AdminUserEmailFailure.BodyRequired => "Write a message.",
+            AdminUserEmailFailure.BodyTooLong => $"Keep the message under {IAdminUserEmailService.MaximumBodyLength:N0} characters.",
+            _ => "The email could not be queued.",
+        };
+        if (result.Succeeded)
+        {
+            // Post/redirect/get, so refreshing the page cannot send the same email twice.
+            NavigationManager.NavigateTo(
+                $"/admin/email?sent={result.QueuedCount}&skipped={result.SkippedCount}&q={Uri.EscapeDataString(Q ?? string.Empty)}");
+        }
+    }
+
+    private static bool HasUsableEmail(AdminEmailRecipient recipient) =>
+        !string.IsNullOrWhiteSpace(recipient.Email) && recipient.Email.Contains('@');
+
+    private sealed class EmailInput
+    {
+        public string? Subject { get; set; }
+
+        public string? Body { get; set; }
+    }
+}

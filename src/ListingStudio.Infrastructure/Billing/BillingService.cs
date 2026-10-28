@@ -1,6 +1,7 @@
 namespace ListingStudio.Infrastructure.Billing;
 
 using System.Data;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Billing;
 using ListingStudio.Domain.Billing;
 using ListingStudio.Domain.Campaigns;
@@ -24,7 +25,10 @@ public sealed class BillingService(
         account.ExpireFreeTrial(timeProvider.GetUtcNow());
         var reservedCampaignUsage = await ReservedCampaignUsageAsync(account, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return ToOverview(account, identity.OrganizationName, reservedCampaignUsage, timeProvider.GetUtcNow());
+        return ToOverview(account, identity.OrganizationName, reservedCampaignUsage, timeProvider.GetUtcNow()) with
+        {
+            IsTester = await IsTesterAsync(userId, cancellationToken),
+        };
     }
 
     public async Task<BillingRedirect> CreateCheckoutSessionAsync(
@@ -137,11 +141,19 @@ public sealed class BillingService(
     public async Task EnsureCampaignCapacityAsync(
         Guid organizationId,
         Guid propertyId,
+        string requestedByUserId,
         CancellationToken cancellationToken = default)
     {
         if (propertyId == Guid.Empty)
         {
             throw new ArgumentException("A property identity is required.", nameof(propertyId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestedByUserId);
+        // Testers use the site for free: no plan, trial or allowance is needed and nothing is reserved.
+        if (await IsTesterAsync(requestedByUserId, cancellationToken))
+        {
+            return;
         }
 
         var now = timeProvider.GetUtcNow();
@@ -188,14 +200,18 @@ public sealed class BillingService(
             return;
         }
 
-        var account = await GetLockedAccountAsync(organizationId, cancellationToken);
-
-        var propertyId = await dbContext.CampaignGenerationJobs.AsNoTracking()
+        var job = await dbContext.CampaignGenerationJobs.AsNoTracking()
             .Where(job => job.Id == campaignGenerationJobId && job.OrganizationId == organizationId)
-            .Select(job => (Guid?)job.PropertyId)
+            .Select(job => new { job.PropertyId, job.RequestedByUserId })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new InvalidOperationException("The completed campaign does not belong to the billing organization.");
-        if (await PropertyCampaignUsageExistsAsync(account, propertyId, cancellationToken))
+        if (await IsTesterAsync(job.RequestedByUserId, cancellationToken))
+        {
+            return;
+        }
+
+        var account = await GetLockedAccountAsync(organizationId, cancellationToken);
+        if (await PropertyCampaignUsageExistsAsync(account, job.PropertyId, cancellationToken))
         {
             return;
         }
@@ -329,6 +345,7 @@ public sealed class BillingService(
             && job.CreatedAtUtc >= account.CurrentPeriodStartUtc
             && (job.Status == CampaignGenerationStatus.Queued
                 || job.Status == CampaignGenerationStatus.Running)
+            && !TesterUserIds().Contains(job.RequestedByUserId)
             && !dbContext.CampaignUsageRecords.Any(record =>
                 record.CampaignGenerationJobId == job.Id)
             && !dbContext.CampaignUsageRecords.Any(record =>
@@ -336,6 +353,15 @@ public sealed class BillingService(
                 && record.PeriodStartUtc == account.CurrentPeriodStartUtc
                 && record.CampaignGenerationJob.PropertyId == job.PropertyId),
             cancellationToken);
+
+    private IQueryable<string> TesterUserIds() =>
+        from userRole in dbContext.UserRoles
+        join role in dbContext.Roles on userRole.RoleId equals role.Id
+        where role.Name == PlatformTesters.Role
+        select userRole.UserId;
+
+    private Task<bool> IsTesterAsync(string userId, CancellationToken cancellationToken) =>
+        TesterUserIds().AnyAsync(testerId => testerId == userId, cancellationToken);
 
     private async Task<bool> PropertyCampaignUsageExistsAsync(
         OrganizationBillingAccount account,

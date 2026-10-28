@@ -26,10 +26,17 @@ public interface IBillingService
 
 public interface ICampaignBillingGate
 {
+    /// <summary>
+    /// Throws <see cref="CampaignAllowanceExceededException"/> when the workspace cannot start another campaign.
+    /// Campaigns requested by a member of the Testers group are always allowed.
+    /// </summary>
     Task EnsureCampaignCapacityAsync(
         Guid organizationId,
         Guid propertyId,
+        string requestedByUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Counts a finished campaign against the allowance, unless a tester requested it.</summary>
 
     Task RecordCompletedCampaignAsync(
         Guid organizationId,

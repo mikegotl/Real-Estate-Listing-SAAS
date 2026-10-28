@@ -210,6 +210,40 @@ app.MapPost("/admin/impersonation/start", async (
     return Results.LocalRedirect(LocalReturnUrl(form["returnUrl"]));
 }).RequireAuthorization(PlatformAdministration.Policy);
 
+app.MapPost("/admin/users/testers", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    IPlatformAdminTesterAccess testerAccess,
+    CancellationToken cancellationToken) =>
+{
+    await antiforgery.ValidateRequestAsync(context);
+    var administratorId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (administratorId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var form = await context.Request.ReadFormAsync(cancellationToken);
+    var targetUserId = form["userId"].ToString();
+    if (string.IsNullOrWhiteSpace(targetUserId) || !bool.TryParse(form["isTester"], out var isTester))
+    {
+        return Results.BadRequest("A user and a Testers choice are required.");
+    }
+
+    var result = await testerAccess.SetTesterAsync(administratorId, targetUserId, isTester, cancellationToken);
+    var notice = result.Failure switch
+    {
+        TesterChangeFailure.None when !result.Changed => "tester-unchanged",
+        TesterChangeFailure.None when isTester => result.WelcomeEmailQueued ? "tester-added-emailed" : "tester-added",
+        TesterChangeFailure.None => "tester-removed",
+        _ => $"tester-{result.Failure}",
+    };
+    var returnQuery = string.Equals(form["testers"], "true", StringComparison.OrdinalIgnoreCase)
+        ? "testers=true"
+        : $"q={Uri.EscapeDataString(form["q"].ToString())}";
+    return Results.LocalRedirect($"/admin/users?{returnQuery}&notice={notice}");
+}).RequireAuthorization(PlatformAdministration.Policy);
+
 app.MapPost("/admin/impersonation/stop", async (
     HttpContext context,
     IAntiforgery antiforgery,

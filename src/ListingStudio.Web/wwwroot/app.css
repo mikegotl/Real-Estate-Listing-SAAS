@@ -445,11 +445,29 @@ h1:focus { outline: none; }
 .admin-chat-text { min-width: 220px; max-width: 360px; white-space: pre-wrap; }
 .admin-chat-changes { margin: 0; padding-left: 1.1rem; min-width: 200px; }
 .admin-impersonate-form { margin: 0; }
+.admin-heading-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.admin-results-bar { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 12px; }
+.admin-results-bar .property-count { flex: 1; margin: 0; }
+.admin-email-actions { margin: 0; }
+.admin-user-title { align-items: flex-start; display: flex; gap: 12px; min-width: 0; }
+.admin-user-select { accent-color: var(--ls-primary); flex: none; height: 18px; margin-top: 6px; width: 18px; }
+.admin-user-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.admin-email-form { display: grid; gap: 14px; max-width: 760px; }
+.admin-email-form label, .admin-email-label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: 4px; }
+.admin-email-form input[type=text], .admin-email-form textarea { background: var(--ls-surface); border: 1px solid var(--ls-line-strong); border-radius: 10px; box-sizing: border-box; color: var(--ls-ink); font: inherit; padding: 10px 14px; width: 100%; }
+.admin-email-form textarea { min-height: 220px; resize: vertical; }
+.admin-email-form input:focus, .admin-email-form textarea:focus { border-color: var(--ls-primary); outline: 2px solid var(--ls-primary-soft); }
+.admin-email-recipients { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.admin-email-recipients li { background: var(--ls-primary-soft); border-radius: 999px; font-size: .8rem; padding: 4px 10px; }
+.admin-email-recipients li.missing { background: var(--ls-accent-light); }
+.admin-email-body { max-width: 420px; white-space: pre-wrap; }
 .impersonation-banner { align-items: center; background: var(--ls-accent-light); border-bottom: 1px solid var(--ls-accent); color: var(--ls-night); display: flex; gap: 12px; padding: 10px 24px; position: sticky; top: 72px; z-index: 5; }
 .impersonation-banner p { display: flex; flex: 1; flex-direction: column; font-size: .88rem; margin: 0; }
 .impersonation-banner form { margin: 0; }
 @media (max-width: 600px) {
     .admin-user-head { flex-direction: column; }
+    .admin-user-actions, .admin-heading-actions { justify-content: flex-start; }
+    .admin-page-heading:has(.admin-heading-actions) { align-items: flex-start; flex-direction: column; gap: 14px; }
     .impersonation-banner { align-items: flex-start; flex-wrap: wrap; padding: 10px 16px; top: 64px; }
     .impersonation-banner form { width: 100%; }
     .impersonation-detail { display: none; }

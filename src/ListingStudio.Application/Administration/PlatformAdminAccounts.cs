@@ -14,6 +14,7 @@ public sealed record AdminAccountRow(
     string UserName,
     DateTimeOffset? LastSuccessfulSignInAtUtc,
     bool IsPlatformAdmin,
+    bool IsTester,
     IReadOnlyList<AdminWorkspaceRow> Workspaces);
 
 public sealed record AdminWorkspaceRow(
@@ -44,6 +45,11 @@ public interface IPlatformAdminAccountDirectory
     Task<AdminAccountSearchResult> SearchAsync(
         string query,
         int maximumResults = 25,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Lists every user in the Testers group, ordered by email.</summary>
+    Task<AdminAccountSearchResult> ListTestersAsync(
+        int maximumResults = 100,
         CancellationToken cancellationToken = default);
 }
 
