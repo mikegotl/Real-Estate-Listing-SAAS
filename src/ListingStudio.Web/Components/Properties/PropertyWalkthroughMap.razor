@@ -4,13 +4,11 @@
 <section class="walkthrough-map" aria-labelledby="walkthrough-map-heading">
     <div class="walkthrough-map-header">
         <div>
-            <p class="storyboard-eyebrow">Tour map</p>
-            <h3 id="walkthrough-map-heading">Plan the buyer's route</h3>
+            <h3 id="walkthrough-map-heading">Route</h3>
             <p class="stop-hint">
-                Each mapped room owns its approved photos, walking direction, fixes and narration.
                 @(IsReadOnly
                     ? "It is a schematic, not a floor plan."
-                    : "Select a room to edit it. Drag the route cards on a larger screen to change the tour order, or use the direction buttons on any screen. It is a schematic, not a floor plan.")
+                    : "Select a room to edit its photos, direction and narration. Change the tour order with Move earlier and Move later, or drag the route cards on a larger screen. It is a schematic, not a floor plan.")
             </p>
         </div>
         <ul class="walkthrough-map-legend" aria-label="Map legend">
@@ -144,6 +142,17 @@
                     }
 
                     <div class="map-detail-actions">
+                        @if (CanMove(chosen.Index))
+                        {
+                            <div class="map-move-actions" role="group" aria-label="@($"Change where {chosen.Name} comes in the tour")">
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ArrowUpward"
+                                           Disabled="@(!CanDropAt(chosen.Index - 1))"
+                                           OnClick="@(() => MoveAsync(chosen.Index, chosen.Index - 1))">Move earlier</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ArrowDownward"
+                                           Disabled="@(!CanDropAt(chosen.Index + 1))"
+                                           OnClick="@(() => MoveAsync(chosen.Index, chosen.Index + 1))">Move later</MudButton>
+                            </div>
+                        }
                         @if (previous is not null && clipIn?.IsReady == true)
                         {
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow"
@@ -171,16 +180,17 @@
         @foreach (var space in spaces)
         {
             var current = space;
+            @* draggable takes "true"/"false": Blazor writes a true bool as an empty attribute, which browsers read as "auto". *@
             <li class="@(draggedStopIndex == space.Index ? "is-dragging" : null)"
-                draggable="@(!IsReadOnly && space.Index > 0)"
-                title="@(space.Index > 0 && !IsReadOnly ? "Drag to change this stop's place in the tour" : null)"
+                draggable="@(CanMove(space.Index) ? "true" : "false")"
+                title="@(CanMove(space.Index) ? "Drag to change this stop's place in the tour" : null)"
                 @ondragstart="@(() => BeginDrag(current.Index))"
                 @ondragover:preventDefault
                 @ondrop="@(() => DropAsync(current.Index))"
                 @ondragend="@(_ => EndDrag())">
                 <button type="button" class="@($"walkthrough-route-step {(space.Index == selectedIndex ? "is-selected" : "")}")"
                         @onclick="@(() => Select(current.Index))">
-                    @if (!IsReadOnly && space.Index > 0)
+                    @if (CanMove(space.Index))
                     {
                         <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Size="Size.Small" Class="walkthrough-route-drag" aria-hidden="true" />
                     }
@@ -234,9 +244,16 @@
     [Parameter]
     public RenderFragment<string>? StopMedia { get; set; }
 
-    /// <summary>Raised when a route card is dragged to a new place. The exterior opening stays first.</summary>
+    /// <summary>Raised when a stop is dragged or moved to a new place in the tour.</summary>
     [Parameter]
     public EventCallback<(int FromIndex, int ToIndex)> StopMoved { get; set; }
+
+    /// <summary>
+    /// Leading stops that keep their place, such as the exterior front and the entry. Other stops move only among
+    /// themselves.
+    /// </summary>
+    [Parameter]
+    public int FixedStopCount { get; set; } = 1;
 
     /// <summary>Raised with the selected stop name so the storyboard can highlight it.</summary>
     [Parameter]
@@ -412,9 +429,15 @@
         await SelectedStopChanged.InvokeAsync(selectedStop);
     }
 
+    private int FirstMovableIndex => Math.Max(1, FixedStopCount);
+
+    private bool CanMove(int index) => !IsReadOnly && StopMoved.HasDelegate && index >= FirstMovableIndex && index < spaces.Count;
+
+    private bool CanDropAt(int index) => index >= FirstMovableIndex && index < spaces.Count;
+
     private void BeginDrag(int index)
     {
-        if (!IsReadOnly && index > 0)
+        if (CanMove(index))
         {
             draggedStopIndex = index;
         }
@@ -424,12 +447,20 @@
     {
         var from = draggedStopIndex;
         draggedStopIndex = null;
-        if (from is null || index <= 0 || from == index)
+        if (from is { } source)
+        {
+            await MoveAsync(source, index);
+        }
+    }
+
+    private async Task MoveAsync(int from, int to)
+    {
+        if (!CanMove(from) || !CanDropAt(to) || from == to)
         {
             return;
         }
 
-        await StopMoved.InvokeAsync((from.Value, index));
+        await StopMoved.InvokeAsync((from, to));
     }
 
     private void EndDrag() => draggedStopIndex = null;

@@ -258,9 +258,9 @@ else
         await summaryGate.WaitAsync();
         try
         {
-            // Gallery photos wait outside the walkthrough, so they do not count toward the listing or its cover.
+            // Only Tour Map photos reach campaigns, so held photos do not count toward the listing or its cover.
             var media = (await ScopedServices.GetRequiredService<IPropertyMediaService>().ListAsync(userId, PropertyId))
-                .Where(item => !item.IsInGallery)
+                .Where(item => item.IsOnTour)
                 .ToList();
             var campaign = await ScopedServices.GetRequiredService<ICampaignGenerationService>().GetLatestAsync(userId, PropertyId);
             photoCount = media.Count;

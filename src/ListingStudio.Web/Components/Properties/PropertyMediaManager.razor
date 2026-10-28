@@ -45,14 +45,6 @@
         <MudAlert Severity="@messageSeverity" Class="my-4">@message</MudAlert>
     }
 
-    @if (loaded && !IsReadOnly && !HasExteriorFront)
-    {
-        <MudAlert Severity="Severity.Warning" Class="my-4" Icon="@Icons.Material.Filled.House">
-            Start with at least one photo of the front of the property. It opens the walkthrough video and becomes the
-            listing cover.
-        </MudAlert>
-    }
-
     @if (loaded && ShowWalkthroughPanel)
     {
         <section class="walkthrough-panel" aria-labelledby="walkthrough-heading">
@@ -147,6 +139,7 @@
             {
                 <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
                                         DirectionChanged="SetStopDirectionAsync" StopMoved="MoveMapStopAsync"
+                                        FixedStopCount="FixedMapStopCount" FocusStop="@mapFocusStop" FocusRequest="mapFocusRequest"
                                         Narration="roomNarration"
                                         NarrationChanged="SetStopNarrationAsync" StopMedia="TourStopMedia" />
             }
@@ -330,6 +323,9 @@
     private RoomNarrationOverview roomNarration = RoomNarrationOverview.Empty;
     private IReadOnlyList<WalkthroughMapStopShots> MapStops = [];
     private string? customStopName;
+    private string? mapFocusStop;
+    private int mapFocusRequest;
+    private bool storyboardBuilt;
     private bool loaded;
     private string? message;
     private Severity messageSeverity = Severity.Info;
@@ -373,11 +369,19 @@
 
     private int WalkthroughPhotoCount => stops.Sum(stop => stop.Items.Count);
 
+    // Template stops (exterior front, entry) always lead the tour, so the ones on the map keep their places.
+    private int FixedMapStopCount => MapStops.TakeWhile(stop => WalkthroughStoryboard.IsTemplateStop(stop.Name)).Count();
+
     private bool HasExteriorFront => stops.Count > 0 && stops[0].Items.Count > 0;
 
     private RenderFragment<string> TourStopMedia => stopName => __builder =>
     {
-        var stop = stops.First(candidate => SameStop(candidate.Name, stopName));
+        var stop = stops.FirstOrDefault(candidate => SameStop(candidate.Name, stopName));
+        if (stop is null)
+        {
+            return;
+        }
+
         <div class="tour-stop-media" aria-label="@($"Approved media for {stop.Name}")">
             <div class="tour-stop-media-head">
                 <strong>Approved tour media</strong>
@@ -1037,10 +1041,21 @@
         sequence = stops.SelectMany(stop => stop.Items).Concat(unsorted)
             .Select((item, index) => (item.Id, index))
             .ToDictionary(entry => entry.Id, entry => entry.index);
+        var previousMapStops = MapStops.Select(stop => stop.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         MapStops = stops
             .Where(stop => stop.Items.Count > 0)
             .Select(stop => new WalkthroughMapStopShots(stop.Name, stop.Items))
             .ToArray();
+
+        // A room that just got its first photo is the one the agent is working on, so the map opens it.
+        var added = MapStops.Where(stop => !previousMapStops.Contains(stop.Name)).ToArray();
+        if (storyboardBuilt && added.Length == 1)
+        {
+            mapFocusStop = added[0].Name;
+            mapFocusRequest++;
+        }
+
+        storyboardBuilt = true;
     }
 
     private async Task SetStopDirectionAsync((string Stop, WalkthroughDirection Direction) change)
@@ -1422,7 +1437,8 @@
 
     private async Task MoveMapStopAsync((int FromIndex, int ToIndex) move)
     {
-        if (move.FromIndex <= 0 || move.ToIndex <= 0
+        var firstMovable = Math.Max(1, FixedMapStopCount);
+        if (move.FromIndex < firstMovable || move.ToIndex < firstMovable
             || move.FromIndex >= MapStops.Count || move.ToIndex >= MapStops.Count
             || move.FromIndex == move.ToIndex)
         {
@@ -1440,7 +1456,14 @@
             order.Add([.. unsorted]);
         }
 
-        await SaveOrderAsync(order, $"{movedName} moved to stop {move.ToIndex + 1} in the tour.");
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await Service.ReorderAsync(userId, PropertyId, order.SelectMany(group => group).Select(item => item.Id).ToArray());
+        await ReloadAfterChangeAsync();
+        // Report where the stop actually landed after the saved order is rebuilt.
+        var landed = MapStops.ToList().FindIndex(stop => SameStop(stop.Name, movedName));
+        ShowMessage(
+            landed >= 0 ? $"{movedName} is now stop {landed + 1} in the tour." : $"{movedName} moved in the tour.",
+            Severity.Success);
     }
 
     private List<List<PropertyMediaItem>> CurrentGroups()

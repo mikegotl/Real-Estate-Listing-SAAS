@@ -527,6 +527,7 @@ h1:focus { outline: none; }
 .map-direction.is-active .mud-icon-root { color: var(--ls-accent-light); }
 .map-direction:disabled { cursor: progress; opacity: .6; }
 .map-detail-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.map-move-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .walkthrough-route { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 16px 0 0; padding: 0; }
 .walkthrough-route li[draggable="true"] { cursor: grab; }
 .walkthrough-route li.is-dragging { opacity: .45; }
