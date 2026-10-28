@@ -1,0 +1,57 @@
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4">
+            Name the room or area where this photo belongs. The photo will become approved campaign media only after it is placed there.
+        </MudText>
+        <MudTextField T="string" @bind-Value="stopName" Label="Room or area" Placeholder="Sunroom, guest suite, pool…"
+                      Variant="Variant.Outlined" Immediate="true" Autofocus="true"
+                      MaxLength="PropertyMedia.MaximumWalkthroughStopLength" OnKeyDown="KeyDownAsync" />
+        @if (validationError is not null)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Error">@validationError</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(stopName)"
+                   OnClick="Create">Create stop and add photo</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = null!;
+
+    private string? stopName;
+    private string? validationError;
+
+    private void Create()
+    {
+        try
+        {
+            var normalized = WalkthroughStoryboard.Normalize(stopName);
+            if (normalized is null)
+            {
+                validationError = "Enter a room or area name.";
+                return;
+            }
+
+            Dialog.Close(DialogResult.Ok(normalized));
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            validationError = exception.Message;
+        }
+    }
+
+    private async Task KeyDownAsync(KeyboardEventArgs eventArgs)
+    {
+        if (eventArgs.Key == "Enter")
+        {
+            await Task.Yield();
+            Create();
+        }
+    }
+
+    private void Cancel() => Dialog.Cancel();
+}

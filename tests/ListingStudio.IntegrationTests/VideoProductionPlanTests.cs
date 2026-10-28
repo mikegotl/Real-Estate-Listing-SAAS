@@ -26,8 +26,10 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
         var owner = await CreateOwnerAndPropertyAsync("video-owner");
         var outsider = await CreateOwnerAndPropertyAsync("video-outsider");
         await UploadAndAnalyzeAsync(owner);
+        await UploadHeldPhotosAsync(owner);
         fixture.Factory.StoryGenerator.Enqueue(SafeStory);
         await GenerateStoryAsync(owner);
+        Assert.Single(fixture.Factory.StoryGenerator.LastRequest!.MediaObservations);
         var callsBefore = fixture.Factory.VideoDirector.CallCount;
         fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
 
@@ -607,6 +609,39 @@ public sealed class VideoProductionPlanTests(PostgreSqlWebApplicationFixture fix
                 new PropertyMediaUpload("front.png", "image/png", content.Length, content, "exterior  FRONT"));
         }
     }
+
+    private async Task UploadHeldPhotosAsync(OwnerProperty owner)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var media = scope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+        await using var unsorted = new MemoryStream(OnePixelPng);
+        await media.UploadAsync(
+            owner.UserId,
+            owner.PropertyId,
+            new PropertyMediaUpload("unsorted.png", "image/png", unsorted.Length, unsorted));
+        await using var extra = new MemoryStream(OnePixelPng);
+        await media.UploadAsync(
+            owner.UserId,
+            owner.PropertyId,
+            new PropertyMediaUpload("extra.png", "image/png", extra.Length, extra, null, ToGallery: true));
+
+        fixture.Factory.MediaAnalyzer.Enqueue(HeldPhotoAnalysis("Unsorted held photo."));
+        await AnalyzeNextAsync();
+        fixture.Factory.MediaAnalyzer.Enqueue(HeldPhotoAnalysis("Extra held photo."));
+        await AnalyzeNextAsync();
+    }
+
+    private static PropertyMediaAnalysis HeldPhotoAnalysis(string description) => new(
+        PropertyMediaCategory.Other,
+        "Other",
+        75,
+        80,
+        false,
+        false,
+        false,
+        [],
+        description,
+        0);
 
     private async Task<OwnerProperty> CreateOwnerAndPropertyAsync(string prefix)
     {

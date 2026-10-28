@@ -257,7 +257,8 @@ public sealed partial class CampaignGenerationProcessor(
         var mediaCount = await dbContext.PropertyMedia.AsNoTracking().CountAsync(candidate =>
             candidate.PropertyId == job.PropertyId
             && candidate.OrganizationId == job.OrganizationId
-            && !candidate.IsInGallery,
+            && !candidate.IsInGallery
+            && candidate.WalkthroughStop != null,
             cancellationToken);
         if (!valid || mediaCount == 0)
         {
@@ -273,7 +274,8 @@ public sealed partial class CampaignGenerationProcessor(
         var media = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.PropertyId == job.PropertyId
                 && candidate.OrganizationId == job.OrganizationId
-                && !candidate.IsInGallery)
+                && !candidate.IsInGallery
+                && candidate.WalkthroughStop != null)
             .Select(candidate => new { candidate.AnalysisStatus, candidate.AnalysisAttemptCount })
             .ToArrayAsync(cancellationToken);
         if (media.All(candidate => candidate.AnalysisStatus == PropertyMediaAnalysisStatus.Completed))
@@ -391,7 +393,8 @@ public sealed partial class CampaignGenerationProcessor(
         var media = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.PropertyId == job.PropertyId
                 && candidate.OrganizationId == job.OrganizationId
-                && !candidate.IsInGallery)
+                && !candidate.IsInGallery
+                && candidate.WalkthroughStop != null)
             .Select(candidate => new CampaignDerivativeMedia(candidate.Id, candidate.Width, candidate.Height))
             .ToArrayAsync(cancellationToken);
         var propertyVideos = await dbContext.PropertyVideos.AsNoTracking()
@@ -599,7 +602,8 @@ public sealed partial class CampaignGenerationProcessor(
         var photos = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.PropertyId == job.PropertyId
                 && candidate.OrganizationId == job.OrganizationId
-                && !candidate.IsInGallery)
+                && !candidate.IsInGallery
+                && candidate.WalkthroughStop != null)
             .OrderBy(candidate => candidate.DisplayOrder)
             .ThenBy(candidate => candidate.Id)
             .Select(candidate => new ShortFormPhoto(
@@ -1831,7 +1835,8 @@ public sealed partial class CampaignGenerationProcessor(
         var hero = await dbContext.PropertyMedia.AsNoTracking()
             .Where(candidate => candidate.OrganizationId == job.OrganizationId
                 && candidate.PropertyId == job.PropertyId
-                && !candidate.IsInGallery)
+                && !candidate.IsInGallery
+                && candidate.WalkthroughStop != null)
             .OrderByDescending(candidate => candidate.HeroScore ?? 0)
             .ThenBy(candidate => candidate.DisplayOrder)
             .ThenBy(candidate => candidate.Id)

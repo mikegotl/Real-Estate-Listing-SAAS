@@ -72,7 +72,7 @@ public sealed partial class VideoProductionPlanService(
         }
 
         var media = await dbContext.PropertyMedia
-            .FromSqlInterpolated($"SELECT * FROM \"PropertyMedia\" WHERE \"PropertyId\" = {propertyId} AND \"OrganizationId\" = {organizationId} AND NOT \"IsInGallery\" ORDER BY \"DisplayOrder\", \"Id\" FOR UPDATE")
+            .FromSqlInterpolated($"SELECT * FROM \"PropertyMedia\" WHERE \"PropertyId\" = {propertyId} AND \"OrganizationId\" = {organizationId} AND NOT \"IsInGallery\" AND \"WalkthroughStop\" IS NOT NULL ORDER BY \"DisplayOrder\", \"Id\" FOR UPDATE")
             .AsNoTracking().ToArrayAsync(cancellationToken);
         if (media.Length == 0
             || media.Any(media => media.AnalysisStatus != PropertyMediaAnalysisStatus.Completed))

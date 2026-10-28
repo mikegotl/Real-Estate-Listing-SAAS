@@ -7,12 +7,11 @@
 <MudPaper Class="pa-6 mt-6 storyboard">
     <div class="storyboard-header">
         <div>
-            <p class="storyboard-eyebrow">Walkthrough storyboard</p>
-            <MudText Typo="Typo.h5" HtmlTag="h2">Listing photos</MudText>
+            <p class="storyboard-eyebrow">Tour map</p>
+            <MudText Typo="Typo.h5" HtmlTag="h2">Plan the buyer's route</MudText>
             <MudText Typo="Typo.body2" Class="storyboard-intro">
-                Add photos in the order a buyer would walk through the property: start outside at the front, step
-                through the entry, then continue room by room. The AI walkthrough video follows this sequence, so each
-                scene flows into the next.
+                Build one intentional tour, starting at the front of the property. Each room owns its approved photos,
+                walking direction, photo fixes and narration. Only photos placed on this map can be used in campaign videos.
             </MudText>
         </div>
         @if (loaded)
@@ -32,21 +31,11 @@
         @* Plain DOM scrolling: the tab's URL carries ?tab=media, so fragment links would navigate away from it. *@
         <nav class="media-nav" aria-label="Media sections">
             <button type="button" onclick="document.getElementById('media-walkthrough')?.scrollIntoView({behavior: 'smooth'})">
-                Walkthrough <span class="media-nav-count">@WalkthroughPhotoCount</span>
+                Tour map <span class="media-nav-count">@WalkthroughPhotoCount</span>
             </button>
-            @if (unsorted.Count > 0)
-            {
-                <button type="button" onclick="document.getElementById('media-unplaced')?.scrollIntoView({behavior: 'smooth'})">
-                    Unplaced <span class="media-nav-count attention">@unsorted.Count</span>
-                </button>
-            }
             <button type="button" onclick="document.getElementById('media-extra')?.scrollIntoView({behavior: 'smooth'})">
-                Extra photos <span class="media-nav-count">@gallery.Count</span>
+                Not in tour <span class="media-nav-count @(unsorted.Count > 0 ? "attention" : null)">@(unsorted.Count + gallery.Count)</span>
             </button>
-            @if (MapStops.Count >= 2)
-            {
-                <button type="button" onclick="document.getElementById('media-map')?.scrollIntoView({behavior: 'smooth'})">Map</button>
-            }
             <button type="button" onclick="document.getElementById('listing-videos')?.scrollIntoView({behavior: 'smooth'})">Videos</button>
         </nav>
     }
@@ -132,144 +121,96 @@
             </p>
         }
 
-        <ol class="storyboard-track" id="media-walkthrough">
-            @for (var stopIndex = 0; stopIndex < stops.Count; stopIndex++)
+        <section class="tour-map-workspace" id="media-walkthrough">
+            @if (!HasExteriorFront)
             {
-                var stop = stops[stopIndex];
-                var previous = stopIndex == 0 ? null : stops[stopIndex - 1];
-                var currentStopIndex = stopIndex;
-                if (IsReadOnly && stop.Items.Count == 0)
-                {
-                    continue;
-                }
-
-                <li class="storyboard-stop @(stop.Items.Count == 0 ? "is-empty" : "is-filled") @(SameStop(stop.Name, highlightedStop) ? "is-highlighted" : "")"
-                    tabindex="-1" @ref="stopElements[stop.Name]">
-                    <div class="stop-marker" aria-hidden="true">
-                        @if (stop.Items.Count > 0)
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
-                        }
-                        else
-                        {
-                            @(stopIndex + 1)
-                        }
+                <div class="tour-map-empty">
+                    <div class="tour-map-empty-icon"><MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" /></div>
+                    <div>
+                        <span class="stop-step">Stop 1 · Required</span>
+                        <h3>Exterior Front</h3>
+                        <p>Start with the front of the property. This becomes the opening shot and anchors every room that follows.</p>
                     </div>
-                    <div class="stop-body">
-                        <div class="stop-head">
-                            <div>
-                                <div class="stop-title">
-                                    <span class="stop-step">Stop @(stopIndex + 1)</span>
-                                    <h3>@stop.Name</h3>
-                                    @if (stop.Name == WalkthroughStoryboard.ExteriorFront)
-                                    {
-                                        <span class="stop-badge @(stop.Items.Count == 0 ? "required" : "done")">
-                                            @(stop.Items.Count == 0 ? "Required" : "Opening shot")
-                                        </span>
-                                    }
-                                    else if (stop.Name == WalkthroughStoryboard.EntryFoyer)
-                                    {
-                                        <span class="stop-badge">Recommended</span>
-                                    }
-                                    @if (stop.Items.Count > 0 && MapStops.Count >= 2)
-                                    {
-                                        var mapStop = stop.Name;
-                                        <button type="button" class="stop-map-link" @onclick="@(() => ShowOnMap(mapStop))"
-                                                aria-label="@($"Show {stop.Name} on the walkthrough map")">
-                                            <MudIcon Icon="@Icons.Material.Filled.Map" Size="Size.Small" />Show on map
-                                        </button>
-                                    }
-                                </div>
-                                @if (stop.Items.Count == 0)
-                                {
-                                    <p class="stop-hint">@Hint(stop, previous)</p>
-                                }
-                            </div>
-                            @if (!IsReadOnly && !stop.IsTemplate)
-                            {
-                                <div class="stop-actions">
-                                    @if (stop.Items.Count > 0)
-                                    {
-                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
-                                                       Disabled="@(!CanMoveStop(currentStopIndex, -1))"
-                                                       aria-label="@($"Move {stop.Name} earlier in the walkthrough")"
-                                                       OnClick="@(() => MoveStopAsync(currentStopIndex, -1))" />
-                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
-                                                       Disabled="@(!CanMoveStop(currentStopIndex, 1))"
-                                                       aria-label="@($"Move {stop.Name} later in the walkthrough")"
-                                                       OnClick="@(() => MoveStopAsync(currentStopIndex, 1))" />
-                                    }
-                                    else
-                                    {
-                                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                                                       aria-label="@($"Remove the empty {stop.Name} stop")"
-                                                       OnClick="@(() => RemovePendingStop(stop.Name))" />
-                                    }
-                                </div>
-                            }
-                        </div>
-                        <div class="stop-strip">
-                            @for (var index = 0; index < stop.Items.Count; index++)
-                            {
-                                @PhotoCard((stop.Items, index, stop.Name))
-                            }
-                            @if (!IsReadOnly)
-                            {
-                                <label class="media-upload-control stop-upload">
-                                    <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
-                                    <span>@(stop.Items.Count == 0 ? $"Add {stop.Name.ToLowerInvariant()} photos" : "Add another angle")</span>
-                                    <InputFile OnChange="@(eventArgs => FilesSelectedAsync(eventArgs, stop.Name))" multiple
-                                               aria-label="@($"Add photos to {stop.Name}")"
-                                               accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
-                                </label>
-                            }
-                        </div>
-                    </div>
-                </li>
+                    @if (!IsReadOnly)
+                    {
+                        <label class="media-upload-control tour-map-empty-upload">
+                            <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
+                            <span>Upload exterior front</span>
+                            <InputFile OnChange="@(eventArgs => FilesSelectedAsync(eventArgs, WalkthroughStoryboard.ExteriorFront))" multiple
+                                       aria-label="Upload exterior front photos"
+                                       accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+                        </label>
+                    }
+                </div>
+            }
+            @if (MapStops.Count > 0)
+            {
+                <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
+                                        DirectionChanged="SetStopDirectionAsync" StopMoved="MoveMapStopAsync"
+                                        Narration="roomNarration"
+                                        NarrationChanged="SetStopNarrationAsync" StopMedia="TourStopMedia" />
             }
 
             @if (!IsReadOnly)
             {
-                <li class="storyboard-stop next-stop">
-                    <div class="stop-marker" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" /></div>
-                    <div class="stop-body">
-                        <div class="stop-title">
-                            <span class="stop-step">Stop @(stops.Count + 1)</span>
-                            <h3>Where does the walkthrough go next?</h3>
+                @foreach (var pending in stops.Where(stop => stop.Items.Count == 0
+                    && !SameStop(stop.Name, WalkthroughStoryboard.ExteriorFront)))
+                {
+                    <div class="tour-map-pending">
+                        <div>
+                            <span class="stop-step">New stop</span>
+                            <h4>@pending.Name</h4>
+                            <p>Add a photo to place this stop on the Tour Map.</p>
                         </div>
-                        <p class="stop-hint">
-                            Which room do you step into from the @stops[^1].Name.ToLowerInvariant()? Add it as the next stop, then keep
-                            going room by room through the property.
-                        </p>
-                        <div class="next-stop-suggestions">
-                            @foreach (var suggestion in WalkthroughStoryboard.SuggestedStops.Where(IsUnusedStop))
-                            {
-                                <button type="button" class="stop-suggestion" @onclick="@(() => AddStop(suggestion))">
-                                    <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" />@suggestion
-                                </button>
-                            }
-                        </div>
-                        <div class="next-stop-custom">
-                            <MudTextField T="string" @bind-Value="customStopName" Label="Other room or area"
-                                          Placeholder="Sunroom, wine cellar, guest suite…" Variant="Variant.Outlined"
-                                          Margin="Margin.Dense" MaxLength="PropertyMedia.MaximumWalkthroughStopLength"
-                                          OnKeyDown="CustomStopKeyDownAsync" Immediate="true" />
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                                       Disabled="@string.IsNullOrWhiteSpace(customStopName)"
-                                       OnClick="@(() => AddStop(customStopName))">Add stop</MudButton>
-                        </div>
+                        <label class="media-upload-control stop-upload">
+                            <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
+                            <span>Add @pending.Name.ToLowerInvariant() photos</span>
+                            <InputFile OnChange="@(eventArgs => FilesSelectedAsync(eventArgs, pending.Name))" multiple
+                                       aria-label="@($"Add photos to {pending.Name}")"
+                                       accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+                        </label>
+                        @if (!pending.IsTemplate)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           aria-label="@($"Remove the empty {pending.Name} stop")"
+                                           OnClick="@(() => RemovePendingStop(pending.Name))" />
+                        }
                     </div>
-                </li>
+                }
+
+                <div class="tour-map-add-stop">
+                    <div>
+                        <span class="stop-step">Continue the route</span>
+                        <h3>Where does the buyer go next?</h3>
+                    </div>
+                    <div class="next-stop-suggestions">
+                        @foreach (var suggestion in WalkthroughStoryboard.SuggestedStops.Where(IsUnusedStop))
+                        {
+                            <button type="button" class="stop-suggestion" @onclick="@(() => AddStop(suggestion))">
+                                <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" />@suggestion
+                            </button>
+                        }
+                    </div>
+                    <div class="next-stop-custom">
+                        <MudTextField T="string" @bind-Value="customStopName" Label="Other room or area"
+                                      Placeholder="Sunroom, wine cellar, guest suite…" Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" MaxLength="PropertyMedia.MaximumWalkthroughStopLength"
+                                      OnKeyDown="CustomStopKeyDownAsync" Immediate="true" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                   Disabled="@string.IsNullOrWhiteSpace(customStopName)"
+                                   OnClick="@(() => AddStop(customStopName))">Add stop</MudButton>
+                    </div>
+                </div>
             }
-        </ol>
+        </section>
 
         @if (unsorted.Count > 0)
         {
             <section class="storyboard-unsorted" id="media-unplaced" aria-labelledby="unsorted-heading">
-                <h3 id="unsorted-heading">Unplaced photos</h3>
+                <h3 id="unsorted-heading">Not in tour: Unsorted photos</h3>
                 <p class="stop-hint">
-                    These photos were added before the storyboard. They still play in the video after the walkthrough,
-                    in this order. Place each one in a stop so it appears where a buyer would see it.
+                    These photos are held outside the Tour Map and are excluded from campaign videos. Use Add to stop to
+                    choose exactly where each photo belongs.
                 </p>
                 <div class="stop-strip">
                     @for (var index = 0; index < unsorted.Count; index++)
@@ -283,10 +224,10 @@
         <section class="photo-gallery" id="media-extra" aria-labelledby="gallery-heading">
             <div class="photo-gallery-head">
                 <div>
-                    <h3 id="gallery-heading">Extra photos <span class="photo-gallery-count">@gallery.Count</span></h3>
+                    <h3 id="gallery-heading">Not in tour: Extra photos <span class="photo-gallery-count">@gallery.Count</span></h3>
                     <p class="stop-hint">
-                        Photos kept here stay out of the walkthrough, the map, the clips and the video. Place one in a stop
-                        when you want buyers to see it there.
+                        Photos kept here are excluded from the Tour Map, clips and every campaign video. Use Add to stop
+                        only when you intentionally want a photo in the tour.
                         @if (MediaAnalysisOptions.Value.Enabled)
                         {
                             @(" Use Find room photos on a listing video to add the best shots of each room here.")
@@ -365,16 +306,6 @@
             }
         </section>
 
-        @if (MapStops.Count >= 2)
-        {
-            <div class="walkthrough-map-anchor" id="media-map" tabindex="-1" @ref="mapElement">
-                <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
-                                        DirectionChanged="SetStopDirectionAsync" ShowShots="ShowStopShotsAsync"
-                                        SelectedStopChanged="HighlightStop" FocusStop="@mapFocusStop"
-                                        FocusRequest="mapFocusRequest" Narration="roomNarration"
-                                        NarrationChanged="SetStopNarrationAsync" />
-            </div>
-        }
     }
 </MudPaper>
 
@@ -398,13 +329,6 @@
     private IReadOnlyList<WalkthroughStopDirectionItem> directions = [];
     private RoomNarrationOverview roomNarration = RoomNarrationOverview.Empty;
     private IReadOnlyList<WalkthroughMapStopShots> MapStops = [];
-    private readonly Dictionary<string, ElementReference> stopElements = new(StringComparer.OrdinalIgnoreCase);
-    private string? highlightedStop;
-    private string? focusStop;
-    private ElementReference mapElement;
-    private string? mapFocusStop;
-    private int mapFocusRequest;
-    private bool scrollToMap;
     private string? customStopName;
     private bool loaded;
     private string? message;
@@ -450,6 +374,33 @@
     private int WalkthroughPhotoCount => stops.Sum(stop => stop.Items.Count);
 
     private bool HasExteriorFront => stops.Count > 0 && stops[0].Items.Count > 0;
+
+    private RenderFragment<string> TourStopMedia => stopName => __builder =>
+    {
+        var stop = stops.First(candidate => SameStop(candidate.Name, stopName));
+        <div class="tour-stop-media" aria-label="@($"Approved media for {stop.Name}")">
+            <div class="tour-stop-media-head">
+                <strong>Approved tour media</strong>
+                <span>@stop.Items.Count @(stop.Items.Count == 1 ? "photo" : "photos")</span>
+            </div>
+            <div class="stop-strip">
+                @for (var index = 0; index < stop.Items.Count; index++)
+                {
+                    @PhotoCard((stop.Items, index, stop.Name))
+                }
+                @if (!IsReadOnly)
+                {
+                    <label class="media-upload-control stop-upload">
+                        <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
+                        <span>Add another angle</span>
+                        <InputFile OnChange="@(eventArgs => FilesSelectedAsync(eventArgs, stop.Name))" multiple
+                                   aria-label="@($"Add photos to {stop.Name}")"
+                                   accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+                    </label>
+                }
+            </div>
+        </div>
+    };
 
     private RenderFragment PhotoCard((IReadOnlyList<PropertyMediaItem> Group, int Index, string? Stop) context) => __builder =>
     {
@@ -552,13 +503,17 @@
                                    Disabled="@(itemIndex == group.Count - 1)" aria-label="Move photo later"
                                    OnClick="@(() => MoveWithinGroupAsync(group, itemIndex, 1))" />
                     <MudSpacer />
-                    <MudMenu Label="Move" StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
+                    <MudMenu Label="@(context.Stop is null ? "Add to stop" : "Move")" StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
                              Variant="Variant.Text" Color="Color.Primary"
                              AriaLabel="@(context.Stop is null ? "Place photo in a stop" : "Move photo to another stop")">
                         <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">@(context.Stop is null ? "Place in stop" : "Move to stop")</MudText>
                         @foreach (var target in stops.Where(candidate => candidate.Name != context.Stop))
                         {
                             <MudMenuItem OnClick="@(() => AssignStopAsync(item.Id, target.Name))">@target.Name</MudMenuItem>
+                        }
+                        @if (context.Stop is null)
+                        {
+                            <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="@(() => AddPhotoToNewStopAsync(item.Id))">Create new stop…</MudMenuItem>
                         }
                         <MudDivider />
                         <MudMenuItem Icon="@Icons.Material.Filled.PhotoLibrary" OnClick="@(() => MoveToGalleryAsync(item.Id))">Move to extra photos</MudMenuItem>
@@ -611,13 +566,14 @@
             {
                 <div class="gallery-thumb-actions">
                     <MudSpacer />
-                    <MudMenu Label="Move" StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
+                    <MudMenu Label="Add to stop" StartIcon="@Icons.Material.Filled.AddLocationAlt" Size="Size.Small" Dense="true"
                              Variant="Variant.Text" Color="Color.Primary" AriaLabel="Place photo in a stop">
-                        <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">Place in stop</MudText>
+                        <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">Choose the room where this belongs</MudText>
                         @foreach (var target in stops)
                         {
                             <MudMenuItem OnClick="@(() => AssignStopAsync(item.Id, target.Name))">@target.Name</MudMenuItem>
                         }
+                        <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="@(() => AddPhotoToNewStopAsync(item.Id))">Create new stop…</MudMenuItem>
                     </MudMenu>
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
                                    aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
@@ -1150,39 +1106,6 @@
         }
     }
 
-    private void HighlightStop(string? stop) => highlightedStop = stop;
-
-    private void ShowStopShotsAsync(string stop)
-    {
-        highlightedStop = stop;
-        focusStop = stop;
-    }
-
-    // The reverse of the map's "Show its shots": selects the stop on the map and scrolls down to it.
-    private void ShowOnMap(string stop)
-    {
-        highlightedStop = stop;
-        mapFocusStop = stop;
-        mapFocusRequest++;
-        scrollToMap = true;
-    }
-
-    // Focusing the highlighted stop scrolls the storyboard to its shots and moves keyboard users there too.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (focusStop is { } stop && stopElements.TryGetValue(stop, out var element))
-        {
-            focusStop = null;
-            await element.FocusAsync(preventScroll: false);
-        }
-
-        if (scrollToMap)
-        {
-            scrollToMap = false;
-            await mapElement.FocusAsync(preventScroll: false);
-        }
-    }
-
     private async Task ReloadAfterChangeAsync()
     {
         await LoadAsync();
@@ -1461,6 +1384,18 @@
         }
     }
 
+    private async Task AddPhotoToNewStopAsync(Guid mediaId)
+    {
+        var dialog = await DialogService.ShowAsync<NewTourStopDialog>(
+            "Create a Tour Map stop",
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string stop })
+        {
+            await AssignStopAsync(mediaId, stop);
+        }
+    }
+
     private async Task MoveToGalleryAsync(Guid mediaId)
     {
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
@@ -1485,29 +1420,27 @@
         await SaveOrderAsync(order, "Photo order saved.");
     }
 
-    private bool CanMoveStop(int stopIndex, int offset)
+    private async Task MoveMapStopAsync((int FromIndex, int ToIndex) move)
     {
-        var to = stopIndex + offset;
-        return to >= 0
-            && to < stops.Count
-            && !stops[to].IsTemplate
-            && stops[to].Items.Count > 0;
-    }
-
-    private async Task MoveStopAsync(int stopIndex, int offset)
-    {
-        if (!CanMoveStop(stopIndex, offset))
+        if (move.FromIndex <= 0 || move.ToIndex <= 0
+            || move.FromIndex >= MapStops.Count || move.ToIndex >= MapStops.Count
+            || move.FromIndex == move.ToIndex)
         {
             return;
         }
 
         var filled = stops.Where(stop => stop.Items.Count > 0).ToList();
-        var from = filled.IndexOf(stops[stopIndex]);
-        var to = filled.IndexOf(stops[stopIndex + offset]);
-        (filled[from], filled[to]) = (filled[to], filled[from]);
+        var movedName = filled[move.FromIndex].Name;
+        var moved = filled[move.FromIndex];
+        filled.RemoveAt(move.FromIndex);
+        filled.Insert(move.ToIndex, moved);
         var order = filled.Select(stop => stop.Items.ToList()).ToList();
-        order.Add([.. unsorted]);
-        await SaveOrderAsync(order, $"{stops[stopIndex].Name} moved {(offset < 0 ? "earlier" : "later")} in the walkthrough.");
+        if (unsorted.Count > 0)
+        {
+            order.Add([.. unsorted]);
+        }
+
+        await SaveOrderAsync(order, $"{movedName} moved to stop {move.ToIndex + 1} in the tour.");
     }
 
     private List<List<PropertyMediaItem>> CurrentGroups()

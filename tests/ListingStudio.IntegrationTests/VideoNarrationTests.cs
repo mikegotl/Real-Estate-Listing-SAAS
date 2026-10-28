@@ -190,7 +190,7 @@ public sealed class VideoNarrationTests(PostgreSqlWebApplicationFixture fixture)
             await media.UploadAsync(
                 owner.UserId,
                 owner.PropertyId,
-                new PropertyMediaUpload("front.png", "image/png", content.Length, content));
+                new PropertyMediaUpload("front.png", "image/png", content.Length, content, WalkthroughStoryboard.ExteriorFront));
         }
 
         fixture.Factory.MediaAnalyzer.Enqueue(new PropertyMediaAnalysis(

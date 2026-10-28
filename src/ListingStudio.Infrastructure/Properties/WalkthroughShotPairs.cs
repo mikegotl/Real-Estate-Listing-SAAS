@@ -25,7 +25,10 @@ internal static class WalkthroughShotPairs
         CancellationToken cancellationToken)
     {
         var shots = await dbContext.PropertyMedia.AsNoTracking()
-            .Where(media => media.OrganizationId == organizationId && media.PropertyId == propertyId && !media.IsInGallery)
+            .Where(media => media.OrganizationId == organizationId
+                && media.PropertyId == propertyId
+                && !media.IsInGallery
+                && media.WalkthroughStop != null)
             .Select(media => new { media.Id, media.WalkthroughStop, media.DisplayOrder, media.BlobPath, media.OriginalBlobPath })
             .ToArrayAsync(cancellationToken);
         var directions = (await dbContext.WalkthroughStopDirections.AsNoTracking()
