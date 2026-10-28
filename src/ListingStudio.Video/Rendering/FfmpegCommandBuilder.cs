@@ -344,7 +344,7 @@ public static class FfmpegCommandBuilder
         {
             var crop = CalculateCrop(scene.Motion.StartViewport, asset);
             transform = $"crop={crop.Width}:{crop.Height}:{crop.X}:{crop.Y},"
-                + $"scale={output.Width}:{output.Height}:flags=lanczos";
+                + $"scale={output.Width}:{output.Height}:flags=lanczos,setsar=1";
         }
         else if (scene.Motion.Type == MotionKind.KenBurns)
         {
