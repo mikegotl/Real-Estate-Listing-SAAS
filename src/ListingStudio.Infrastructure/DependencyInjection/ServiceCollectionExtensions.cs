@@ -214,6 +214,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentAvatarVideoService, AgentAvatarVideoService>();
         services.AddScoped<IWalkthroughTransitionService, WalkthroughTransitionService>();
         services.AddScoped<IWalkthroughTransitionProcessor, WalkthroughTransitionProcessor>();
+        services.AddScoped<IAerialIntroService, AerialIntroService>();
+        services.AddScoped<IAerialIntroProcessor, AerialIntroProcessor>();
         services.AddScoped<IPropertyPhotoFixService, PropertyPhotoFixService>();
         services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();

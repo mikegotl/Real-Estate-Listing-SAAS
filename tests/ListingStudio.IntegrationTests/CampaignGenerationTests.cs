@@ -470,6 +470,41 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             Assert.Equal(CampaignDeliverableStatus.Rendered, deliverable.Status));
     }
 
+    [Fact]
+    public async Task ApprovedDroneIntroOpensTheVideosThatStartOnTheFrontPhoto()
+    {
+        // A finished intro the agent has not approved is never used.
+        var (unapproved, unapprovedFront, unapprovedFoyer) =
+            await CreatePropertyWithFinishedWalkthroughClipAsync("campaign-aerial-unapproved");
+        await CreateFinishedDroneIntroAsync(unapproved);
+        var introsBefore = fixture.Factory.VideoRenderer.AerialIntroInputCount;
+        await GenerateTwoPhotoCampaignAsync(unapproved, unapprovedFront, unapprovedFoyer);
+        Assert.Equal(introsBefore, fixture.Factory.VideoRenderer.AerialIntroInputCount);
+
+        var (owner, front, foyer) = await CreatePropertyWithFinishedWalkthroughClipAsync("campaign-aerial-intro");
+        await CreateFinishedDroneIntroAsync(owner);
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            Assert.True(await scope.ServiceProvider.GetRequiredService<IAerialIntroService>()
+                .ApproveAsync(owner.UserId, owner.PropertyId));
+        }
+
+        await GenerateTwoPhotoCampaignAsync(owner, front, foyer);
+        Assert.True(fixture.Factory.VideoRenderer.AerialIntroInputCount > introsBefore);
+    }
+
+    private async Task CreateFinishedDroneIntroAsync(OwnerProperty owner)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var intro = await scope.ServiceProvider.GetRequiredService<IAerialIntroService>()
+            .RequestAsync(owner.UserId, owner.PropertyId, AerialIntroClip.LowHeightFeet, true);
+        var processor = scope.ServiceProvider.GetRequiredService<IAerialIntroProcessor>();
+        Assert.Equal(AerialIntroClipStatus.Generating, (await processor.ProcessNextAsync())!.Status);
+        fixture.Factory.TimeProvider.Advance(TimeSpan.FromSeconds(11));
+        fixture.Factory.WalkthroughVideoProvider.EnqueuePoll(intro.Id, WalkthroughVideoState.Completed);
+        Assert.Equal(AerialIntroClipStatus.Completed, (await processor.ProcessNextAsync())!.Status);
+    }
+
     private async Task<CampaignGenerationResult> GenerateTwoPhotoCampaignAsync(
         OwnerProperty owner,
         Guid front,

@@ -12,6 +12,7 @@ public enum UserNotificationKind
     Campaign,
     PhotoFixes,
     Lead,
+    AerialIntro,
 }
 
 public enum UserNotificationOutcome

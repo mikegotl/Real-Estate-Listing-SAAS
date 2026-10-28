@@ -54,6 +54,11 @@ public sealed class OpenAIHelpChatAssistant(
         - AI walk-through clips (Media tab): short AI clips that move from one Tour Map photo to the next. They take a
           few minutes, you get a notification, and campaign videos use finished clips. Changing tour order or
           directions makes affected clips regenerate.
+        - AI drone intro (optional, Exterior front stop on the Tour Map): an AI-generated drone shot that descends from
+          about 50 ft (or 100 ft) and lands on the real front photo. The agent confirms it is AI-generated before
+          creating it and must approve it after watching; approved intros open campaign videos with a burned-in
+          "AI-generated aerial / Not actual footage" label. The roof, yard and surroundings in it are invented, so it
+          must never be presented as real footage. Replacing or fixing the front photo makes it out of date.
         - Room narration: you can write narration per room on the walkthrough map; on the Campaign tab, Narration then
           lets you choose your room-by-room narration or the AI-generated script from the property story.
         - Listing videos (Media tab): upload walkthrough videos; "Find room photos" pulls the sharpest still of each room

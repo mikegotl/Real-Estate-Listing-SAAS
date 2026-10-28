@@ -79,6 +79,8 @@ public static class FfmpegCommandBuilder
                 : scene)];
             request = request with { Specification = request.Specification with { Scenes = scenes } };
         }
+
+        var aerialIntro = PlanAerialIntro(scenes, request.AerialIntro, walkthroughs);
         var sceneAssets = scenes.Select((scene, index) => ResolveAsset(
             scene,
             media,
@@ -191,6 +193,18 @@ public static class FfmpegCommandBuilder
             arguments.AddRange(["-i", walkthrough.Asset.FilePath]);
         }
 
+        int? aerialIntroInput = null;
+        if (aerialIntro is not null)
+        {
+            aerialIntroInput = nextInput++;
+            arguments.AddRange(
+            [
+                "-ss", Seconds(aerialIntro.SourceStartMs),
+                "-t", Seconds(aerialIntro.Asset.DurationMs - aerialIntro.SourceStartMs),
+                "-i", aerialIntro.Asset.FilePath,
+            ]);
+        }
+
         var inputs = new RenderInputIndexes(
             narrationInput,
             musicInput,
@@ -198,7 +212,9 @@ public static class FfmpegCommandBuilder
             neighborhoodInputs,
             agentPresenterInput,
             walkthroughs,
-            walkthroughInputs);
+            walkthroughInputs,
+            aerialIntro,
+            aerialIntroInput);
         var hasAgentPresenter = agentPresenter is not null;
         var ffmpegThreadCount = hasAgentPresenter ? "2" : "1";
         var videoPreset = hasAgentPresenter ? "veryfast" : "faster";
@@ -250,20 +266,41 @@ public static class FfmpegCommandBuilder
             var extensionMs = index + 1 < specification.Scenes.Count
                 ? specification.Scenes[index + 1].TransitionIn.DurationMs
                 : 0;
-            var hold = inputs.Walkthroughs.ContainsKey(index) || inputs.Walkthroughs.ContainsKey(index - 1);
+            var intro = index == 0 ? inputs.AerialIntro : null;
+            var hold = intro is not null
+                || inputs.Walkthroughs.ContainsKey(index)
+                || inputs.Walkthroughs.ContainsKey(index - 1);
             var sceneFilter = BuildSceneFilter(index, scene, assets[index], specification.Output, extensionMs, hold);
-            if (!inputs.Walkthroughs.TryGetValue(index, out var walkthrough))
+            var hasWalkthrough = inputs.Walkthroughs.TryGetValue(index, out var walkthrough);
+            if (intro is null && !hasWalkthrough)
             {
                 filters.Add(sceneFilter);
+                continue;
+            }
+
+            filters.Add(sceneFilter[..^$"[scene{index}]".Length] + $"[scene{index}still]");
+            var introMs = intro?.PlayMs ?? 0;
+            var body = intro is null ? $"scene{index}" : $"scene{index}body";
+            if (hasWalkthrough)
+            {
+                filters.Add(BuildWalkthroughFilter(
+                    index,
+                    walkthrough!,
+                    inputs.WalkthroughInputs[index],
+                    specification.Output,
+                    introMs,
+                    body));
             }
             else
             {
-                filters.Add(sceneFilter[..^$"[scene{index}]".Length] + $"[scene{index}still]");
-                filters.Add(BuildWalkthroughFilter(
-                    index,
-                    walkthrough,
-                    inputs.WalkthroughInputs[index],
-                    specification.Output));
+                filters.Add($"[scene{index}still]trim=duration={Seconds(scene.DurationMs + extensionMs - introMs)},"
+                    + $"setpts=PTS-STARTPTS[{body}]");
+            }
+
+            if (intro is not null)
+            {
+                filters.Add(BuildAerialIntroFilter(index, intro, inputs.AerialIntroInput!.Value, specification.Output));
+                filters.Add($"[scene{index}intro][{body}]concat=n=2:v=1:a=0[scene{index}]");
             }
         }
 
@@ -371,15 +408,73 @@ public static class FfmpegCommandBuilder
         int index,
         SceneWalkthrough walkthrough,
         int input,
-        VideoOutputProfile output)
+        VideoOutputProfile output,
+        int introMs,
+        string label)
     {
         var speed = walkthrough.PlayMs / (decimal)walkthrough.Asset.DurationMs;
-        var hold = $"[scene{index}still]trim=duration={Seconds(walkthrough.HoldMs)},setpts=PTS-STARTPTS[scene{index}hold]";
+        var hold = $"[scene{index}still]trim=duration={Seconds(walkthrough.HoldMs - introMs)},setpts=PTS-STARTPTS[scene{index}hold]";
         var walk = $"[{input}:v]{FillTransform(output)},setpts={Number(speed)}*(PTS-STARTPTS),"
             + $"fps={output.FrameRate},format=yuv420p,settb=AVTB,"
             + $"tpad=stop_mode=clone:stop_duration={Seconds(walkthrough.PlayMs)},"
             + $"trim=duration={Seconds(walkthrough.PlayMs)},setpts=PTS-STARTPTS[scene{index}walk]";
-        return $"{hold};{walk};[scene{index}hold][scene{index}walk]concat=n=2:v=1:a=0[scene{index}]";
+        return $"{hold};{walk};[scene{index}hold][scene{index}walk]concat=n=2:v=1:a=0[{label}]";
+    }
+
+    /// <summary>
+    /// Plays the end of the drone intro, which lands on the scene's photo, before the scene holds that photo. The
+    /// input already starts at <see cref="SceneAerialIntro.SourceStartMs"/>.
+    /// </summary>
+    private static string BuildAerialIntroFilter(
+        int index,
+        SceneAerialIntro intro,
+        int input,
+        VideoOutputProfile output)
+    {
+        var speed = intro.PlayMs / (decimal)(intro.Asset.DurationMs - intro.SourceStartMs);
+        return $"[{input}:v]{FillTransform(output)},setpts={Number(speed)}*(PTS-STARTPTS),"
+            + $"fps={output.FrameRate},format=yuv420p,settb=AVTB,"
+            + $"tpad=stop_mode=clone:stop_duration={Seconds(intro.PlayMs)},"
+            + $"trim=duration={Seconds(intro.PlayMs)},setpts=PTS-STARTPTS[scene{index}intro]";
+    }
+
+    /// <summary>
+    /// Opens the video with the drone intro when the first scene shows the photo it lands on. The scene keeps its
+    /// planned length: the intro takes the time left after a one-second hold on the photo (and after any walk-through
+    /// out of it), playing up to twice as fast; a short scene plays only the end of the descent. A scene too short for
+    /// one second of intro keeps its photo.
+    /// </summary>
+    private static SceneAerialIntro? PlanAerialIntro(
+        IReadOnlyList<VideoScene> scenes,
+        VideoRenderAerialIntroAsset? asset,
+        IReadOnlyDictionary<int, SceneWalkthrough> walkthroughs)
+    {
+        if (asset is null)
+        {
+            return null;
+        }
+
+        if (asset.DurationMs <= 0 || !File.Exists(asset.FilePath))
+        {
+            throw new ArgumentException("The drone intro must be an existing clip.");
+        }
+
+        var first = scenes[0];
+        if (first.VisualSource.Kind != VisualSourceKind.PropertyMedia
+            || first.VisualSource.PropertyMediaId != asset.PropertyMediaId)
+        {
+            return null;
+        }
+
+        var stillMs = walkthroughs.TryGetValue(0, out var walkthrough) ? walkthrough.HoldMs : first.DurationMs;
+        var playMs = Math.Min(asset.DurationMs, stillMs - MinimumWalkthroughHoldMs);
+        if (playMs < MinimumWalkthroughMs)
+        {
+            return null;
+        }
+
+        var sourceMs = (int)Math.Min(asset.DurationMs, playMs * MaximumWalkthroughSpeedUp);
+        return new SceneAerialIntro(asset, asset.DurationMs - sourceMs, playMs);
     }
 
     /// <summary>
@@ -1366,7 +1461,14 @@ public static class FfmpegCommandBuilder
         IReadOnlyList<int> NeighborhoodInputs,
         int? AgentPresenterInput,
         IReadOnlyDictionary<int, SceneWalkthrough> Walkthroughs,
-        IReadOnlyDictionary<int, int> WalkthroughInputs);
+        IReadOnlyDictionary<int, int> WalkthroughInputs,
+        SceneAerialIntro? AerialIntro,
+        int? AerialIntroInput);
+
+    private sealed record SceneAerialIntro(
+        VideoRenderAerialIntroAsset Asset,
+        int SourceStartMs,
+        int PlayMs);
 
     private sealed record SceneWalkthrough(
         VideoRenderWalkthroughTransitionAsset Asset,

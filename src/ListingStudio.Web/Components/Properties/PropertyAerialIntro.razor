@@ -1,0 +1,308 @@
+@* The optional AI drone intro on the Exterior front stop: a generated descent that lands on the real front photo.
+   The agent acknowledges it is AI-generated before asking, and approves the finished clip before videos use it. *@
+@implements IAsyncDisposable
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IServiceScopeFactory ScopeFactory
+
+@if (loaded && (intro is not null || (service?.IsEnabled == true && !IsReadOnly)))
+{
+    <section class="aerial-intro" aria-labelledby="aerial-intro-heading">
+        <div class="aerial-intro-head">
+            <MudIcon Icon="@Icons.Material.Filled.FlightLand" Size="Size.Small" />
+            <strong id="aerial-intro-heading">AI drone intro</strong>
+            <span class="@($"aerial-intro-status {StatusClass}")">@StatusText</span>
+        </div>
+
+        @if (intro is { IsReady: true } ready && !choosing)
+        {
+            <video class="aerial-intro-video" src="@($"/aerial-intros/{ready.Id}")" controls muted playsinline preload="metadata"
+                   aria-label="AI-generated drone intro, descending onto the Exterior front photo"></video>
+        }
+
+        @if (intro is null || choosing)
+        {
+            <p class="aerial-intro-copy">
+                Open the tour with a drone shot that descends from above the street and lands on this photo.
+                Everything above the photo, including the roof, yard and neighbors, is made up by AI, so every video
+                shows "AI-generated aerial · Not actual footage" while it plays.
+            </p>
+            <div class="map-direction-picker" role="radiogroup" aria-label="Starting height">
+                @foreach (var option in Heights)
+                {
+                    var choice = option.Feet;
+                    var active = heightFeet == choice;
+                    <button type="button" role="radio" class="@($"map-direction {(active ? "is-active" : "")}")"
+                            aria-checked="@(active ? "true" : "false")" disabled="@busy" @onclick="@(() => heightFeet = choice)">
+                        @option.Label
+                    </button>
+                }
+            </div>
+            <p class="aerial-intro-hint">@HeightHint</p>
+            <MudCheckBox T="bool" @bind-Value="acknowledged" Disabled="@busy" Color="Color.Primary" Dense="true"
+                         Label="I understand this is AI-generated, may not match the real roof, yard or surroundings, and must not be presented as real footage." />
+            <div class="aerial-intro-actions">
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoAwesome"
+                           Disabled="@(busy || !acknowledged)" OnClick="RequestAsync">
+                    @(intro is null ? "Create drone intro" : "Make a new one")
+                </MudButton>
+                @if (choosing)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@busy" OnClick="@(() => choosing = false)">Cancel</MudButton>
+                }
+            </div>
+        }
+        else if (intro.IsInProgress)
+        {
+            <p class="aerial-intro-copy">Making a @intro.HeightFeet ft drone intro. This usually takes a few minutes; you'll get a notification when it is ready to review.</p>
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            @if (!IsReadOnly)
+            {
+                <div class="aerial-intro-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="@busy" OnClick="RemoveAsync">Cancel</MudButton>
+                </div>
+            }
+        }
+        else if (intro.Status == AerialIntroClipStatus.Failed)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@(intro.Error ?? "The drone intro could not be made.")</MudAlert>
+            @if (!IsReadOnly)
+            {
+                <div class="aerial-intro-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="@busy" OnClick="StartChoosing">Try again</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="@busy" OnClick="RemoveAsync">Remove</MudButton>
+                </div>
+            }
+        }
+        else if (!intro.IsCurrent)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="my-2">
+                The Exterior front photo changed since this intro was made, so videos don't use it. Make a new one to match the tour.
+            </MudAlert>
+            @if (!IsReadOnly)
+            {
+                <div class="aerial-intro-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@busy" OnClick="StartChoosing">Make a new one</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="@busy" OnClick="RemoveAsync">Remove</MudButton>
+                </div>
+            }
+        }
+        else if (!intro.IsApproved)
+        {
+            <p class="aerial-intro-copy">
+                Watch it all the way through. Approve it only if the roof, yard, street and neighbors look plausible for
+                this home and nothing that isn't there, like a pool or a water view, appears.
+            </p>
+            @if (!IsReadOnly)
+            {
+                <div class="aerial-intro-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check"
+                               Disabled="@busy" OnClick="ApproveAsync">Approve for videos</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="@busy" OnClick="StartChoosing">Make a new one</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="@busy" OnClick="RemoveAsync">Remove</MudButton>
+                </div>
+            }
+        }
+        else
+        {
+            <p class="aerial-intro-copy">Campaign videos you create from now on open with this drone intro, then hold on the front photo.</p>
+            @if (!IsReadOnly)
+            {
+                <div class="aerial-intro-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="@busy" OnClick="StartChoosing">Make a new one</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="@busy" OnClick="RemoveAsync">Remove</MudButton>
+                </div>
+            }
+        }
+
+        @if (error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" ShowCloseIcon="true" CloseIconClicked="@(() => error = null)">@error</MudAlert>
+        }
+    </section>
+}
+
+@code {
+    private static readonly (int Feet, string Label)[] Heights =
+    [
+        (AerialIntroClip.LowHeightFeet, "Low · about 50 ft"),
+        (AerialIntroClip.HighHeightFeet, "High · about 100 ft"),
+    ];
+
+    [Parameter, EditorRequired]
+    public Guid PropertyId { get; set; }
+
+    /// <summary>
+    /// Identifies the Exterior front photo the drone lands on and its latest fix, so replacing or fixing the photo
+    /// re-checks whether the intro still matches.
+    /// </summary>
+    [Parameter, EditorRequired]
+    public string FrontPhotoKey { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private readonly CancellationTokenSource polling = new();
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private AsyncServiceScope? scope;
+    private IAerialIntroService? service;
+    private AerialIntroItem? intro;
+    private (Guid PropertyId, string FrontPhotoKey)? loadedFor;
+    private bool loaded;
+    private bool busy;
+    private bool choosing;
+    private bool acknowledged;
+    private bool pollingStarted;
+    private int heightFeet = AerialIntroClip.LowHeightFeet;
+    private string? error;
+
+    private string HeightHint => heightFeet == AerialIntroClip.LowHeightFeet
+        ? "Recommended. Starts low over the street and mostly sees the front of the home, so the AI invents less."
+        : "Starts higher and sees more of the roof and surroundings, all of which the AI makes up.";
+
+    private string StatusText => intro switch
+    {
+        null => "Optional",
+        { IsInProgress: true } => "Generating",
+        { Status: AerialIntroClipStatus.Failed } => "Failed",
+        { IsCurrent: false } => "Out of date",
+        { IsApproved: true } => "Approved · used in videos",
+        _ => "Ready to review",
+    };
+
+    private string StatusClass => intro switch
+    {
+        { IsUsedInVideos: true } => "is-approved",
+        { Status: AerialIntroClipStatus.Failed } or { IsReady: true, IsCurrent: false } => "is-warning",
+        _ => string.Empty,
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == (PropertyId, FrontPhotoKey))
+        {
+            return;
+        }
+
+        loadedFor = (PropertyId, FrontPhotoKey);
+        await LoadAsync();
+        loaded = true;
+    }
+
+    // The intro uses its own scope so polling never shares the media workspace's DbContext.
+    private async Task LoadAsync()
+    {
+        scope ??= ScopeFactory.CreateAsyncScope();
+        service ??= scope.Value.ServiceProvider.GetRequiredService<IAerialIntroService>();
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await gate.WaitAsync();
+        try
+        {
+            intro = await service.GetAsync(userId, PropertyId);
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        if (intro?.IsInProgress == true && !pollingStarted)
+        {
+            pollingStarted = true;
+            _ = PollAsync();
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(polling.Token))
+            {
+                if (intro?.IsInProgress != true)
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    await LoadAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (polling.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void StartChoosing()
+    {
+        heightFeet = intro?.HeightFeet ?? AerialIntroClip.LowHeightFeet;
+        acknowledged = false;
+        choosing = true;
+    }
+
+    private Task RequestAsync() => RunAsync(async (userId, aerial) =>
+    {
+        intro = await aerial.RequestAsync(userId, PropertyId, heightFeet, acknowledged);
+        choosing = false;
+        acknowledged = false;
+    });
+
+    private Task ApproveAsync() => RunAsync(async (userId, aerial) =>
+    {
+        await aerial.ApproveAsync(userId, PropertyId);
+    });
+
+    private Task RemoveAsync() => RunAsync(async (userId, aerial) =>
+    {
+        await aerial.RemoveAsync(userId, PropertyId);
+        choosing = false;
+    });
+
+    private async Task RunAsync(Func<string, IAerialIntroService, Task> action)
+    {
+        if (service is null)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await gate.WaitAsync();
+            try
+            {
+                await action(userId, service);
+            }
+            finally
+            {
+                gate.Release();
+            }
+
+            await LoadAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await polling.CancelAsync();
+        polling.Dispose();
+        if (scope is { } current)
+        {
+            await current.DisposeAsync();
+        }
+
+        gate.Dispose();
+    }
+}

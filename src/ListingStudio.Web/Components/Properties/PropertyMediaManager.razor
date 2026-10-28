@@ -404,6 +404,12 @@
                 }
             </div>
         </div>
+        @if (ReferenceEquals(stop, stops[0]) && SameStop(stop.Name, WalkthroughStoryboard.ExteriorFront) && stop.Items.Count > 0)
+        {
+            var front = stop.Items[0];
+            <PropertyAerialIntro PropertyId="PropertyId" IsReadOnly="IsReadOnly"
+                                 FrontPhotoKey="@($"{front.Id:N}:{front.EditedAtUtc?.UtcTicks}:{front.AppliedFixes}")" />
+        }
     };
 
     private RenderFragment PhotoCard((IReadOnlyList<PropertyMediaItem> Group, int Index, string? Stop) context) => __builder =>

@@ -1195,6 +1195,7 @@ public sealed partial class CampaignGenerationProcessor(
                 specification,
                 directory,
                 cancellationToken);
+            var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, cancellationToken);
             var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
             var agentPresenter = await MaterializeAgentPresenterAsync(
                 job,
@@ -1218,19 +1219,22 @@ public sealed partial class CampaignGenerationProcessor(
                 neighborhoodAssets,
                 propertyVideos,
                 walkthroughTransitions,
-                agentPresenter);
+                agentPresenter,
+                aerialIntro);
             try
             {
                 await videoRenderer.RenderAsync(renderRequest, cancellationToken);
             }
-            catch (VideoRenderException exception) when (walkthroughTransitions.Length > 0)
+            catch (VideoRenderException exception) when (walkthroughTransitions.Length > 0 || aerialIntro is not null)
             {
-                // A provider-generated transition is optional polish. If FFmpeg cannot decode or compose one of
-                // those clips, preserve the approved tour-map photos and narration instead of failing the entire
-                // campaign. The retry is deterministic and never admits media outside the campaign allowlist.
-                LogWalkthroughRenderFallback(exception, job.Id, label, walkthroughTransitions.Length);
+                // Provider-generated walk-throughs and the drone intro are optional polish. If FFmpeg cannot decode
+                // or compose one of those clips, preserve the approved tour-map photos and narration instead of
+                // failing the entire campaign. The retry is deterministic and never admits media outside the
+                // campaign allowlist.
+                LogWalkthroughRenderFallback(
+                    exception, job.Id, label, walkthroughTransitions.Length + (aerialIntro is null ? 0 : 1));
                 await videoRenderer.RenderAsync(
-                    renderRequest with { WalkthroughTransitions = [] },
+                    renderRequest with { WalkthroughTransitions = [], AerialIntro = null },
                     cancellationToken);
             }
             var stored = false;
@@ -1702,6 +1706,54 @@ public sealed partial class CampaignGenerationProcessor(
         return [.. result];
     }
 
+    /// <summary>
+    /// Copies the property's drone intro when the agent approved it, it still lands on the Exterior front photo as the
+    /// tour shows it today, and the video opens on that photo. Otherwise the video opens on the photo as before.
+    /// </summary>
+    private async Task<VideoRenderAerialIntroAsset?> MaterializeAerialIntroAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        var opening = specification.Scenes.Count > 0 ? specification.Scenes[0].VisualSource : null;
+        if (opening?.Kind != VisualSourceKind.PropertyMedia || opening.PropertyMediaId is not { } openingPhotoId)
+        {
+            return null;
+        }
+
+        var clip = await dbContext.AerialIntroClips.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.OrganizationId == job.OrganizationId
+                && candidate.PropertyId == job.PropertyId
+                && candidate.PropertyMediaId == openingPhotoId
+                && candidate.Status == AerialIntroClipStatus.Completed
+                && candidate.ApprovedAtUtc != null,
+            cancellationToken);
+        if (clip?.AssetPath is null || clip.DurationMs is not { } durationMs)
+        {
+            return null;
+        }
+
+        var front = await AerialIntroSource.LoadFrontPhotoAsync(
+            dbContext, job.OrganizationId, job.PropertyId, cancellationToken);
+        if (!AerialIntroSource.IsCurrent(clip, front))
+        {
+            return null;
+        }
+
+        await using var source = await campaignAssetStorage.OpenReadAsync(clip.AssetPath, cancellationToken);
+        if (source is null)
+        {
+            LogAerialIntroUnavailable(job.Id, clip.Id);
+            return null;
+        }
+
+        var path = Path.Combine(directory, $"aerial-intro-{clip.Id:N}.mp4");
+        await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(target, cancellationToken);
+        return new VideoRenderAerialIntroAsset(openingPhotoId, path, durationMs);
+    }
+
     private async Task<VideoRenderPropertyVideoAsset[]> MaterializePropertyVideosAsync(
         CampaignGenerationJob job,
         VideoProductionSpecification specification,
@@ -2051,7 +2103,12 @@ public sealed partial class CampaignGenerationProcessor(
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Campaign {JobId} deliverable {Label} could not render {TransitionCount} walk-through transitions; retrying with approved tour-map photos")]
+        Message = "Campaign {JobId} skipped drone intro {ClipId} because its clip could not be opened")]
+    private partial void LogAerialIntroUnavailable(Guid jobId, Guid clipId);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} deliverable {Label} could not render {TransitionCount} walk-through or drone intro clips; retrying with approved tour-map photos")]
     private partial void LogWalkthroughRenderFallback(
         Exception exception,
         Guid jobId,

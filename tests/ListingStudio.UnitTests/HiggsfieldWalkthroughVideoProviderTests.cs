@@ -103,6 +103,42 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
     }
 
     [Fact]
+    public async Task AerialIntroUploadsOnlyTheFrontPhotoAndAsksForAPullBackToTheChosenHeight()
+    {
+        var handler = new RoutingHandler(request => request.RequestUri!.ToString() switch
+        {
+            "https://api.higgsfield.test/files/generate-upload-url" => Json(new
+            {
+                upload_url = $"https://uploads.storage.test/{Guid.NewGuid():N}",
+                public_url = $"https://cdn.storage.test/{Guid.NewGuid():N}.jpg",
+            }),
+            "https://api.higgsfield.test/kling-video/v3.0/std/image-to-video" => Json(new { status = "queued", request_id = "req_aerial" }),
+            _ when request.RequestUri!.Host == "uploads.storage.test" => new HttpResponseMessage(HttpStatusCode.OK),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var client = new HttpClient(handler);
+        await using var front = new MemoryStream([7, 8, 9]);
+        var provider = CreateProvider(client);
+
+        var requestId = await provider.SubmitAerialIntroAsync(new AerialIntroVideoSubmission(
+            new WalkthroughVideoFrame(front, "image/jpeg"),
+            50,
+            "aerial-1"));
+
+        Assert.Equal("req_aerial", requestId);
+        Assert.Single(handler.Requests, request => request.Uri.Host == "uploads.storage.test");
+        using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
+        var root = generation.RootElement;
+        Assert.StartsWith("https://cdn.storage.test/", root.GetProperty("image_url").GetString(), StringComparison.Ordinal);
+        Assert.False(root.TryGetProperty("last_image_url", out _));
+        var prompt = root.GetProperty("prompt").GetString()!;
+        Assert.Contains("climbing to about 50 feet", prompt, StringComparison.Ordinal);
+        Assert.Contains("Do not add a swimming pool", prompt, StringComparison.Ordinal);
+        Assert.StartsWith("higgsfield/", provider.AerialIntroGenerationVersion, StringComparison.Ordinal);
+        Assert.NotEqual(provider.GenerationVersion, provider.AerialIntroGenerationVersion);
+    }
+
+    [Fact]
     public void EachDirectionNamesOnlyItsOwnTurn()
     {
         Assert.Equal(HiggsfieldWalkthroughVideoProvider.Prompt, HiggsfieldWalkthroughVideoProvider.PromptFor(null));

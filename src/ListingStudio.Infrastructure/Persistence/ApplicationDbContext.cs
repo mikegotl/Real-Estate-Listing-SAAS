@@ -45,6 +45,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<WalkthroughTransition> WalkthroughTransitions => Set<WalkthroughTransition>();
 
+    public DbSet<AerialIntroClip> AerialIntroClips => Set<AerialIntroClip>();
+
     public DbSet<WalkthroughStopDirection> WalkthroughStopDirections => Set<WalkthroughStopDirection>();
 
     public DbSet<WalkthroughStopNarration> WalkthroughStopNarrations => Set<WalkthroughStopNarration>();
