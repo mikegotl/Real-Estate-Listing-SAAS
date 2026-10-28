@@ -13,6 +13,7 @@ public sealed class OpenAIOptions
     public decimal SpeechEstimatedCostUsd { get; init; }
     public decimal LocalizationEstimatedCostUsd { get; init; }
     public decimal VideoChatEstimatedCostUsd { get; init; }
+    public decimal HelpChatEstimatedCostUsd { get; init; }
 }
 
 public sealed class VoiceOptions

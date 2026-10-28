@@ -17,6 +17,7 @@ using Testcontainers.PostgreSql;
 using Xunit;
 using ListingStudio.Application.Billing;
 using ListingStudio.Application.Campaigns;
+using ListingStudio.Application.Help;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Billing;
 using ListingStudio.Infrastructure.Configuration;
@@ -86,6 +87,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeCampaignVideoChatAssistant VideoChatAssistant { get; } = new();
 
+    public FakeHelpChatAssistant HelpChatAssistant { get; } = new();
+
     public FakeVideoRenderer VideoRenderer { get; } = new();
 
     public FakeAiVideoProvider AiVideoProvider { get; } = new();
@@ -148,6 +151,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<ICampaignLocalizationService>(CampaignLocalizationService);
             services.RemoveAll<ICampaignVideoChatAssistant>();
             services.AddSingleton<ICampaignVideoChatAssistant>(VideoChatAssistant);
+            services.RemoveAll<IHelpChatAssistant>();
+            services.AddSingleton<IHelpChatAssistant>(HelpChatAssistant);
             services.RemoveAll<IVideoRenderer>();
             services.AddSingleton<IVideoRenderer>(VideoRenderer);
             services.RemoveAll<IAiVideoProvider>();
@@ -650,6 +655,23 @@ public sealed class FakeCampaignVideoChatAssistant : ICampaignVideoChatAssistant
         cancellationToken.ThrowIfCancellationRequested();
         LastRequest = request;
         Assert.True(outcomes.TryDequeue(out var outcome), "A fake video chat reply must be queued.");
+        return Task.FromResult(outcome(request));
+    }
+}
+
+public sealed class FakeHelpChatAssistant : IHelpChatAssistant
+{
+    private readonly ConcurrentQueue<Func<HelpChatRequest, string>> outcomes = new();
+
+    public HelpChatRequest? LastRequest { get; private set; }
+
+    public void Enqueue(Func<HelpChatRequest, string> factory) => outcomes.Enqueue(factory);
+
+    public Task<string> ReplyAsync(HelpChatRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LastRequest = request;
+        Assert.True(outcomes.TryDequeue(out var outcome), "A fake help chat reply must be queued.");
         return Task.FromResult(outcome(request));
     }
 }

@@ -35,7 +35,7 @@
                       Placeholder="Tour this home and request more information"
                       MaxLength="@LeadCapturePage.MaximumHeadlineLength" Counter="@LeadCapturePage.MaximumHeadlineLength"
                       Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)" />
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-3">
+        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mt-3">
             <MudSwitch T="bool" @bind-Value="published" Color="Color.Primary"
                        Disabled="@(busy || IsReadOnly)" Label="Accept inquiries on the public listing page" />
             <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || IsReadOnly)" OnClick="SaveAsync">

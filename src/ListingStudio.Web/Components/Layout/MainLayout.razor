@@ -12,6 +12,11 @@
             @Body
         </MudContainer>
     </MudMainContent>
+    <AuthorizeView>
+        <Authorized>
+            <HelpChatWindow @rendermode="InteractiveServer" />
+        </Authorized>
+    </AuthorizeView>
 </MudLayout>
 
 @code {

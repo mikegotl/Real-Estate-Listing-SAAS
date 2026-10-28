@@ -104,6 +104,7 @@ public sealed record CampaignVideoChatRequest(
     CampaignVoiceAccent? CurrentVoice,
     CampaignCaptionStyle? CaptionStyle,
     int RendersLeft,
-    IReadOnlyList<CampaignVideoChatTurn> Conversation);
+    IReadOnlyList<CampaignVideoChatTurn> Conversation,
+    IReadOnlyList<CampaignVideoProductionNote>? Production = null);
 
 public sealed record CampaignVideoChatReply(string Reply, IReadOnlyList<CampaignVideoEdit> Edits);

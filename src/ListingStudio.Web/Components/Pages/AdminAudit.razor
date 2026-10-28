@@ -10,7 +10,7 @@
     <div>
         <span class="eyebrow">PLATFORM SECURITY</span>
         <MudText Typo="Typo.h3" HtmlTag="h1">Administrator audit log</MudText>
-        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes and user impersonation, plus every change users asked for in campaign video chats.</MudText>
+        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes and user impersonation, plus every change users asked for in campaign video chats and every question asked in the Ask AI help chat.</MudText>
     </div>
     <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
 </div>
@@ -24,7 +24,7 @@ else
     <MudPaper Elevation="0" Class="admin-panel">
         <div class="admin-table-wrap">
             <table class="admin-table">
-                <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Actor reference</th><th>Target reference</th><th>Outcome</th><th>Did it fix it?</th></tr></thead>
+                <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Actor reference</th><th>Target reference</th><th>Outcome</th></tr></thead>
                 <tbody>
                     @foreach (var item in events)
                     {
@@ -117,14 +117,53 @@ else
     }
 </section>
 
+<section class="admin-video-chat" aria-labelledby="help-chat-heading">
+    <MudText Typo="Typo.h5" HtmlTag="h2" id="help-chat-heading" Class="mt-8 mb-1">Ask AI help questions</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        What users asked the Ask AI chat available on every page (outside a single video's chat), the page they were on and what the AI answered. Questions the AI couldn't answer point to missing help or features. Last 90 days, newest first.
+    </MudText>
+    @if (helpQuestions is null)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (helpQuestions.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No help questions yet.</MudText>
+    }
+    else
+    {
+        <MudPaper Elevation="0" Class="admin-panel">
+            <div class="admin-table-wrap">
+                <table class="admin-table admin-video-chat-table">
+                    <thead><tr><th>Time</th><th>User</th><th>Page</th><th>Question</th><th>AI reply</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in helpQuestions)
+                        {
+                            <tr>
+                                <td>@item.OccurredAtUtc.ToLocalTime().ToString("g")</td>
+                                <td>@(item.UserEmail ?? "Unknown")@if (item.WorkspaceName is { } workspace){<br /><span class="mud-text-secondary">@workspace</span>}</td>
+                                <td><code>@(item.PagePath ?? "")</code>@if (item.PropertyAddress is { } address){<br /><span class="mud-text-secondary">@address</span>}</td>
+                                <td class="admin-chat-text">@item.Question</td>
+                                <td class="admin-chat-text">@item.AssistantReply</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </MudPaper>
+    }
+</section>
+
 @code {
     private IReadOnlyList<AdminAuditRow>? events;
     private IReadOnlyList<AdminVideoChatRequestRow>? chatRequests;
+    private IReadOnlyList<AdminHelpChatQuestionRow>? helpQuestions;
 
     protected override async Task OnInitializedAsync()
     {
         var range = AdminDateRange.LastDays(90, TimeProvider);
         events = await DashboardService.GetAuditEventsAsync(range);
         chatRequests = await DashboardService.GetVideoChatRequestsAsync(range, 300);
+        helpQuestions = await DashboardService.GetHelpChatQuestionsAsync(range, 300);
     }
 }

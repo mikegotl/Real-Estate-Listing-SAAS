@@ -2,23 +2,23 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ILogger<CampaignVideoChatPanel> Logger
 
-<div class="video-chat">
-    @if (!open)
+<div class="video-chat @(Embedded ? "embedded" : null)">
+    @if (!open && !Embedded)
     {
         <MudButton Variant="Variant.Text"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.ChatBubbleOutline"
                    Class="mt-2 video-chat-toggle"
                    OnClick="OpenAsync">
-            Chat to change this video
+            Ask about or change this video
         </MudButton>
     }
     else
     {
-        <MudPaper Outlined="true" Class="video-chat-panel mt-3" aria-label="@($"Chat about the {VideoName}")">
+        <MudPaper Outlined="@(!Embedded)" Elevation="0" Class="@(Embedded ? "video-chat-panel" : "video-chat-panel mt-3")" aria-label="@($"Chat about the {VideoName}")">
             <div class="video-chat-header">
                 <div>
-                    <MudText Typo="Typo.subtitle2" HtmlTag="h3">Change this video</MudText>
+                    <MudText Typo="Typo.subtitle2" HtmlTag="h3">@(Embedded ? VideoName : "Ask about or change this video")</MudText>
                     @if (chat is not null)
                     {
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">
@@ -26,10 +26,13 @@
                         </MudText>
                     }
                 </div>
-                <MudIconButton Icon="@Icons.Material.Filled.Close"
-                               Size="Size.Small"
-                               aria-label="Close chat"
-                               OnClick="() => open = false" />
+                @if (!Embedded)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   Size="Size.Small"
+                                   aria-label="Close chat"
+                                   OnClick="() => open = false" />
+                }
             </div>
 
             @if (chat is null)
@@ -43,8 +46,15 @@
                     {
                         <div class="video-chat-message assistant">
                             <MudText Typo="Typo.body2">
-                                Tell me what you'd change, like "cut the garage shot", "start on the kitchen", "quieter music" or "use a British voice". I'll suggest the edits, and nothing changes until you press Render.
+                                Ask me how this video was made, like where the voiceover words or the music came from, or tell me what you'd change, like "cut the garage shot", "start on the kitchen", "quieter music" or "use a British voice". I'll suggest the edits, and nothing changes until you press Render.
                             </MudText>
+                        </div>
+                        <div class="video-chat-suggestions" role="group" aria-label="Suggested questions">
+                            @foreach (var suggestion in Suggestions)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                         Disabled="@(busy || sending)" OnClick="() => SendSuggestionAsync(suggestion)">@suggestion</MudChip>
+                            }
                         </div>
                     }
                     @foreach (var message in chat.Messages)
@@ -165,8 +175,8 @@
                 <div class="video-chat-input">
                     <MudTextField T="string"
                                   @bind-Value="draft"
-                                  Label="What should change?"
-                                  Placeholder="e.g. Drop the garage shot and make the music quieter"
+                                  Label="Ask a question or say what should change"
+                                  Placeholder="e.g. Why this music? Or: drop the garage shot"
                                   Variant="Variant.Outlined"
                                   Lines="2"
                                   MaxLength="ICampaignVideoChatService.MaximumMessageLength"
@@ -207,6 +217,10 @@
     [Parameter]
     public string VideoName { get; set; } = "video";
 
+    /// <summary>Shown inside the Ask AI window: always open, with the video's name as its heading.</summary>
+    [Parameter]
+    public bool Embedded { get; set; }
+
     /// <summary>Raised when the video's version changes, so the card shows the new render.</summary>
     [Parameter]
     public EventCallback VersionChanged { get; set; }
@@ -228,6 +242,31 @@
         1 => "1 free update left",
         var count => $"{count} free updates left",
     };
+
+    private static readonly string[] Suggestions =
+    [
+        "How was this video made?",
+        "Where did the voiceover words come from?",
+        "Why was this music chosen?",
+        "Make the music quieter",
+    ];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Embedded && (chat is null || chat.JobId != JobId || chat.Kind != Kind))
+        {
+            open = true;
+            chat = null;
+            error = null;
+            await LoadAsync();
+        }
+    }
+
+    private async Task SendSuggestionAsync(string suggestion)
+    {
+        draft = suggestion;
+        await SendAsync();
+    }
 
     private async Task OpenAsync()
     {

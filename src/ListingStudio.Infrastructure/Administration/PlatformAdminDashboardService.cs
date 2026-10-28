@@ -1,5 +1,6 @@
 using ListingStudio.Application.Administration;
 using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Help;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -220,6 +221,55 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
                 revision?.FixFeedback,
                 revision?.FixConfirmedAtUtc);
         }).ToArray();
+    }
+
+    public async Task<IReadOnlyList<AdminHelpChatQuestionRow>> GetHelpChatQuestionsAsync(
+        AdminDateRange range,
+        int maximumResults = 200,
+        CancellationToken cancellationToken = default)
+    {
+        range.Validate();
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumResults, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maximumResults, 500);
+        var questions = await dbContext.HelpChatMessages.AsNoTracking()
+            .Where(item => item.Role == HelpChatRole.User
+                && item.CreatedAtUtc >= range.FromUtc
+                && item.CreatedAtUtc < range.ToUtc)
+            .OrderByDescending(item => item.CreatedAtUtc)
+            .Take(maximumResults)
+            .ToListAsync(cancellationToken);
+        if (questions.Count == 0)
+        {
+            return [];
+        }
+
+        var questionIds = questions.Select(item => (Guid?)item.Id).ToArray();
+        var answers = await dbContext.HelpChatMessages.AsNoTracking()
+            .Where(item => item.Role == HelpChatRole.Assistant && questionIds.Contains(item.QuestionId))
+            .ToDictionaryAsync(item => item.QuestionId!.Value, item => item.Text, cancellationToken);
+        var userIds = questions.Select(item => item.UserId).Distinct().ToArray();
+        var emails = await dbContext.Users.AsNoTracking()
+            .Where(user => userIds.Contains(user.Id))
+            .ToDictionaryAsync(user => user.Id, user => user.Email, cancellationToken);
+        var organizationIds = questions.Select(item => item.OrganizationId).Distinct().ToArray();
+        var workspaces = await dbContext.Organizations.AsNoTracking()
+            .Where(organization => organizationIds.Contains(organization.Id))
+            .ToDictionaryAsync(organization => organization.Id, organization => organization.Name, cancellationToken);
+        var propertyIds = questions.Select(item => item.PropertyId).OfType<Guid>().Distinct().ToArray();
+        var properties = await dbContext.Properties.AsNoTracking()
+            .Where(property => propertyIds.Contains(property.Id))
+            .ToDictionaryAsync(
+                property => property.Id,
+                property => $"{property.Address1}, {property.City}",
+                cancellationToken);
+        return questions.Select(question => new AdminHelpChatQuestionRow(
+            question.CreatedAtUtc,
+            emails.GetValueOrDefault(question.UserId),
+            workspaces.GetValueOrDefault(question.OrganizationId),
+            question.PagePath,
+            question.PropertyId is { } propertyId ? properties.GetValueOrDefault(propertyId) : null,
+            question.Text,
+            answers.GetValueOrDefault(question.Id))).ToArray();
     }
 
     public async Task<IReadOnlyList<AdminAuditRow>> GetAuditEventsAsync(

@@ -40,7 +40,7 @@ public sealed partial class CampaignVideoChatService(
         var normalized = text?.Trim() ?? string.Empty;
         if (normalized.Length == 0)
         {
-            throw new InvalidOperationException("Type what you would like changed in this video.");
+            throw new InvalidOperationException("Type a question about this video or what you would like changed.");
         }
 
         if (normalized.Length > ICampaignVideoChatService.MaximumMessageLength)
@@ -79,6 +79,7 @@ public sealed partial class CampaignVideoChatService(
             deliverable.PropertyId,
             cancellationToken);
         var hasVoiceover = specification.Audio.NarrationSegments.Count > 0;
+        CampaignVoiceAccent? currentVoice = hasVoiceover ? CampaignVideoEditing.CurrentVoice(job, revisions) : null;
         var request = new CampaignVideoChatRequest(
             OutputName(kind),
             (int)specification.RequestedDuration,
@@ -92,13 +93,14 @@ public sealed partial class CampaignVideoChatService(
             CampaignVideoEditor.TrackOf(specification.Audio.Music),
             specification.Audio.Music.GainDb,
             hasVoiceover,
-            hasVoiceover ? CampaignVideoEditing.CurrentVoice(job, revisions) : null,
+            currentVoice,
             CampaignVideoEditor.CaptionStyleOf(specification),
             RendersLeft(revisions),
             history
                 .Select(message => new CampaignVideoChatTurn(message.Role, message.Text))
                 .Append(new CampaignVideoChatTurn(CampaignVideoChatRole.User, normalized))
-                .ToArray());
+                .ToArray(),
+            CampaignVideoProductionNotes.Describe(kind, specification, job, currentVoice));
 
         CampaignVideoChatReply reply;
         try
