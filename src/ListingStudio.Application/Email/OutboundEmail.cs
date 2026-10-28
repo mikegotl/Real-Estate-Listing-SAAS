@@ -7,14 +7,16 @@ public enum OutboundEmailPriority
 }
 
 /// <summary>
-/// A plain-text message to people who should not see each other's addresses, so every recipient is blind copied.
+/// A plain-text message. People who should not see each other's addresses are blind copied; a message to a single
+/// person names them in <see cref="ToRecipients"/> instead.
 /// </summary>
 public sealed record OutboundEmail(
     IReadOnlyList<string> BlindCopyRecipients,
     string Subject,
     string TextBody,
     string? ReplyTo = null,
-    OutboundEmailPriority Priority = OutboundEmailPriority.Normal);
+    OutboundEmailPriority Priority = OutboundEmailPriority.Normal,
+    IReadOnlyList<string>? ToRecipients = null);
 
 public interface IOutboundEmailSender
 {

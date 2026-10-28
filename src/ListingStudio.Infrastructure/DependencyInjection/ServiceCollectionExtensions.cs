@@ -170,6 +170,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PlatformAdminRoleBootstrapper>();
         services.AddScoped<IPlatformAdminAccountDirectory, PlatformAdminAccountDirectory>();
         services.AddScoped<IPlatformAdminImpersonationAudit, PlatformAdminImpersonationAudit>();
+        services.AddScoped<IPlatformAdminTesterAccess, PlatformAdminTesterAccess>();
+        services.AddScoped<IAdminUserEmailService, AdminUserEmailService>();
+        services.AddScoped<IAdminUserEmailProcessor, AdminUserEmailProcessor>();
         // Identity rebuilds the cookie principal when it revalidates the security stamp; keep the impersonation
         // claims so an admin session does not silently turn into a plain customer session.
         services.Configure<SecurityStampValidatorOptions>(options => options.OnRefreshingPrincipal = context =>

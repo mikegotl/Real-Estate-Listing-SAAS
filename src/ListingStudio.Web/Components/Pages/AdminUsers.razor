@@ -1,6 +1,7 @@
 @page "/admin/users"
 @attribute [Authorize(Policy = PlatformAdministration.Policy)]
 @attribute [StreamRendering]
+@using ListingStudio.Application.Help
 @inject IPlatformAdminAccountDirectory AccountDirectory
 
 <PageTitle>Find users</PageTitle>
@@ -9,9 +10,14 @@
     <div>
         <span class="eyebrow">CUSTOMER SUPPORT</span>
         <MudText Typo="Typo.h3" HtmlTag="h1">Find users</MudText>
-        <MudText Typo="Typo.body1">Search by email, user name or workspace name, then open a workspace or property as that user.</MudText>
+        <MudText Typo="Typo.body1">Search by email, user name or workspace name, then open a workspace or property as that user, add them to Testers or email them.</MudText>
     </div>
-    <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
+    <div class="admin-heading-actions">
+        <MudButton Href="/admin/users?testers=true" Variant="@(TestersView ? Variant.Filled : Variant.Outlined)" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.Science">Testers</MudButton>
+        <MudButton Href="/admin/email" Variant="Variant.Outlined" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Outbox">Sent emails</MudButton>
+        <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
+    </div>
 </div>
 
 <form method="get" action="/admin/users" class="admin-user-search" role="search">
@@ -27,7 +33,26 @@
     <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">@ErrorMessage</MudAlert>
 }
 
-@if (string.IsNullOrWhiteSpace(Q) || Q.Trim().Length < IPlatformAdminAccountDirectory.MinimumQueryLength)
+@if (NoticeMessage is { } notice)
+{
+    <MudAlert Severity="@notice.Severity" Variant="Variant.Outlined" Class="mb-4">@notice.Text</MudAlert>
+}
+
+@if (TestersView)
+{
+    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-1">Testers</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+        Testers use the site for free: their campaigns skip plan, trial and allowance checks and are not counted
+        against their workspace. Safety caps still apply to everyone, such as @CampaignVideoRevision.FreeRendersPerVideo
+        chat updates per video and @IHelpChatService.MaximumMessagesPerDay Ask AI questions a day.
+    </MudText>
+}
+
+@if (TestersView && result is not null && result.Accounts.Count == 0)
+{
+    <p class="admin-empty">No testers yet. Search for a user above and choose Add to Testers.</p>
+}
+else if (!TestersView && (string.IsNullOrWhiteSpace(Q) || Q.Trim().Length < IPlatformAdminAccountDirectory.MinimumQueryLength))
 {
     <p class="admin-empty">Type at least @IPlatformAdminAccountDirectory.MinimumQueryLength characters to search.</p>
 }
@@ -41,15 +66,37 @@ else if (result.Accounts.Count == 0)
 }
 else
 {
-    <p class="property-count">
-        @result.Accounts.Count @(result.Accounts.Count == 1 ? "user" : "users")@(result.HasMore ? " shown. Refine the search to see more." : string.Empty)
-    </p>
+    <div class="admin-results-bar">
+        <p class="property-count">
+            @result.Accounts.Count @(result.Accounts.Count == 1 ? (TestersView ? "tester" : "user") : (TestersView ? "testers" : "users"))@(result.HasMore ? " shown. Refine the search to see more." : string.Empty)
+        </p>
+        @* Checkboxes on each card belong to this form through their form attribute, so no script is needed. *@
+        <form id="admin-email-selected" method="get" action="/admin/email" class="admin-email-actions">
+            <input type="hidden" name="q" value="@ReturnQuery" />
+            <MudButton ButtonType="ButtonType.Submit" Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Email">Email selected</MudButton>
+        </form>
+        <form method="get" action="/admin/email" class="admin-email-actions">
+            <input type="hidden" name="q" value="@ReturnQuery" />
+            @foreach (var account in result.Accounts)
+            {
+                <input type="hidden" name="to" value="@account.UserId" />
+            }
+            <MudButton ButtonType="ButtonType.Submit" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary">
+                Email all @result.Accounts.Count shown
+            </MudButton>
+        </form>
+    </div>
     <div class="admin-user-list">
         @foreach (var account in result.Accounts)
         {
             <MudPaper Elevation="0" Class="admin-panel admin-user-card">
                 <header class="admin-user-head">
-                    <div>
+                    <div class="admin-user-title">
+                        <input type="checkbox" form="admin-email-selected" name="to" value="@account.UserId"
+                               id="@($"select-{account.UserId}")" class="admin-user-select" />
+                        <label for="@($"select-{account.UserId}")" class="visually-hidden">Select @account.Email for email</label>
+                        <div>
                         <MudText Typo="Typo.h5" HtmlTag="h2">@account.Email</MudText>
                         <p class="admin-user-meta">
                             @if (!string.Equals(account.UserName, account.Email, StringComparison.OrdinalIgnoreCase))
@@ -61,13 +108,24 @@ else
                             {
                                 <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined">Platform admin</MudChip>
                             }
+                            @if (account.IsTester)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined"
+                                         Icon="@Icons.Material.Filled.Science">Tester · free</MudChip>
+                            }
                         </p>
+                        </div>
                     </div>
-                    @if (!account.IsPlatformAdmin)
-                    {
-                        <ImpersonateForm UserId="@account.UserId" Query="@result.Query" ReturnUrl="/auth"
-                                         Label="Open workspace as user" Primary="true" />
-                    }
+                    <div class="admin-user-actions">
+                        <MudButton Href="@EmailLink(account.UserId)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Email">Email</MudButton>
+                        <TesterForm UserId="@account.UserId" IsTester="@account.IsTester" Query="@result.Query" TestersView="@TestersView" />
+                        @if (!account.IsPlatformAdmin)
+                        {
+                            <ImpersonateForm UserId="@account.UserId" Query="@result.Query" ReturnUrl="/auth"
+                                             Label="Open workspace as user" Primary="true" />
+                        }
+                    </div>
                 </header>
 
                 @if (account.Workspaces.Count == 0)
@@ -123,8 +181,9 @@ else
 
 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-6">
     Opening a workspace or property signs you in as that user for up to
-    @((int)PlatformAdminImpersonation.MaximumDuration.TotalMinutes) minutes. Each start and stop is written to the
-    <MudLink Href="/admin/audit">audit log</MudLink>. Billing changes are blocked while you are impersonating.
+    @((int)PlatformAdminImpersonation.MaximumDuration.TotalMinutes) minutes. Each start and stop, every Testers
+    change and every email is written to the <MudLink Href="/admin/audit">audit log</MudLink>. Billing changes are
+    blocked while you are impersonating.
 </MudAlert>
 
 @code {
@@ -135,6 +194,30 @@ else
 
     [SupplyParameterFromQuery]
     public string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    public bool? Testers { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Notice { get; set; }
+
+    private bool TestersView => Testers == true;
+
+    // Where the email page sends the admin back to: this search, or the Testers list.
+    private string ReturnQuery => TestersView ? string.Empty : Q?.Trim() ?? string.Empty;
+
+    private string EmailLink(string userId) =>
+        $"/admin/email?to={Uri.EscapeDataString(userId)}&q={Uri.EscapeDataString(ReturnQuery)}";
+
+    private (Severity Severity, string Text)? NoticeMessage => Notice switch
+    {
+        "tester-added" => (Severity.Success, "Added to Testers. They can now use the site for free."),
+        "tester-removed" => (Severity.Success, "Removed from Testers. Their workspace's plan and allowance apply again."),
+        "tester-unchanged" => (Severity.Info, "Nothing changed; the user was already in that state."),
+        "tester-UserNotFound" => (Severity.Warning, "That user no longer exists."),
+        "tester-NotPlatformAdmin" => (Severity.Warning, "Your account no longer has platform administrator access."),
+        _ => null,
+    };
 
     private string? ErrorMessage => Enum.TryParse<ImpersonationStartFailure>(Error, out var failure)
         ? failure switch
@@ -150,7 +233,11 @@ else
     protected override async Task OnParametersSetAsync()
     {
         result = null;
-        if (!string.IsNullOrWhiteSpace(Q) && Q.Trim().Length >= IPlatformAdminAccountDirectory.MinimumQueryLength)
+        if (TestersView)
+        {
+            result = await AccountDirectory.ListTestersAsync();
+        }
+        else if (!string.IsNullOrWhiteSpace(Q) && Q.Trim().Length >= IPlatformAdminAccountDirectory.MinimumQueryLength)
         {
             result = await AccountDirectory.SearchAsync(Q);
         }

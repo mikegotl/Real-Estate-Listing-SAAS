@@ -88,6 +88,7 @@ builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
 builder.Services.AddHostedService<PhotoFixWorker>();
 builder.Services.AddHostedService<CommentEmailWorker>();
+builder.Services.AddHostedService<AdminUserEmailWorker>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 

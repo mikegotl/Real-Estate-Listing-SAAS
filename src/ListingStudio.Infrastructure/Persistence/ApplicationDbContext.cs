@@ -91,6 +91,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<HelpChatMessage> HelpChatMessages => Set<HelpChatMessage>();
 
+    public DbSet<AdminUserEmail> AdminUserEmails => Set<AdminUserEmail>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
