@@ -6,6 +6,8 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject NavigationManager Navigation
 @inject ILogger<HelpChatWindow> Logger
+@inject IDialogService DialogService
+@inject PhotoAssistantSelectionState PhotoAssistantState
 
 @* The Ask AI window on every signed-in page. General questions go to the help assistant; on a property's pages the
    finished campaign videos can be picked, which opens that video's own chat (questions about how it was made, and
@@ -24,7 +26,7 @@
             <header class="help-chat-header">
                 <div>
                     <strong><MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" /> Ask AI</strong>
-                    <small>Answers can be wrong. Nothing changes until you press Render.</small>
+                    <small>Answers can be wrong. Nothing changes unless you review and confirm it.</small>
                 </div>
                 <button type="button" class="notification-text-button" @onclick="Close">Close</button>
             </header>
@@ -52,6 +54,17 @@
             else
             {
                 <div class="help-chat-body">
+                    @if (SelectedPhoto is { } photo)
+                    {
+                        <div class="help-chat-photo-context">
+                            <img src="@photo.ImageUrl" alt="Selected photo @photo.Filename" />
+                            <div>
+                                <strong>Selected photo</strong>
+                                <small>@photo.Filename</small>
+                            </div>
+                            <button type="button" class="notification-text-button" @onclick="ClearSelectedPhoto">Clear</button>
+                        </div>
+                    }
                     <div class="video-chat-messages help-chat-messages" role="log" aria-live="polite">
                         @if (chat is null)
                         {
@@ -84,6 +97,18 @@
                                     <MudText Typo="Typo.body2">@message.Text</MudText>
                                 </div>
                             }
+                            @if (chat.ProposedPhotoAction is { } action && SelectedPhoto is not null)
+                            {
+                                <div class="help-chat-photo-action">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                                               Disabled="sending"
+                                               OnClick="@(() => ApplyPhotoActionAsync(action))">
+                                        @PhotoActionLabel(action)
+                                    </MudButton>
+                                    <MudText Typo="Typo.caption">You choose the areas and confirm before anything changes.</MudText>
+                                </div>
+                            }
                         }
                         @if (sending)
                         {
@@ -97,12 +122,16 @@
                     {
                         <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@error</MudAlert>
                     }
+                    @if (notice is not null)
+                    {
+                        <MudAlert Severity="Severity.Success" Dense="true" Class="mb-2">@notice</MudAlert>
+                    }
 
                     <div class="video-chat-input">
                         <MudTextField T="string"
                                       @bind-Value="draft"
                                       Label="Ask a question"
-                                      Placeholder="e.g. How do I add a room to the tour?"
+                                      Placeholder="@(SelectedPhoto is null ? "e.g. How do I add a room to the tour?" : "e.g. Remove the items on the counter")"
                                       Variant="Variant.Outlined"
                                       Lines="2"
                                       MaxLength="IHelpChatService.MaximumMessageLength"
@@ -154,6 +183,10 @@
     private bool sending;
     private string? draft;
     private string? error;
+    private string? notice;
+
+    private PhotoAssistantSelection? SelectedPhoto =>
+        PhotoAssistantState.Selected is { } photo && photo.PropertyId == propertyId ? photo : null;
 
     private HelpChatVideo? SelectedVideo => videos.FirstOrDefault(video => TopicOf(video) == topic);
 
@@ -162,6 +195,7 @@
     protected override async Task OnInitializedAsync()
     {
         Navigation.LocationChanged += OnLocationChanged;
+        PhotoAssistantState.Changed += OnPhotoSelectionChanged;
         ReadLocation();
         await LoadVideosAsync();
     }
@@ -174,6 +208,10 @@
             ReadLocation();
             if (before != propertyId)
             {
+                if (PhotoAssistantState.Selected is { } selected && selected.PropertyId != propertyId)
+                {
+                    PhotoAssistantState.Clear();
+                }
                 await LoadVideosAsync();
                 StateHasChanged();
             }
@@ -228,6 +266,7 @@
     {
         open = true;
         error = null;
+        notice = null;
         await LoadVideosAsync();
         if (chat is null)
         {
@@ -257,6 +296,7 @@
     {
         chat = chat is null ? null : new HelpChat(null, chat.MessagesLeftToday, []);
         error = null;
+        notice = null;
     }
 
     private async Task OnKeyDownAsync(KeyboardEventArgs args)
@@ -287,7 +327,14 @@
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             await using var scope = ScopeFactory.CreateAsyncScope();
             chat = await scope.ServiceProvider.GetRequiredService<IHelpChatService>()
-                .SendAsync(userId, before.ConversationId, text, PagePath(), propertyId, disposal.Token);
+                .SendAsync(
+                    userId,
+                    before.ConversationId,
+                    text,
+                    PagePath(),
+                    propertyId,
+                    SelectedPhoto?.MediaId,
+                    disposal.Token);
         }
         catch (InvalidOperationException exception)
         {
@@ -307,7 +354,98 @@
     public void Dispose()
     {
         Navigation.LocationChanged -= OnLocationChanged;
+        PhotoAssistantState.Changed -= OnPhotoSelectionChanged;
         disposal.Cancel();
         disposal.Dispose();
     }
+
+    private void OnPhotoSelectionChanged() => _ = InvokeAsync(async () =>
+    {
+        // A proposed action belongs to the photo that was selected when the assistant answered. Never carry it to
+        // another photo just because the agent changes the selection before pressing the action button.
+        chat = chat is null ? null : chat with { ProposedPhotoAction = null };
+        topic = GeneralTopic;
+        await OpenAsync();
+        StateHasChanged();
+    });
+
+    private void ClearSelectedPhoto()
+    {
+        PhotoAssistantState.Clear();
+        chat = chat is null ? null : chat with { ProposedPhotoAction = null };
+    }
+
+    private async Task ApplyPhotoActionAsync(HelpChatPhotoAction action)
+    {
+        var selected = SelectedPhoto;
+        if (selected is null)
+        {
+            return;
+        }
+
+        IReadOnlyCollection<PhotoEditRegion>? regions = null;
+        if (action == HelpChatPhotoAction.RemoveSelectedClutter)
+        {
+            var dialog = await DialogService.ShowAsync<PhotoClutterMaskDialog>(
+                "Mark clutter",
+                new DialogParameters<PhotoClutterMaskDialog>
+                {
+                    { component => component.ImageUrl, selected.ImageUrl },
+                    { component => component.Filename, selected.Filename },
+                },
+                new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+            var result = await dialog.Result;
+            if (result is not { Canceled: false, Data: PhotoEditRegion[] selectedRegions })
+            {
+                return;
+            }
+
+            regions = selectedRegions;
+        }
+        else if (await DialogService.ShowMessageBoxAsync(
+                PhotoActionLabel(action),
+                $"Apply this fix to {selected.Filename}? The original stays saved so you can compare and revert.",
+                yesText: "Apply fix",
+                cancelText: "Cancel") != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>();
+            var requested = action switch
+            {
+                HelpChatPhotoAction.FixBrightnessAndColor => await service.RequestAsync(
+                    userId, selected.PropertyId, selected.MediaId, PhotoFix.BrightnessAndColor, disposal.Token),
+                HelpChatPhotoAction.StraightenAndCrop => await service.RequestAsync(
+                    userId, selected.PropertyId, selected.MediaId, PhotoFix.LevelAndCrop, disposal.Token),
+                HelpChatPhotoAction.RemoveSelectedClutter => await service.RequestClutterRemovalAsync(
+                    userId, selected.PropertyId, selected.MediaId, regions!, disposal.Token),
+                _ => false,
+            };
+            if (requested)
+            {
+                notice = action == HelpChatPhotoAction.RemoveSelectedClutter
+                    ? "Cleanup preview requested. You will review it before it can replace the photo."
+                    : "Photo fix requested. The Media tab will update when it finishes.";
+                chat = chat is null ? null : chat with { ProposedPhotoAction = null };
+                PhotoAssistantState.NotifyPhotoFixQueued();
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+    }
+
+    private static string PhotoActionLabel(HelpChatPhotoAction action) => action switch
+    {
+        HelpChatPhotoAction.FixBrightnessAndColor => "Fix brightness and color",
+        HelpChatPhotoAction.StraightenAndCrop => "Straighten and auto-crop",
+        HelpChatPhotoAction.RemoveSelectedClutter => "Mark clutter to remove",
+        _ => "Apply photo fix",
+    };
 }

@@ -1,0 +1,44 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Review AI cleanup</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="photo-compare">
+            <figure>
+                <img src="@($"/property-media/{MediaId}")" alt="Current version of @Filename" />
+                <figcaption>Current listing photo</figcaption>
+            </figure>
+            <figure>
+                <img src="@($"/photo-fixes/{FixId}/candidate")" alt="Proposed cleanup of @Filename" />
+                <figcaption>Proposed AI cleanup</figcaption>
+            </figure>
+        </div>
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+            Check walls, doors, windows, fixtures, finishes and room layout. Use the cleanup only when the property itself is unchanged.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.DeleteOutline"
+                   OnClick="Discard">Discard cleanup</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check"
+                   OnClick="Approve">Use this cleanup</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public Guid MediaId { get; set; }
+
+    [Parameter, EditorRequired]
+    public Guid FixId { get; set; }
+
+    [Parameter]
+    public string Filename { get; set; } = "photo";
+
+    private void Discard() => Dialog.Close(DialogResult.Ok(false));
+
+    private void Approve() => Dialog.Close(DialogResult.Ok(true));
+}

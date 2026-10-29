@@ -276,7 +276,14 @@ public sealed class PropertyMediaPhotoFixTests
     public void AFixRequestRetriesOnlyWhileAttemptsRemain()
     {
         var now = DateTimeOffset.UtcNow;
-        var fix = PropertyPhotoFix.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), PhotoFix.RemoveClutter, "upload.png", now);
+        var fix = PropertyPhotoFix.Create(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            PhotoFix.RemoveClutter,
+            "upload.png",
+            now,
+            PhotoEditMask.Encode([new PhotoEditRegion(.4m, .6m, .1m, .1m)]));
         for (var attempt = 1; attempt < PropertyPhotoFix.MaximumAttempts; attempt++)
         {
             fix.Begin(now);
@@ -289,6 +296,51 @@ public sealed class PropertyMediaPhotoFixTests
         Assert.False(fix.IsInProgress);
         Assert.Null(fix.NextAttemptAtUtc);
         Assert.Throws<InvalidOperationException>(() => fix.Begin(now));
+    }
+
+    [Fact]
+    public void ClutterCleanupRequiresASelectionAndWaitsForApproval()
+    {
+        var now = DateTimeOffset.UtcNow;
+        Assert.Throws<ArgumentException>(() => PropertyPhotoFix.Create(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), PhotoFix.RemoveClutter, "upload.png", now));
+        var fix = PropertyPhotoFix.Create(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            PhotoFix.RemoveClutter,
+            "upload.png",
+            now,
+            PhotoEditMask.Encode([new PhotoEditRegion(.4m, .4m, .1m, .1m)]));
+
+        fix.Begin(now);
+        fix.StageCandidate("candidate.jpg", "image/jpeg", 1_024, 1_600, 1_200, now.AddSeconds(1));
+
+        Assert.Equal(PropertyPhotoFixStatus.AwaitingApproval, fix.Status);
+        Assert.Equal("candidate.jpg", fix.CandidateBlobPath);
+        Assert.False(fix.IsInProgress);
+        fix.ApproveCandidate(now.AddSeconds(2));
+        Assert.Equal(PropertyPhotoFixStatus.Completed, fix.Status);
+    }
+
+    [Fact]
+    public void DiscardingAClutterCleanupReturnsItsCandidateForDeletion()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var fix = PropertyPhotoFix.Create(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            PhotoFix.RemoveClutter,
+            "upload.png",
+            now,
+            PhotoEditMask.Encode([new PhotoEditRegion(.4m, .4m, .1m, .1m)]));
+        fix.Begin(now);
+        fix.StageCandidate("candidate.jpg", "image/jpeg", 1_024, 1_600, 1_200, now.AddSeconds(1));
+
+        Assert.Equal("candidate.jpg", fix.RejectCandidate());
+        Assert.Equal(PropertyPhotoFixStatus.Rejected, fix.Status);
+        Assert.Null(fix.CandidateBlobPath);
     }
 
     private static PropertyMedia CreateAnalyzedMedia()

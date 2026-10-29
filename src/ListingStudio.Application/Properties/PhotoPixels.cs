@@ -61,4 +61,11 @@ public interface IPhotoImageCodec
         int height,
         PhotoRegion editable,
         CancellationToken cancellationToken = default);
+
+    /// <summary>A PNG edit mask transparent only in the explicitly selected regions.</summary>
+    Task<byte[]> EncodeMaskPngAsync(
+        int width,
+        int height,
+        IReadOnlyCollection<PhotoRegion> editable,
+        CancellationToken cancellationToken = default);
 }

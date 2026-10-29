@@ -1155,7 +1155,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     {
         var owner = await CreateOwnerAndPropertyAsync("help-chat");
         var stranger = await CreateOwnerAndPropertyAsync("help-chat-stranger");
-        await UploadAsync(owner);
+        var selectedPhoto = await UploadAsync(owner);
         fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
         QueueSuccessfulProviders();
         var queued = await EnqueueAsync(owner, CampaignOutputSelection.YouTubeTour | CampaignOutputSelection.FacebookFeed);
@@ -1182,24 +1182,41 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
                 Assert.StartsWith("123 Main Street", request.Property!.Address, StringComparison.Ordinal);
                 Assert.Equal("Completed", request.Property.LatestCampaignStatus);
                 Assert.Contains("YouTube tour", request.Property.FinishedVideos);
-                return "Pick the YouTube tour in the Ask about menu.";
+                Assert.NotNull(request.Photo);
+                Assert.Equal("Exterior front", request.Photo.TourStop);
+                return new HelpChatAssistantReply(
+                    "I can fix the selected photo's brightness and color.",
+                    HelpChatPhotoAction.FixBrightnessAndColor);
             });
             var chat = await service.SendAsync(
-                owner.UserId, null, "  How was my YouTube video made?  ", "/properties/x?tab=campaign", owner.PropertyId);
+                owner.UserId,
+                null,
+                "  How was my YouTube video made?  ",
+                "/properties/x?tab=campaign",
+                owner.PropertyId,
+                selectedPhoto);
             Assert.NotNull(chat.ConversationId);
             Assert.Equal(2, chat.Messages.Count);
             Assert.Equal("How was my YouTube video made?", chat.Messages[0].Text);
-            Assert.Equal("Pick the YouTube tour in the Ask about menu.", chat.Messages[1].Text);
+            Assert.Equal("I can fix the selected photo's brightness and color.", chat.Messages[1].Text);
+            Assert.Equal(HelpChatPhotoAction.FixBrightnessAndColor, chat.ProposedPhotoAction);
             Assert.Equal(IHelpChatService.MaximumMessagesPerDay - 1, chat.MessagesLeftToday);
 
             // Another workspace's property gives the assistant no context.
             fixture.Factory.HelpChatAssistant.Enqueue(request =>
             {
                 Assert.Null(request.Property);
+                Assert.Null(request.Photo);
                 Assert.Equal(3, request.Conversation.Count);
                 return "Open the property first.";
             });
-            chat = await service.SendAsync(owner.UserId, chat.ConversationId, "And this one?", "/properties/y", stranger.PropertyId);
+            chat = await service.SendAsync(
+                owner.UserId,
+                chat.ConversationId,
+                "And this one?",
+                "/properties/y",
+                stranger.PropertyId,
+                selectedPhoto);
             Assert.Equal(4, chat.Messages.Count);
             Assert.Equal(chat.ConversationId, (await service.GetAsync(owner.UserId)).ConversationId);
             Assert.Empty((await service.GetAsync(stranger.UserId)).Messages);
@@ -1216,7 +1233,7 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
             var rows = await admin.GetHelpChatQuestionsAsync(
                 Application.Administration.AdminDateRange.LastDays(90, fixture.Factory.TimeProvider));
             var row = Assert.Single(rows, item => item.Question == "How was my YouTube video made?");
-            Assert.Equal("Pick the YouTube tour in the Ask about menu.", row.AssistantReply);
+            Assert.Equal("I can fix the selected photo's brightness and color.", row.AssistantReply);
             Assert.Equal("/properties/x?tab=campaign", row.PagePath);
             Assert.StartsWith("123 Main Street", row.PropertyAddress, StringComparison.Ordinal);
             Assert.NotNull(row.UserEmail);

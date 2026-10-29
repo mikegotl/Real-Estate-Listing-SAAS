@@ -86,7 +86,7 @@ public sealed class HelpChatTests
                 {
                     content = new[]
                     {
-                        new { type = "output_text", text = JsonSerializer.Serialize(new { reply = "  Open the Media tab and press Add stop.  " }) },
+                        new { type = "output_text", text = JsonSerializer.Serialize(new { reply = "  Open the Media tab and press Add stop.  ", photo_action = "none" }) },
                     },
                 },
             },
@@ -103,13 +103,15 @@ public sealed class HelpChatTests
         var reply = await assistant.ReplyAsync(new HelpChatRequest(
             "/properties/abc",
             new HelpChatPropertySummary("123 Main Street, Raleigh, NC", 6, 2, "Completed", null, ["YouTube tour"]),
+            null,
             [
                 new HelpChatTurn(HelpChatRole.User, "Hi"),
                 new HelpChatTurn(HelpChatRole.Assistant, "Hello!"),
                 new HelpChatTurn(HelpChatRole.User, "How do I add a room?"),
             ]));
 
-        Assert.Equal("Open the Media tab and press Add stop.", reply);
+        Assert.Equal("Open the Media tab and press Add stop.", reply.Text);
+        Assert.Null(reply.PhotoAction);
         using var sent = JsonDocument.Parse(handler.RequestBody!);
         var instructions = sent.RootElement.GetProperty("instructions").GetString()!;
         Assert.Contains("untrusted data", instructions, StringComparison.Ordinal);
@@ -127,10 +129,10 @@ public sealed class HelpChatTests
     [Fact]
     public void EmptyHelpRepliesAreRejectedAndLongOnesTrimmed()
     {
-        using var empty = JsonDocument.Parse("""{"reply":"  "}""");
+        using var empty = JsonDocument.Parse("""{"reply":"  ","photo_action":"none"}""");
         Assert.Throws<InvalidDataException>(() => OpenAIHelpChatAssistant.Parse(empty.RootElement));
-        using var longReply = JsonDocument.Parse(JsonSerializer.Serialize(new { reply = new string('a', 3_000) }));
-        Assert.Equal(HelpChatMessage.MaximumTextLength, OpenAIHelpChatAssistant.Parse(longReply.RootElement).Length);
+        using var longReply = JsonDocument.Parse(JsonSerializer.Serialize(new { reply = new string('a', 3_000), photo_action = "none" }));
+        Assert.Equal(HelpChatMessage.MaximumTextLength, OpenAIHelpChatAssistant.Parse(longReply.RootElement).Text.Length);
     }
 
     [Fact]

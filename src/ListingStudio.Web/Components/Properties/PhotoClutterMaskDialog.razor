@@ -1,0 +1,112 @@
+@using ListingStudio.Domain.Properties
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Mark only the clutter</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Tap the tiles covering movable items to remove. Walls, fixtures, furniture and unselected pixels stay from
+            the original photo. You will review the generated result before it can be used.
+        </MudText>
+        <div class="clutter-mask-editor" style="@($"--photo:url('{ImageUrl}')")" role="group"
+             aria-label="Select clutter areas in @Filename">
+            @for (var index = 0; index < Columns * Rows; index++)
+            {
+                var cell = index;
+                <button type="button"
+                        class="clutter-mask-cell @(selected.Contains(cell) ? "selected" : null)"
+                        aria-label="@($"{(selected.Contains(cell) ? "Unselect" : "Select")} photo area {cell + 1}")"
+                        aria-pressed="@selected.Contains(cell)"
+                        @onclick="@(() => Toggle(cell))"></button>
+            }
+        </div>
+        <div class="clutter-mask-summary">
+            <MudText Typo="Typo.caption">@selected.Count selected tiles · maximum @MaximumCells</MudText>
+            <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="@(selected.Count == 0)" OnClick="Clear">Clear</MudButton>
+        </div>
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+            The AI may regenerate pixels inside the marked tiles. The rest of the photo is copied exactly from the current image.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CleaningServices"
+                   Disabled="@(selected.Count == 0 || selected.Count > MaximumCells)" OnClick="Submit">
+            Create cleanup preview
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .clutter-mask-editor {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        grid-template-rows: repeat(8, 1fr);
+        width: 100%;
+        aspect-ratio: 3 / 2;
+        max-height: 62vh;
+        background: var(--photo) center / contain no-repeat #171b21;
+        border-radius: 12px;
+        overflow: hidden;
+        touch-action: manipulation;
+    }
+
+    .clutter-mask-cell {
+        min-width: 0;
+        border: 1px solid rgba(255,255,255,.16);
+        background: transparent;
+        cursor: crosshair;
+    }
+
+    .clutter-mask-cell:hover { background: rgba(229, 177, 93, .18); }
+    .clutter-mask-cell.selected {
+        background: rgba(229, 138, 52, .48);
+        box-shadow: inset 0 0 0 2px rgba(255,255,255,.8);
+    }
+
+    .clutter-mask-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: .5rem;
+    }
+</style>
+
+@code {
+    private const int Columns = 12;
+    private const int Rows = 8;
+    private const int MaximumCells = 33;
+    private readonly HashSet<int> selected = [];
+
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public string ImageUrl { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Filename { get; set; } = "photo";
+
+    private void Toggle(int cell)
+    {
+        if (!selected.Remove(cell) && selected.Count < MaximumCells)
+        {
+            selected.Add(cell);
+        }
+    }
+
+    private void Clear() => selected.Clear();
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void Submit()
+    {
+        var regions = selected.Order().Select(cell => new PhotoEditRegion(
+            (cell % Columns) / (decimal)Columns,
+            (cell / Columns) / (decimal)Rows,
+            1m / Columns,
+            1m / Rows)).ToArray();
+        Dialog.Close(DialogResult.Ok(regions));
+    }
+}

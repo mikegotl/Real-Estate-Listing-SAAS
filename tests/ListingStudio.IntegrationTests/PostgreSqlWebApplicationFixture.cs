@@ -710,13 +710,16 @@ public sealed class FakeCampaignVideoChatAssistant : ICampaignVideoChatAssistant
 
 public sealed class FakeHelpChatAssistant : IHelpChatAssistant
 {
-    private readonly ConcurrentQueue<Func<HelpChatRequest, string>> outcomes = new();
+    private readonly ConcurrentQueue<Func<HelpChatRequest, HelpChatAssistantReply>> outcomes = new();
 
     public HelpChatRequest? LastRequest { get; private set; }
 
-    public void Enqueue(Func<HelpChatRequest, string> factory) => outcomes.Enqueue(factory);
+    public void Enqueue(Func<HelpChatRequest, string> factory) => outcomes.Enqueue(request =>
+        new HelpChatAssistantReply(factory(request), null));
 
-    public Task<string> ReplyAsync(HelpChatRequest request, CancellationToken cancellationToken = default)
+    public void Enqueue(Func<HelpChatRequest, HelpChatAssistantReply> factory) => outcomes.Enqueue(factory);
+
+    public Task<HelpChatAssistantReply> ReplyAsync(HelpChatRequest request, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         LastRequest = request;
@@ -898,6 +901,12 @@ public sealed class FakePhotoImageCodec : IPhotoImageCodec
         int width,
         int height,
         PhotoRegion editable,
+        CancellationToken cancellationToken = default) => Task.FromResult(Png.ToArray());
+
+    public Task<byte[]> EncodeMaskPngAsync(
+        int width,
+        int height,
+        IReadOnlyCollection<PhotoRegion> editable,
         CancellationToken cancellationToken = default) => Task.FromResult(Png.ToArray());
 
     private static (int Width, int Height) FitInside(int boxWidth, int boxHeight)

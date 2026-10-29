@@ -45,18 +45,39 @@ public sealed class FfmpegPhotoImageCodec(IOptions<FfmpegOptions> options) : IPh
         int width,
         int height,
         PhotoRegion editable,
+        CancellationToken cancellationToken = default) =>
+        EncodeMaskPngAsync(width, height, [editable], cancellationToken);
+
+    public Task<byte[]> EncodeMaskPngAsync(
+        int width,
+        int height,
+        IReadOnlyCollection<PhotoRegion> editable,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
-        var rgba = new byte[width * height * 4];
-        for (var y = 0; y < height; y++)
+        ArgumentNullException.ThrowIfNull(editable);
+        if (editable.Count == 0 || editable.Any(region => region.X < 0 || region.Y < 0
+            || region.Width <= 0 || region.Height <= 0
+            || region.X + region.Width > width || region.Y + region.Height > height))
         {
-            var insideRow = y >= editable.Y && y < editable.Y + editable.Height;
-            for (var x = 0; x < width; x++)
+            throw new ArgumentOutOfRangeException(nameof(editable), "Editable regions must lie inside the mask.");
+        }
+
+        var rgba = new byte[width * height * 4];
+        for (var alpha = 3; alpha < rgba.Length; alpha += 4)
+        {
+            rgba[alpha] = 255;
+        }
+
+        foreach (var region in editable)
+        {
+            for (var y = region.Y; y < region.Y + region.Height; y++)
             {
-                var inside = insideRow && x >= editable.X && x < editable.X + editable.Width;
-                rgba[(y * width + x) * 4 + 3] = inside ? (byte)0 : (byte)255;
+                for (var x = region.X; x < region.X + region.Width; x++)
+                {
+                    rgba[(y * width + x) * 4 + 3] = 0;
+                }
             }
         }
 
