@@ -154,7 +154,7 @@
                         <div>
                             <span class="stop-step">New stop</span>
                             <h4>@pending.Name</h4>
-                            <p>Add a photo to place this stop on the Tour Map.</p>
+                            <p>Add a photo to place this stop on the Tour Map. Empty stops aren't saved, so this one disappears if you leave or reload the page first.</p>
                         </div>
                         <label class="media-upload-control stop-upload">
                             <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" />
@@ -1769,7 +1769,7 @@
 
         pendingStops.Add(stop);
         BuildStoryboard();
-        ShowMessage($"{stop} added as stop {stops.Count}. Add its photos to keep the walkthrough moving.", Severity.Success);
+        ShowMessage($"{stop} added as stop {stops.Count}. Add a photo to keep it: empty stops aren't saved.", Severity.Success);
     }
 
     private async Task CustomStopKeyDownAsync(KeyboardEventArgs eventArgs)

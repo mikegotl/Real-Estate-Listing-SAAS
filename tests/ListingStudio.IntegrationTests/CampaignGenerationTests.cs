@@ -493,6 +493,28 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
         Assert.True(fixture.Factory.VideoRenderer.AerialIntroInputCount > introsBefore);
     }
 
+    [Fact]
+    public async Task WalkthroughMotionOffLeavesOutTheApprovedDroneIntro()
+    {
+        var (owner, front, foyer) = await CreatePropertyWithFinishedWalkthroughClipAsync("campaign-aerial-photos-only");
+        await CreateFinishedDroneIntroAsync(owner);
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            Assert.True(await scope.ServiceProvider.GetRequiredService<IAerialIntroService>()
+                .ApproveAsync(owner.UserId, owner.PropertyId));
+        }
+
+        var introsBefore = fixture.Factory.VideoRenderer.AerialIntroInputCount;
+        var photosOnly = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements & ~CampaignVideoElement.WalkthroughMotion,
+        };
+
+        await GenerateTwoPhotoCampaignAsync(owner, front, foyer, photosOnly);
+
+        Assert.Equal(introsBefore, fixture.Factory.VideoRenderer.AerialIntroInputCount);
+    }
+
     private async Task CreateFinishedDroneIntroAsync(OwnerProperty owner)
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
