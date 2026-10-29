@@ -159,6 +159,8 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
                 .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
                     HeaderAuthenticationHandler.SchemeName,
                     _ => { });
+            services.AddSingleton<IPhotoClutterRemover>(
+                new FakePhotoClutterRemover { IsEnabled = false });
         });
         await using var scope = factory.Services.CreateAsyncScope();
         var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
@@ -195,6 +197,7 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         var oneStop = await (await client.GetAsync($"/properties/{propertyId}?tab=media")).Content.ReadAsStringAsync();
         Assert.Contains("walkthrough-map-heading", oneStop, StringComparison.Ordinal);
         Assert.Contains("Approved tour media", oneStop, StringComparison.Ordinal);
+        Assert.Contains("Remove clutter with AI is not configured", oneStop, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Media sections\"", oneStop, StringComparison.Ordinal);
         Assert.Contains("Tour map", oneStop, StringComparison.Ordinal);
         Assert.DoesNotContain("getElementById('media-map')", oneStop, StringComparison.Ordinal);

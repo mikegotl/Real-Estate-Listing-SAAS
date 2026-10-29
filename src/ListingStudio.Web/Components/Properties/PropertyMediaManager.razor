@@ -277,11 +277,16 @@
                             <MudMenuItem Icon="@Icons.Material.Filled.CropRotate" OnClick="@(() => FixSelectedAsync(PhotoFix.LevelAndCrop))">
                                 Straighten and auto-crop
                             </MudMenuItem>
-                            @if (photoFixService?.IsClutterRemovalEnabled == true)
+                            <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices"
+                                         Disabled="@(!IsClutterRemovalAvailable)"
+                                         OnClick="@(() => FixSelectedAsync(PhotoFix.RemoveClutter))">
+                                Remove clutter with AI
+                            </MudMenuItem>
+                            @if (!IsClutterRemovalAvailable)
                             {
-                                <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices" OnClick="@(() => FixSelectedAsync(PhotoFix.RemoveClutter))">
-                                    Remove clutter with AI
-                                </MudMenuItem>
+                                <MudText Typo="Typo.caption" Class="px-4 pb-2 d-block">
+                                    Enable the approved AI photo-edit provider to use this fix.
+                                </MudText>
                             }
                         </MudMenu>
                         <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
@@ -355,6 +360,8 @@
         && gallery.All(item => selectedGalleryIds.Contains(item.Id));
 
     private bool AnyPhotoFixRunning => photoFixes.Values.Any(fix => fix.IsInProgress);
+
+    private bool IsClutterRemovalAvailable => photoFixService?.IsClutterRemovalEnabled == true;
 
     private bool ShowWalkthroughPanel => transitions.Count > 0
         && (transitionService?.IsEnabled == true || ReadyTransitionCount > 0);
@@ -619,7 +626,7 @@
                 <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
                     <ActivatorContent Context="menu">
                         <button type="button" class="photo-fix-button" title="Fix this photo" @onclick="menu.ToggleAsync"
-                                aria-label="@($"Fix {item.OriginalFilename}")">
+                                aria-label="@($"Fix {item.OriginalFilename}. Remove clutter with AI is {(IsClutterRemovalAvailable ? "available" : "not configured")}.")">
                             <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Size="Size.Small" />Fix
                         </button>
                     </ActivatorContent>
@@ -630,11 +637,16 @@
                         <MudMenuItem Icon="@Icons.Material.Filled.CropRotate" OnClick="@(() => RequestFixAsync(item, PhotoFix.LevelAndCrop))">
                             Straighten and auto-crop
                         </MudMenuItem>
-                        @if (photoFixService?.IsClutterRemovalEnabled == true)
+                        <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices"
+                                     Disabled="@(!IsClutterRemovalAvailable)"
+                                     OnClick="@(() => RequestFixAsync(item, PhotoFix.RemoveClutter))">
+                            Remove clutter with AI
+                        </MudMenuItem>
+                        @if (!IsClutterRemovalAvailable)
                         {
-                            <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices" OnClick="@(() => RequestFixAsync(item, PhotoFix.RemoveClutter))">
-                                Remove clutter with AI
-                            </MudMenuItem>
+                            <MudText Typo="Typo.caption" Class="px-4 pb-2 d-block">
+                                Enable the approved AI photo-edit provider to use this fix.
+                            </MudText>
                         }
                         @if (item.HasOriginal)
                         {
