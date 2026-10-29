@@ -103,7 +103,7 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
     }
 
     [Fact]
-    public async Task AerialIntroUploadsOnlyTheFrontPhotoAndAsksForAPullBackToTheChosenHeight()
+    public async Task AerialIntroUploadsOnlyTheFrontPhotoAndUsesTheLowAerialMotionProfile()
     {
         var handler = new RoutingHandler(request => request.RequestUri!.ToString() switch
         {
@@ -131,11 +131,46 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         var root = generation.RootElement;
         Assert.StartsWith("https://cdn.storage.test/", root.GetProperty("image_url").GetString(), StringComparison.Ordinal);
         Assert.False(root.TryGetProperty("last_image_url", out _));
+        Assert.Equal(HiggsfieldWalkthroughVideoProvider.LowAerialIntroDurationSeconds, root.GetProperty("duration").GetInt32());
+        Assert.Equal(HiggsfieldWalkthroughVideoProvider.AerialIntroPromptAdherence, root.GetProperty("cfg_scale").GetDecimal());
         var prompt = root.GetProperty("prompt").GetString()!;
-        Assert.Contains("climbing to about 50 feet", prompt, StringComparison.Ordinal);
+        Assert.Contains("approximately 50-foot aerial viewpoint", prompt, StringComparison.Ordinal);
+        Assert.Contains("Do not merely hover, drift a few feet", prompt, StringComparison.Ordinal);
+        Assert.Contains("clearly above the roofline", prompt, StringComparison.Ordinal);
         Assert.Contains("Do not add a swimming pool", prompt, StringComparison.Ordinal);
         Assert.StartsWith("higgsfield/", provider.AerialIntroGenerationVersion, StringComparison.Ordinal);
         Assert.NotEqual(provider.GenerationVersion, provider.AerialIntroGenerationVersion);
+    }
+
+    [Fact]
+    public async Task HighAerialIntroUsesALongerClipAndRequiresAVisibleScaleChange()
+    {
+        var handler = new RoutingHandler(request => request.RequestUri!.ToString() switch
+        {
+            "https://api.higgsfield.test/files/generate-upload-url" => Json(new
+            {
+                upload_url = $"https://uploads.storage.test/{Guid.NewGuid():N}",
+                public_url = $"https://cdn.storage.test/{Guid.NewGuid():N}.jpg",
+            }),
+            "https://api.higgsfield.test/kling-video/v3.0/std/image-to-video" => Json(new { status = "queued", request_id = "req_high_aerial" }),
+            _ when request.RequestUri!.Host == "uploads.storage.test" => new HttpResponseMessage(HttpStatusCode.OK),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var client = new HttpClient(handler);
+        await using var front = new MemoryStream([9, 8, 7]);
+
+        await CreateProvider(client).SubmitAerialIntroAsync(new AerialIntroVideoSubmission(
+            new WalkthroughVideoFrame(front, "image/jpeg"),
+            AerialIntroClip.HighHeightFeet,
+            "aerial-high"));
+
+        using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
+        var root = generation.RootElement;
+        Assert.Equal(HiggsfieldWalkthroughVideoProvider.HighAerialIntroDurationSeconds, root.GetProperty("duration").GetInt32());
+        var prompt = root.GetProperty("prompt").GetString()!;
+        Assert.Contains("approximately 100-foot aerial viewpoint", prompt, StringComparison.Ordinal);
+        Assert.Contains("entire roof", prompt, StringComparison.Ordinal);
+        Assert.Contains("house should be much smaller", prompt, StringComparison.Ordinal);
     }
 
     [Fact]

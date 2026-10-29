@@ -31,7 +31,16 @@ internal static class AerialIntroSource
             : null;
     }
 
-    /// <summary>A clip still matches the tour when it lands on today's front photo, made from today's version of it.</summary>
-    public static bool IsCurrent(AerialIntroClip clip, AerialIntroFrontPhoto? front) =>
-        front is not null && clip.PropertyMediaId == front.Id && clip.SourceBlobPath == front.BlobPath;
+    /// <summary>
+    /// A clip still matches the tour when it lands on today's front photo, was made from today's version of it, and
+    /// uses the provider's current aerial motion profile.
+    /// </summary>
+    public static bool IsCurrent(
+        AerialIntroClip clip,
+        AerialIntroFrontPhoto? front,
+        string currentGenerationVersion) =>
+        front is not null
+        && clip.PropertyMediaId == front.Id
+        && clip.SourceBlobPath == front.BlobPath
+        && clip.GenerationVersion == currentGenerationVersion;
 }

@@ -53,7 +53,7 @@
         }
         else if (intro.IsInProgress)
         {
-            <p class="aerial-intro-copy">Making a @intro.HeightFeet ft drone intro. This usually takes a few minutes; you'll get a notification when it is ready to review.</p>
+            <p class="aerial-intro-copy">Making a @ProfileName(intro.HeightFeet) drone intro. This usually takes a few minutes; you'll get a notification when it is ready to review.</p>
             <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
             @if (!IsReadOnly)
             {
@@ -76,7 +76,7 @@
         else if (!intro.IsCurrent)
         {
             <MudAlert Severity="Severity.Warning" Dense="true" Class="my-2">
-                The Exterior front photo changed since this intro was made, so videos don't use it. Make a new one to match the tour.
+                The Exterior front photo or drone motion profile changed since this intro was made, so videos don't use it. Make a new one to match the tour.
             </MudAlert>
             @if (!IsReadOnly)
             {
@@ -124,8 +124,8 @@
 @code {
     private static readonly (int Feet, string Label)[] Heights =
     [
-        (AerialIntroClip.LowHeightFeet, "Low · about 50 ft"),
-        (AerialIntroClip.HighHeightFeet, "High · about 100 ft"),
+        (AerialIntroClip.LowHeightFeet, "Low aerial · approximately 50 ft"),
+        (AerialIntroClip.HighHeightFeet, "High aerial · approximately 100 ft"),
     ];
 
     [Parameter, EditorRequired]
@@ -156,8 +156,12 @@
     private string? error;
 
     private string HeightHint => heightFeet == AerialIntroClip.LowHeightFeet
-        ? "Recommended. Starts low over the street and mostly sees the front of the home, so the AI invents less."
-        : "Starts higher and sees more of the roof and surroundings, all of which the AI makes up.";
+        ? "Recommended. Uses an 8-second climb above the roofline while limiting how much the AI must invent."
+        : "Uses a 12-second climb for a much wider roof, lot and street reveal, all of which the AI makes up.";
+
+    private static string ProfileName(int feet) => feet == AerialIntroClip.HighHeightFeet
+        ? "high aerial (approximately 100 ft)"
+        : "low aerial (approximately 50 ft)";
 
     private string StatusText => intro switch
     {

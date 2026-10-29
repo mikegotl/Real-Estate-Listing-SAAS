@@ -33,7 +33,7 @@ public sealed partial class AerialIntroService(
         }
 
         var front = await AerialIntroSource.LoadFrontPhotoAsync(dbContext, organizationId, propertyId, cancellationToken);
-        return ToItem(clip, AerialIntroSource.IsCurrent(clip, front));
+        return ToItem(clip, AerialIntroSource.IsCurrent(clip, front, provider.AerialIntroGenerationVersion));
     }
 
     public async Task<AerialIntroItem> RequestAsync(
@@ -120,10 +120,10 @@ public sealed partial class AerialIntroService(
         }
 
         var front = await AerialIntroSource.LoadFrontPhotoAsync(dbContext, organizationId, propertyId, cancellationToken);
-        if (!AerialIntroSource.IsCurrent(clip, front))
+        if (!AerialIntroSource.IsCurrent(clip, front, provider.AerialIntroGenerationVersion))
         {
             throw new InvalidOperationException(
-                "The Exterior front photo changed since this intro was made. Make a new one to match the tour.");
+                "The Exterior front photo or drone motion profile changed since this intro was made. Make a new one to match the tour.");
         }
 
         if (!clip.IsApproved)
