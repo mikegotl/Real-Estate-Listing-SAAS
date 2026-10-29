@@ -37,6 +37,17 @@ public sealed class OrganizationMember
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         return new OrganizationMember(organizationId, userId, OrganizationMemberRole.Owner);
     }
+
+    public static OrganizationMember CreateMember(Guid organizationId, string userId)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ArgumentException("An organization is required.", nameof(organizationId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        return new OrganizationMember(organizationId, userId, OrganizationMemberRole.Member);
+    }
 }
 
 public enum OrganizationMemberRole

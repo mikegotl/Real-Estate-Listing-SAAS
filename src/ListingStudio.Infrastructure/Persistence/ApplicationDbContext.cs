@@ -59,6 +59,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<CampaignStillPost> CampaignStillPosts => Set<CampaignStillPost>();
 
+    public DbSet<CampaignSettingsPreset> CampaignSettingsPresets => Set<CampaignSettingsPreset>();
+
     public DbSet<CampaignVideoChatMessage> CampaignVideoChatMessages => Set<CampaignVideoChatMessage>();
 
     public DbSet<CampaignVideoRevision> CampaignVideoRevisions => Set<CampaignVideoRevision>();
