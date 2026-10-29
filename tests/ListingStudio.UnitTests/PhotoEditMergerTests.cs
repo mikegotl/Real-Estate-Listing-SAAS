@@ -1,4 +1,5 @@
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Properties;
 using Xunit;
 
 namespace ListingStudio.UnitTests;
@@ -61,6 +62,46 @@ public sealed class PhotoEditMergerTests
             () => PhotoEditMerger.Merge(original, Shift(original, red: 5, green: 5, blue: 5)));
 
         Assert.Contains("no clutter", rejection.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MaskedMergeKeepsEveryPixelOutsideTheApprovedArea()
+    {
+        var original = Room(withClutter: true);
+        var edited = Room(withClutter: false, seed: 7);
+        PhotoEditRegion[] regions = [new(.48m, .7m, .16m, .2m)];
+
+        var merge = PhotoEditMerger.MergeMasked(original, edited, regions);
+
+        for (var y = 0; y < Height; y++)
+        {
+            for (var x = 0; x < Width; x++)
+            {
+                var normalizedX = (x + .5) / Width;
+                var normalizedY = (y + .5) / Height;
+                var inside = regions.Any(region =>
+                    normalizedX >= (double)region.X
+                    && normalizedX <= (double)(region.X + region.Width)
+                    && normalizedY >= (double)region.Y
+                    && normalizedY <= (double)(region.Y + region.Height));
+                if (!inside)
+                {
+                    Assert.Equal(Pixel(original, x, y), Pixel(merge.Photo, x, y));
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void PhotoEditMaskRoundTripsAndLimitsTheAllowedArea()
+    {
+        PhotoEditRegion[] regions = [new(.1m, .2m, .2m, .3m), new(.6m, .5m, .1m, .1m)];
+
+        var decoded = PhotoEditMask.Decode(PhotoEditMask.Encode(regions));
+
+        Assert.Equal(regions, decoded);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PhotoEditMask.Encode([new(0, 0, .8m, .8m)]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PhotoEditMask.Encode([new(.9m, .9m, .2m, .2m)]));
     }
 
     // A synthetic room: a wall with doorways and a window, a floor with boards, and an optional shoe.

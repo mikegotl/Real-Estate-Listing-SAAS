@@ -407,6 +407,13 @@ h1:focus { outline: none; }
 .photo-fix-edited { align-items: center; background: var(--ls-surface); border: 0; border-radius: 999px; bottom: 6px; color: var(--ls-accent-strong); cursor: pointer; display: inline-flex; font: inherit; font-size: .7rem; font-weight: 750; gap: 3px; left: 6px; padding: 2px 8px 2px 5px; position: absolute; }
 .photo-fix-edited:focus-visible { outline: 2px solid var(--ls-primary); outline-offset: 2px; }
 .photo-fix-progress { align-items: center; background: rgba(var(--ls-night-rgb), .62); color: var(--ls-on-night); display: flex; flex-direction: column; font-size: .78rem; font-weight: 650; gap: 6px; inset: 0; justify-content: center; position: absolute; text-align: center; }
+.photo-fix-progress.review { border: 0; cursor: pointer; width: 100%; }
+.photo-fix-progress.review:hover, .photo-fix-progress.review:focus-visible { background: rgba(var(--ls-night-rgb), .78); outline: 3px solid var(--ls-accent); outline-offset: -3px; }
+.help-chat-photo-context { align-items: center; background: var(--ls-surface-muted); border-bottom: 1px solid var(--mud-palette-divider); display: grid; gap: .65rem; grid-template-columns: 48px 1fr auto; padding: .65rem .8rem; }
+.help-chat-photo-context img { border-radius: 8px; height: 48px; object-fit: cover; width: 48px; }
+.help-chat-photo-context strong, .help-chat-photo-context small { display: block; }
+.help-chat-photo-context small { color: var(--mud-palette-text-secondary); max-width: 15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.help-chat-photo-action { align-items: flex-start; background: rgba(var(--ls-accent-rgb), .12); border-radius: 10px; display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0; padding: .65rem; }
 .gallery-thumb-image { position: relative; }
 .photo-compare { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .photo-compare figure { margin: 0; }

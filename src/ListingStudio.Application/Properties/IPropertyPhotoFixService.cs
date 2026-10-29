@@ -27,6 +27,28 @@ public interface IPropertyPhotoFixService
         PhotoFix fix,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Queues an AI clutter edit limited to the areas the agent deliberately selected.</summary>
+    Task<bool> RequestClutterRemovalAsync(
+        string userId,
+        Guid propertyId,
+        Guid mediaId,
+        IReadOnlyCollection<PhotoEditRegion> regions,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Applies a reviewed AI cleanup to the listing photo.</summary>
+    Task<bool> ApproveCandidateAsync(
+        string userId,
+        Guid propertyId,
+        Guid fixId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Discards a reviewed AI cleanup without changing the listing photo.</summary>
+    Task<bool> RejectCandidateAsync(
+        string userId,
+        Guid propertyId,
+        Guid fixId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Puts the original upload back in place of the fixed photo.</summary>
     Task<bool> RevertAsync(
         string userId,
@@ -39,6 +61,12 @@ public interface IPropertyPhotoFixService
         string userId,
         Guid mediaId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>The generated cleanup waiting for the agent's approval.</summary>
+    Task<PropertyMediaContent?> OpenCandidateReadAsync(
+        string userId,
+        Guid fixId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record PropertyPhotoFixItem(
@@ -47,7 +75,8 @@ public sealed record PropertyPhotoFixItem(
     PhotoFix Kind,
     PropertyPhotoFixStatus Status,
     string? Error,
-    bool IsInProgress);
+    bool IsInProgress,
+    bool IsAwaitingApproval);
 
 public interface IPropertyPhotoFixProcessor
 {

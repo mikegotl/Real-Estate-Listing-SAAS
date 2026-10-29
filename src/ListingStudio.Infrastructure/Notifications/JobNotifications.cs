@@ -173,6 +173,13 @@ public static class JobNotificationText
             JobNotifications.MediaTab);
     }
 
+    public static JobNotificationContent PhotoCleanupReady(string property) => new(
+        UserNotificationKind.PhotoFixes,
+        UserNotificationOutcome.Succeeded,
+        "Photo cleanup ready to review",
+        $"The AI cleanup for a photo at {property} is ready. Compare it with the upload on the Media tab, then use or discard it.",
+        JobNotifications.MediaTab);
+
     public static JobNotificationContent CampaignCompleted(string property) => new(
         UserNotificationKind.Campaign,
         UserNotificationOutcome.Succeeded,

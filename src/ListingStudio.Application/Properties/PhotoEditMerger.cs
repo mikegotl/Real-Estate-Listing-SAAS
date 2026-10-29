@@ -1,3 +1,5 @@
+using ListingStudio.Domain.Properties;
+
 namespace ListingStudio.Application.Properties;
 
 /// <summary>
@@ -24,6 +26,8 @@ public static class PhotoEditMerger
     // Grow each changed area slightly so a removed item's edges and shadow go with it, then soften the seam.
     private const int DilateCells = 2;
     private const int FeatherCells = 2;
+
+    private const double MaskEdgeFeather = 0.008;
 
     /// <summary>
     /// Returns the original photo with the edit's changed areas pasted in. <paramref name="edited"/> is the edit cut
@@ -99,6 +103,104 @@ public static class PhotoEditMerger
         }
 
         return new PhotoEditMerge(new PhotoPixels(original.Width, original.Height, result), changedFraction);
+    }
+
+    /// <summary>
+    /// Keeps every pixel outside the agent-approved regions exactly as uploaded and takes generated pixels only from
+    /// inside those regions. The agent reviews the result before it is allowed to replace the listing photo.
+    /// </summary>
+    public static PhotoEditMerge MergeMasked(
+        PhotoPixels original,
+        PhotoPixels edited,
+        IReadOnlyCollection<PhotoEditRegion> regions)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        ArgumentNullException.ThrowIfNull(edited);
+        PhotoEditMask.Encode(regions);
+
+        var gridWidth = Math.Min(GridWidth, original.Width);
+        var gridHeight = Math.Max(1, (int)Math.Round(original.Height * gridWidth / (double)original.Width));
+        var before = Downscale(original, gridWidth, gridHeight);
+        var after = Downscale(edited, gridWidth, gridHeight);
+        var tone = ToneMatch.Between(after, before);
+        tone.Apply(after);
+
+        var changedInside = 0;
+        var selectedCells = 0;
+        for (var y = 0; y < gridHeight; y++)
+        {
+            for (var x = 0; x < gridWidth; x++)
+            {
+                var nx = (x + .5) / gridWidth;
+                var ny = (y + .5) / gridHeight;
+                if (!regions.Any(region => Contains(region, nx, ny)))
+                {
+                    continue;
+                }
+
+                selectedCells++;
+                var offset = (y * gridWidth + x) * 3;
+                var difference = Math.Max(
+                    Math.Abs(before[offset] - after[offset]),
+                    Math.Max(Math.Abs(before[offset + 1] - after[offset + 1]), Math.Abs(before[offset + 2] - after[offset + 2])));
+                if (difference > ChangedThreshold / 2)
+                {
+                    changedInside++;
+                }
+            }
+        }
+
+        if (selectedCells == 0 || changedInside == 0)
+        {
+            throw new PhotoFixRejectedException("The AI found no removable clutter in the selected areas, so the photo was left as it was.");
+        }
+
+        var result = (byte[])original.Rgb.Clone();
+        for (var y = 0; y < original.Height; y++)
+        {
+            var ny = (y + .5) / original.Height;
+            var editedY = Math.Min(edited.Height - 1, (int)((y + .5) * edited.Height / original.Height));
+            for (var x = 0; x < original.Width; x++)
+            {
+                var nx = (x + .5) / original.Width;
+                var weight = regions.Max(region => MaskWeight(region, nx, ny));
+                if (weight <= 0)
+                {
+                    continue;
+                }
+
+                var editedX = Math.Min(edited.Width - 1, (int)((x + .5) * edited.Width / original.Width));
+                var source = (editedY * edited.Width + editedX) * 3;
+                var target = (y * original.Width + x) * 3;
+                for (var channel = 0; channel < 3; channel++)
+                {
+                    var patch = tone.Map(channel, edited.Rgb[source + channel]);
+                    result[target + channel] = (byte)Math.Round(
+                        result[target + channel] * (1 - weight) + patch * weight);
+                }
+            }
+        }
+
+        return new PhotoEditMerge(
+            new PhotoPixels(original.Width, original.Height, result),
+            changedInside / (double)Math.Max(1, gridWidth * gridHeight));
+    }
+
+    private static bool Contains(PhotoEditRegion region, double x, double y) =>
+        x >= (double)region.X && x <= (double)(region.X + region.Width)
+        && y >= (double)region.Y && y <= (double)(region.Y + region.Height);
+
+    private static double MaskWeight(PhotoEditRegion region, double x, double y)
+    {
+        if (!Contains(region, x, y))
+        {
+            return 0;
+        }
+
+        var distance = Math.Min(
+            Math.Min(x - (double)region.X, (double)(region.X + region.Width) - x),
+            Math.Min(y - (double)region.Y, (double)(region.Y + region.Height) - y));
+        return Math.Clamp(distance / MaskEdgeFeather, 0, 1);
     }
 
     // Box-averages a photo onto the comparison grid.

@@ -30,6 +30,7 @@ public interface IHelpChatService
         string text,
         string? pagePath,
         Guid? propertyId,
+        Guid? selectedMediaId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>The finished videos of the property's latest campaign, which the user can ask about one by one.</summary>
@@ -39,7 +40,11 @@ public interface IHelpChatService
         CancellationToken cancellationToken = default);
 }
 
-public sealed record HelpChat(Guid? ConversationId, int MessagesLeftToday, IReadOnlyList<HelpChatEntry> Messages);
+public sealed record HelpChat(
+    Guid? ConversationId,
+    int MessagesLeftToday,
+    IReadOnlyList<HelpChatEntry> Messages,
+    HelpChatPhotoAction? ProposedPhotoAction = null);
 
 public sealed record HelpChatEntry(Guid Id, HelpChatRole Role, string Text, DateTimeOffset CreatedAtUtc);
 
@@ -48,7 +53,7 @@ public sealed record HelpChatVideo(Guid JobId, CampaignOutputKind Kind, string N
 /// <summary>Answers questions about using Listing Studio from its built-in product guide.</summary>
 public interface IHelpChatAssistant
 {
-    Task<string> ReplyAsync(HelpChatRequest request, CancellationToken cancellationToken = default);
+    Task<HelpChatAssistantReply> ReplyAsync(HelpChatRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed record HelpChatTurn(HelpChatRole Role, string Text);
@@ -62,7 +67,19 @@ public sealed record HelpChatPropertySummary(
     string? LatestCampaignProblem,
     IReadOnlyList<string> FinishedVideos);
 
+public sealed record HelpChatPhotoSummary(string Filename, string? TourStop, bool ClutterRemovalAvailable);
+
+public enum HelpChatPhotoAction
+{
+    FixBrightnessAndColor,
+    StraightenAndCrop,
+    RemoveSelectedClutter,
+}
+
+public sealed record HelpChatAssistantReply(string Text, HelpChatPhotoAction? PhotoAction);
+
 public sealed record HelpChatRequest(
     string? PagePath,
     HelpChatPropertySummary? Property,
+    HelpChatPhotoSummary? Photo,
     IReadOnlyList<HelpChatTurn> Conversation);

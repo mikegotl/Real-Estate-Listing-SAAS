@@ -12,6 +12,7 @@ using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Video.DependencyInjection;
 using ListingStudio.Web;
 using ListingStudio.Web.Components;
+using ListingStudio.Web.Components.Properties;
 using ListingStudio.Web.Components.Account;
 using ListingStudio.Web.Authentication;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -60,6 +61,7 @@ builder.Services.AddListingStudioDataProtection(builder.Configuration, builder.E
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+builder.Services.AddScoped<PhotoAssistantSelectionState>();
 builder.Services.AddSingleton<DevelopmentEmailStore>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
@@ -303,6 +305,24 @@ app.MapGet("/property-media/{mediaId:guid}/original", async (
     }
 
     var media = await photoFixService.OpenOriginalReadAsync(userId, mediaId, cancellationToken);
+    return media is null
+        ? Results.NotFound()
+        : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
+app.MapGet("/photo-fixes/{fixId:guid}/candidate", async (
+    Guid fixId,
+    HttpContext context,
+    IPropertyPhotoFixService photoFixService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var media = await photoFixService.OpenCandidateReadAsync(userId, fixId, cancellationToken);
     return media is null
         ? Results.NotFound()
         : Results.Stream(media.Content, media.MimeType, enableRangeProcessing: true);

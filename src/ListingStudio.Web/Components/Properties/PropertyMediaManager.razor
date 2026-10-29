@@ -2,6 +2,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IServiceScopeFactory ScopeFactory
 @inject IDialogService DialogService
+@inject PhotoAssistantSelectionState PhotoAssistantState
 @inject Microsoft.Extensions.Options.IOptions<MediaAnalysisOptions> MediaAnalysisOptions
 
 <MudPaper Class="pa-6 mt-6 storyboard">
@@ -520,6 +521,9 @@
                                    Disabled="@(itemIndex == group.Count - 1)" aria-label="Move photo later"
                                    OnClick="@(() => MoveWithinGroupAsync(group, itemIndex, 1))" />
                     <MudSpacer />
+                    <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Small"
+                                   aria-label="@($"Ask AI about {item.OriginalFilename}")"
+                                   OnClick="@(() => SelectForAssistant(item))" />
                     <MudMenu Label="@(context.Stop is null ? "Add to stop" : "Move")" StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" Dense="true"
                              Variant="Variant.Text" Color="Color.Primary"
                              AriaLabel="@(context.Stop is null ? "Place photo in a stop" : "Move photo to another stop")">
@@ -583,6 +587,9 @@
             {
                 <div class="gallery-thumb-actions">
                     <MudSpacer />
+                    <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Small"
+                                   aria-label="@($"Ask AI about {item.OriginalFilename}")"
+                                   OnClick="@(() => SelectForAssistant(item))" />
                     <MudMenu Label="Add to stop" StartIcon="@Icons.Material.Filled.AddLocationAlt" Size="Size.Small" Dense="true"
                              Variant="Variant.Text" Color="Color.Primary" AriaLabel="Place photo in a stop">
                         <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">Choose the room where this belongs</MudText>
@@ -605,12 +612,20 @@
     {
         var item = photo.Item;
         var running = photo.Fix?.IsInProgress == true;
+        var awaitingApproval = photo.Fix?.IsAwaitingApproval == true;
         @if (running)
         {
             <div class="photo-fix-progress" role="status">
                 <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="Color.Inherit" />
                 <span>@PhotoFixText.InProgress(photo.Fix!.Kind)</span>
             </div>
+        }
+        else if (awaitingApproval)
+        {
+            <button type="button" class="photo-fix-progress review" title="Review the proposed AI cleanup"
+                    @onclick="@(() => ReviewCandidateAsync(item, photo.Fix!))">
+                <MudIcon Icon="@Icons.Material.Filled.RateReview" Size="Size.Small" />Review cleanup
+            </button>
         }
         else if (item.HasOriginal)
         {
@@ -620,7 +635,7 @@
             </button>
         }
 
-        @if (!IsReadOnly && !running)
+        @if (!IsReadOnly && !running && !awaitingApproval)
         {
             <div class="photo-fix-menu">
                 <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
@@ -639,7 +654,7 @@
                         </MudMenuItem>
                         <MudMenuItem Icon="@Icons.Material.Filled.CleaningServices"
                                      Disabled="@(!IsClutterRemovalAvailable)"
-                                     OnClick="@(() => RequestFixAsync(item, PhotoFix.RemoveClutter))">
+                                     OnClick="@(() => RequestClutterRemovalAsync(item))">
                             Remove clutter with AI
                         </MudMenuItem>
                         @if (!IsClutterRemovalAvailable)
@@ -662,6 +677,14 @@
 
     private RenderFragment PhotoFixStatus(PropertyPhotoFixItem? fix) => __builder =>
     {
+        @if (fix?.IsAwaitingApproval == true)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" Class="storyboard-suggest"
+                       StartIcon="@Icons.Material.Filled.RateReview"
+                       OnClick="@(() => ReviewCandidateAsync(MediaById(fix.PropertyMediaId), fix))">
+                Review AI cleanup
+            </MudButton>
+        }
         @if (fix is { IsInProgress: false, Status: PropertyPhotoFixStatus.Failed })
         {
             @if (fix.Kind == PhotoFix.LevelAndCrop)
@@ -926,6 +949,111 @@
         }
     }
 
+    private async Task RequestClutterRemovalAsync(PropertyMediaItem item)
+    {
+        if (photoFixService is null)
+        {
+            return;
+        }
+
+        var dialog = await DialogService.ShowAsync<PhotoClutterMaskDialog>(
+            "Mark clutter",
+            new DialogParameters<PhotoClutterMaskDialog>
+            {
+                { component => component.ImageUrl, PhotoUrl(item) },
+                { component => component.Filename, item.OriginalFilename },
+            },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result is not { Canceled: false, Data: PhotoEditRegion[] regions } || regions.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            bool requested;
+            await photoFixGate.WaitAsync();
+            try
+            {
+                requested = await photoFixService.RequestClutterRemovalAsync(
+                    userId, PropertyId, item.Id, regions);
+            }
+            finally
+            {
+                photoFixGate.Release();
+            }
+
+            if (requested)
+            {
+                await LoadPhotoFixesAsync(userId);
+                ShowMessage(
+                    "Creating a cleanup preview from only the areas you marked. The current photo stays in use until you approve it.",
+                    Severity.Success);
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task ReviewCandidateAsync(PropertyMediaItem item, PropertyPhotoFixItem fix)
+    {
+        if (photoFixService is null)
+        {
+            return;
+        }
+
+        var dialog = await DialogService.ShowAsync<PhotoFixCandidateDialog>(
+            "Review AI cleanup",
+            new DialogParameters<PhotoFixCandidateDialog>
+            {
+                { component => component.MediaId, item.Id },
+                { component => component.FixId, fix.FixId },
+                { component => component.Filename, item.OriginalFilename },
+            },
+            new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result is not { Canceled: false, Data: bool approve })
+        {
+            return;
+        }
+
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            bool changed;
+            await photoFixGate.WaitAsync();
+            try
+            {
+                changed = approve
+                    ? await photoFixService.ApproveCandidateAsync(userId, PropertyId, fix.FixId)
+                    : await photoFixService.RejectCandidateAsync(userId, PropertyId, fix.FixId);
+            }
+            finally
+            {
+                photoFixGate.Release();
+            }
+
+            if (changed)
+            {
+                await LoadAsync();
+                ShowMessage(
+                    approve ? "AI cleanup approved and applied." : "AI cleanup discarded. The current photo was not changed.",
+                    Severity.Success);
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            ShowMessage(exception.Message, Severity.Error);
+        }
+    }
+
+    private PropertyMediaItem MediaById(Guid mediaId) =>
+        media.Single(item => item.Id == mediaId);
+
     private async Task CompareAsync(PropertyMediaItem item)
     {
         var dialog = await DialogService.ShowAsync<PhotoFixCompareDialog>(
@@ -1020,6 +1148,7 @@
 
     protected override async ValueTask DisposeAsyncCore()
     {
+        PhotoAssistantState.PhotoFixQueued -= OnAssistantPhotoFixQueued;
         transitionPolling.Cancel();
         transitionPolling.Dispose();
         if (transitionScope is { } scope)
@@ -1034,6 +1163,25 @@
 
         await base.DisposeAsyncCore();
     }
+
+    protected override void OnInitialized()
+    {
+        PhotoAssistantState.PhotoFixQueued += OnAssistantPhotoFixQueued;
+        base.OnInitialized();
+    }
+
+    private void SelectForAssistant(PropertyMediaItem item) => PhotoAssistantState.Select(new PhotoAssistantSelection(
+        PropertyId,
+        item.Id,
+        item.OriginalFilename,
+        PhotoUrl(item)));
+
+    private void OnAssistantPhotoFixQueued() => _ = InvokeAsync(async () =>
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await LoadPhotoFixesAsync(userId);
+        StateHasChanged();
+    });
 
     private void BuildStoryboard()
     {

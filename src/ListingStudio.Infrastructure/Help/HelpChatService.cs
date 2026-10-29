@@ -1,5 +1,6 @@
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Help;
+using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Help;
 using ListingStudio.Infrastructure.Campaigns;
@@ -12,6 +13,7 @@ namespace ListingStudio.Infrastructure.Help;
 public sealed partial class HelpChatService(
     ApplicationDbContext dbContext,
     IHelpChatAssistant assistant,
+    IPropertyPhotoFixService photoFixService,
     IAiUsagePropertyContext aiUsagePropertyContext,
     TimeProvider timeProvider,
     ILogger<HelpChatService> logger) : IHelpChatService
@@ -40,6 +42,7 @@ public sealed partial class HelpChatService(
         string text,
         string? pagePath,
         Guid? propertyId,
+        Guid? selectedMediaId,
         CancellationToken cancellationToken = default)
     {
         var normalized = text?.Trim() ?? string.Empty;
@@ -69,6 +72,14 @@ public sealed partial class HelpChatService(
             : null;
 
         var conversation = conversationId ?? Guid.NewGuid();
+        var selectedPhoto = property is not null && selectedMediaId is { } mediaId
+            ? await dbContext.PropertyMedia.AsNoTracking()
+                .Where(media => media.Id == mediaId
+                    && media.PropertyId == property.Id
+                    && media.OrganizationId == organizationId)
+                .Select(media => new { media.OriginalFilename, media.WalkthroughStop })
+                .SingleOrDefaultAsync(cancellationToken)
+            : null;
         var history = conversationId is null
             ? []
             : await dbContext.HelpChatMessages.AsNoTracking()
@@ -83,13 +94,19 @@ public sealed partial class HelpChatService(
             property is null
                 ? null
                 : await SummarizeAsync(organizationId, property.Id, $"{property.Address1}, {property.City}, {property.State}", cancellationToken),
+            selectedPhoto is null
+                ? null
+                : new HelpChatPhotoSummary(
+                    selectedPhoto.OriginalFilename,
+                    selectedPhoto.WalkthroughStop,
+                    photoFixService.IsClutterRemovalEnabled),
             history
                 .OrderBy(message => message.CreatedAtUtc)
                 .Select(message => new HelpChatTurn(message.Role, message.Text))
                 .Append(new HelpChatTurn(HelpChatRole.User, normalized))
                 .ToArray());
 
-        string reply;
+        HelpChatAssistantReply reply;
         try
         {
             using (property is null ? null : aiUsagePropertyContext.BeginProperty(property.Id))
@@ -109,9 +126,12 @@ public sealed partial class HelpChatService(
         var now = timeProvider.GetUtcNow();
         var question = HelpChatMessage.FromUser(organizationId, userId, conversation, normalized, pagePath, property?.Id, now);
         dbContext.HelpChatMessages.Add(question);
-        dbContext.HelpChatMessages.Add(HelpChatMessage.FromAssistant(question, reply, now.AddMilliseconds(1)));
+        dbContext.HelpChatMessages.Add(HelpChatMessage.FromAssistant(question, reply.Text, now.AddMilliseconds(1)));
         await dbContext.SaveChangesAsync(cancellationToken);
-        return await ToChatAsync(organizationId, userId, conversation, cancellationToken);
+        return (await ToChatAsync(organizationId, userId, conversation, cancellationToken)) with
+        {
+            ProposedPhotoAction = reply.PhotoAction,
+        };
     }
 
     public async Task<IReadOnlyList<HelpChatVideo>> GetVideosAsync(

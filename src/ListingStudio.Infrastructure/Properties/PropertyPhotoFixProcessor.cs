@@ -66,7 +66,15 @@ public sealed partial class PropertyPhotoFixProcessor(
             fix = claimed;
         }
 
-        var claim = new Claim(fix.Id, fix.OrganizationId, fix.PropertyId, fix.PropertyMediaId, fix.Kind, fix.SourceBlobPath, fix.AttemptCount);
+        var claim = new Claim(
+            fix.Id,
+            fix.OrganizationId,
+            fix.PropertyId,
+            fix.PropertyMediaId,
+            fix.Kind,
+            fix.SourceBlobPath,
+            fix.EditMask,
+            fix.AttemptCount);
         dbContext.ChangeTracker.Clear();
         string? storedPath = null;
         try
@@ -94,7 +102,11 @@ public sealed partial class PropertyPhotoFixProcessor(
                 fixedPhoto = claim.Kind switch
                 {
                     PhotoFix.BrightnessAndColor => await NormalizeAsync(original, source.MimeType, cancellationToken),
-                    PhotoFix.RemoveClutter => await RemoveClutterAsync(original, source.MimeType, cancellationToken),
+                    PhotoFix.RemoveClutter => await RemoveClutterAsync(
+                        original,
+                        source.MimeType,
+                        claim.EditMask ?? throw new InvalidDataException("The clutter selection is missing."),
+                        cancellationToken),
                     PhotoFix.LevelAndCrop => await LevelAndCropAsync(original, source.MimeType, cancellationToken),
                     _ => throw new InvalidOperationException("The photo fix is not supported."),
                 };
@@ -106,14 +118,20 @@ public sealed partial class PropertyPhotoFixProcessor(
                 await storage.StoreAsync(storedPath, stored, "image/jpeg", cancellationToken);
             }
 
-            var superseded = await ApplyAsync(claim, storedPath, jpeg.Length, fixedPhoto, cancellationToken);
+            var stagedForReview = claim.Kind == PhotoFix.RemoveClutter;
+            var superseded = stagedForReview
+                ? await StageCandidateAsync(claim, storedPath, jpeg.Length, fixedPhoto, cancellationToken)
+                : await ApplyAsync(claim, storedPath, jpeg.Length, fixedPhoto, cancellationToken);
             storedPath = null;
             if (superseded is not null)
             {
                 await storage.DeleteAsync(superseded, cancellationToken);
             }
 
-            await RequeueAffectedClipsAsync(claim, cancellationToken);
+            if (!stagedForReview)
+            {
+                await RequeueAffectedClipsAsync(claim, cancellationToken);
+            }
             return new PropertyPhotoFixRunResult(claim.FixId, claim.MediaId, claim.Kind, true, false, claim.Attempt, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -195,7 +213,11 @@ public sealed partial class PropertyPhotoFixProcessor(
                 "This photo already appears level, or it does not contain enough clear horizontal or vertical lines to straighten safely.");
     }
 
-    private async Task<PhotoPixels> RemoveClutterAsync(byte[] original, string mimeType, CancellationToken cancellationToken)
+    private async Task<PhotoPixels> RemoveClutterAsync(
+        byte[] original,
+        string mimeType,
+        string editMask,
+        CancellationToken cancellationToken)
     {
         if (!clutterRemover.IsEnabled)
         {
@@ -207,10 +229,22 @@ public sealed partial class PropertyPhotoFixProcessor(
         var (canvasWidth, canvasHeight) = PhotoEditCanvas.SizeFor(preview.Width, preview.Height);
         var fitted = await codec.DecodeAsync(original, mimeType, canvasWidth, canvasHeight, PhotoScaling.Fit, cancellationToken);
         var canvas = PhotoEditCanvas.Pad(fitted, canvasWidth, canvasHeight, out var region);
+        var selected = PhotoEditMask.Decode(editMask);
+        var canvasRegions = selected.Select(item => new PhotoRegion(
+            region.X + (int)Math.Floor((double)item.X * region.Width),
+            region.Y + (int)Math.Floor((double)item.Y * region.Height),
+            Math.Max(1, (int)Math.Ceiling((double)item.Width * region.Width)),
+            Math.Max(1, (int)Math.Ceiling((double)item.Height * region.Height))))
+            .Select(item => item with
+            {
+                Width = Math.Min(item.Width, canvasWidth - item.X),
+                Height = Math.Min(item.Height, canvasHeight - item.Y),
+            })
+            .ToArray();
         var edited = await clutterRemover.RemoveClutterAsync(
             new PhotoClutterRemovalRequest(
                 await codec.EncodePngAsync(canvas, cancellationToken),
-                await codec.EncodeMaskPngAsync(canvasWidth, canvasHeight, region, cancellationToken),
+                await codec.EncodeMaskPngAsync(canvasWidth, canvasHeight, canvasRegions, cancellationToken),
                 canvasWidth,
                 canvasHeight),
             cancellationToken);
@@ -225,7 +259,48 @@ public sealed partial class PropertyPhotoFixProcessor(
             MaximumFixedDimension,
             PhotoScaling.ShrinkToFit,
             cancellationToken);
-        return PhotoEditMerger.Merge(photo, PhotoEditCanvas.Crop(result, region)).Photo;
+        return PhotoEditMerger.MergeMasked(photo, PhotoEditCanvas.Crop(result, region), selected).Photo;
+    }
+
+    private async Task<string?> StageCandidateAsync(
+        Claim claim,
+        string storedPath,
+        long fileSize,
+        PhotoPixels fixedPhoto,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        var fix = await dbContext.PropertyPhotoFixes.SingleOrDefaultAsync(
+            candidate => candidate.Id == claim.FixId && candidate.OrganizationId == claim.OrganizationId,
+            cancellationToken);
+        var media = await dbContext.PropertyMedia.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.Id == claim.MediaId && candidate.OrganizationId == claim.OrganizationId,
+            cancellationToken);
+        if (fix is null
+            || fix.Status != PropertyPhotoFixStatus.Processing
+            || fix.AttemptCount != claim.Attempt
+            || media is null
+            || media.BlobPath != claim.SourceBlobPath)
+        {
+            throw new PhotoChangedException();
+        }
+
+        fix.StageCandidate(storedPath, "image/jpeg", fileSize, fixedPhoto.Width, fixedPhoto.Height, timeProvider.GetUtcNow());
+        var property = await JobNotifications.GetPropertyLabelAsync(
+            dbContext, claim.OrganizationId, claim.PropertyId, cancellationToken);
+        await JobNotifications.AddAsync(
+            dbContext,
+            claim.OrganizationId,
+            claim.PropertyId,
+            null,
+            JobNotificationText.PhotoCleanupReady(property),
+            timeProvider.GetUtcNow(),
+            cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return null;
     }
 
     private async Task<string?> ApplyAsync(
@@ -358,6 +433,7 @@ public sealed partial class PropertyPhotoFixProcessor(
         Guid MediaId,
         PhotoFix Kind,
         string SourceBlobPath,
+        string? EditMask,
         int Attempt);
 
     private sealed class PhotoChangedException() : Exception("The photo changed before its fix was applied.");

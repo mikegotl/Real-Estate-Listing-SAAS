@@ -20,7 +20,9 @@ public enum PropertyPhotoFixStatus
 {
     Pending,
     Processing,
+    AwaitingApproval,
     Completed,
+    Rejected,
     Failed,
 }
 
@@ -46,12 +48,19 @@ public sealed class PropertyPhotoFix
 
     // The photo content the fix starts from.
     public string SourceBlobPath { get; private set; } = string.Empty;
+    public string? EditMask { get; private set; }
+    public string? CandidateBlobPath { get; private set; }
+    public string? CandidateMimeType { get; private set; }
+    public long? CandidateFileSize { get; private set; }
+    public int? CandidateWidth { get; private set; }
+    public int? CandidateHeight { get; private set; }
     public int AttemptCount { get; private set; }
     public string? LastError { get; private set; }
     public DateTimeOffset RequestedAtUtc { get; private set; }
     public DateTimeOffset? LastAttemptedAtUtc { get; private set; }
     public DateTimeOffset? NextAttemptAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
+    public DateTimeOffset? StagedAtUtc { get; private set; }
 
     public bool IsInProgress => Status is PropertyPhotoFixStatus.Pending or PropertyPhotoFixStatus.Processing
         || (Status == PropertyPhotoFixStatus.Failed && NextAttemptAtUtc is not null);
@@ -62,7 +71,8 @@ public sealed class PropertyPhotoFix
         Guid propertyMediaId,
         PhotoFix kind,
         string sourceBlobPath,
-        DateTimeOffset requestedAtUtc)
+        DateTimeOffset requestedAtUtc,
+        string? editMask = null)
     {
         if (organizationId == Guid.Empty || propertyId == Guid.Empty || propertyMediaId == Guid.Empty)
         {
@@ -75,6 +85,16 @@ public sealed class PropertyPhotoFix
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceBlobPath);
+        if (kind == PhotoFix.RemoveClutter)
+        {
+            PhotoEditMask.Decode(editMask ?? throw new ArgumentException(
+                "Choose the clutter areas before requesting AI removal.", nameof(editMask)));
+        }
+        else if (editMask is not null)
+        {
+            throw new ArgumentException("Only clutter removal accepts an edit selection.", nameof(editMask));
+        }
+
         return new PropertyPhotoFix
         {
             Id = Guid.NewGuid(),
@@ -84,6 +104,7 @@ public sealed class PropertyPhotoFix
             Kind = kind,
             Status = PropertyPhotoFixStatus.Pending,
             SourceBlobPath = sourceBlobPath,
+            EditMask = editMask,
             RequestedAtUtc = requestedAtUtc,
         };
     }
@@ -116,6 +137,56 @@ public sealed class PropertyPhotoFix
         LastError = null;
     }
 
+    public void StageCandidate(
+        string blobPath,
+        string mimeType,
+        long fileSize,
+        int width,
+        int height,
+        DateTimeOffset now)
+    {
+        EnsureProcessing();
+        if (Kind != PhotoFix.RemoveClutter)
+        {
+            throw new InvalidOperationException("Only an AI clutter edit requires approval.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(blobPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mimeType);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fileSize);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        CandidateBlobPath = blobPath;
+        CandidateMimeType = mimeType;
+        CandidateFileSize = fileSize;
+        CandidateWidth = width;
+        CandidateHeight = height;
+        StagedAtUtc = now;
+        Status = PropertyPhotoFixStatus.AwaitingApproval;
+        NextAttemptAtUtc = null;
+        LastError = null;
+    }
+
+    public void ApproveCandidate(DateTimeOffset now)
+    {
+        EnsureCandidate();
+        Status = PropertyPhotoFixStatus.Completed;
+        CompletedAtUtc = now;
+    }
+
+    public string RejectCandidate()
+    {
+        EnsureCandidate();
+        var path = CandidateBlobPath!;
+        CandidateBlobPath = null;
+        CandidateMimeType = null;
+        CandidateFileSize = null;
+        CandidateWidth = null;
+        CandidateHeight = null;
+        Status = PropertyPhotoFixStatus.Rejected;
+        return path;
+    }
+
     /// <summary>Records a failure. A null retry time ends the request; otherwise the Worker tries again then.</summary>
     public void Fail(string error, DateTimeOffset? nextAttemptAtUtc)
     {
@@ -132,6 +203,19 @@ public sealed class PropertyPhotoFix
         if (Status != PropertyPhotoFixStatus.Processing)
         {
             throw new InvalidOperationException("The photo fix is not in progress.");
+        }
+    }
+
+    private void EnsureCandidate()
+    {
+        if (Status != PropertyPhotoFixStatus.AwaitingApproval
+            || CandidateBlobPath is null
+            || CandidateMimeType is null
+            || CandidateFileSize is null
+            || CandidateWidth is null
+            || CandidateHeight is null)
+        {
+            throw new InvalidOperationException("The photo fix has no result waiting for review.");
         }
     }
 }

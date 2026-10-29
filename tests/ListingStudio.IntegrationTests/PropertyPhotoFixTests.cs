@@ -50,11 +50,17 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         await RequestAsync(owner, kitchen, PhotoFix.RemoveClutter);
         var decluttered = await ProcessNextAsync();
         Assert.True(decluttered.Succeeded, decluttered.Error);
-        // The second fix gets its own note; the first is not counted again.
-        Assert.All(
+        var cleanup = Assert.Single(await GetFixesAsync(owner), item => item.IsAwaitingApproval);
+        Assert.Equal(PhotoFix.BrightnessAndColor, (await GetMediaAsync(owner, kitchen)).AppliedFixes);
+        await using (var candidate = await OpenCandidateAsync(owner, cleanup.FixId))
+        {
+            Assert.Equal(FakePhotoImageCodec.Jpeg, await ReadAllAsync(candidate));
+        }
+
+        await ApproveCandidateAsync(owner, cleanup.FixId);
+        Assert.Contains(
             (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items,
-            note => Assert.Equal("The fixed photo for 123 Main Street is in place on the Media tab.", note.Message));
-        Assert.Equal(2, (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items.Count);
+            note => note.Message == "The AI cleanup for a photo at 123 Main Street is ready. Compare it with the upload on the Media tab, then use or discard it.");
         var sent = fixture.Factory.PhotoClutterRemover.Requests.Skip(requestsBefore).Single();
         Assert.Equal((1_536, 1_024), (sent.Width, sent.Height));
         var afterClutter = await GetMediaAsync(owner, kitchen);
@@ -133,6 +139,9 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         var photo = await UploadAsync(owner, WalkthroughStoryboard.ExteriorFront);
         await RequestAsync(owner, photo, PhotoFix.BrightnessAndColor);
         Assert.True((await ProcessNextAsync()).Succeeded);
+        await RequestAsync(owner, photo, PhotoFix.RemoveClutter);
+        Assert.True((await ProcessNextAsync()).Succeeded);
+        var cleanup = Assert.Single(await GetFixesAsync(owner), item => item.IsAwaitingApproval);
 
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var service = scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>();
@@ -140,8 +149,13 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         Assert.False(await service.RequestAsync(outsider.UserId, outsider.PropertyId, photo, PhotoFix.BrightnessAndColor));
         Assert.False(await service.RevertAsync(outsider.UserId, owner.PropertyId, photo));
         Assert.Null(await service.OpenOriginalReadAsync(outsider.UserId, photo));
+        Assert.Null(await service.OpenCandidateReadAsync(outsider.UserId, cleanup.FixId));
+        Assert.False(await service.ApproveCandidateAsync(outsider.UserId, owner.PropertyId, cleanup.FixId));
+        Assert.False(await service.RejectCandidateAsync(outsider.UserId, owner.PropertyId, cleanup.FixId));
         Assert.Empty(await service.ListAsync(outsider.UserId, owner.PropertyId));
         Assert.NotNull(await service.OpenOriginalReadAsync(owner.UserId, photo));
+        Assert.NotNull(await service.OpenCandidateReadAsync(owner.UserId, cleanup.FixId));
+        Assert.True(await service.RejectCandidateAsync(owner.UserId, owner.PropertyId, cleanup.FixId));
     }
 
     [Fact]
@@ -155,7 +169,7 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         {
             var service = scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>();
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                service.RequestAsync(owner.UserId, owner.PropertyId, photo, PhotoFix.RemoveClutter));
+                service.RequestClutterRemovalAsync(owner.UserId, owner.PropertyId, photo, CleanupRegions));
         }
 
         Assert.True((await ProcessNextAsync()).Succeeded);
@@ -195,6 +209,7 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         Assert.Equal((UserNotificationKind.PhotoFixes, UserNotificationOutcome.Failed), (failedNote.Kind, failedNote.Outcome));
         Assert.Equal("A photo for 123 Main Street could not be fixed. OpenAI declined to edit this photo.", failedNote.Message);
 
+        fixture.Factory.TimeProvider.Advance(TimeSpan.FromSeconds(1));
         fixture.Factory.PhotoClutterRemover.EnqueueFailure(new HttpRequestException("connection reset"));
         await RequestAsync(owner, photo, PhotoFix.RemoveClutter);
         var dropped = await ProcessNextAsync();
@@ -205,14 +220,17 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
         fixture.Factory.TimeProvider.Advance(TimeSpan.FromMinutes(2));
         var retried = await ProcessNextAsync();
         Assert.Equal((dropped.FixId, true, 2), (retried.FixId, retried.Succeeded, retried.AttemptNumber));
+        Assert.Equal(PhotoFix.None, (await GetMediaAsync(owner, photo)).AppliedFixes);
+        var cleanup = Assert.Single(await GetFixesAsync(owner), item => item.IsAwaitingApproval);
+        await ApproveCandidateAsync(owner, cleanup.FixId);
         Assert.Equal(PhotoFix.RemoveClutter, (await GetMediaAsync(owner, photo)).AppliedFixes);
         Assert.Contains(
             (await NotificationInbox.ForAsync(fixture, owner.UserId)).Items,
-            note => note.Message == "The fixed photo for 123 Main Street is in place on the Media tab.");
+            note => note.Message == "The AI cleanup for a photo at 123 Main Street is ready. Compare it with the upload on the Media tab, then use or discard it.");
     }
 
     [Fact]
-    public async Task AClutterEditThatRedrewTheRoomIsRejectedAndThePhotoKept()
+    public async Task AClutterEditCanOnlyChangeTheSelectedAreaAndWaitsForReview()
     {
         var owner = await CreateOwnerAndPropertyAsync("photo-fix-redrawn");
         var photo = await UploadAsync(owner, "Entry / foyer");
@@ -221,15 +239,14 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
 
         var result = await ProcessNextAsync();
 
-        Assert.False(result.Succeeded);
-        Assert.False(result.WillRetry);
-        Assert.Equal(
-            "The AI edit changed the room itself instead of only removing clutter, so the original photo was kept.",
-            result.Error);
+        Assert.True(result.Succeeded, result.Error);
         var media = await GetMediaAsync(owner, photo);
         Assert.Equal(PhotoFix.None, media.AppliedFixes);
         Assert.False(media.HasOriginal);
         Assert.Equal(FakePhotoImageCodec.Png, await ReadPhotoAsync(owner, photo));
+        var cleanup = Assert.Single(await GetFixesAsync(owner), item => item.IsAwaitingApproval);
+        Assert.True(await RejectCandidateAsync(owner, cleanup.FixId));
+        Assert.Empty(await GetFixesAsync(owner));
     }
 
     [Fact]
@@ -316,8 +333,53 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
     private async Task RequestAsync(OwnerProperty owner, Guid mediaId, PhotoFix fix)
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>();
+        Assert.True(fix == PhotoFix.RemoveClutter
+            ? await service.RequestClutterRemovalAsync(owner.UserId, owner.PropertyId, mediaId, CleanupRegions)
+            : await service.RequestAsync(owner.UserId, owner.PropertyId, mediaId, fix));
+    }
+
+    private static readonly PhotoEditRegion[] CleanupRegions = [new(.35m, .35m, .3m, .3m)];
+
+    private async Task<IReadOnlyList<PropertyPhotoFixItem>> GetFixesAsync(OwnerProperty owner)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>()
+            .ListAsync(owner.UserId, owner.PropertyId);
+    }
+
+    private async Task<Stream> OpenCandidateAsync(OwnerProperty owner, Guid fixId)
+    {
+        var scope = fixture.Factory.Services.CreateAsyncScope();
+        try
+        {
+            var candidate = await scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>()
+                .OpenCandidateReadAsync(owner.UserId, fixId);
+            Assert.NotNull(candidate);
+            var copy = new MemoryStream();
+            await candidate.Content.CopyToAsync(copy);
+            await candidate.Content.DisposeAsync();
+            copy.Position = 0;
+            return copy;
+        }
+        finally
+        {
+            await scope.DisposeAsync();
+        }
+    }
+
+    private async Task ApproveCandidateAsync(OwnerProperty owner, Guid fixId)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
         Assert.True(await scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>()
-            .RequestAsync(owner.UserId, owner.PropertyId, mediaId, fix));
+            .ApproveCandidateAsync(owner.UserId, owner.PropertyId, fixId));
+    }
+
+    private async Task<bool> RejectCandidateAsync(OwnerProperty owner, Guid fixId)
+    {
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>()
+            .RejectCandidateAsync(owner.UserId, owner.PropertyId, fixId);
     }
 
     private async Task<PropertyPhotoFixRunResult> ProcessNextAsync()
