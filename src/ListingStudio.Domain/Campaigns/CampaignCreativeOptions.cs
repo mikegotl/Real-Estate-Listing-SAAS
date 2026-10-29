@@ -104,6 +104,15 @@ public sealed record CampaignCreativeOptions(
         CampaignCaptionStyle.Pop,
         MarketingTemplate: CampaignMarketingTemplate.BalancedShowcase);
 
+    /// <summary>
+    /// The elements a campaign asks for once its music choice is applied: background music is on exactly when a track
+    /// plays.
+    /// </summary>
+    public static CampaignVideoElement WithSoundtrack(CampaignVideoElement elements, CampaignSoundtrack soundtrack) =>
+        soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
+            ? elements & ~CampaignVideoElement.BackgroundMusic
+            : elements | CampaignVideoElement.BackgroundMusic;
+
     public static CampaignVideoElement AllElements { get; } = Enum.GetValues<CampaignVideoElement>()
         .Aggregate(CampaignVideoElement.None, (all, item) => all | item);
 

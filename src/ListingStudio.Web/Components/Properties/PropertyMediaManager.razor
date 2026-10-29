@@ -1485,11 +1485,18 @@
         }
 
         var selected = SelectedGalleryItems()
-            .Where(item => photoFixes.GetValueOrDefault(item.Id)?.IsInProgress != true)
+            .Where(item => photoFixes.GetValueOrDefault(item.Id)?.IsInProgress != true
+                && photoFixes.GetValueOrDefault(item.Id)?.IsAwaitingApproval != true)
             .ToArray();
         if (selected.Length == 0)
         {
             ShowMessage("Every selected photo already has a fix in progress.", Severity.Info);
+            return;
+        }
+
+        if (fix == PhotoFix.RemoveClutter)
+        {
+            await RemoveClutterFromSelectedAsync(selected);
             return;
         }
 
@@ -1526,7 +1533,6 @@
             await LoadPhotoFixesAsync(userId);
             var action = fix switch
             {
-                PhotoFix.RemoveClutter => "AI clutter removal requested for",
                 PhotoFix.LevelAndCrop => "Straightening and auto-crop requested for",
                 _ => "Brightness and color correction requested for",
             };
@@ -1535,6 +1541,81 @@
                     ? $"{action} {requested} {(requested == 1 ? "photo" : "photos")}."
                     : $"{action} {requested} {(requested == 1 ? "photo" : "photos")}; {failed} could not be queued.",
                 failed == 0 ? Severity.Success : Severity.Warning);
+        }
+        finally
+        {
+            bulkActionRunning = false;
+        }
+    }
+
+    // AI cleanup only ever touches areas the agent marked, so each selected photo gets its own marking step in turn.
+    private async Task RemoveClutterFromSelectedAsync(IReadOnlyList<PropertyMediaItem> selected)
+    {
+        bulkActionRunning = true;
+        var requested = 0;
+        var skipped = 0;
+        var failed = 0;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            for (var index = 0; index < selected.Count; index++)
+            {
+                var item = selected[index];
+                var dialog = await DialogService.ShowAsync<PhotoClutterMaskDialog>(
+                    selected.Count == 1 ? "Mark clutter" : $"Mark clutter ({index + 1} of {selected.Count})",
+                    new DialogParameters<PhotoClutterMaskDialog>
+                    {
+                        { component => component.ImageUrl, PhotoUrl(item) },
+                        { component => component.Filename, item.OriginalFilename },
+                    },
+                    new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+                var result = await dialog.Result;
+                if (result is not { Canceled: false, Data: PhotoEditRegion[] regions } || regions.Length == 0)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                try
+                {
+                    bool accepted;
+                    await photoFixGate.WaitAsync();
+                    try
+                    {
+                        accepted = await photoFixService!.RequestClutterRemovalAsync(userId, PropertyId, item.Id, regions);
+                    }
+                    finally
+                    {
+                        photoFixGate.Release();
+                    }
+
+                    requested += accepted ? 1 : 0;
+                    failed += accepted ? 0 : 1;
+                }
+                catch (InvalidOperationException)
+                {
+                    failed++;
+                }
+            }
+
+            await LoadPhotoFixesAsync(userId);
+            var parts = new List<string>
+            {
+                $"Cleanup previews requested for {requested} {(requested == 1 ? "photo" : "photos")}. Review each one before it replaces the photo.",
+            };
+            if (skipped > 0)
+            {
+                parts.Add($"{skipped} skipped without marked areas.");
+            }
+
+            if (failed > 0)
+            {
+                parts.Add($"{failed} could not be queued.");
+            }
+
+            ShowMessage(
+                string.Join(" ", parts),
+                failed > 0 ? Severity.Warning : requested > 0 ? Severity.Success : Severity.Info);
         }
         finally
         {

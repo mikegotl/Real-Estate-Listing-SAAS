@@ -47,7 +47,7 @@ public static class PropertyNextSteps
 
         if (campaignStatus == CampaignGenerationStatus.Completed)
         {
-            return new("Campaign ready", "Preview the HERO, FEATURE and TEASER videos, then download them and copy the social captions.", "View deliverables", PropertyDetailsTab.Campaign);
+            return new("Campaign ready", "Preview your videos and still posts, then download them and copy the social captions.", "View deliverables", PropertyDetailsTab.Campaign);
         }
 
         if (photoCount < RecommendedPhotoCount)

@@ -20,6 +20,38 @@ public sealed class CampaignCreativeDirectorTests
             CampaignCreativeDirector.ResolveSoundtrack(CampaignSoundtrack.AutoByHomeEra, yearBuilt));
     }
 
+    [Theory]
+    [InlineData(CampaignSoundtrack.None)]
+    [InlineData(CampaignSoundtrack.AddInApp)]
+    public void SilentSoundtracksDropBackgroundMusic(CampaignSoundtrack soundtrack)
+    {
+        var elements = CampaignCreativeOptions.WithSoundtrack(
+            CampaignVideoElement.OpeningTitle | CampaignVideoElement.BackgroundMusic,
+            soundtrack);
+
+        Assert.Equal(CampaignVideoElement.OpeningTitle, elements);
+    }
+
+    [Fact]
+    public void PlayedSoundtrackAddsBackgroundMusic()
+    {
+        Assert.Equal(
+            CampaignVideoElement.BackgroundMusic,
+            CampaignCreativeOptions.WithSoundtrack(CampaignVideoElement.None, CampaignSoundtrack.ModernAmbient));
+    }
+
+    [Fact]
+    public void NoElementsAndNoMusicLeavesNothingToRequest()
+    {
+        // The Campaign tab disables Generate in this state instead of sending options that fail validation.
+        var elements = CampaignCreativeOptions.WithSoundtrack(CampaignVideoElement.None, CampaignSoundtrack.None);
+
+        Assert.Equal(CampaignVideoElement.None, elements);
+        var options = CampaignCreativeOptions.SocialDefault with { Elements = elements };
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
+        Assert.StartsWith("Choose at least one supported video element.", exception.Message);
+    }
+
     [Fact]
     public void PopCaptionsAndAgentPortraitAreGroundedInExistingNarration()
     {

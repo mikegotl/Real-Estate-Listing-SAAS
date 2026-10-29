@@ -25,7 +25,7 @@
         {
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
-                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None || !TemplateReady || NoTourPhotos)"
+                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None || !TemplateReady || NoTourPhotos || NoVideoElements)"
                        OnClick="GenerateAsync">
                 @(job?.Status == CampaignGenerationStatus.Completed ? "Generate updated campaign" : "Generate campaign")
             </MudButton>
@@ -273,6 +273,12 @@
             </MudGrid>
                 </MudExpansionPanel>
             </MudExpansionPanels>
+            @if (NoVideoElements)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mt-2" data-testid="no-elements">
+                    Turn on at least one on-screen element, your name and phone, or music before generating the campaign.
+                </MudText>
+            }
             <MudDivider Class="my-4" />
             <MudText Typo="Typo.subtitle2">Narration and captions</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
@@ -740,15 +746,7 @@
 
     private async Task GenerateAsync() => await MutateAsync(async userId =>
     {
-        var elements = selectedCreativeElements;
-        if (selectedSoundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp)
-        {
-            elements &= ~CampaignVideoElement.BackgroundMusic;
-        }
-        else
-        {
-            elements |= CampaignVideoElement.BackgroundMusic;
-        }
+        var elements = RequestedElements;
 
         var portraitId = elements.HasFlag(CampaignVideoElement.AgentPortrait)
             || elements.HasFlag(CampaignVideoElement.AgentAvatar)
@@ -813,6 +811,11 @@
         catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
         {
             error = exception.Message;
+        }
+        catch (ArgumentException exception)
+        {
+            // Option checks report what to change; ArgumentException adds the parameter name, which the agent never needs.
+            error = exception.Message.Split(" (Parameter", 2)[0];
         }
         finally
         {
@@ -951,6 +954,11 @@
     private bool IsCreativeElementSelected(CampaignVideoElement element) => selectedCreativeElements.HasFlag(element);
 
     private bool NoTourPhotos => mediaLoaded && mediaCount == 0;
+
+    private CampaignVideoElement RequestedElements =>
+        CampaignCreativeOptions.WithSoundtrack(selectedCreativeElements, selectedSoundtrack);
+
+    private bool NoVideoElements => RequestedElements == CampaignVideoElement.None;
 
     private bool TemplateReady =>
         (selectedMarketingTemplate != CampaignMarketingTemplate.PriceDrop
