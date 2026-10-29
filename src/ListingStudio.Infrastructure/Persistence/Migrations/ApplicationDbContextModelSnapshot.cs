@@ -690,6 +690,67 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("CampaignGenerationJobs", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignSettingsPreset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsShared")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("OrganizationId", "IsShared");
+
+                    b.HasIndex("OrganizationId", "OwnerUserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CampaignSettingsPresets_OneDefaultPerOwner")
+                        .HasFilter("\"IsDefault\"");
+
+                    b.HasIndex("OrganizationId", "OwnerUserId", "NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("CampaignSettingsPresets", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignStillPost", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3040,6 +3101,23 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("Property");
 
                     b.Navigation("VideoNarration");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignSettingsPreset", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignStillPost", b =>

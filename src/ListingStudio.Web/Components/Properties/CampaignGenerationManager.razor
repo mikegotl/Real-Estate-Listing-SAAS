@@ -34,6 +34,15 @@
 
     @if (job is null || job.Status is CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
     {
+        @if (selectionInitialized && !IsReadOnly)
+        {
+            <CampaignSettingsPresetBar @key="PropertyId"
+                                       Current="CurrentPresetSettings"
+                                       ApplyPreset="ApplySavedSettings"
+                                       OnApplied="@(() => { })"
+                                       ApplyDefault="@(job is null)"
+                                       Disabled="busy" />
+        }
         <MudPaper Outlined="true" Class="pa-4 mb-4">
             <MudText Typo="Typo.subtitle1">Choose your deliverables</MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
@@ -608,6 +617,7 @@
     private CampaignVoiceAccent selectedVoiceAccent = CampaignNarrationPreferences.Default.VoiceAccent;
     private bool selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
     private bool selectedAgentAvatarConsent;
+    private bool profileIncludesPresenter;
     private bool soundtrackChosen;
     private RoomNarrationOverview roomNarration = RoomNarrationOverview.Empty;
     private bool choosingNarration;
@@ -651,6 +661,7 @@
             var script = await NarrationScriptService.GetAsync(userId, PropertyId, pollingCancellation.Token);
             var profile = await AgentProfileService.GetAsync(userId, pollingCancellation.Token);
             portrait = await AgentPortraitService.GetLatestAsync(userId, pollingCancellation.Token);
+            profileIncludesPresenter = profile.IncludeAvatarInCampaigns;
             roomNarration = await LoadRoomNarrationAsync(userId, pollingCancellation.Token);
             longFormAvailable = roomNarration.IsInUse
                 ? roomNarration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
@@ -1028,6 +1039,57 @@
             + (soundtrackChosen ? string.Empty : $", music ({SoundtrackName(selectedSoundtrack)})")
             + (captionStyleChosen ? string.Empty : $", caption look ({CaptionStyleName(selectedCaptionStyle)})")
             + (kept.Count == 0 ? "." : $" and kept {string.Join(" and ", kept)}.");
+    }
+
+    /// <summary>The tab's reusable choices, in the shape saved settings store them.</summary>
+    private CampaignPresetSettings CurrentPresetSettings => new CampaignPresetSettings(
+        selectedOutputs,
+        selectedMarketingTemplate,
+        selectedCreativeElements,
+        selectedSoundtrack,
+        selectedCaptionStyle,
+        selectedPace,
+        selectedVoiceover,
+        selectedNarrationRegion,
+        selectedSpokenLanguage,
+        selectedCaptionLanguage,
+        selectedVoiceAccent,
+        selectedLocalizeAgentCard).Normalize();
+
+    private CampaignPresetApplication ApplySavedSettings(CampaignSettingsPresetItem preset)
+    {
+        var application = CampaignPresetApplier.Apply(
+            preset.Settings,
+            preset.SkippedValues,
+            new CampaignPresetContext(longFormAvailable, portrait is not null, profileIncludesPresenter));
+        var settings = application.Settings;
+        if (settings.MarketingTemplate != selectedMarketingTemplate)
+        {
+            // Listing facts belong to one template on one property, so a different template starts them empty.
+            selectedPriceReductionAmount = null;
+            selectedPriceReductionVerified = false;
+            selectedOpenHouseText = null;
+            selectedOpenHouseVerified = false;
+        }
+
+        selectedOutputs = settings.Outputs;
+        selectedMarketingTemplate = settings.MarketingTemplate;
+        selectedCreativeElements = settings.Elements;
+        selectedSoundtrack = settings.Soundtrack;
+        selectedCaptionStyle = settings.CaptionStyle;
+        selectedPace = settings.Pace;
+        selectedVoiceover = settings.Voiceover;
+        selectedNarrationRegion = settings.NarrationRegion;
+        selectedSpokenLanguage = settings.SpokenLanguage;
+        selectedCaptionLanguage = settings.CaptionLanguage;
+        selectedVoiceAccent = settings.VoiceAccent;
+        selectedLocalizeAgentCard = settings.LocalizeAgentCard;
+        selectedAgentAvatarConsent = application.AgentAvatarConsentConfirmed;
+        // The saved music and caption look are the user's own choices, so switching template afterwards keeps them.
+        soundtrackChosen = true;
+        captionStyleChosen = true;
+        templateNote = null;
+        return application;
     }
 
     private void SetSoundtrack(CampaignSoundtrack soundtrack)

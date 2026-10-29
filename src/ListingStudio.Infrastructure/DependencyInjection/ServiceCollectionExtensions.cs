@@ -224,6 +224,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IHelpChatService, HelpChatService>();
         services.AddScoped<IAgentPortraitService, AgentPortraitService>();
         services.AddScoped<IAgentProfileService, AgentProfileService>();
+        services.AddScoped<ICampaignSettingsPresetService, CampaignSettingsPresetService>();
         services.AddScoped<IAgentAvatarPreviewService, AgentAvatarPreviewService>();
         services.AddScoped<IUserNotificationService, UserNotificationService>();
         services.AddScoped<ILeadGenerationService, LeadGenerationService>();

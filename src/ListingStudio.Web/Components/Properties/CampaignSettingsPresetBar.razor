@@ -1,0 +1,448 @@
+@inherits OwningComponentBase<ICampaignSettingsPresetService>
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDialogService DialogService
+@inject ILogger<CampaignSettingsPresetBar> Logger
+
+<MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="saved-settings">
+    <MudText Typo="Typo.subtitle1">Saved settings</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Apply choices you saved before, or save everything below under a name to reuse on your other listings.
+        Prices, open house times and consents are never saved; you confirm those for each listing.
+    </MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6">
+            <MudSelect T="Guid?"
+                       Label="Apply saved settings"
+                       Value="appliedId"
+                       ValueChanged="ApplyAsync"
+                       Placeholder="@(list.Items.Count == 0 ? "No saved settings yet" : "Choose saved settings")"
+                       Variant="Variant.Outlined"
+                       Disabled="@(Disabled || working || list.Items.Count == 0)"
+                       data-testid="saved-settings-select">
+                @foreach (var item in list.Items)
+                {
+                    <MudSelectItem T="Guid?" Value="@item.Id">@OptionLabel(item)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mt-sm-3">
+                @if (!readOnlyAccount)
+                {
+                    @if (Applied is { CanManage: true } applied && IsChanged)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   Disabled="@(Disabled || working)" OnClick="UpdateAsync"
+                                   data-testid="saved-settings-update">
+                            Update "@applied.Name"
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.BookmarkAdd"
+                               Disabled="@(Disabled || working)" OnClick="StartSave"
+                               data-testid="saved-settings-save-new">
+                        Save as new
+                    </MudButton>
+                    @if (Applied is { CanManage: true } managed)
+                    {
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                 AriaLabel="More actions for these saved settings" Disabled="@(Disabled || working)"
+                                 data-testid="saved-settings-menu">
+                            <MudMenuItem OnClick="StartRename">Rename</MudMenuItem>
+                            @if (list.WorkspaceHasOtherMembers || managed.IsShared)
+                            {
+                                <MudMenuItem OnClick="@(() => SetSharedAsync(!managed.IsShared))">
+                                    @(managed.IsShared ? "Stop sharing with workspace" : "Share with workspace")
+                                </MudMenuItem>
+                            }
+                            @if (managed.IsOwn)
+                            {
+                                <MudMenuItem OnClick="@(() => SetDefaultAsync(!managed.IsDefault))">
+                                    @(managed.IsDefault ? "Stop using for new properties" : "Use for new properties")
+                                </MudMenuItem>
+                            }
+                            <MudMenuItem OnClick="DeleteAsync">Delete</MudMenuItem>
+                        </MudMenu>
+                    }
+                }
+            </MudStack>
+        </MudItem>
+    </MudGrid>
+
+    @if (Applied is { } current)
+    {
+        <MudText Typo="Typo.caption" Class="d-block mt-2" data-testid="saved-settings-status">
+            Using <strong>@current.Name</strong>@(IsChanged ? " (changed)" : string.Empty)
+            @if (current.IsDefault)
+            {
+                <text> · used for new properties</text>
+            }
+            @if (current.SharedBy is not null)
+            {
+                <text> · shared by @current.SharedBy</text>
+            }
+            else if (current.IsShared)
+            {
+                <text> · shared with your workspace</text>
+            }
+            @if (IsChanged)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="@(Disabled || working)"
+                           OnClick="@(() => ApplyAsync(current.Id))">Undo my changes</MudButton>
+            }
+        </MudText>
+    }
+
+    @if (notes.Count > 0)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2" data-testid="saved-settings-notes">
+            @foreach (var note in notes)
+            {
+                <div>@note</div>
+            }
+        </MudAlert>
+    }
+
+    @if (editing is not EditMode.None)
+    {
+        <MudGrid Spacing="2" Class="mt-2" data-testid="saved-settings-name-form">
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string"
+                              Label="@(editing == EditMode.Save ? "Name these settings" : "New name")"
+                              Placeholder="My TikTok style"
+                              @bind-Value="nameInput"
+                              MaxLength="CampaignSettingsPreset.MaximumNameLength"
+                              Counter="CampaignSettingsPreset.MaximumNameLength"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              AutoFocus="true"
+                              Disabled="working"
+                              data-testid="saved-settings-name" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                @if (editing == EditMode.Save && list.WorkspaceHasOtherMembers)
+                {
+                    <MudCheckBox T="bool" @bind-Value="shareInput" Disabled="working"
+                                 Label="Share with my workspace" />
+                }
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               Disabled="@(working || string.IsNullOrWhiteSpace(nameInput))"
+                               OnClick="SubmitNameAsync" data-testid="saved-settings-name-submit">
+                        @(editing == EditMode.Save ? "Save" : "Rename")
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="working" OnClick="CancelEdit">Cancel</MudButton>
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+    }
+
+    @if (readOnlyAccount)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+            Saved settings can be applied but not changed while you are viewing as this user.
+        </MudText>
+    }
+
+    @if (message is not null)
+    {
+        <MudText Typo="Typo.caption" Color="Color.Success" Class="d-block mt-2" data-testid="saved-settings-message">@message</MudText>
+    }
+
+    @if (error is not null)
+    {
+        <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mt-2" data-testid="saved-settings-error">@error</MudText>
+    }
+</MudPaper>
+
+@code {
+    /// <summary>The Campaign tab's choices as they stand now.</summary>
+    [Parameter, EditorRequired]
+    public CampaignPresetSettings Current { get; set; } = CampaignPresetSettings.Default;
+
+    /// <summary>Fills the Campaign tab from a saved set and says what was applied.</summary>
+    [Parameter, EditorRequired]
+    public Func<CampaignSettingsPresetItem, CampaignPresetApplication> ApplyPreset { get; set; } = null!;
+
+    /// <summary>Raised after a saved set filled the tab, so the tab redraws.</summary>
+    [Parameter]
+    public EventCallback OnApplied { get; set; }
+
+    /// <summary>Apply the user's default set once loaded (only on properties with no campaign yet).</summary>
+    [Parameter]
+    public bool ApplyDefault { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    private enum EditMode
+    {
+        None,
+        Save,
+        Rename,
+    }
+
+    private CampaignSettingsPresetList list = new([], false);
+    private Guid? appliedId;
+    private CampaignPresetSettings? appliedSettings;
+    private List<string> notes = [];
+    private EditMode editing;
+    private string? nameInput;
+    private bool shareInput;
+    private bool working;
+    private bool readOnlyAccount;
+    private string? message;
+    private string? error;
+
+    private CampaignSettingsPresetItem? Applied => list.Items.FirstOrDefault(item => item.Id == appliedId);
+
+    private bool IsChanged => appliedSettings is not null && Current.Normalize() != appliedSettings;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        readOnlyAccount = PlatformAdminImpersonation.IsImpersonating(user);
+        await LoadAsync();
+        if (ApplyDefault && list.Default is { } preferred)
+        {
+            await ApplyAsync(preferred.Id);
+            message = null;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            list = await Service.ListAsync(userId);
+            if (appliedId is { } id && list.Items.All(item => item.Id != id))
+            {
+                appliedId = null;
+                appliedSettings = null;
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Logger.LogWarning(exception, "Saved campaign settings could not be loaded.");
+            error = "Saved settings could not be loaded. Refresh the page to try again.";
+        }
+    }
+
+    private async Task ApplyAsync(Guid? presetId)
+    {
+        if (presetId is null || list.Items.FirstOrDefault(item => item.Id == presetId) is not { } item)
+        {
+            return;
+        }
+
+        var application = ApplyPreset(item);
+        appliedId = item.Id;
+        appliedSettings = application.Settings;
+        notes = application.Notes.ToList();
+        editing = EditMode.None;
+        error = null;
+        message = $"Applied \"{item.Name}\".";
+        await OnApplied.InvokeAsync();
+    }
+
+    private void StartSave()
+    {
+        editing = EditMode.Save;
+        nameInput = null;
+        shareInput = false;
+        message = null;
+        error = null;
+    }
+
+    private void StartRename()
+    {
+        editing = EditMode.Rename;
+        nameInput = Applied?.Name;
+        message = null;
+        error = null;
+    }
+
+    private void CancelEdit()
+    {
+        editing = EditMode.None;
+        error = null;
+    }
+
+    private async Task SubmitNameAsync()
+    {
+        var name = nameInput ?? string.Empty;
+        if (editing == EditMode.Save)
+        {
+            var share = shareInput && list.WorkspaceHasOtherMembers;
+            await RunAsync(async (service, userId) =>
+            {
+                var saved = await service.SaveAsync(userId, name, Current);
+                if (share)
+                {
+                    saved = await service.SetSharedAsync(userId, saved.Id, isShared: true) ?? saved;
+                }
+
+                appliedId = saved.Id;
+                appliedSettings = saved.Settings;
+                notes = [];
+                editing = EditMode.None;
+                return $"Saved \"{saved.Name}\".";
+            });
+        }
+        else if (Applied is { } applied)
+        {
+            await RunAsync(async (service, userId) =>
+            {
+                var renamed = await service.RenameAsync(userId, applied.Id, name);
+                editing = EditMode.None;
+                return renamed is null ? null : $"Renamed to \"{renamed.Name}\".";
+            });
+        }
+    }
+
+    private async Task UpdateAsync()
+    {
+        if (Applied is not { } applied)
+        {
+            return;
+        }
+
+        var settings = Current;
+        await RunAsync(async (service, userId) =>
+        {
+            var updated = await service.UpdateSettingsAsync(userId, applied.Id, settings);
+            if (updated is null)
+            {
+                return null;
+            }
+
+            appliedSettings = updated.Settings;
+            notes = [];
+            return $"Updated \"{updated.Name}\".";
+        });
+    }
+
+    private async Task SetSharedAsync(bool isShared)
+    {
+        if (Applied is not { } applied)
+        {
+            return;
+        }
+
+        await RunAsync(async (service, userId) =>
+            await service.SetSharedAsync(userId, applied.Id, isShared) is { } updated
+                ? updated.IsShared
+                    ? $"\"{updated.Name}\" is shared with your workspace."
+                    : $"\"{updated.Name}\" is private to {(updated.IsOwn ? "you" : "its creator")} again."
+                : null);
+    }
+
+    private async Task SetDefaultAsync(bool isDefault)
+    {
+        if (Applied is not { } applied)
+        {
+            return;
+        }
+
+        await RunAsync(async (service, userId) =>
+            await service.SetDefaultAsync(userId, applied.Id, isDefault) is { } updated
+                ? updated.IsDefault
+                    ? $"New properties will start with \"{updated.Name}\"."
+                    : "New properties will start with the standard choices."
+                : null);
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Applied is not { } applied)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            $"Delete \"{applied.Name}\"?",
+            applied.IsShared
+                ? "It is removed for everyone in your workspace. Campaigns already made are not changed."
+                : "Campaigns already made are not changed. The choices on this tab stay as they are.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        await RunAsync(async (service, userId) =>
+        {
+            if (!await service.DeleteAsync(userId, applied.Id))
+            {
+                return null;
+            }
+
+            appliedId = null;
+            appliedSettings = null;
+            notes = [];
+            return $"Deleted \"{applied.Name}\".";
+        });
+    }
+
+    /// <summary>Runs one change; a null result means the set is gone or no longer yours to change.</summary>
+    private async Task RunAsync(Func<ICampaignSettingsPresetService, string, Task<string?>> action)
+    {
+        if (readOnlyAccount)
+        {
+            error = "Saved settings can't be changed while you are viewing as this user.";
+            return;
+        }
+
+        working = true;
+        message = null;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var result = await action(Service, userId);
+            if (result is null)
+            {
+                error = "Those saved settings were removed or can no longer be changed by you.";
+            }
+            else
+            {
+                message = result;
+            }
+
+            await LoadAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.ParamName is null
+                ? exception.Message
+                : exception.Message.Replace($" (Parameter '{exception.ParamName}')", string.Empty, StringComparison.Ordinal);
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    private static string OptionLabel(CampaignSettingsPresetItem item)
+    {
+        var label = item.Name;
+        if (item.SharedBy is not null)
+        {
+            return $"{label} · shared by {item.SharedBy}";
+        }
+
+        if (item.IsDefault)
+        {
+            label += " · default";
+        }
+
+        return item.IsShared ? $"{label} · shared" : label;
+    }
+}
