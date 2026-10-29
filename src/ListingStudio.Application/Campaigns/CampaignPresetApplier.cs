@@ -69,9 +69,14 @@ public static class CampaignPresetApplier
             }
         }
 
+        settings = settings.Normalize();
         if (settings.Elements == CampaignVideoElement.None)
         {
-            settings = settings with { Elements = CampaignPresetSettings.Default.Elements };
+            // A campaign needs at least one on-screen element or music, so fall back to the standard elements.
+            settings = settings with
+            {
+                Elements = CampaignCreativeOptions.WithSoundtrack(CampaignPresetSettings.Default.Elements, settings.Soundtrack),
+            };
         }
 
         if (settings.MarketingTemplate == CampaignMarketingTemplate.PriceDrop)
@@ -83,6 +88,6 @@ public static class CampaignPresetApplier
             notes.Add("Enter this listing's open house day and time and confirm them before generating.");
         }
 
-        return new CampaignPresetApplication(settings.Normalize(), consent, notes);
+        return new CampaignPresetApplication(settings, consent, notes);
     }
 }

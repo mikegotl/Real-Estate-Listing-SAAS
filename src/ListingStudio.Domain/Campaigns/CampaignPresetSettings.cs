@@ -56,10 +56,9 @@ public sealed record CampaignPresetSettings(
             outputs = (outputs & ~SharedVertical) | CampaignOutputSelection.TikTok;
         }
 
-        var elements = Elements & ~CampaignVideoElement.KitchenIslandOrbit;
-        elements = Soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp
-            ? elements & ~CampaignVideoElement.BackgroundMusic
-            : elements | CampaignVideoElement.BackgroundMusic;
+        var elements = CampaignCreativeOptions.WithSoundtrack(
+            Elements & ~CampaignVideoElement.KitchenIslandOrbit,
+            Soundtrack);
         return this with { Outputs = outputs, Elements = elements };
     }
 

@@ -187,6 +187,18 @@ public sealed class CampaignSettingsPresetTests
     }
 
     [Fact]
+    public void ASetLeftWithNoElementsFallsBackToTheStandardOnes()
+    {
+        var settings = Styled() with { Elements = CampaignVideoElement.BackgroundMusic | CampaignVideoElement.AgentPortrait };
+
+        var application = CampaignPresetApplier.Apply(settings, [], Everything with { HasPortrait = false });
+
+        Assert.NotEqual(CampaignVideoElement.None, application.Settings.Elements);
+        Assert.False(application.Settings.Elements.HasFlag(CampaignVideoElement.BackgroundMusic));
+        Assert.True(application.Settings.Elements.HasFlag(CampaignVideoElement.OpeningTitle));
+    }
+
+    [Fact]
     public void SkippedValuesAreReported()
     {
         var application = CampaignPresetApplier.Apply(Styled(), ["HoloDeck"], Everything);
