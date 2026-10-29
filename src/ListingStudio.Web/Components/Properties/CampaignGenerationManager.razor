@@ -248,6 +248,13 @@
                                  Label="Show my name and phone on short videos" />
                 </MudItem>
             </MudGrid>
+            @if (SilentVerticalVideo)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="silent-vertical">
+                    With no voiceover and no music, the vertical video will be silent. Pick a music track or a voiceover,
+                    or choose "None, I'll add a sound in TikTok or Instagram" if you'll add one there.
+                </MudAlert>
+            }
             <MudExpansionPanels Elevation="0" Outlined="true" Class="mt-3">
                 <MudExpansionPanel Text="Advanced: on-screen elements and captions">
             <MudGrid Spacing="2">
@@ -960,6 +967,11 @@
 
     private bool NoVideoElements => RequestedElements == CampaignVideoElement.None;
 
+    // "Add a sound in the app" is silent on purpose; plain No music with no voiceover is usually a mistake.
+    private bool SilentVerticalVideo => selectedOutputs.HasFlag(CampaignOutputSelection.TikTok)
+        && selectedVoiceover == CampaignVoiceoverMode.None
+        && selectedSoundtrack == CampaignSoundtrack.None;
+
     private bool TemplateReady =>
         (selectedMarketingTemplate != CampaignMarketingTemplate.PriceDrop
             || selectedPriceReductionAmount is > 0 and <= 100_000_000m && selectedPriceReductionVerified)
@@ -1122,7 +1134,7 @@
         new(CampaignVideoElement.PropertyFacts, "Property facts", "Verified facts only, shown as compact feature callouts."),
         new(CampaignVideoElement.NarrationCaptions, "Narration captions", "Short, timed caption bursts designed for mobile viewing."),
         new(CampaignVideoElement.NeighborhoodHighlights, "Neighborhood highlights", "Approved neighborhood facts and licensed images."),
-        new(CampaignVideoElement.WalkthroughMotion, "Use walkthrough video and AI walk-through clips", "Play your walkthrough videos and finished AI walk-through clips. Turn this off for photos only."),
+        new(CampaignVideoElement.WalkthroughMotion, "Use walkthrough video and AI walk-through clips", "Play your walkthrough videos, finished AI walk-through clips and the approved AI drone intro. Turn this off for photos only."),
         new(CampaignVideoElement.AgentPortrait, "Agent photo on closing card", "Place the uploaded agent photo beside the final call to action."),
         new(CampaignVideoElement.AgentAvatar, "AI agent presenter", "Create short lip-synced opening and closing clips from the approved profile headshot, with a static-photo fallback."),
         new(CampaignVideoElement.ClosingCallToAction, "Closing call to action", "End with the campaign's verified contact call to action."),

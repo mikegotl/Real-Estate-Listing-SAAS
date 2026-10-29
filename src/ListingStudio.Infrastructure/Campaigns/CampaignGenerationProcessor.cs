@@ -1717,6 +1717,12 @@ public sealed partial class CampaignGenerationProcessor(
         string directory,
         CancellationToken cancellationToken)
     {
+        // The drone intro is generated motion, so the photos-only choice leaves it out like walk-through clips.
+        if (!job.CreativeElements.HasFlag(CampaignVideoElement.WalkthroughMotion))
+        {
+            return null;
+        }
+
         var opening = specification.Scenes.Count > 0 ? specification.Scenes[0].VisualSource : null;
         if (opening?.Kind != VisualSourceKind.PropertyMedia || opening.PropertyMediaId is not { } openingPhotoId)
         {
