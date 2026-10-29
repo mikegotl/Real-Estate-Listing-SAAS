@@ -21,6 +21,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     IOptions<HiggsfieldOptions> options) : IWalkthroughVideoProvider
 {
     public const string ProviderName = "higgsfield";
+    public const decimal AerialIntroPromptAdherence = 0.85m;
+    public const int LowAerialIntroDurationSeconds = 8;
+    public const int HighAerialIntroDurationSeconds = 12;
 
     public const string Prompt = """
         A smooth, steady first-person walk-through of a real home for a real-estate listing video.
@@ -58,14 +61,30 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     /// plays it backwards, so the buyer sees a descent that lands on the photo. Keeping the camera on the facade and
     /// naming what not to invent limits how much of the roof, yard and street the model makes up.
     /// </summary>
-    public static string AerialIntroPrompt(int heightFeet) => $"""
-        Real-estate aerial drone shot. The camera starts exactly on this photograph of the front of the house,
-        then smoothly rises and pulls back over the front yard toward the street, climbing to about {heightFeet} feet,
-        tilting down slightly so the house stays centered in frame.
+    public static string AerialIntroPrompt(int heightFeet)
+    {
+        var finalComposition = heightFeet >= AerialIntroClip.HighHeightFeet
+            ? "Finish in a clearly high aerial view with the entire roof, the whole visible lot, the street and nearby surroundings in frame. The house should be much smaller than it was in the first frame."
+            : "Finish clearly above the roofline with the roof, front yard and street visible. The house should be noticeably smaller than it was in the first frame.";
+
+        return $"""
+        Real-estate aerial drone shot with one continuous, large-scale crane movement. The camera starts exactly on
+        this ground-level photograph of the front of the house, then physically flies upward and backward over the
+        front yard toward the street until it reaches an approximately {heightFeet}-foot aerial viewpoint.
+        {finalComposition}
+        Make the vertical travel unmistakable through a substantial change in altitude, perspective and subject size.
+        Do not merely hover, drift a few feet, use a digital zoom, or stop at eave height. Keep the house centered while
+        progressively tilting the camera downward as it climbs.
         Keep the facade, windows, doors, garage, colors, driveway and landscaping exactly as in the photograph.
-        Show only a little of the roof. Do not add a swimming pool, water, a view, solar panels, extra buildings,
-        people, moving cars or text. Steady, smooth, realistic drone footage. No camera shake.
+        Do not add a swimming pool, water, a view, solar panels, extra buildings, people, moving cars or text.
+        Steady, smooth, realistic drone footage. No camera shake.
         """;
+    }
+
+    public static int AerialIntroDurationSeconds(int heightFeet) =>
+        heightFeet >= AerialIntroClip.HighHeightFeet
+            ? HighAerialIntroDurationSeconds
+            : LowAerialIntroDurationSeconds;
 
     private static string DirectionLine(string movement) =>
         $"\nDirection: the next space is {movement}";
@@ -93,7 +112,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         {
             var configuration = options.Value;
             var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-                $"{configuration.Model}\n{configuration.ClipDurationSeconds}\n{AerialIntroPrompt(0)}")))[..12].ToLowerInvariant();
+                $"{configuration.Model}\n{AerialIntroPromptAdherence}\n"
+                + $"{LowAerialIntroDurationSeconds}\n{AerialIntroPrompt(AerialIntroClip.LowHeightFeet)}\n"
+                + $"{HighAerialIntroDurationSeconds}\n{AerialIntroPrompt(AerialIntroClip.HighHeightFeet)}")))[..12].ToLowerInvariant();
             return $"higgsfield/{configuration.GenerationVersion}/aerial-{identity}";
         }
     }
@@ -116,8 +137,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                 AerialIntroPrompt(submission.HeightFeet),
                 startUrl,
                 null,
-                configuration.ClipDurationSeconds,
-                "off"),
+                AerialIntroDurationSeconds(submission.HeightFeet),
+                "off",
+                AerialIntroPromptAdherence),
             cancellationToken);
     }
 
@@ -131,7 +153,13 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         var endUrl = await UploadAsync(configuration, submission.EndFrame, cancellationToken);
         return await QueueAsync(
             configuration,
-            new GenerationRequest(PromptFor(submission.Direction), startUrl, endUrl, configuration.ClipDurationSeconds, "off"),
+            new GenerationRequest(
+                PromptFor(submission.Direction),
+                startUrl,
+                endUrl,
+                configuration.ClipDurationSeconds,
+                "off",
+                null),
             cancellationToken);
     }
 
@@ -374,7 +402,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         [property: JsonPropertyName("image_url")] string ImageUrl,
         [property: JsonPropertyName("last_image_url"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LastImageUrl,
         [property: JsonPropertyName("duration")] int Duration,
-        [property: JsonPropertyName("sound")] string Sound);
+        [property: JsonPropertyName("sound")] string Sound,
+        [property: JsonPropertyName("cfg_scale"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? CfgScale);
 
     private sealed record QueuedResponse([property: JsonPropertyName("request_id")] string? RequestId);
 

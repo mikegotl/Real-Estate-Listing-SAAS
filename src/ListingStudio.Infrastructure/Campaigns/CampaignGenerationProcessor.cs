@@ -33,6 +33,7 @@ public sealed partial class CampaignGenerationProcessor(
     IAgentAvatarVideoService agentAvatarVideoService,
     IVideoRenderer videoRenderer,
     ICampaignSoundtrackService campaignSoundtrackService,
+    IWalkthroughVideoProvider walkthroughVideoProvider,
     IPhotoImageCodec photoImageCodec,
     IPropertyMediaStorage propertyMediaStorage,
     IPropertyVideoClipFinder videoClipFinder,
@@ -1736,7 +1737,7 @@ public sealed partial class CampaignGenerationProcessor(
 
         var front = await AerialIntroSource.LoadFrontPhotoAsync(
             dbContext, job.OrganizationId, job.PropertyId, cancellationToken);
-        if (!AerialIntroSource.IsCurrent(clip, front))
+        if (!AerialIntroSource.IsCurrent(clip, front, walkthroughVideoProvider.AerialIntroGenerationVersion))
         {
             return null;
         }
