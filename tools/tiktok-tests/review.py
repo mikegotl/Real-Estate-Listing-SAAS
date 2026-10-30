@@ -97,7 +97,10 @@ Watch the entire video, check facts against the listing, and review captions, fr
 
 
 async def choose(page, label, value):
-    await page.get_by_role("combobox", name=label, exact=True).click()
+    combo = page.get_by_role("combobox", name=label, exact=True)
+    if (await combo.inner_text()).strip() == value or await combo.get_attribute("value") == value:
+        return
+    await combo.click()
     await page.get_by_text(value, exact=True).click()
 
 

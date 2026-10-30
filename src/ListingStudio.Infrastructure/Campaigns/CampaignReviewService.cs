@@ -15,11 +15,24 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         string userId, CancellationToken cancellationToken = default)
     {
         var organizationId = await AuthorizeAsync(userId, cancellationToken);
-        var jobs = await dbContext.CampaignGenerationJobs.AsNoTracking().Include(job => job.Property)
-            .Where(job => job.OrganizationId == organizationId
-                && (job.RequestedOutputs & CampaignOutputSelection.TikTok) != 0)
+        // RequestedOutputs is stored through a string converter; SQL bitwise operators cannot inspect it.
+        // Stream only this workspace's ordered jobs and stop after 100 matching vertical campaigns.
+        var jobs = new List<CampaignGenerationJob>();
+        await foreach (var job in dbContext.CampaignGenerationJobs.AsNoTracking().Include(job => job.Property)
+            .Where(job => job.OrganizationId == organizationId)
             .OrderByDescending(job => job.CreatedAtUtc).ThenByDescending(job => job.Id)
-            .Take(100).ToListAsync(cancellationToken);
+            .AsAsyncEnumerable().WithCancellation(cancellationToken))
+        {
+            if (!job.RequestedOutputs.HasFlag(CampaignOutputSelection.TikTok))
+            {
+                continue;
+            }
+            jobs.Add(job);
+            if (jobs.Count == 100)
+            {
+                break;
+            }
+        }
         var jobIds = jobs.Select(job => job.Id).ToArray();
         var videos = await dbContext.CampaignDeliverables.AsNoTracking()
             .Where(video => video.OrganizationId == organizationId && jobIds.Contains(video.CampaignGenerationJobId)

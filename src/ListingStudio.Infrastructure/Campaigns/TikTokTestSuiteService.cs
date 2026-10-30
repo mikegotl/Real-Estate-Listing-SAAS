@@ -19,7 +19,7 @@ public sealed class TikTokTestSuiteService(ApplicationDbContext dbContext, UserM
     public async Task<IReadOnlyList<TikTokTestPropertyChoice>> PropertyChoicesAsync(string userId, CancellationToken cancellationToken = default)
     {
         var org = await AuthorizeAsync(userId, cancellationToken);
-        return await dbContext.Properties.AsNoTracking().Where(p => p.OrganizationId == org && !p.IsArchived)
+        return await dbContext.Properties.AsNoTracking().Where(p => p.OrganizationId == org && p.ArchivedAtUtc == null)
             .OrderBy(p => p.Address1).Take(200)
             .Select(p => new TikTokTestPropertyChoice(p.Id, p.Address1 + ", " + p.City + ", " + p.State))
             .ToListAsync(cancellationToken);
@@ -43,7 +43,7 @@ public sealed class TikTokTestSuiteService(ApplicationDbContext dbContext, UserM
         try
         {
             var property = await dbContext.Properties.AsNoTracking()
-                .SingleOrDefaultAsync(p => p.Id == propertyId && p.OrganizationId == org && !p.IsArchived, cancellationToken)
+                .SingleOrDefaultAsync(p => p.Id == propertyId && p.OrganizationId == org && p.ArchivedAtUtc == null, cancellationToken)
                 ?? throw new KeyNotFoundException("Choose an available property in your workspace.");
             if (await dbContext.TikTokTestSuites.AnyAsync(s => s.OrganizationId == org
                 && (s.Status == TikTokTestSuiteStatus.Queued || s.Status == TikTokTestSuiteStatus.Running), cancellationToken))
@@ -106,7 +106,7 @@ public sealed class TikTokTestSuiteService(ApplicationDbContext dbContext, UserM
                 else
                 {
                     if (!await dbContext.Properties.AsNoTracking().AnyAsync(p =>
-                        p.Id == suite.PropertyId && p.OrganizationId == org && !p.IsArchived, cancellationToken))
+                        p.Id == suite.PropertyId && p.OrganizationId == org && p.ArchivedAtUtc == null, cancellationToken))
                         throw new KeyNotFoundException("The test property is no longer available.");
                     var options = OptionsFor(suite.CurrentCaseIndex);
                     var keyBytes = suite.Id.ToByteArray();
