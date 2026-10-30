@@ -129,6 +129,41 @@ param smtpFromAddress string = ''
 @description('Public site address used in links inside emails. Defaults to the web app address.')
 param appBaseUrl string = ''
 
+@description('Enable Stripe-hosted checkout, billing portal, and signed webhook processing in the Web host.')
+param stripeEnabled bool = false
+
+@description('Public HTTPS origin used for Stripe checkout and portal return URLs.')
+param stripePublicBaseUrl string = ''
+
+@secure()
+@description('Stripe restricted secret API key. Supply from the protected GitHub environment; never commit it.')
+param stripeSecretKey string = ''
+
+@secure()
+@description('Stripe webhook endpoint signing secret. Supply from the protected GitHub environment; never commit it.')
+param stripeWebhookSecret string = ''
+
+@description('Stripe recurring monthly price identifier for the Basic plan.')
+param stripeBasicPriceId string = ''
+
+@description('Stripe recurring monthly price identifier for the Professional plan.')
+param stripeProfessionalPriceId string = ''
+
+@description('Stripe recurring monthly price identifier for the Enterprise plan.')
+param stripeEnterprisePriceId string = ''
+
+@description('Optional Stripe recurring yearly price identifier for the Basic plan.')
+param stripeBasicAnnualPriceId string = ''
+
+@description('Optional Stripe recurring yearly price identifier for the Professional plan.')
+param stripeProfessionalAnnualPriceId string = ''
+
+@description('Optional Stripe recurring yearly price identifier for the Enterprise plan.')
+param stripeEnterpriseAnnualPriceId string = ''
+
+@description('Existing custom-domain bindings to preserve when updating the Web Container App.')
+param webCustomDomains array = []
+
 @description('Immutable Web image reference, normally the ACR image tagged with the Git commit SHA.')
 param webImage string = ''
 
@@ -442,6 +477,22 @@ resource smtpPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if 
   name: 'smtp-password'
   properties: {
     value: smtpPassword
+  }
+}
+
+resource stripeSecretKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (stripeEnabled && !empty(stripeSecretKey)) {
+  parent: keyVault
+  name: 'stripe-secret-key'
+  properties: {
+    value: stripeSecretKey
+  }
+}
+
+resource stripeWebhookSecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (stripeEnabled && !empty(stripeWebhookSecret)) {
+  parent: keyVault
+  name: 'stripe-webhook-secret'
+  properties: {
+    value: stripeWebhookSecret
   }
 }
 
@@ -759,7 +810,57 @@ var webEnvironment = concat(providerSharedEnvironment, [
     name: 'Authentication__Google__ClientSecret'
     secretRef: 'google-authentication-client-secret'
   }
-] : [])
+] : [], stripeEnabled ? [
+  {
+    name: 'Stripe__Enabled'
+    value: 'true'
+  }
+  {
+    name: 'Stripe__ApiBaseUrl'
+    value: 'https://api.stripe.com'
+  }
+  {
+    name: 'Stripe__PublicBaseUrl'
+    value: stripePublicBaseUrl
+  }
+  {
+    name: 'Stripe__SecretKey'
+    secretRef: 'stripe-secret-key'
+  }
+  {
+    name: 'Stripe__WebhookSecret'
+    secretRef: 'stripe-webhook-secret'
+  }
+  {
+    name: 'Stripe__BasicPriceId'
+    value: stripeBasicPriceId
+  }
+  {
+    name: 'Stripe__ProfessionalPriceId'
+    value: stripeProfessionalPriceId
+  }
+  {
+    name: 'Stripe__EnterprisePriceId'
+    value: stripeEnterprisePriceId
+  }
+  {
+    name: 'Stripe__BasicAnnualPriceId'
+    value: stripeBasicAnnualPriceId
+  }
+  {
+    name: 'Stripe__ProfessionalAnnualPriceId'
+    value: stripeProfessionalAnnualPriceId
+  }
+  {
+    name: 'Stripe__EnterpriseAnnualPriceId'
+    value: stripeEnterpriseAnnualPriceId
+  }
+] : [
+  {
+    name: 'Stripe__Enabled'
+    value: 'false'
+  }
+])
 
 var databaseKeyVaultSecrets = [
   {
@@ -849,6 +950,17 @@ var webKeyVaultSecrets = concat(providerKeyVaultSecrets, googleAuthenticationEna
     keyVaultUrl: '${keyVault.properties.vaultUri}secrets/google-authentication-client-secret'
     identity: runtimeIdentity.id
   }
+] : [], stripeEnabled ? [
+  {
+    name: 'stripe-secret-key'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/stripe-secret-key'
+    identity: runtimeIdentity.id
+  }
+  {
+    name: 'stripe-webhook-secret'
+    keyVaultUrl: '${keyVault.properties.vaultUri}secrets/stripe-webhook-secret'
+    identity: runtimeIdentity.id
+  }
 ] : [])
 
 var registryConfiguration = [
@@ -874,6 +986,7 @@ resource webApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplication
       activeRevisionsMode: 'Single'
       ingress: {
         allowInsecure: false
+        customDomains: webCustomDomains
         external: true
         stickySessions: {
           affinity: 'sticky'
@@ -1122,6 +1235,6 @@ output applicationInsightsName string = applicationInsights.name
 output keyVaultName string = keyVault.name
 output migrationJobName string = deployApplications ? migrationJob.name : ''
 output postgresServerName string = postgresServer.name
-output webAppName string = deployApplications ? webApp.name : ''
+output webAppName string = '${resourcePrefix}-web'
 output webUrl string = deployApplications ? 'https://${webApp!.properties.configuration.ingress.fqdn}' : ''
 output workerAppName string = deployApplications ? workerApp.name : ''
