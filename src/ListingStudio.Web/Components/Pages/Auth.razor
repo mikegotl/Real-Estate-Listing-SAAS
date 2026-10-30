@@ -90,10 +90,14 @@ else
         {
             <MudPaper Elevation="0" Class="content-card plan-card">
                 <span class="eyebrow">PLAN AND USAGE</span>
-                <MudText Typo="Typo.h5" HtmlTag="h2">@(billing.IsTester ? "Tester access" : $"{billing.Plan} plan")</MudText>
-                @if (billing.IsTester)
+                <MudText Typo="Typo.h5" HtmlTag="h2">@(billing.IsPlatformAdmin ? "Platform admin" : billing.IsTester ? "Tester access" : $"{SubscriptionPlanFeatures.DisplayName(billing.Plan)} plan")</MudText>
+                @if (billing.IsPlatformAdmin)
                 {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">You're in the Testers group, so campaigns are free and don't count toward a plan.</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Every feature and unlimited campaigns.</MudText>
+                }
+                else if (billing.IsTester)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">You're in the Testers group, so you have every feature free. @billing.TesterCampaignsThisMonth of @billing.TesterMonthlyCampaignLimit tester campaigns used this month.</MudText>
                 }
                 else if (billing.MonthlyCampaignAllowance > 0)
                 {

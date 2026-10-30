@@ -4,7 +4,9 @@ using System.Data;
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Billing;
 using ListingStudio.Domain.Billing;
+using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Infrastructure.Configuration;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +16,7 @@ public sealed class BillingService(
     ApplicationDbContext dbContext,
     IBillingProviderGateway provider,
     IOptions<StripeOptions> options,
-    TimeProvider timeProvider) : IBillingService, ICampaignBillingGate
+    TimeProvider timeProvider) : IBillingService, ICampaignBillingGate, IPlanFeatureGate
 {
     public async Task<BillingOverview> GetOverviewAsync(
         string userId,
@@ -23,22 +25,53 @@ public sealed class BillingService(
         var identity = await GetIdentityAsync(userId, cancellationToken);
         var account = await GetOrCreateAccountAsync(identity.OrganizationId, cancellationToken);
         account.ExpireFreeTrial(timeProvider.GetUtcNow());
+        account.AdvanceUsageWindow(timeProvider.GetUtcNow());
         var reservedCampaignUsage = await ReservedCampaignUsageAsync(account, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        var isTester = await IsTesterAsync(userId, cancellationToken);
+        var isPlatformAdmin = await IsPlatformAdminAsync(userId, cancellationToken);
         return ToOverview(account, identity.OrganizationName, reservedCampaignUsage, timeProvider.GetUtcNow()) with
         {
-            IsTester = await IsTesterAsync(userId, cancellationToken),
+            IsTester = isTester,
+            IsPlatformAdmin = isPlatformAdmin,
+            IncludesPremiumAi = isTester || isPlatformAdmin || IncludesPremiumAi(account, timeProvider.GetUtcNow()),
+            TesterMonthlyCampaignLimit = isTester ? await TesterLimitAsync(userId, cancellationToken) : 0,
+            TesterCampaignsThisMonth = isTester ? await TesterCampaignsThisMonthAsync(userId, cancellationToken) : 0,
         };
+    }
+
+    public async Task<PlanFeatureAccess> GetAccessAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var identity = await GetIdentityAsync(userId, cancellationToken);
+        return await GetAccessAsync(identity.OrganizationId, userId, cancellationToken);
+    }
+
+    public async Task<PlanFeatureAccess> GetAccessAsync(
+        Guid organizationId,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        var account = await dbContext.OrganizationBillingAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.OrganizationId == organizationId, cancellationToken);
+        var plan = account?.Plan ?? SubscriptionPlan.Trial;
+        // Testers and platform admins get every feature.
+        var included = await IsFreeUserAsync(userId, cancellationToken)
+            || (account is not null && IncludesPremiumAi(account, timeProvider.GetUtcNow()));
+        return new PlanFeatureAccess(plan, included);
     }
 
     public async Task<BillingRedirect> CreateCheckoutSessionAsync(
         string userId,
         SubscriptionPlan plan,
+        BillingInterval interval,
         string successUrl,
         string cancelUrl,
         CancellationToken cancellationToken = default)
     {
-        if (plan is not (SubscriptionPlan.Starter or SubscriptionPlan.Professional))
+        if (!SubscriptionPlanFeatures.IsPaid(plan))
         {
             throw new ArgumentOutOfRangeException(nameof(plan), "A paid subscription plan is required.");
         }
@@ -67,10 +100,11 @@ public sealed class BillingService(
                 identity.OrganizationId,
                 stripeCustomerId,
                 plan,
-                PriceId(plan),
+                interval,
+                PriceId(plan, interval),
                 successUrl,
                 cancelUrl,
-                $"checkout:{identity.OrganizationId:D}:{plan}"),
+                $"checkout:{identity.OrganizationId:D}:{plan}:{interval}"),
             cancellationToken);
     }
 
@@ -150,20 +184,25 @@ public sealed class BillingService(
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(requestedByUserId);
-        // Testers use the site for free: no plan, trial or allowance is needed and nothing is reserved.
+        // Platform admins are unlimited. Testers need no plan or workspace allowance but have their own monthly limit.
+        if (await IsPlatformAdminAsync(requestedByUserId, cancellationToken))
+        {
+            return;
+        }
+
         if (await IsTesterAsync(requestedByUserId, cancellationToken))
         {
+            await EnsureTesterCapacityAsync(organizationId, propertyId, requestedByUserId, cancellationToken);
             return;
         }
 
         var now = timeProvider.GetUtcNow();
         var account = await GetLockedAccountAsync(organizationId, cancellationToken);
         account.ExpireFreeTrial(now);
+        account.AdvanceUsageWindow(now);
 
-        var isTrial = account.Plan == SubscriptionPlan.Free;
-        var activeSubscription = account.Plan is SubscriptionPlan.Starter or SubscriptionPlan.Professional
-            && account.SubscriptionStatus is BillingSubscriptionStatus.Active or BillingSubscriptionStatus.Trialing
-            && now < account.CurrentPeriodEndUtc;
+        var isTrial = account.Plan == SubscriptionPlan.Trial;
+        var activeSubscription = HasActiveSubscription(account, now);
         var activeFreeTrial = isTrial
             && account.MonthlyCampaignAllowance > 0
             && now < account.CurrentPeriodEndUtc;
@@ -184,7 +223,7 @@ public sealed class BillingService(
         {
             throw new CampaignAllowanceExceededException(isTrial
                 ? "Your free campaign allowance is fully used or another campaign is still processing. Choose a plan on Billing to create another campaign."
-                : $"Your {account.Plan} plan's campaign allowance is fully used or reserved for this period. Upgrade on Billing to continue.");
+                : $"Your {SubscriptionPlanFeatures.DisplayName(account.Plan)} plan's {account.MonthlyCampaignAllowance} campaigns for this month are used or reserved. Upgrade on Billing to continue.");
         }
     }
 
@@ -205,12 +244,13 @@ public sealed class BillingService(
             .Select(job => new { job.PropertyId, job.RequestedByUserId })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new InvalidOperationException("The completed campaign does not belong to the billing organization.");
-        if (await IsTesterAsync(job.RequestedByUserId, cancellationToken))
+        if (await IsFreeUserAsync(job.RequestedByUserId, cancellationToken))
         {
             return;
         }
 
         var account = await GetLockedAccountAsync(organizationId, cancellationToken);
+        account.AdvanceUsageWindow(timeProvider.GetUtcNow());
         if (await PropertyCampaignUsageExistsAsync(account, job.PropertyId, cancellationToken))
         {
             return;
@@ -237,7 +277,7 @@ public sealed class BillingService(
                 """)
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new InvalidOperationException("The Stripe customer is not linked to a Creative Listing Studio organization.");
-        var plan = Plan(subscription.PriceId);
+        var (plan, interval) = Plan(subscription.PriceId);
         account.ApplySubscription(
             subscription.StripeCustomerId,
             subscription.StripeSubscriptionId,
@@ -247,7 +287,8 @@ public sealed class BillingService(
             subscription.CurrentPeriodEndUtc,
             Allowance(plan),
             subscription.EventCreatedUtc,
-            timeProvider.GetUtcNow());
+            timeProvider.GetUtcNow(),
+            interval);
         return BillingWebhookOutcome.Processed;
     }
 
@@ -345,7 +386,7 @@ public sealed class BillingService(
             && job.CreatedAtUtc >= account.CurrentPeriodStartUtc
             && (job.Status == CampaignGenerationStatus.Queued
                 || job.Status == CampaignGenerationStatus.Running)
-            && !TesterUserIds().Contains(job.RequestedByUserId)
+            && !FreeUserIds().Contains(job.RequestedByUserId)
             && !dbContext.CampaignUsageRecords.Any(record =>
                 record.CampaignGenerationJobId == job.Id)
             && !dbContext.CampaignUsageRecords.Any(record =>
@@ -354,14 +395,142 @@ public sealed class BillingService(
                 && record.CampaignGenerationJob.PropertyId == job.PropertyId),
             cancellationToken);
 
-    private IQueryable<string> TesterUserIds() =>
+    private IQueryable<string> UserIdsInRole(string roleName) =>
         from userRole in dbContext.UserRoles
         join role in dbContext.Roles on userRole.RoleId equals role.Id
-        where role.Name == PlatformTesters.Role
+        where role.Name == roleName
+        select userRole.UserId;
+
+    // Campaigns by testers and platform admins never use a workspace's allowance.
+    private IQueryable<string> FreeUserIds() =>
+        from userRole in dbContext.UserRoles
+        join role in dbContext.Roles on userRole.RoleId equals role.Id
+        where role.Name == PlatformTesters.Role || role.Name == PlatformAdministration.Role
         select userRole.UserId;
 
     private Task<bool> IsTesterAsync(string userId, CancellationToken cancellationToken) =>
-        TesterUserIds().AnyAsync(testerId => testerId == userId, cancellationToken);
+        UserIdsInRole(PlatformTesters.Role).AnyAsync(testerId => testerId == userId, cancellationToken);
+
+    private Task<bool> IsPlatformAdminAsync(string userId, CancellationToken cancellationToken) =>
+        UserIdsInRole(PlatformAdministration.Role).AnyAsync(adminId => adminId == userId, cancellationToken);
+
+    private Task<bool> IsFreeUserAsync(string userId, CancellationToken cancellationToken) =>
+        FreeUserIds().AnyAsync(freeUserId => freeUserId == userId, cancellationToken);
+
+    private async Task<int> TesterLimitAsync(string userId, CancellationToken cancellationToken) =>
+        await dbContext.Users.AsNoTracking()
+            .Where(user => user.Id == userId)
+            .Select(user => user.TesterMonthlyCampaignLimit)
+            .SingleOrDefaultAsync(cancellationToken)
+        ?? PlatformTesters.DefaultMonthlyCampaignLimit;
+
+    private Task<int> TesterCampaignsThisMonthAsync(string userId, CancellationToken cancellationToken) =>
+        TesterCampaignUsage.CountedJobs(dbContext, [userId], timeProvider.GetUtcNow())
+            .Select(job => job.PropertyId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
+    private async Task EnsureTesterCapacityAsync(
+        Guid organizationId,
+        Guid propertyId,
+        string testerUserId,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var counted = await TesterCampaignUsage.CountedJobs(dbContext, [testerUserId], now)
+            .Select(job => job.PropertyId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (counted.Contains(propertyId))
+        {
+            return;
+        }
+
+        var limit = await TesterLimitAsync(testerUserId, cancellationToken);
+        if (counted.Count >= limit)
+        {
+            throw new CampaignAllowanceExceededException(
+                $"You've used all {limit} tester campaigns for {now.UtcDateTime:MMMM}. Ask the Creative Listing Studio team to raise your limit, or wait until next month.");
+        }
+
+        if (counted.Count + 1 == limit)
+        {
+            await NotifyAdminsOfLastTesterCampaignAsync(organizationId, propertyId, testerUserId, limit, now, cancellationToken);
+        }
+    }
+
+    // Added to the context and saved with the campaign that uses the last slot, so a failed request sends nothing.
+    private async Task NotifyAdminsOfLastTesterCampaignAsync(
+        Guid organizationId,
+        Guid propertyId,
+        string testerUserId,
+        int limit,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var monthStart = PlatformTesters.MonthStart(now);
+        if (await dbContext.UserNotifications.AnyAsync(notification =>
+                notification.Kind == UserNotificationKind.TesterCampaignLimit
+                && notification.OrganizationId == organizationId
+                && notification.PropertyId == propertyId
+                && notification.CreatedAtUtc >= monthStart,
+                cancellationToken))
+        {
+            return;
+        }
+
+        var tester = await dbContext.Users.AsNoTracking()
+            .Where(user => user.Id == testerUserId)
+            .Select(user => user.Email ?? user.UserName ?? user.Id)
+            .SingleAsync(cancellationToken);
+        var admins = await dbContext.Users.AsNoTracking()
+            .Where(user => UserIdsInRole(PlatformAdministration.Role).Contains(user.Id))
+            .Select(user => new { user.Id, user.Email })
+            .ToListAsync(cancellationToken);
+        var month = now.UtcDateTime.ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        var title = $"Tester on last campaign: {tester}";
+        var message = $"{tester} just started campaign {limit} of {limit} for {month}. "
+            + "Raise their limit on Find users > Testers if they need more.";
+        var body = string.Join('\n',
+            "Hi,",
+            string.Empty,
+            $"{tester} just started their last tester campaign for {month} ({limit} of {limit}). After this one they can't start a campaign for another property until next month.",
+            string.Empty,
+            "To give them more, open Admin > Find users > Testers and raise their monthly campaign limit.",
+            string.Empty,
+            "Creative Listing Studio");
+        foreach (var admin in admins)
+        {
+            dbContext.UserNotifications.Add(UserNotification.Create(
+                organizationId,
+                admin.Id,
+                propertyId,
+                UserNotificationKind.TesterCampaignLimit,
+                UserNotificationOutcome.Succeeded,
+                Truncate(title, UserNotification.MaximumTitleLength),
+                Truncate(message, UserNotification.MaximumMessageLength),
+                "admin-testers",
+                now));
+            var email = admin.Email?.Trim();
+            if (!string.IsNullOrEmpty(email)
+                && email.Length <= AdminUserEmail.MaximumEmailLength
+                && MimeKit.MailboxAddress.TryParse(email, out _))
+            {
+                // The admin email outbox sends it once SMTP is configured, and it shows on Sent emails.
+                dbContext.AdminUserEmails.Add(AdminUserEmail.Create(
+                    Guid.NewGuid(),
+                    admin.Id,
+                    admin.Id,
+                    email,
+                    Truncate(title, AdminUserEmail.MaximumSubjectLength),
+                    body,
+                    now));
+            }
+        }
+    }
+
+    private static string Truncate(string value, int maximumLength) =>
+        value.Length <= maximumLength ? value : value[..(maximumLength - 1)] + "…";
 
     private async Task<bool> PropertyCampaignUsageExistsAsync(
         OrganizationBillingAccount account,
@@ -373,38 +542,51 @@ public sealed class BillingService(
             && record.CampaignGenerationJob.PropertyId == propertyId,
             cancellationToken);
 
-    private string PriceId(SubscriptionPlan plan)
+    private static bool HasActiveSubscription(OrganizationBillingAccount account, DateTimeOffset now) =>
+        SubscriptionPlanFeatures.IsPaid(account.Plan)
+        && account.SubscriptionStatus is BillingSubscriptionStatus.Active or BillingSubscriptionStatus.Trialing
+        && now < account.PaidThroughUtc;
+
+    private static bool IncludesPremiumAi(OrganizationBillingAccount account, DateTimeOffset now) =>
+        SubscriptionPlanFeatures.IncludesPremiumAi(account.Plan) && HasActiveSubscription(account, now);
+
+    private string PriceId(SubscriptionPlan plan, BillingInterval interval)
     {
-        var priceId = plan switch
-        {
-            SubscriptionPlan.Starter => options.Value.StarterPriceId,
-            SubscriptionPlan.Professional => options.Value.ProfessionalPriceId,
-            _ => string.Empty,
-        };
+        var priceId = PriceIds().SingleOrDefault(price => price.Plan == plan && price.Interval == interval).PriceId;
         return !string.IsNullOrWhiteSpace(priceId)
             ? priceId
-            : throw new InvalidOperationException($"Stripe price configuration is missing for the {plan} plan.");
+            : throw new InvalidOperationException(
+                $"Stripe price configuration is missing for {interval.ToString().ToLowerInvariant()} {plan} billing.");
     }
 
-    private SubscriptionPlan Plan(string priceId)
+    private (SubscriptionPlan Plan, BillingInterval Interval) Plan(string priceId)
     {
-        if (string.Equals(priceId, options.Value.StarterPriceId, StringComparison.Ordinal))
+        foreach (var price in PriceIds())
         {
-            return SubscriptionPlan.Starter;
-        }
-
-        if (string.Equals(priceId, options.Value.ProfessionalPriceId, StringComparison.Ordinal))
-        {
-            return SubscriptionPlan.Professional;
+            if (!string.IsNullOrWhiteSpace(price.PriceId) && string.Equals(priceId, price.PriceId, StringComparison.Ordinal))
+            {
+                return (price.Plan, price.Interval);
+            }
         }
 
         throw new InvalidOperationException("The Stripe subscription uses an unknown price.");
     }
 
+    private (SubscriptionPlan Plan, BillingInterval Interval, string PriceId)[] PriceIds() =>
+    [
+        (SubscriptionPlan.Basic, BillingInterval.Monthly, options.Value.BasicPriceId),
+        (SubscriptionPlan.Professional, BillingInterval.Monthly, options.Value.ProfessionalPriceId),
+        (SubscriptionPlan.Enterprise, BillingInterval.Monthly, options.Value.EnterprisePriceId),
+        (SubscriptionPlan.Basic, BillingInterval.Annual, options.Value.BasicAnnualPriceId),
+        (SubscriptionPlan.Professional, BillingInterval.Annual, options.Value.ProfessionalAnnualPriceId),
+        (SubscriptionPlan.Enterprise, BillingInterval.Annual, options.Value.EnterpriseAnnualPriceId),
+    ];
+
     private int Allowance(SubscriptionPlan plan) => plan switch
     {
-        SubscriptionPlan.Starter => options.Value.StarterMonthlyCampaignAllowance,
+        SubscriptionPlan.Basic => options.Value.BasicMonthlyCampaignAllowance,
         SubscriptionPlan.Professional => options.Value.ProfessionalMonthlyCampaignAllowance,
+        SubscriptionPlan.Enterprise => options.Value.EnterpriseMonthlyCampaignAllowance,
         _ => 0,
     };
 
@@ -438,9 +620,11 @@ public sealed class BillingService(
         account.CampaignUsage,
         account.AdditionalCampaignUsage,
         reservedCampaignUsage,
-        account.Plan == SubscriptionPlan.Free
+        account.Plan == SubscriptionPlan.Trial
             && account.MonthlyCampaignAllowance > 0
-            && now < account.CurrentPeriodEndUtc);
+            && now < account.CurrentPeriodEndUtc,
+        BillingInterval: account.BillingInterval,
+        PaidThroughUtc: account.SubscriptionPeriodEndUtc);
 
     private static void EnsureAbsoluteUrl(string value, string parameterName)
     {

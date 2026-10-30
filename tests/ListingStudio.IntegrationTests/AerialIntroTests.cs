@@ -1,6 +1,7 @@
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Billing;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Notifications;
 using ListingStudio.Domain.Properties;
@@ -221,6 +222,9 @@ public sealed class AerialIntroTests(PostgreSqlWebApplicationFixture fixture)
             new PropertyInput(
                 "123 Main Street", null, "Raleigh", "NC", "27601", 450_000m, 3, 2.5m, 2_100, 0.25m, 1998,
                 PropertyType.SingleFamily, "A comfortable home.", ListingStatus.Draft));
+        // The drone intro comes with Professional and Enterprise.
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services, registration.UserId!, SubscriptionPlan.Professional, fixture.Factory.TimeProvider.GetUtcNow());
         return new OwnerProperty(registration.UserId!, propertyId);
     }
 

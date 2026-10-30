@@ -124,10 +124,12 @@ public sealed class ListingStudioWebApplicationFactory(
                 ["AzureBlobStorage:CampaignLocalRootPath"] = Path.Combine(mediaRootPath, "campaign-assets"),
                 ["FFmpeg:ExecutablePath"] = "/usr/bin/true",
                 ["Stripe:WebhookSecret"] = FakeBillingProviderGateway.WebhookSecret,
-                ["Stripe:StarterPriceId"] = FakeBillingProviderGateway.StarterPriceId,
+                ["Stripe:BasicPriceId"] = FakeBillingProviderGateway.BasicPriceId,
                 ["Stripe:ProfessionalPriceId"] = FakeBillingProviderGateway.ProfessionalPriceId,
+                ["Stripe:EnterprisePriceId"] = FakeBillingProviderGateway.EnterprisePriceId,
+                ["Stripe:EnterpriseAnnualPriceId"] = FakeBillingProviderGateway.EnterpriseAnnualPriceId,
                 ["Stripe:FreeTrialCampaignAllowance"] = "1",
-                ["Stripe:StarterMonthlyCampaignAllowance"] = "2",
+                ["Stripe:BasicMonthlyCampaignAllowance"] = "2",
                 ["Stripe:ProfessionalMonthlyCampaignAllowance"] = "5",
             });
         });
@@ -367,8 +369,10 @@ public sealed class FakePropertyVideoFrameExtractor : IPropertyVideoFrameExtract
 public sealed class FakeBillingProviderGateway : IBillingProviderGateway
 {
     public const string WebhookSecret = "whsec_integration_test_only";
-    public const string StarterPriceId = "price_starter_test";
+    public const string BasicPriceId = "price_basic_test";
     public const string ProfessionalPriceId = "price_professional_test";
+    public const string EnterprisePriceId = "price_enterprise_test";
+    public const string EnterpriseAnnualPriceId = "price_enterprise_annual_test";
 
     private int customerCallCount;
     private int checkoutCallCount;
@@ -417,8 +421,10 @@ public sealed class FakeBillingProviderGateway : IBillingProviderGateway
             Options.Create(new StripeOptions
             {
                 WebhookSecret = WebhookSecret,
-                StarterPriceId = StarterPriceId,
+                BasicPriceId = BasicPriceId,
                 ProfessionalPriceId = ProfessionalPriceId,
+                EnterprisePriceId = EnterprisePriceId,
+                EnterpriseAnnualPriceId = EnterpriseAnnualPriceId,
                 WebhookToleranceSeconds = 300,
             }),
             TimeProvider.System);

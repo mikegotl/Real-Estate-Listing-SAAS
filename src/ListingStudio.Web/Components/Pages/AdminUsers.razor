@@ -58,8 +58,10 @@
 {
     <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-1">Testers</MudText>
     <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-        Testers use the site for free: their campaigns skip plan, trial and allowance checks and are not counted
-        against their workspace. Safety caps still apply to everyone, such as @CampaignVideoRevision.FreeRendersPerVideo
+        Testers use the site for free with every feature, including the AI drone fly-in and AI agent presenter. Their
+        campaigns skip plan, trial and allowance checks and are not counted against their workspace. Each tester can
+        start @PlatformTesters.DefaultMonthlyCampaignLimit new property campaigns a month (UTC) unless you raise it below,
+        and every platform admin gets a notification and an email when a tester starts their last one. Safety caps still apply to everyone, such as @CampaignVideoRevision.FreeRendersPerVideo
         chat updates per video and @IHelpChatService.MaximumMessagesPerDay Ask AI questions a day.
     </MudText>
 }
@@ -127,7 +129,7 @@ else
                             @if (account.IsTester)
                             {
                                 <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined"
-                                         Icon="@Icons.Material.Filled.Science">Tester · free</MudChip>
+                                         Icon="@Icons.Material.Filled.Science">Tester · @account.TesterCampaignsThisMonth of @account.TesterMonthlyCampaignLimit campaigns this month</MudChip>
                             }
                         </p>
                         </div>
@@ -136,6 +138,19 @@ else
                         <MudButton Href="@EmailLink(account.UserId)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
                                    StartIcon="@Icons.Material.Filled.Email">Email</MudButton>
                         <TesterForm UserId="@account.UserId" IsTester="@account.IsTester" Query="@result.Query" TestersView="@TestersView" />
+                        @if (account.IsTester)
+                        {
+                            <form action="/admin/users/testers/limit" method="post" class="admin-impersonate-form tester-limit-form">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="userId" value="@account.UserId" />
+                                <input type="hidden" name="q" value="@result.Query" />
+                                <input type="hidden" name="testers" value="@(TestersView ? "true" : "false")" />
+                                <label for="@($"limit-{account.UserId}")">Campaigns / month</label>
+                                <input id="@($"limit-{account.UserId}")" name="limit" type="number" min="0"
+                                       max="@PlatformTesters.MaximumMonthlyCampaignLimit" value="@account.TesterMonthlyCampaignLimit" required />
+                                <MudButton ButtonType="ButtonType.Submit" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary">Save limit</MudButton>
+                            </form>
+                        }
                         @if (!account.IsPlatformAdmin)
                         {
                             <ImpersonateForm UserId="@account.UserId" Query="@result.Query" ReturnUrl="/auth"
@@ -227,9 +242,11 @@ else
 
     private (Severity Severity, string Text)? NoticeMessage => Notice switch
     {
-        "tester-added-emailed" => (Severity.Success, "Added to Testers. They can now use the site for free, and a welcome email is queued (see Sent emails)."),
-        "tester-added" => (Severity.Success, "Added to Testers. They can now use the site for free. They have no email address, so no welcome email was sent."),
+        "tester-added-emailed" => (Severity.Success, $"Added to Testers. They get every feature and {PlatformTesters.DefaultMonthlyCampaignLimit} campaigns a month, and a welcome email is queued (see Sent emails)."),
+        "tester-added" => (Severity.Success, $"Added to Testers. They get every feature and {PlatformTesters.DefaultMonthlyCampaignLimit} campaigns a month. They have no email address, so no welcome email was sent."),
         "tester-removed" => (Severity.Success, "Removed from Testers. Their workspace's plan and allowance apply again."),
+        "tester-limit-saved" => (Severity.Success, "Saved the tester's monthly campaign limit. It applies right away."),
+        "tester-limit-invalid" => (Severity.Warning, $"Enter a monthly campaign limit from 0 to {PlatformTesters.MaximumMonthlyCampaignLimit}."),
         "tester-unchanged" => (Severity.Info, "Nothing changed; the user was already in that state."),
         "tester-UserNotFound" => (Severity.Warning, "That user no longer exists."),
         "tester-NotPlatformAdmin" => (Severity.Warning, "Your account no longer has platform administrator access."),

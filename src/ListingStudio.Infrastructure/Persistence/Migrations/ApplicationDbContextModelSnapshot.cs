@@ -299,6 +299,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<int>("AdditionalCampaignUsage")
                         .HasColumnType("integer");
 
+                    b.Property<string>("BillingInterval")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Monthly");
+
                     b.Property<int>("CampaignUsage")
                         .HasColumnType("integer");
 
@@ -329,6 +336,12 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<string>("StripeSubscriptionId")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<DateTimeOffset?>("SubscriptionPeriodEndUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("SubscriptionPeriodStartUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("SubscriptionStatus")
                         .IsRequired()
@@ -2844,6 +2857,9 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("text");
+
+                    b.Property<int?>("TesterMonthlyCampaignLimit")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("boolean");

@@ -1,4 +1,5 @@
 using ListingStudio.Application.Notifications;
+using ListingStudio.Domain.Notifications;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +13,9 @@ public sealed class UserNotificationService(
     {
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         var owned = dbContext.UserNotifications.AsNoTracking()
-            .Where(notification => notification.UserId == userId && notification.OrganizationId == organizationId);
+            .Where(notification => notification.UserId == userId
+                && (notification.OrganizationId == organizationId
+                    || notification.Kind == UserNotificationKind.TesterCampaignLimit));
         var rows = await owned
             .OrderByDescending(notification => notification.CreatedAtUtc)
             .ThenByDescending(notification => notification.Id)
@@ -42,7 +45,8 @@ public sealed class UserNotificationService(
         var notification = await dbContext.UserNotifications.SingleOrDefaultAsync(
             candidate => candidate.Id == notificationId
                 && candidate.UserId == userId
-                && candidate.OrganizationId == organizationId,
+                && (candidate.OrganizationId == organizationId
+                    || candidate.Kind == UserNotificationKind.TesterCampaignLimit),
             cancellationToken);
         if (notification is null)
         {
@@ -60,7 +64,8 @@ public sealed class UserNotificationService(
         var now = timeProvider.GetUtcNow();
         return await dbContext.UserNotifications
             .Where(notification => notification.UserId == userId
-                && notification.OrganizationId == organizationId
+                && (notification.OrganizationId == organizationId
+                    || notification.Kind == UserNotificationKind.TesterCampaignLimit)
                 && notification.ReadAtUtc == null)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(notification => notification.ReadAtUtc, now),

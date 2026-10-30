@@ -2,11 +2,43 @@ namespace ListingStudio.Domain.Billing;
 
 using ListingStudio.Domain.Organizations;
 
+/// <summary>
+/// The workspace's plan. Stored by name, so renaming a value needs a data migration
+/// (Free became Trial and Starter became Basic in RenameBillingPlans).
+/// </summary>
 public enum SubscriptionPlan
 {
-    Free,
-    Starter,
+    Trial,
+    Basic,
     Professional,
+    Enterprise,
+}
+
+/// <summary>Which paid AI features each plan includes.</summary>
+public static class SubscriptionPlanFeatures
+{
+    /// <summary>The AI drone intro and the AI agent presenter come with Professional and Enterprise.</summary>
+    public static bool IncludesPremiumAi(SubscriptionPlan plan) =>
+        plan is SubscriptionPlan.Professional or SubscriptionPlan.Enterprise;
+
+    public static bool IsPaid(SubscriptionPlan plan) =>
+        plan is SubscriptionPlan.Basic or SubscriptionPlan.Professional or SubscriptionPlan.Enterprise;
+
+    public static string DisplayName(SubscriptionPlan plan) => plan switch
+    {
+        SubscriptionPlan.Trial => "Trial",
+        SubscriptionPlan.Basic => "Basic",
+        SubscriptionPlan.Professional => "Professional",
+        SubscriptionPlan.Enterprise => "Enterprise",
+        _ => plan.ToString(),
+    };
+}
+
+/// <summary>How often a paid plan is billed. Campaign limits reset every month either way.</summary>
+public enum BillingInterval
+{
+    Monthly,
+    Annual,
 }
 
 public enum BillingSubscriptionStatus
@@ -35,7 +67,7 @@ public sealed class OrganizationBillingAccount
         int freeTrialDays)
     {
         OrganizationId = organizationId;
-        Plan = SubscriptionPlan.Free;
+        Plan = SubscriptionPlan.Trial;
         SubscriptionStatus = BillingSubscriptionStatus.None;
         CurrentPeriodStartUtc = now;
         CurrentPeriodEndUtc = now.AddDays(freeTrialDays);
@@ -52,8 +84,19 @@ public sealed class OrganizationBillingAccount
 
     public SubscriptionPlan Plan { get; private set; }
 
+    public BillingInterval BillingInterval { get; private set; }
+
+    /// <summary>The paid period Stripe bills for (a month or a year); null before the first subscription.</summary>
+    public DateTimeOffset? SubscriptionPeriodStartUtc { get; private set; }
+
+    public DateTimeOffset? SubscriptionPeriodEndUtc { get; private set; }
+
     public BillingSubscriptionStatus SubscriptionStatus { get; private set; }
 
+    /// <summary>
+    /// The current campaign-usage window: the trial, or one month of the paid period. An annual subscription moves
+    /// through twelve monthly windows, each with a fresh allowance.
+    /// </summary>
     public DateTimeOffset CurrentPeriodStartUtc { get; private set; }
 
     public DateTimeOffset CurrentPeriodEndUtc { get; private set; }
@@ -75,8 +118,8 @@ public sealed class OrganizationBillingAccount
     public static OrganizationBillingAccount Create(
         Guid organizationId,
         DateTimeOffset now,
-        int freeTrialCampaignAllowance = 10,
-        int freeTrialDays = 30)
+        int freeTrialCampaignAllowance = 2,
+        int freeTrialDays = 14)
     {
         if (organizationId == Guid.Empty)
         {
@@ -123,7 +166,8 @@ public sealed class OrganizationBillingAccount
         DateTimeOffset periodEndUtc,
         int monthlyCampaignAllowance,
         DateTimeOffset stripeEventCreatedUtc,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        BillingInterval interval = BillingInterval.Monthly)
     {
         if (stripeEventCreatedUtc < LastStripeEventCreatedUtc)
         {
@@ -139,20 +183,69 @@ public sealed class OrganizationBillingAccount
         LinkCustomer(stripeCustomerId, now);
         LinkSubscription(stripeSubscriptionId, now);
 
-        if (CurrentPeriodStartUtc != periodStartUtc || CurrentPeriodEndUtc != periodEndUtc)
+        var window = UsageWindow(periodStartUtc, periodEndUtc, now);
+        if (SubscriptionPeriodStartUtc != periodStartUtc
+            || SubscriptionPeriodEndUtc != periodEndUtc
+            || CurrentPeriodStartUtc != window.Start)
         {
             CampaignUsage = 0;
             AdditionalCampaignUsage = 0;
         }
 
         Plan = plan;
+        BillingInterval = interval;
         SubscriptionStatus = status;
-        CurrentPeriodStartUtc = periodStartUtc;
-        CurrentPeriodEndUtc = periodEndUtc;
+        SubscriptionPeriodStartUtc = periodStartUtc;
+        SubscriptionPeriodEndUtc = periodEndUtc;
+        CurrentPeriodStartUtc = window.Start;
+        CurrentPeriodEndUtc = window.End;
         MonthlyCampaignAllowance = monthlyCampaignAllowance;
         LastStripeEventCreatedUtc = stripeEventCreatedUtc;
         UpdatedAtUtc = now;
         return true;
+    }
+
+    /// <summary>
+    /// Moves an annual subscription into the month that contains <paramref name="now"/> and starts that month's
+    /// allowance fresh. Returns false when the current window is still running or the paid period has ended.
+    /// </summary>
+    public bool AdvanceUsageWindow(DateTimeOffset now)
+    {
+        if (SubscriptionPeriodStartUtc is not { } start
+            || SubscriptionPeriodEndUtc is not { } end
+            || now < CurrentPeriodEndUtc
+            || CurrentPeriodEndUtc >= end)
+        {
+            return false;
+        }
+
+        var window = UsageWindow(start, end, now);
+        CurrentPeriodStartUtc = window.Start;
+        CurrentPeriodEndUtc = window.End;
+        CampaignUsage = 0;
+        AdditionalCampaignUsage = 0;
+        UpdatedAtUtc = now;
+        return true;
+    }
+
+    /// <summary>The paid period ends when Stripe's billed period does, not when the monthly usage window does.</summary>
+    public DateTimeOffset PaidThroughUtc => SubscriptionPeriodEndUtc ?? CurrentPeriodEndUtc;
+
+    // Months count from the paid period's start, so a subscription that began on the 31st resets on the last day of
+    // shorter months, as AddMonths does.
+    private static (DateTimeOffset Start, DateTimeOffset End) UsageWindow(
+        DateTimeOffset periodStart,
+        DateTimeOffset periodEnd,
+        DateTimeOffset at)
+    {
+        var months = 0;
+        while (periodStart.AddMonths(months + 1) <= at && periodStart.AddMonths(months + 1) < periodEnd)
+        {
+            months++;
+        }
+
+        var windowEnd = periodStart.AddMonths(months + 1);
+        return (periodStart.AddMonths(months), windowEnd < periodEnd ? windowEnd : periodEnd);
     }
 
     public void RecordCampaignUsage(DateTimeOffset now)
@@ -164,7 +257,7 @@ public sealed class OrganizationBillingAccount
 
     public bool ExpireFreeTrial(DateTimeOffset now)
     {
-        if (Plan != SubscriptionPlan.Free || now < CurrentPeriodEndUtc || MonthlyCampaignAllowance == 0)
+        if (Plan != SubscriptionPlan.Trial || now < CurrentPeriodEndUtc || MonthlyCampaignAllowance == 0)
         {
             return false;
         }

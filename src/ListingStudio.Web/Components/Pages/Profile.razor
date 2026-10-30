@@ -6,6 +6,7 @@
 @inject IAgentProfileService AgentProfileService
 @inject IAgentAvatarPreviewService AgentAvatarPreviewService
 @inject IAgentAvatarVideoService AgentAvatarVideoService
+@inject IPlanFeatureGate PlanFeatureGate
 
 <PageTitle>Agent profile</PageTitle>
 
@@ -100,14 +101,27 @@
                 }
 
                 <MudDivider Class="my-5" />
-                <MudText Typo="Typo.h6" HtmlTag="h3">Agent presenter</MudText>
+                <div class="@(planIncludesPresenter ? null : "is-plan-locked")">
+                <div class="plan-unlock-row">
+                    <MudText Typo="Typo.h6" HtmlTag="h3">AI agent presenter (avatar)</MudText>
+                    @if (!planIncludesPresenter)
+                    {
+                        <PlanUnlock Feature="AI agent presenter (avatar)" />
+                    }
+                </div>
+                @if (!planIncludesPresenter)
+                {
+                    <MudText Typo="Typo.body2" Class="plan-upgrade-note mb-2" data-testid="presenter-plan-note">
+                        Included with Professional and Enterprise. On your plan, campaigns show this photo on the closing card instead.
+                    </MudText>
+                }
                 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
                     Use this approved headshot during the opening and closing of new campaign videos while the disclosed AI voice narrates.
                 </MudText>
                 <MudCheckBox T="bool"
                              Value="includeAvatarInCampaigns"
                              ValueChanged="SetAvatarDefaultAsync"
-                             Disabled="busy"
+                             Disabled="@(busy || !planIncludesPresenter)"
                              Color="Color.Primary"
                              Label="Include my agent presenter in new campaign videos by default. I confirm this is my photo and consent to this use." />
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
@@ -123,7 +137,7 @@
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Primary"
                            StartIcon="@Icons.Material.Filled.PlayCircle"
-                           Disabled="busy"
+                           Disabled="@(busy || !planIncludesPresenter)"
                            OnClick="PrepareAvatarPreviewAsync"
                            Class="mt-3">
                     Preview presenter
@@ -146,6 +160,7 @@
                                aria-label="Preview the agent presenter in a campaign video"></video>
                     </MudPaper>
                 }
+                </div>
             }
         </MudPaper>
     </MudItem>
@@ -176,6 +191,7 @@
     private double focusY = 0.5;
     private AgentPortraitCropShape cropShape = AgentPortraitCropShape.Square;
     private bool includeAvatarInCampaigns;
+    private bool planIncludesPresenter = true;
     private bool avatarPreviewReady;
 
     private string PortraitUrl => portrait is null ? string.Empty : $"/agent-portraits/{portrait.Id}?v={portrait.UpdatedAtUtc.ToUnixTimeMilliseconds()}";
@@ -193,6 +209,7 @@
         var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
         portrait = await AgentPortraitService.GetLatestAsync(userId);
         includeAvatarInCampaigns = (await AgentProfileService.GetAsync(userId)).IncludeAvatarInCampaigns;
+        planIncludesPresenter = (await PlanFeatureGate.GetAccessAsync(userId)).IncludesPremiumAi;
     }
 
     private async Task UploadAsync(InputFileChangeEventArgs args) => await RunAsync(async userId =>

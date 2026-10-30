@@ -14,5 +14,6 @@ public sealed class ApplicationUserConfiguration : IEntityTypeConfiguration<Appl
         builder.Property(user => user.RequiresPasswordChange)
             .HasDefaultValue(false)
             .IsRequired();
+        builder.Property(user => user.TesterMonthlyCampaignLimit);
     }
 }

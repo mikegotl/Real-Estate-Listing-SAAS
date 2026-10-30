@@ -11,6 +11,16 @@ public static class PlatformTesters
     public const string AddAction = "platform-admin.testers.add";
     public const string RemoveAction = "platform-admin.testers.remove";
     public const string InviteAction = "platform-admin.testers.invite";
+    public const string LimitAction = "platform-admin.testers.limit";
+
+    /// <summary>New property campaigns a tester can start each calendar month (UTC) unless an admin raises it.</summary>
+    public const int DefaultMonthlyCampaignLimit = 10;
+
+    public const int MaximumMonthlyCampaignLimit = 1_000;
+
+    /// <summary>The first day of the calendar month (UTC) that tester limits count from.</summary>
+    public static DateTimeOffset MonthStart(DateTimeOffset now) =>
+        new(now.UtcDateTime.Year, now.UtcDateTime.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>Queued automatically, from the admin who added them, when someone joins the Testers group.</summary>
     public const string WelcomeEmailSubject = "You're now a Creative Listing Studio tester";
@@ -18,7 +28,7 @@ public static class PlatformTesters
     public const string WelcomeEmailBody = """
         Hi,
 
-        You've been added to the Creative Listing Studio Testers group, so you can use Creative Listing Studio for free while you help us test it. Campaigns you create don't need a plan and don't count toward your workspace's allowance.
+        You've been added to the Creative Listing Studio Testers group, so you can use Creative Listing Studio for free while you help us test it. You get every feature, including the AI drone fly-in and the AI agent presenter, and up to 10 new property campaigns each month. Campaigns you create don't need a plan and don't count toward your workspace's allowance.
 
         Sign in as usual to get started. Reply to this email with anything that feels off or could be better.
 
@@ -94,5 +104,15 @@ public interface IPlatformAdminTesterAccess
         string administratorUserId,
         string targetUserId,
         bool isTester,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets how many new property campaigns the tester can start each month, and records it in the audit log.
+    /// Null puts the tester back on <see cref="PlatformTesters.DefaultMonthlyCampaignLimit"/>.
+    /// </summary>
+    Task<TesterChangeResult> SetMonthlyCampaignLimitAsync(
+        string administratorUserId,
+        string targetUserId,
+        int? monthlyCampaignLimit,
         CancellationToken cancellationToken = default);
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using ListingStudio.AI.DependencyInjection;
 using ListingStudio.Application.Properties;
@@ -245,6 +246,41 @@ app.MapPost("/admin/users/testers", async (
         TesterChangeFailure.None when !result.Changed => "tester-unchanged",
         TesterChangeFailure.None when isTester => result.WelcomeEmailQueued ? "tester-added-emailed" : "tester-added",
         TesterChangeFailure.None => "tester-removed",
+        _ => $"tester-{result.Failure}",
+    };
+    var returnQuery = string.Equals(form["testers"], "true", StringComparison.OrdinalIgnoreCase)
+        ? "testers=true"
+        : $"q={Uri.EscapeDataString(form["q"].ToString())}";
+    return Results.LocalRedirect($"/admin/users?{returnQuery}&notice={notice}");
+}).RequireAuthorization(PlatformAdministration.Policy);
+
+app.MapPost("/admin/users/testers/limit", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    IPlatformAdminTesterAccess testerAccess,
+    CancellationToken cancellationToken) =>
+{
+    await antiforgery.ValidateRequestAsync(context);
+    var administratorId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (administratorId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var form = await context.Request.ReadFormAsync(cancellationToken);
+    var targetUserId = form["userId"].ToString();
+    if (string.IsNullOrWhiteSpace(targetUserId)
+        || !int.TryParse(form["limit"], NumberStyles.None, CultureInfo.InvariantCulture, out var limit)
+        || limit > PlatformTesters.MaximumMonthlyCampaignLimit)
+    {
+        return Results.LocalRedirect("/admin/users?testers=true&notice=tester-limit-invalid");
+    }
+
+    var result = await testerAccess.SetMonthlyCampaignLimitAsync(administratorId, targetUserId, limit, cancellationToken);
+    var notice = result.Failure switch
+    {
+        TesterChangeFailure.None when !result.Changed => "tester-unchanged",
+        TesterChangeFailure.None => "tester-limit-saved",
         _ => $"tester-{result.Failure}",
     };
     var returnQuery = string.Equals(form["testers"], "true", StringComparison.OrdinalIgnoreCase)
@@ -689,15 +725,20 @@ app.MapPost("/billing/checkout", async (
 
     var form = await context.Request.ReadFormAsync(cancellationToken);
     if (!Enum.TryParse<SubscriptionPlan>(form["plan"], ignoreCase: true, out var plan)
-        || plan is not (SubscriptionPlan.Starter or SubscriptionPlan.Professional))
+        || !SubscriptionPlanFeatures.IsPaid(plan))
     {
         return Results.BadRequest("A valid paid plan is required.");
     }
+
+    var interval = string.Equals(form["interval"], nameof(BillingInterval.Annual), StringComparison.OrdinalIgnoreCase)
+        ? BillingInterval.Annual
+        : BillingInterval.Monthly;
 
     var baseUri = BillingBaseUri(context, stripeOptions.Value);
     var redirect = await billingService.CreateCheckoutSessionAsync(
         userId,
         plan,
+        interval,
         new Uri(baseUri, "/billing?checkout=success").AbsoluteUri,
         new Uri(baseUri, "/billing?checkout=cancelled").AbsoluteUri,
         cancellationToken);

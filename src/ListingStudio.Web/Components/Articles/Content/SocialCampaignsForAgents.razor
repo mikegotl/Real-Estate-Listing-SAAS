@@ -5,7 +5,7 @@
     Buyers meet most homes on a screen long before they walk through the door. For agents, that makes every listing a
     small media project: photos, a short vertical video, a voiceover, captions and a handful of posts, all of it needed
     on launch day. This guide looks at what recent research says about buyers and social media, what a creative listing
-    campaign needs today, and how much an all-in-one studio saves compared with stitching together separate subscriptions.
+    campaign needs today, and how an all-in-one studio compares with stitching together separate subscriptions.
 </p>
 
 <h2 id="buyers-start-online">Buyers start online, and they start with pictures</h2>
@@ -65,13 +65,13 @@
 
 <p>
     Paid month to month at the list prices below, that five-app stack comes to <strong>@Money(StackTotal) a month</strong>.
-    @if (StarterSavings > 0)
+    @if (BasicSavings > 0)
     {
-        <text>Creative Listing Studio's Starter plan is @Money(StarterPrice) a month for @Stripe.StarterMonthlyCampaignAllowance completed campaigns, which is <strong>@Money(StarterSavings) less each month</strong>, or about @Money(Math.Round(StarterSavings * 12)) a year.</text>
+        <text>Creative Listing Studio's Basic plan is @Money(BasicPrice) a month for @Stripe.BasicMonthlyCampaignAllowance completed campaigns, which is <strong>@Money(BasicSavings) less each month</strong>, or about @Money(Math.Round(BasicSavings * 12)) a year.</text>
     }
     else
     {
-        <text>Creative Listing Studio's Starter plan is @Money(StarterPrice) a month for @Stripe.StarterMonthlyCampaignAllowance completed campaigns.</text>
+        <text>Creative Listing Studio's Basic plan is @Money(BasicPrice) a month for @Stripe.BasicMonthlyCampaignAllowance completed campaigns.</text>
     }
     @if (ProfessionalSavings >= 0)
     {
@@ -114,9 +114,9 @@
                 <td class="numeric">@Money(StackTotal)</td>
             </tr>
             <tr class="ours">
-                <th scope="row">Creative Listing Studio Starter</th>
-                <td>@Stripe.StarterMonthlyCampaignAllowance completed campaigns a month</td>
-                <td class="numeric">@Money(StarterPrice)</td>
+                <th scope="row">Creative Listing Studio Basic</th>
+                <td>@Stripe.BasicMonthlyCampaignAllowance completed campaigns a month</td>
+                <td class="numeric">@Money(BasicPrice)</td>
             </tr>
             <tr class="ours">
                 <th scope="row">Creative Listing Studio Professional</th>
@@ -236,11 +236,11 @@
 
     private static decimal StackTotal => Stack.Sum(tool => tool.MonthlyUsd);
 
-    private decimal StarterPrice => Stripe.StarterMonthlyPriceUsd;
+    private decimal BasicPrice => Stripe.BasicMonthlyPriceUsd;
 
     private decimal ProfessionalPrice => Stripe.ProfessionalMonthlyPriceUsd;
 
-    private decimal StarterSavings => StackTotal - StarterPrice;
+    private decimal BasicSavings => StackTotal - BasicPrice;
 
     private decimal ProfessionalSavings => StackTotal - ProfessionalPrice;
 
@@ -248,7 +248,7 @@
     [
         .. Stack.Select(tool => new ArticleCostChart.Row(tool.Name, tool.MonthlyUsd, ArticleCostChart.Group.Separate)),
         new("Separate tools, combined", StackTotal, ArticleCostChart.Group.SeparateTotal),
-        new("Creative Listing Studio Starter", StarterPrice, ArticleCostChart.Group.Studio),
+        new("Creative Listing Studio Basic", BasicPrice, ArticleCostChart.Group.Studio),
         new("Creative Listing Studio Professional", ProfessionalPrice, ArticleCostChart.Group.Studio),
     ];
 

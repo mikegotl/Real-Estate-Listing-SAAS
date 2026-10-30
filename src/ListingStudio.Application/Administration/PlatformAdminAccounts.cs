@@ -15,7 +15,9 @@ public sealed record AdminAccountRow(
     DateTimeOffset? LastSuccessfulSignInAtUtc,
     bool IsPlatformAdmin,
     bool IsTester,
-    IReadOnlyList<AdminWorkspaceRow> Workspaces);
+    IReadOnlyList<AdminWorkspaceRow> Workspaces,
+    int TesterMonthlyCampaignLimit = PlatformTesters.DefaultMonthlyCampaignLimit,
+    int TesterCampaignsThisMonth = 0);
 
 public sealed record AdminWorkspaceRow(
     Guid OrganizationId,

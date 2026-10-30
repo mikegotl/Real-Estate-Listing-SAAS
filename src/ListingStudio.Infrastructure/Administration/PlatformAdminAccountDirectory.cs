@@ -1,11 +1,14 @@
 using ListingStudio.Application.Administration;
+using ListingStudio.Infrastructure.Billing;
 using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace ListingStudio.Infrastructure.Administration;
 
-public sealed class PlatformAdminAccountDirectory(ApplicationDbContext dbContext) : IPlatformAdminAccountDirectory
+public sealed class PlatformAdminAccountDirectory(
+    ApplicationDbContext dbContext,
+    TimeProvider timeProvider) : IPlatformAdminAccountDirectory
 {
     private const int MaximumPropertiesPerWorkspace = 50;
 
@@ -66,6 +69,7 @@ public sealed class PlatformAdminAccountDirectory(ApplicationDbContext dbContext
                 Email = user.Email ?? string.Empty,
                 UserName = user.UserName ?? string.Empty,
                 user.LastSuccessfulSignInAtUtc,
+                user.TesterMonthlyCampaignLimit,
             })
             .ToListAsync(cancellationToken);
         var hasMore = matchingUsers.Count > maximumResults;
@@ -87,6 +91,13 @@ public sealed class PlatformAdminAccountDirectory(ApplicationDbContext dbContext
             .Where(membership => membership.Name == PlatformTesters.Role)
             .Select(membership => membership.UserId)
             .ToHashSet(StringComparer.Ordinal);
+        var testerIdList = testerUserIds.ToList();
+        var testerUsage = (await TesterCampaignUsage.CountedJobs(dbContext, testerIdList, timeProvider.GetUtcNow())
+                .Select(job => new { job.RequestedByUserId, job.PropertyId })
+                .Distinct()
+                .ToListAsync(cancellationToken))
+            .GroupBy(item => item.RequestedByUserId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         var memberships = await dbContext.OrganizationMembers.AsNoTracking()
             .Where(member => userIds.Contains(member.UserId))
             .OrderBy(member => member.JoinedAtUtc)
@@ -141,7 +152,9 @@ public sealed class PlatformAdminAccountDirectory(ApplicationDbContext dbContext
                         member.Name,
                         member.Role.ToString(),
                         propertiesByOrganization.GetValueOrDefault(member.OrganizationId, [])))
-                    .ToList()))
+                    .ToList(),
+                user.TesterMonthlyCampaignLimit ?? PlatformTesters.DefaultMonthlyCampaignLimit,
+                testerUsage.GetValueOrDefault(user.Id)))
             .ToList();
         return new AdminAccountSearchResult(query, accounts, hasMore);
     }

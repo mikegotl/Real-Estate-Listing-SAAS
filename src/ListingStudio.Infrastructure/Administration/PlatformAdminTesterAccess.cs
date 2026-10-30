@@ -64,6 +64,51 @@ public sealed class PlatformAdminTesterAccess(
         return new TesterChangeResult(TesterChangeFailure.None, changed, target.Email ?? target.UserName, welcomeEmailQueued);
     }
 
+    public async Task<TesterChangeResult> SetMonthlyCampaignLimitAsync(
+        string administratorUserId,
+        string targetUserId,
+        int? monthlyCampaignLimit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(administratorUserId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetUserId);
+        if (monthlyCampaignLimit is < 0 or > PlatformTesters.MaximumMonthlyCampaignLimit)
+        {
+            throw new ArgumentOutOfRangeException(nameof(monthlyCampaignLimit));
+        }
+
+        var administrator = await userManager.FindByIdAsync(administratorUserId);
+        if (administrator is null || !await userManager.IsInRoleAsync(administrator, PlatformAdministration.Role))
+        {
+            await RecordAsync(PlatformTesters.LimitAction, administratorUserId, targetUserId, "denied", cancellationToken);
+            return new TesterChangeResult(TesterChangeFailure.NotPlatformAdmin, false, null);
+        }
+
+        var target = await userManager.FindByIdAsync(targetUserId);
+        if (target is null)
+        {
+            await RecordAsync(PlatformTesters.LimitAction, administratorUserId, targetUserId, "user-not-found", cancellationToken);
+            return new TesterChangeResult(TesterChangeFailure.UserNotFound, false, null);
+        }
+
+        // The default is stored as null, so changing the default later moves everyone who was never raised.
+        var stored = monthlyCampaignLimit == PlatformTesters.DefaultMonthlyCampaignLimit ? null : monthlyCampaignLimit;
+        var changed = target.TesterMonthlyCampaignLimit != stored;
+        if (changed)
+        {
+            target.SetTesterMonthlyCampaignLimit(stored);
+            EnsureSucceeded(await userManager.UpdateAsync(target));
+        }
+
+        await RecordAsync(
+            PlatformTesters.LimitAction,
+            administratorUserId,
+            targetUserId,
+            changed ? $"limit-{monthlyCampaignLimit ?? PlatformTesters.DefaultMonthlyCampaignLimit}" : "unchanged",
+            cancellationToken);
+        return new TesterChangeResult(TesterChangeFailure.None, changed, target.Email ?? target.UserName);
+    }
+
     // Uses the admin email outbox, so the Worker sends it once SMTP is configured and it shows on Sent emails.
     private bool QueueWelcomeEmail(string administratorUserId, ApplicationUser target)
     {

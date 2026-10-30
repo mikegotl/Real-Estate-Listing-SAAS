@@ -30,8 +30,9 @@ public sealed class StripeBillingGatewayTests
         var checkout = await gateway.CreateCheckoutSessionAsync(new BillingProviderCheckoutRequest(
             organizationId,
             customerId,
-            SubscriptionPlan.Starter,
-            "price_starter",
+            SubscriptionPlan.Basic,
+            BillingInterval.Monthly,
+            "price_basic",
             "https://listing.test/success",
             "https://listing.test/cancel",
             "checkout-key"));
@@ -58,7 +59,7 @@ public sealed class StripeBillingGatewayTests
                 Assert.Equal("/v1/checkout/sessions", request.Path);
                 Assert.Equal("checkout-key", request.IdempotencyKey);
                 Assert.Contains("mode=subscription", request.Body, StringComparison.Ordinal);
-                Assert.Contains("line_items%5B0%5D%5Bprice%5D=price_starter", request.Body, StringComparison.Ordinal);
+                Assert.Contains("line_items%5B0%5D%5Bprice%5D=price_basic", request.Body, StringComparison.Ordinal);
                 Assert.DoesNotContain("card", request.Body, StringComparison.OrdinalIgnoreCase);
             },
             request =>
@@ -87,7 +88,7 @@ public sealed class StripeBillingGatewayTests
                     status = "active",
                     current_period_start = Now.ToUnixTimeSeconds(),
                     current_period_end = Now.AddMonths(1).ToUnixTimeSeconds(),
-                    items = new { data = new[] { new { price = new { id = "price_starter" } } } },
+                    items = new { data = new[] { new { price = new { id = "price_basic" } } } },
                 },
             },
         });
@@ -97,7 +98,7 @@ public sealed class StripeBillingGatewayTests
         Assert.Equal("evt_verified", parsed.EventId);
         Assert.Equal("cus_verified", parsed.StripeCustomerId);
         Assert.Equal("sub_verified", parsed.StripeSubscriptionId);
-        Assert.Equal("price_starter", parsed.PriceId);
+        Assert.Equal("price_basic", parsed.PriceId);
         Assert.Equal("active", parsed.Status);
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -128,8 +129,9 @@ public sealed class StripeBillingGatewayTests
             Enabled = true,
             SecretKey = "test-secret-key",
             WebhookSecret = "test-webhook-secret",
-            StarterPriceId = "price_starter",
+            BasicPriceId = "price_basic",
             ProfessionalPriceId = "price_professional",
+            EnterprisePriceId = "price_enterprise",
             WebhookToleranceSeconds = 300,
         }),
         new FixedTimeProvider(Now));

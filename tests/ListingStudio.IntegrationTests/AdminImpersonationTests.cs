@@ -89,7 +89,7 @@ public sealed class AdminImpersonationTests(PostgreSqlWebApplicationFixture fixt
         using var checkout = await client.PostAsync("/billing/checkout", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["__RequestVerificationToken"] = HiddenValue(propertyHtml, "__RequestVerificationToken"),
-            ["plan"] = "Starter",
+            ["plan"] = "Basic",
         }));
         Assert.Equal(HttpStatusCode.Forbidden, checkout.StatusCode);
 

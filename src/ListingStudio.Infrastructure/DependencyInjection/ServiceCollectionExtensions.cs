@@ -70,17 +70,22 @@ public static class ServiceCollectionExtensions
                     && (publicUri.Scheme == Uri.UriSchemeHttps || publicUri.IsLoopback)
                     && !string.IsNullOrWhiteSpace(options.SecretKey)
                     && !string.IsNullOrWhiteSpace(options.WebhookSecret)
-                    && !string.IsNullOrWhiteSpace(options.StarterPriceId)
-                    && !string.IsNullOrWhiteSpace(options.ProfessionalPriceId)),
-                "Enabled Stripe billing requires an HTTPS API URL, an HTTPS public base URL (HTTP is allowed only for loopback), secret key, webhook secret, and both price identifiers.")
+                    && !string.IsNullOrWhiteSpace(options.BasicPriceId)
+                    && !string.IsNullOrWhiteSpace(options.ProfessionalPriceId)
+                    && !string.IsNullOrWhiteSpace(options.EnterprisePriceId)),
+                "Enabled Stripe billing requires an HTTPS API URL, an HTTPS public base URL (HTTP is allowed only for loopback), secret key, webhook secret, and the Basic, Professional and Enterprise price identifiers.")
             .Validate(options => options.FreeTrialCampaignAllowance >= 0
                     && options.FreeTrialDays is >= 1 and <= 90
-                    && options.StarterMonthlyCampaignAllowance >= 0
-                    && options.ProfessionalMonthlyCampaignAllowance >= 0,
+                    && options.BasicMonthlyCampaignAllowance >= 0
+                    && options.ProfessionalMonthlyCampaignAllowance >= 0
+                    && options.EnterpriseMonthlyCampaignAllowance >= 0,
                 "Stripe campaign allowances cannot be negative.")
-            .Validate(options => options.StarterMonthlyPriceUsd > 0
-                    && options.ProfessionalMonthlyPriceUsd > options.StarterMonthlyPriceUsd,
-                "Stripe display prices must be positive and Professional must cost more than Starter.")
+            .Validate(options => options.BasicMonthlyPriceUsd > 0
+                    && options.ProfessionalMonthlyPriceUsd > options.BasicMonthlyPriceUsd
+                    && options.EnterpriseMonthlyPriceUsd > options.ProfessionalMonthlyPriceUsd,
+                "Stripe display prices must be positive and rise from Basic to Professional to Enterprise.")
+            .Validate(options => options.AnnualDiscountPercent is >= 0 and < 100,
+                "Stripe:AnnualDiscountPercent must be between 0 and 99.")
             .Validate(options => options.WebhookToleranceSeconds is >= 60 and <= 900,
                 "Stripe webhook tolerance must be between 60 and 900 seconds.");
         services.AddOptions<CampaignGenerationOptions>()
@@ -241,6 +246,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BillingService>();
         services.AddScoped<IBillingService>(provider => provider.GetRequiredService<BillingService>());
         services.AddScoped<ICampaignBillingGate>(provider => provider.GetRequiredService<BillingService>());
+        services.AddScoped<IPlanFeatureGate>(provider => provider.GetRequiredService<BillingService>());
         services.AddHealthChecks()
             .AddCheck<PostgreSqlHealthCheck>("postgresql", tags: ["ready"]);
         services.AddHttpClient<IBillingProviderGateway, StripeBillingGateway>((provider, client) =>

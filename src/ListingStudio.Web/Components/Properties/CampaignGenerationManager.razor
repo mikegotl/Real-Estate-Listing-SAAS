@@ -6,6 +6,7 @@
 @inject IAgentPortraitService AgentPortraitService
 @inject IAgentProfileService AgentProfileService
 @inject IAgentAvatarVideoService AgentAvatarVideoService
+@inject IPlanFeatureGate PlanFeatureGate
 @inject IServiceScopeFactory ScopeFactory
 @inject ILogger<CampaignGenerationManager> Logger
 @inject IJSRuntime JSRuntime
@@ -269,13 +270,21 @@
             <MudGrid Spacing="2">
                 @foreach (var option in CreativeElementOptions)
                 {
-                    <MudItem xs="12" sm="6">
+                    var lockedByPlan = option.Element == CampaignVideoElement.AgentAvatar && !planIncludesPresenter;
+                    <MudItem xs="12" sm="6" Class="@(lockedByPlan ? "is-plan-locked" : null)">
                         <MudCheckBox T="bool"
                                      Value="@IsCreativeElementSelected(option.Element)"
                                      ValueChanged="@(value => SetCreativeElement(option.Element, value))"
-                                     Disabled="@(busy || IsReadOnly)"
+                                     Disabled="@(busy || IsReadOnly || lockedByPlan)"
                                      Label="@option.Name" />
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">@option.Details</MudText>
+                        @if (lockedByPlan)
+                        {
+                            <div class="plan-unlock-row" data-testid="presenter-plan-note">
+                                <span class="plan-upgrade-note">Included with Professional and Enterprise.</span>
+                                <PlanUnlock Feature="AI agent presenter (avatar)" />
+                            </div>
+                        }
                     </MudItem>
                 }
             </MudGrid>
@@ -618,6 +627,7 @@
     private bool selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
     private bool selectedAgentAvatarConsent;
     private bool profileIncludesPresenter;
+    private bool planIncludesPresenter = true;
     private bool soundtrackChosen;
     private RoomNarrationOverview roomNarration = RoomNarrationOverview.Empty;
     private bool choosingNarration;
@@ -662,6 +672,7 @@
             var profile = await AgentProfileService.GetAsync(userId, pollingCancellation.Token);
             portrait = await AgentPortraitService.GetLatestAsync(userId, pollingCancellation.Token);
             profileIncludesPresenter = profile.IncludeAvatarInCampaigns;
+            planIncludesPresenter = (await PlanFeatureGate.GetAccessAsync(userId, pollingCancellation.Token)).IncludesPremiumAi;
             roomNarration = await LoadRoomNarrationAsync(userId, pollingCancellation.Token);
             longFormAvailable = roomNarration.IsInUse
                 ? roomNarration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
@@ -695,7 +706,7 @@
 
                 if (job?.Status is null or CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
                 {
-                    if (profile.IncludeAvatarInCampaigns && portrait is not null)
+                    if (profile.IncludeAvatarInCampaigns && portrait is not null && planIncludesPresenter)
                     {
                         selectedCreativeElements &= ~CampaignVideoElement.AgentPortrait;
                         selectedCreativeElements |= CampaignVideoElement.AgentAvatar;
@@ -703,6 +714,12 @@
                     }
                     else
                     {
+                        if (profile.IncludeAvatarInCampaigns && portrait is not null)
+                        {
+                            // The plan has no AI presenter, so the agent still appears as a photo on the closing card.
+                            selectedCreativeElements |= CampaignVideoElement.AgentPortrait;
+                        }
+
                         selectedCreativeElements &= ~CampaignVideoElement.AgentAvatar;
                         selectedAgentAvatarConsent = false;
                     }
@@ -1061,7 +1078,7 @@
         var application = CampaignPresetApplier.Apply(
             preset.Settings,
             preset.SkippedValues,
-            new CampaignPresetContext(longFormAvailable, portrait is not null, profileIncludesPresenter));
+            new CampaignPresetContext(longFormAvailable, portrait is not null, profileIncludesPresenter, planIncludesPresenter));
         var settings = application.Settings;
         if (settings.MarketingTemplate != selectedMarketingTemplate)
         {
@@ -1146,6 +1163,12 @@
         {
             selectedCreativeElements &= ~element;
             error = "Add a profile headshot before adding an agent presenter to the video.";
+        }
+
+        if (element == CampaignVideoElement.AgentAvatar && selected && !planIncludesPresenter)
+        {
+            selectedCreativeElements &= ~element;
+            error = PlanFeatureAccess.PremiumAiUpgradeMessage;
         }
 
         if (element == CampaignVideoElement.AgentAvatar && !selected)

@@ -7,7 +7,8 @@ namespace ListingStudio.Application.Campaigns;
 public sealed record CampaignPresetContext(
     bool LongFormAvailable,
     bool HasPortrait,
-    bool ProfileIncludesPresenter);
+    bool ProfileIncludesPresenter,
+    bool PlanIncludesPresenter = true);
 
 /// <param name="Settings">The choices to show on the Campaign tab.</param>
 /// <param name="AgentAvatarConsentConfirmed">Whether the AI presenter consent starts ticked.</param>
@@ -57,6 +58,15 @@ public static class CampaignPresetApplier
         {
             settings = settings with { Elements = settings.Elements & ~agentCard };
             notes.Add("Your agent photo was left off because no profile headshot is uploaded.");
+        }
+        else if (settings.Elements.HasFlag(CampaignVideoElement.AgentAvatar) && !context.PlanIncludesPresenter)
+        {
+            // The still photo keeps the agent on the closing card when the plan has no AI presenter.
+            settings = settings with
+            {
+                Elements = (settings.Elements & ~CampaignVideoElement.AgentAvatar) | CampaignVideoElement.AgentPortrait,
+            };
+            notes.Add("The AI agent presenter comes with Professional and Enterprise, so your agent photo is on the closing card instead.");
         }
         else if (settings.Elements.HasFlag(CampaignVideoElement.AgentAvatar))
         {

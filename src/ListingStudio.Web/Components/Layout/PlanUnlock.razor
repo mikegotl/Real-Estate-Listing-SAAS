@@ -1,0 +1,52 @@
+@* An "Unlock" button for a feature the workspace's plan doesn't include. It opens an upgrade prompt, in place, with
+   the plans that include the feature. *@
+@inject Microsoft.Extensions.Options.IOptions<ListingStudio.Infrastructure.Configuration.StripeOptions> StripeOptions
+
+<MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.LockOpen"
+           Class="plan-unlock-button" OnClick="@(() => open = !open)" aria-expanded="@(open ? "true" : "false")"
+           data-testid="plan-unlock">Unlock</MudButton>
+
+@if (open)
+{
+    <div class="plan-unlock-prompt" role="dialog" aria-label="@($"Unlock {Feature}")" data-testid="plan-unlock-prompt">
+        <div class="plan-unlock-head">
+            <strong>Unlock @Feature</strong>
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" aria-label="Close" OnClick="@(() => open = false)" />
+        </div>
+        <p>@Feature is included with the Professional and Enterprise plans, along with the @OtherFeature.</p>
+        <div class="plan-unlock-options">
+            @foreach (var plan in Plans)
+            {
+                <a class="@($"plan-unlock-option {(plan.Badge is null ? "" : "is-featured")}")" href="/billing#plans">
+                    @if (plan.Badge is not null)
+                    {
+                        <span class="plan-unlock-badge">@plan.Badge</span>
+                    }
+                    <strong>@plan.Name</strong>
+                    <span class="plan-unlock-price">$@plan.Price / month</span>
+                    <span>@plan.Campaigns campaigns per month</span>
+                    <span class="plan-unlock-cta">Upgrade to @plan.Name</span>
+                </a>
+            }
+        </div>
+        <small>Save @StripeOptions.Value.AnnualDiscountPercent% with yearly billing.</small>
+    </div>
+}
+
+@code {
+    /// <summary>The locked feature, as the agent sees it, such as "AI drone fly-in".</summary>
+    [Parameter, EditorRequired]
+    public string Feature { get; set; } = string.Empty;
+
+    private bool open;
+
+    private string OtherFeature => Feature.Contains("drone", StringComparison.OrdinalIgnoreCase)
+        ? "AI agent presenter (avatar)"
+        : "AI drone fly-in";
+
+    private (string Name, int Price, int Campaigns, string? Badge)[] Plans =>
+    [
+        ("Professional", StripeOptions.Value.ProfessionalMonthlyPriceUsd, StripeOptions.Value.ProfessionalMonthlyCampaignAllowance, null),
+        ("Enterprise", StripeOptions.Value.EnterpriseMonthlyPriceUsd, StripeOptions.Value.EnterpriseMonthlyCampaignAllowance, "Best deal for professionals"),
+    ];
+}

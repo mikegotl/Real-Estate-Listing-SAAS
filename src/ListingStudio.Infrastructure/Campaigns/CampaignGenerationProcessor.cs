@@ -39,6 +39,7 @@ public sealed partial class CampaignGenerationProcessor(
     IPropertyVideoClipFinder videoClipFinder,
     ICampaignAssetStorage campaignAssetStorage,
     ICampaignBillingGate campaignBillingGate,
+    IPlanFeatureGate planFeatureGate,
     IOptions<CampaignGenerationOptions> options,
     TimeProvider timeProvider,
     ILogger<CampaignGenerationProcessor> logger) : ICampaignGenerationProcessor
@@ -1290,7 +1291,8 @@ public sealed partial class CampaignGenerationProcessor(
         if (job.CreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
             && job.AgentAvatarConsentConfirmed
             && job.AgentPortraitId is { } portraitId
-            && agentAvatarVideoService.IsEnabled)
+            && agentAvatarVideoService.IsEnabled
+            && await IncludesPremiumAiAsync(job, cancellationToken))
         {
             var narrationIds = await dbContext.CampaignDeliverables.AsNoTracking()
                 .Where(candidate => candidate.CampaignGenerationJobId == jobId)
@@ -1711,6 +1713,11 @@ public sealed partial class CampaignGenerationProcessor(
     /// Copies the property's drone intro when the agent approved it, it still lands on the Exterior front photo as the
     /// tour shows it today, and the video opens on that photo. Otherwise the video opens on the photo as before.
     /// </summary>
+    // The plan can change between request and render, so the paid AI features are checked again here.
+    private async Task<bool> IncludesPremiumAiAsync(CampaignGenerationJob job, CancellationToken cancellationToken) =>
+        (await planFeatureGate.GetAccessAsync(job.OrganizationId, job.RequestedByUserId, cancellationToken))
+            .IncludesPremiumAi;
+
     private async Task<VideoRenderAerialIntroAsset?> MaterializeAerialIntroAsync(
         CampaignGenerationJob job,
         VideoProductionSpecification specification,
@@ -1718,7 +1725,8 @@ public sealed partial class CampaignGenerationProcessor(
         CancellationToken cancellationToken)
     {
         // The drone intro is generated motion, so the photos-only choice leaves it out like walk-through clips.
-        if (!job.CreativeElements.HasFlag(CampaignVideoElement.WalkthroughMotion))
+        if (!job.CreativeElements.HasFlag(CampaignVideoElement.WalkthroughMotion)
+            || !await IncludesPremiumAiAsync(job, cancellationToken))
         {
             return null;
         }
