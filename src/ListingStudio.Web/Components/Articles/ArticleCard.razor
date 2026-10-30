@@ -1,0 +1,32 @@
+@using ListingStudio.Application.Articles
+
+<article class="article-card @(Archived ? "archived" : null)">
+    <div class="article-card-meta">
+        <time datetime="@Article.PublishedOn.ToString("yyyy-MM-dd")">@Article.PublishedOn.ToString("MMMM d, yyyy")</time>
+        <span aria-hidden="true">·</span>
+        <span>@Article.ReadMinutes min read</span>
+        @if (Archived)
+        {
+            <span class="article-archived-tag">Archived</span>
+        }
+    </div>
+    <h3 class="article-card-title"><a href="@($"/articles/{Article.Slug}")">@Article.Title</a></h3>
+    <p class="article-card-summary">@Article.Description</p>
+    @if (Article.Topics.Count > 0)
+    {
+        <ul class="article-topics" aria-label="Topics">
+            @foreach (var topic in Article.Topics)
+            {
+                <li>@topic</li>
+            }
+        </ul>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public ArticleSummary Article { get; set; } = default!;
+
+    [Parameter]
+    public bool Archived { get; set; }
+}

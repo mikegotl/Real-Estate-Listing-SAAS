@@ -1,0 +1,75 @@
+@page "/articles"
+@attribute [AllowAnonymous]
+@using ListingStudio.Application.Articles
+@using ListingStudio.Web.Components.Articles
+@inject TimeProvider TimeProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Articles for real estate agents | Creative Listing Studio</PageTitle>
+<HeadContent>
+    <meta name="description" content="@PageDescription" />
+    <link rel="canonical" href="@CanonicalUrl" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="@ArticleLibrary.Publisher" />
+    <meta property="og:title" content="Articles for real estate agents" />
+    <meta property="og:description" content="@PageDescription" />
+    <meta property="og:url" content="@CanonicalUrl" />
+    <meta name="twitter:card" content="summary" />
+</HeadContent>
+
+<section class="page-heading articles-heading">
+    <div>
+        <span class="eyebrow">ARTICLES</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Ideas for marketing your listings</MudText>
+        <MudText Typo="Typo.body1">Practical reads for real estate agents on social media, listing video and getting more from every campaign.</MudText>
+    </div>
+</section>
+
+<section class="article-shelf" aria-labelledby="recent-articles">
+    <h2 id="recent-articles" class="article-shelf-title">Recently released</h2>
+    @if (shelves.RecentlyReleased.Count == 0)
+    {
+        <p class="article-shelf-empty">New articles are on the way. Check back soon.</p>
+    }
+    else
+    {
+        <ul class="article-list">
+            @foreach (var article in shelves.RecentlyReleased)
+            {
+                <li><ArticleCard Article="article" /></li>
+            }
+        </ul>
+    }
+</section>
+
+<section class="article-shelf" aria-labelledby="archived-articles">
+    <h2 id="archived-articles" class="article-shelf-title">Archived</h2>
+    @if (shelves.Archived.Count == 0)
+    {
+        <p class="article-shelf-empty">Nothing archived yet. Articles move here after a year, or sooner when they are replaced by a newer guide.</p>
+    }
+    else
+    {
+        <ul class="article-list archived">
+            @foreach (var article in shelves.Archived)
+            {
+                <li><ArticleCard Article="article" Archived="true" /></li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    private const string PageDescription =
+        "Articles for real estate agents on creative social media campaigns, listing video and marketing costs, from Creative Listing Studio.";
+
+    private ArticleShelves shelves = new([], []);
+
+    private string CanonicalUrl => Navigation.ToAbsoluteUri("/articles").ToString();
+
+    protected override void OnInitialized()
+    {
+        var today = DateOnly.FromDateTime(TimeProvider.GetUtcNow().UtcDateTime);
+        shelves = ArticleShelving.Arrange(ArticleLibrary.All.Select(entry => entry.Summary), today);
+    }
+}

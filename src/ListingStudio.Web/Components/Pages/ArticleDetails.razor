@@ -1,0 +1,117 @@
+@page "/articles/{Slug}"
+@attribute [AllowAnonymous]
+@using System.Text.Json
+@using ListingStudio.Application.Articles
+@using ListingStudio.Web.Components.Articles
+@inject TimeProvider TimeProvider
+@inject NavigationManager Navigation
+
+@if (entry is not null)
+{
+    var article = entry.Summary;
+    <PageTitle>@article.Title | @ArticleLibrary.Publisher</PageTitle>
+    <HeadContent>
+        <meta name="description" content="@article.Description" />
+        <link rel="canonical" href="@CanonicalUrl" />
+        <meta property="og:type" content="article" />
+        <meta property="og:site_name" content="@ArticleLibrary.Publisher" />
+        <meta property="og:title" content="@article.Title" />
+        <meta property="og:description" content="@article.Description" />
+        <meta property="og:url" content="@CanonicalUrl" />
+        <meta property="article:published_time" content="@article.PublishedOn.ToString("yyyy-MM-dd")" />
+        <meta property="article:modified_time" content="@ArticleShelving.LastChangedOn(article).ToString("yyyy-MM-dd")" />
+        @foreach (var topic in article.Topics)
+        {
+            <meta property="article:tag" content="@topic" />
+        }
+        <meta name="twitter:card" content="summary" />
+        @* Razor drops literal script elements from components, so the JSON-LD block is emitted as markup. *@
+        @((MarkupString)$"<script type=\"application/ld+json\">{StructuredData}</script>")
+    </HeadContent>
+
+    <article class="article-page">
+        <nav class="article-breadcrumb" aria-label="Breadcrumb">
+            <a href="/articles">Articles</a>
+            <span aria-hidden="true">/</span>
+            <span>@(archived ? "Archived" : "Recently released")</span>
+        </nav>
+
+        <header class="article-header">
+            <span class="eyebrow">@string.Join(" · ", article.Topics)</span>
+            <h1 class="article-title">@article.Title</h1>
+            <p class="article-dek">@article.Description</p>
+            <div class="article-byline">
+                <span>@article.Author</span>
+                <span aria-hidden="true">·</span>
+                <time datetime="@article.PublishedOn.ToString("yyyy-MM-dd")">@article.PublishedOn.ToString("MMMM d, yyyy")</time>
+                @if (article.UpdatedOn is { } updated && updated > article.PublishedOn)
+                {
+                    <span aria-hidden="true">·</span>
+                    <span>Updated <time datetime="@updated.ToString("yyyy-MM-dd")">@updated.ToString("MMMM d, yyyy")</time></span>
+                }
+                <span aria-hidden="true">·</span>
+                <span>@article.ReadMinutes min read</span>
+            </div>
+            @if (archived)
+            {
+                <p class="article-archive-note">
+                    This article is in the archive. Prices, research and product details may have changed since it was published.
+                </p>
+            }
+        </header>
+
+        <div class="article-body">
+            <DynamicComponent Type="entry.Body" />
+        </div>
+
+        <footer class="article-footer">
+            <a href="/articles" class="article-back">← All articles</a>
+        </footer>
+    </article>
+}
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = string.Empty;
+
+    private ArticleEntry? entry;
+    private bool archived;
+
+    private string CanonicalUrl => Navigation.ToAbsoluteUri($"/articles/{entry!.Summary.Slug}").ToString();
+
+    private string StructuredData
+    {
+        get
+        {
+            var article = entry!.Summary;
+            // Schema.org Article markup lets search engines show the headline, date and publisher in results.
+            // JsonSerializer escapes <, > and & by default, so the text cannot close the script element early.
+            return JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["@context"] = "https://schema.org",
+                ["@type"] = "Article",
+                ["headline"] = article.Title,
+                ["description"] = article.Description,
+                ["datePublished"] = article.PublishedOn.ToString("yyyy-MM-dd"),
+                ["dateModified"] = ArticleShelving.LastChangedOn(article).ToString("yyyy-MM-dd"),
+                ["author"] = new Dictionary<string, string> { ["@type"] = "Organization", ["name"] = article.Author },
+                ["publisher"] = new Dictionary<string, string> { ["@type"] = "Organization", ["name"] = ArticleLibrary.Publisher },
+                ["mainEntityOfPage"] = CanonicalUrl,
+                ["keywords"] = string.Join(", ", article.Topics),
+            });
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        entry = ArticleLibrary.Find(Slug);
+        if (entry is null)
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        var today = DateOnly.FromDateTime(TimeProvider.GetUtcNow().UtcDateTime);
+        archived = ArticleShelving.IsArchived(entry.Summary, today);
+    }
+}
