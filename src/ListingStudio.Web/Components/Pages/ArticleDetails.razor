@@ -5,6 +5,7 @@
 @using ListingStudio.Web.Components.Articles
 @inject TimeProvider TimeProvider
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Options.IOptions<SiteOptions> Site
 
 @if (entry is not null)
 {
@@ -77,7 +78,7 @@
     private ArticleEntry? entry;
     private bool archived;
 
-    private string CanonicalUrl => Navigation.ToAbsoluteUri($"/articles/{entry!.Summary.Slug}").ToString();
+    private string CanonicalUrl => Site.Value.AbsoluteUrl($"/articles/{entry!.Summary.Slug}", new Uri(Navigation.BaseUri));
 
     private string StructuredData
     {

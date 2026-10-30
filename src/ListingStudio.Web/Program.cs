@@ -67,6 +67,7 @@ builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 builder.Services.AddScoped<IEmailSender<ApplicationUser>, DevelopmentIdentityEmailSender>();
 builder.Services.Configure<MediaAnalysisOptions>(builder.Configuration.GetSection(MediaAnalysisOptions.SectionName));
+builder.Services.Configure<SiteOptions>(builder.Configuration.GetSection(SiteOptions.SectionName));
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration)

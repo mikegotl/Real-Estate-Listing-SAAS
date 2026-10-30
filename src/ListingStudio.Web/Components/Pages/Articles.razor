@@ -4,6 +4,7 @@
 @using ListingStudio.Web.Components.Articles
 @inject TimeProvider TimeProvider
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Options.IOptions<SiteOptions> Site
 
 <PageTitle>Articles for real estate agents | Creative Listing Studio</PageTitle>
 <HeadContent>
@@ -65,7 +66,7 @@
 
     private ArticleShelves shelves = new([], []);
 
-    private string CanonicalUrl => Navigation.ToAbsoluteUri("/articles").ToString();
+    private string CanonicalUrl => Site.Value.AbsoluteUrl("/articles", new Uri(Navigation.BaseUri));
 
     protected override void OnInitialized()
     {

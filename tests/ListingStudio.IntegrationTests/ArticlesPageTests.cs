@@ -20,7 +20,7 @@ public sealed class ArticlesPageTests(PostgreSqlWebApplicationFixture fixture)
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("<title>Articles for real estate agents | Creative Listing Studio</title>", html);
         Assert.Contains("<meta name=\"description\"", html);
-        Assert.Contains("rel=\"canonical\" href=\"http://localhost/articles\"", html);
+        Assert.Contains("rel=\"canonical\" href=\"https://creativelistingstudio.com/articles\"", html);
         Assert.Contains("Recently released", html);
         Assert.Contains("Archived", html);
         Assert.Contains($"href=\"{StarterArticle}\"", html);
@@ -37,7 +37,7 @@ public sealed class ArticlesPageTests(PostgreSqlWebApplicationFixture fixture)
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("| Creative Listing Studio</title>", html);
         Assert.Contains("<meta property=\"og:type\" content=\"article\"", html);
-        Assert.Contains($"rel=\"canonical\" href=\"http://localhost{StarterArticle}\"", html);
+        Assert.Contains($"rel=\"canonical\" href=\"https://creativelistingstudio.com{StarterArticle}\"", html);
         Assert.Contains("application/ld+json", html);
         Assert.Contains("\"@type\":\"Article\"", html);
         Assert.Contains("datePublished", html);
