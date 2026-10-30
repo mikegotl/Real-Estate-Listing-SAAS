@@ -1,0 +1,50 @@
+@using System.Globalization
+
+@* A horizontal bar chart of monthly prices. Plain HTML so it renders without scripts and reads as a list to screen readers. *@
+<figure class="cost-chart">
+    <figcaption class="cost-chart-caption">@Caption</figcaption>
+    <ul class="cost-chart-legend" aria-hidden="true">
+        <li><span class="cost-chart-swatch separate"></span>Separate subscription</li>
+        <li><span class="cost-chart-swatch studio"></span>Creative Listing Studio</li>
+    </ul>
+    <ul class="cost-chart-rows">
+        @foreach (var row in Rows)
+        {
+            <li class="cost-chart-row @CssClass(row.Kind)" title="@($"{row.Label}: {Money(row.MonthlyUsd)} per month")">
+                <span class="cost-chart-label">@row.Label</span>
+                <span class="cost-chart-track">
+                    <span class="cost-chart-bar" style="width: @Width(row.MonthlyUsd)"></span>
+                    <span class="cost-chart-value">@Money(row.MonthlyUsd)<span class="visually-hidden"> per month</span></span>
+                </span>
+            </li>
+        }
+    </ul>
+</figure>
+
+@code {
+    public enum Group { Separate, SeparateTotal, Studio }
+
+    public sealed record Row(string Label, decimal MonthlyUsd, Group Kind);
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Row> Rows { get; set; } = [];
+
+    [Parameter]
+    public string Caption { get; set; } = string.Empty;
+
+    private decimal Max => Rows.Count == 0 ? 1 : Math.Max(1, Rows.Max(row => row.MonthlyUsd));
+
+    // Leave room after the longest bar for its price label.
+    private string Width(decimal value) =>
+        (value / Max * 82m).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+
+    private static string CssClass(Group kind) => kind switch
+    {
+        Group.SeparateTotal => "separate total",
+        Group.Studio => "studio",
+        _ => "separate",
+    };
+
+    public static string Money(decimal amount) =>
+        amount.ToString(amount == decimal.Truncate(amount) ? "$#,0" : "$#,0.00", CultureInfo.InvariantCulture);
+}

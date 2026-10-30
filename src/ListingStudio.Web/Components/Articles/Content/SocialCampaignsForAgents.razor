@@ -1,0 +1,256 @@
+@using ListingStudio.Web.Components.Articles
+@inject Microsoft.Extensions.Options.IOptions<ListingStudio.Infrastructure.Configuration.StripeOptions> StripeOptions
+
+<p class="article-lede">
+    Buyers meet most homes on a screen long before they walk through the door. For agents, that makes every listing a
+    small media project: photos, a short vertical video, a voiceover, captions and a handful of posts, all of it needed
+    on launch day. This guide looks at what recent research says about buyers and social media, what a creative listing
+    campaign needs today, and how much an all-in-one studio saves compared with stitching together separate subscriptions.
+</p>
+
+<h2 id="buyers-start-online">Buyers start online, and they start with pictures</h2>
+<p>
+    The National Association of REALTORS® asks recent buyers how they searched. In its
+    <a href="@Sources.GenerationalTrends.Url" rel="noopener">2025 Home Buyers and Sellers Generational Trends report</a>,
+    looking at homes online was the most common first step, and photos were the website feature buyers found most useful,
+    ahead of property details and floor plans. Your photos are the first showing.
+</p>
+<p>
+    Agents feel the same shift in their pipelines. In NAR's
+    <a href="@Sources.TechnologySurvey.Url" rel="noopener">2025 REALTORS® Technology Survey</a>, social media was the
+    technology respondents most often credited with their highest number of quality leads (39%), ahead of CRM tools
+    (23%) and the local MLS (17%). Three in four respondents use social media in their business.
+</p>
+
+<h2 id="what-a-campaign-needs">What a creative listing campaign needs now</h2>
+<p>
+    Short vertical video is the format the feeds favor. Real estate marketing guides for 2026, such as
+    <a href="@Sources.LuxuryPresenceVideo.Url" rel="noopener">Luxury Presence's guide to video in a real estate business</a>,
+    put short clips for Instagram Reels, TikTok and YouTube Shorts at the top of the list. A launch-ready listing
+    campaign usually means:
+</p>
+<ul>
+    <li>A 20 to 60 second vertical video with a strong first two seconds, captions and music.</li>
+    <li>A longer landscape tour for YouTube, the listing page and email.</li>
+    <li>A voiceover that walks the home in a sensible order, in the language your buyers speak.</li>
+    <li>Still posts and carousels built from your best photos.</li>
+    <li>A place to send viewers, where interested buyers can ask a question.</li>
+</ul>
+<p>
+    None of that is hard on its own. The hard part is doing all of it, for every listing, in the same week you are
+    pricing, staging and showing the home.
+</p>
+
+<h2 id="one-studio">How one studio turns photos into a campaign</h2>
+<p>Creative Listing Studio was built around that launch-week crunch. You upload once, and the rest of the campaign builds on the same photos and facts.</p>
+<ul>
+    <li><strong>A walkthrough storyboard and tour map.</strong> Put your photos in the order a buyer walks the home, from the front of the house through each room, and mark which way each room sits from the last one.</li>
+    <li><strong>A story grounded in your listing.</strong> The voiceover script follows your storyboard and uses the facts you entered, so it does not invent features the home does not have. You can also write your own narration room by room.</li>
+    <li><strong>One vertical video for every feed.</strong> A beat-cut vertical edit with hook text, captions and music works for TikTok, Reels and Shorts, alongside a longer landscape tour.</li>
+    <li><strong>Voiceover in the language and accent you choose</strong>, or no voiceover at all when music and captions say enough.</li>
+    <li><strong>AI walk-through motion, clearly labeled.</strong> Optional AI clips move the viewer between rooms, and an optional aerial intro carries a burned-in "AI-generated aerial / Not actual footage" label.</li>
+    <li><strong>Photo fixes that keep the original.</strong> Brightness and color fixes, and optional clutter removal, always keep your original photo so you can compare side by side and revert.</li>
+    <li><strong>Saved campaign settings.</strong> Save the music, caption look and voice you like once, share them with your team, and start the next listing from them.</li>
+    <li><strong>A public listing page with an inquiry form</strong>, so the link in your post leads to a page that collects leads for you.</li>
+</ul>
+
+<h2 id="cost-savings">The cost of a tool stack compared with one studio</h2>
+<p>
+    Many agents build the same campaign with a set of separate apps: a chatbot for scripts and captions, a voice
+    generator, an AI video tool for motion, a mobile video editor and a design app for still posts. Each is a good tool,
+    and each one bills separately.
+</p>
+
+<ArticleCostChart Rows="CostRows" Caption="Monthly cost: separate subscriptions compared with Creative Listing Studio" />
+
+<p>
+    Paid month to month at the list prices below, that five-app stack comes to <strong>@Money(StackTotal) a month</strong>.
+    @if (StarterSavings > 0)
+    {
+        <text>Creative Listing Studio's Starter plan is @Money(StarterPrice) a month for @Stripe.StarterMonthlyCampaignAllowance completed campaigns, which is <strong>@Money(StarterSavings) less each month</strong>, or about @Money(Math.Round(StarterSavings * 12)) a year.</text>
+    }
+    else
+    {
+        <text>Creative Listing Studio's Starter plan is @Money(StarterPrice) a month for @Stripe.StarterMonthlyCampaignAllowance completed campaigns.</text>
+    }
+    @if (ProfessionalSavings >= 0)
+    {
+        <text> The Professional plan, at @Money(ProfessionalPrice) for @Stripe.ProfessionalMonthlyCampaignAllowance campaigns a month, also costs less than the stack.</text>
+    }
+    else
+    {
+        <text> The Professional plan, at @Money(ProfessionalPrice) for @Stripe.ProfessionalMonthlyCampaignAllowance campaigns a month, costs about @Money(Math.Round(-ProfessionalSavings)) more than the stack and covers a busy month of listings in one place.</text>
+    }
+</p>
+<p>The subscription price is only part of the cost of a stack:</p>
+<ul>
+    <li><strong>Usage limits.</strong> Several of these plans meter usage with monthly credits, so a busy month of listings can mean a higher tier or add-on credits.</li>
+    <li><strong>Hand-offs.</strong> Every app means exporting, re-uploading and re-entering the same address, room names and selling points.</li>
+    <li><strong>Consistency.</strong> Keeping the same music, captions and voice across listings is easier when the settings live in one place and your team can share them.</li>
+</ul>
+
+<div class="article-table-wrap">
+    <table class="article-table">
+        <caption>Monthly prices used in the chart</caption>
+        <thead>
+            <tr>
+                <th scope="col">Tool and plan</th>
+                <th scope="col">Used for in a listing campaign</th>
+                <th scope="col" class="numeric">Per month</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var tool in Stack)
+            {
+                <tr>
+                    <th scope="row"><a href="@tool.PricingUrl" rel="noopener">@tool.Name</a></th>
+                    <td>@tool.UsedFor</td>
+                    <td class="numeric">@Money(tool.MonthlyUsd)</td>
+                </tr>
+            }
+            <tr class="total">
+                <th scope="row">Separate tools, combined</th>
+                <td>Five subscriptions</td>
+                <td class="numeric">@Money(StackTotal)</td>
+            </tr>
+            <tr class="ours">
+                <th scope="row">Creative Listing Studio Starter</th>
+                <td>@Stripe.StarterMonthlyCampaignAllowance completed campaigns a month</td>
+                <td class="numeric">@Money(StarterPrice)</td>
+            </tr>
+            <tr class="ours">
+                <th scope="row">Creative Listing Studio Professional</th>
+                <td>@Stripe.ProfessionalMonthlyCampaignAllowance completed campaigns a month</td>
+                <td class="numeric">@Money(ProfessionalPrice)</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+<p class="article-note">
+    Prices are US list prices for one user on monthly billing, as published in October 2026, before tax and
+    promotions. Annual billing lowers most of them, and some trackers now list Canva Pro at $18 a month, so we used the
+    lower $15. Each of these tools does much more than the single job counted here. Check each vendor's pricing page for
+    current terms. Creative Listing Studio prices are the current plan prices on our billing page, and new workspaces
+    start with a free trial of @Stripe.FreeTrialCampaignAllowance campaigns.
+</p>
+
+<h2 id="photo-rules">Stay on the right side of photo and AI rules</h2>
+<p>
+    Editing tools are getting more powerful, and the rules are catching up. California's
+    <a href="@Sources.CaliforniaAb723.Url" rel="noopener">AB 723</a>, in effect since January 1, 2026, requires agents to
+    disclose digitally altered images in listing advertising and give buyers a way to see the unaltered original.
+    MLSs are adding their own rules too; <a href="@Sources.TheCloseMlsRules.Url" rel="noopener">The Close reported in
+    September 2026</a> that new MLS rules spell out how far a listing photo can be edited, and advised agents to keep
+    their original images.
+</p>
+<p>
+    Creative Listing Studio keeps every original photo next to its fixed version, and AI-generated aerial footage is
+    labeled on screen. Disclosure rules still differ by state and MLS, so check yours before you publish.
+</p>
+
+<h2 id="weekly-plan">A simple launch week for one listing</h2>
+<ol>
+    <li><strong>Day 1:</strong> Upload photos and any phone video, place them on the storyboard in walking order and fix lighting where needed.</li>
+    <li><strong>Day 2:</strong> Generate the campaign with your saved settings and review the vertical video, the landscape tour and the still posts.</li>
+    <li><strong>Day 3:</strong> Post the vertical video with the public listing link, then the stills over the following days.</li>
+    <li><strong>Open house week:</strong> Reuse the same campaign with an open house hook instead of starting over.</li>
+</ol>
+<p>
+    The goal is not more apps or more hours. It is a campaign for every listing that looks like you spent the week on
+    it, built in an afternoon.
+</p>
+
+<aside class="article-cta">
+    <div>
+        <h2>Try it on your next listing</h2>
+        <p>Start a free trial with @Stripe.FreeTrialCampaignAllowance campaigns and turn your next set of listing photos into a full social campaign.</p>
+    </div>
+    <MudButton Href="/Account/Register" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Class="cta-on-night"
+               EndIcon="@Icons.Material.Filled.ArrowForward">Start creating</MudButton>
+</aside>
+
+<section class="article-sources" aria-labelledby="sources">
+    <h2 id="sources">Sources</h2>
+    <ol>
+        @foreach (var source in Sources.All)
+        {
+            <li><a href="@source.Url" rel="noopener">@source.Title</a>, @source.Publisher, @source.Date.</li>
+        }
+    </ol>
+</section>
+
+@code {
+    public const string Slug = "creative-social-media-campaigns-for-real-estate-agents";
+
+    private sealed record StackTool(string Name, string UsedFor, decimal MonthlyUsd, string PricingUrl);
+
+    private sealed record Source(string Title, string Publisher, string Date, string Url);
+
+    // US list prices for one user on monthly billing, as published in October 2026.
+    private static readonly StackTool[] Stack =
+    [
+        new("ChatGPT Plus", "Scripts, captions and post copy", 20m, "https://openai.com/chatgpt/pricing/"),
+        new("ElevenLabs Creator", "Voiceover", 22m, "https://elevenlabs.io/pricing"),
+        new("Runway Standard", "AI motion and walk-through clips", 15m, "https://runwayml.com/pricing"),
+        new("CapCut Pro", "Vertical video editing, captions and music", 19.99m, "https://www.capcut.com/help/how-much-does-capcut-pro-cost"),
+        new("Canva Pro", "Still posts and carousels", 15m, "https://www.canva.com/pricing/"),
+    ];
+
+    private static class Sources
+    {
+        public static readonly Source GenerationalTrends = new(
+            "2025 Home Buyers and Sellers Generational Trends Report",
+            "National Association of REALTORS®",
+            "April 2025",
+            "https://cms.nar.realtor/sites/default/files/2025-03/2025-home-buyers-and-sellers-generational-trends-report-04-01-2025.pdf");
+
+        public static readonly Source TechnologySurvey = new(
+            "2025 REALTORS® Technology Survey",
+            "National Association of REALTORS®",
+            "September 2025",
+            "https://cms.nar.realtor/sites/default/files/2025-09/2025-realtors-technology-survey-report-09-18-2025.pdf");
+
+        public static readonly Source LuxuryPresenceVideo = new(
+            "Where, When, and How to Use Video in Your Real Estate Business in 2026",
+            "Luxury Presence",
+            "2026",
+            "https://www.luxurypresence.com/blogs/where-when-and-how-to-use-video-in-your-real-estate-business");
+
+        public static readonly Source CaliforniaAb723 = new(
+            "AB 723: Real estate, digitally altered images, disclosure (Chapter 497, Statutes of 2025)",
+            "CalMatters Digital Democracy",
+            "2025",
+            "https://calmatters.digitaldemocracy.org/bills/ca_202520260ab723");
+
+        public static readonly Source TheCloseMlsRules = new(
+            "How Far Can Agents Edit a Listing Photo? New MLS Rules Draw the Line",
+            "The Close",
+            "September 2026",
+            "https://theclose.com/news-ai-listing-photo-rules/");
+
+        public static readonly Source[] All =
+            [GenerationalTrends, TechnologySurvey, LuxuryPresenceVideo, CaliforniaAb723, TheCloseMlsRules];
+    }
+
+    private ListingStudio.Infrastructure.Configuration.StripeOptions Stripe => StripeOptions.Value;
+
+    private static decimal StackTotal => Stack.Sum(tool => tool.MonthlyUsd);
+
+    private decimal StarterPrice => Stripe.StarterMonthlyPriceUsd;
+
+    private decimal ProfessionalPrice => Stripe.ProfessionalMonthlyPriceUsd;
+
+    private decimal StarterSavings => StackTotal - StarterPrice;
+
+    private decimal ProfessionalSavings => StackTotal - ProfessionalPrice;
+
+    private IReadOnlyList<ArticleCostChart.Row> CostRows =>
+    [
+        .. Stack.Select(tool => new ArticleCostChart.Row(tool.Name, tool.MonthlyUsd, ArticleCostChart.Group.Separate)),
+        new("Separate tools, combined", StackTotal, ArticleCostChart.Group.SeparateTotal),
+        new("Creative Listing Studio Starter", StarterPrice, ArticleCostChart.Group.Studio),
+        new("Creative Listing Studio Professional", ProfessionalPrice, ArticleCostChart.Group.Studio),
+    ];
+
+    private static string Money(decimal amount) => ArticleCostChart.Money(amount);
+}
