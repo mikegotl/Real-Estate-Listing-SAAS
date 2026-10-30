@@ -84,7 +84,7 @@ Use `az deployment group what-if` with the same protected parameter values befor
    - public Web readiness and Worker revision-health verification.
 5. Record the workflow URL, commit SHA, Web URL, migration execution and approver in the release ticket.
 
-The workflow never uses `latest`. Re-running the same commit reuses its immutable tag and EF migrations remain idempotent.
+The workflow never uses `latest`. Re-running the same commit reuses its immutable tag and EF migrations remain idempotent. Before replacing the Web Container App configuration, it reads the current custom-domain bindings and passes them back into Bicep so deployments do not detach `creativelistingstudio.com`, `www.creativelistingstudio.com`, or their managed certificates.
 
 ## Provider secrets after the foundation exists
 
@@ -102,7 +102,30 @@ Recommended Key Vault names are:
 
 Use the Azure portal or a protected administrative shell that does not persist secret values in history. Never pass a secret as a plain Container Apps environment value. Apply the same secret reference to Web and Worker only when that host needs it. Set non-secret model, endpoint, voice, Stripe price and allowance settings separately.
 
-For Stripe, set `Stripe__PublicBaseUrl` to the deployed Web origin and register `https://<web-host>/billing/stripe-webhook` in Stripe test mode first. Do not enable live mode as part of infrastructure deployment.
+For Stripe, configure the protected GitHub environment values below and register `https://creativelistingstudio.com/billing/stripe-webhook` in Stripe test mode first. The workflow stores both Stripe secrets in Key Vault and gives them only to the Web host. Checkout remains disabled unless `STRIPE_ENABLED=true`; `STRIPE_MODE=test` rejects live API keys before Azure is changed.
+
+Stripe environment secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | Stripe test secret or restricted key (`sk_test_...` or `rk_test_...`) |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for the production-origin test webhook (`whsec_...`) |
+
+Stripe environment variables:
+
+| Variable | Test-checkout value |
+| --- | --- |
+| `STRIPE_ENABLED` | `true` only when the complete test configuration is ready |
+| `STRIPE_MODE` | `test` |
+| `STRIPE_PUBLIC_BASE_URL` | `https://creativelistingstudio.com` |
+| `STRIPE_BASIC_PRICE_ID` | Basic monthly recurring test price ID |
+| `STRIPE_PROFESSIONAL_PRICE_ID` | Professional monthly recurring test price ID |
+| `STRIPE_ENTERPRISE_PRICE_ID` | Enterprise monthly recurring test price ID |
+| `STRIPE_BASIC_ANNUAL_PRICE_ID` | Optional Basic yearly recurring test price ID |
+| `STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID` | Optional Professional yearly recurring test price ID |
+| `STRIPE_ENTERPRISE_ANNUAL_PRICE_ID` | Optional Enterprise yearly recurring test price ID |
+
+Configure either all three yearly prices or none. The workflow verifies HTTPS, Stripe identifier formats, the webhook secret, and the API-key mode before provisioning. Moving to live billing is a separate owner-approved change: create live products/prices and a live webhook, replace the protected values, and explicitly change `STRIPE_MODE` to `live`. Never reuse test price IDs or a test webhook secret in live mode.
 
 Google and Apple sign-in are Web-only integrations. Store `Authentication__Google__ClientSecret` and `Authentication__Apple__PrivateKey` as Key Vault-backed Container Apps secrets. Set the non-secret Google client ID and Apple Services ID, Team ID and Key ID as ordinary environment values, then enable each provider with `Authentication__Google__Enabled=true` or `Authentication__Apple__Enabled=true`. Register the exact public callbacks `https://<web-host>/signin-google` and `https://<web-host>/signin-apple` before enabling them. The Web container processes Azure Container Apps' forwarded HTTPS scheme so those provider redirects use the public HTTPS origin.
 

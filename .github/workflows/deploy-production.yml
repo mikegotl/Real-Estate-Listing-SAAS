@@ -106,6 +106,18 @@ jobs:
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       SMTP_FROM_ADDRESS: ${{ vars.SMTP_FROM_ADDRESS }}
       APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+      # Stripe stays off unless explicitly enabled. Use mode=test with test keys before any live billing rollout.
+      STRIPE_ENABLED: ${{ vars.STRIPE_ENABLED || 'false' }}
+      STRIPE_MODE: ${{ vars.STRIPE_MODE || 'test' }}
+      STRIPE_PUBLIC_BASE_URL: ${{ vars.STRIPE_PUBLIC_BASE_URL }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_BASIC_PRICE_ID: ${{ vars.STRIPE_BASIC_PRICE_ID }}
+      STRIPE_PROFESSIONAL_PRICE_ID: ${{ vars.STRIPE_PROFESSIONAL_PRICE_ID }}
+      STRIPE_ENTERPRISE_PRICE_ID: ${{ vars.STRIPE_ENTERPRISE_PRICE_ID }}
+      STRIPE_BASIC_ANNUAL_PRICE_ID: ${{ vars.STRIPE_BASIC_ANNUAL_PRICE_ID }}
+      STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID: ${{ vars.STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID }}
+      STRIPE_ENTERPRISE_ANNUAL_PRICE_ID: ${{ vars.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID }}
       OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD: ${{ vars.OPENAI_MEDIA_ANALYSIS_ESTIMATED_COST_USD || '0' }}
       OPENAI_STORY_ESTIMATED_COST_USD: ${{ vars.OPENAI_STORY_ESTIMATED_COST_USD || '0' }}
       OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD: ${{ vars.OPENAI_VIDEO_DIRECTION_ESTIMATED_COST_USD || '0' }}
@@ -157,6 +169,67 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$STRIPE_ENABLED" == "true" ]]; then
+            stripe_required=(
+              STRIPE_PUBLIC_BASE_URL STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET
+              STRIPE_BASIC_PRICE_ID STRIPE_PROFESSIONAL_PRICE_ID STRIPE_ENTERPRISE_PRICE_ID
+            )
+            for name in "${stripe_required[@]}"; do
+              if [[ -z "${!name:-}" ]]; then
+                echo "Stripe checkout is enabled but a value is missing: ${name}" >&2
+                exit 1
+              fi
+            done
+            if [[ ! "$STRIPE_PUBLIC_BASE_URL" =~ ^https:// ]]; then
+              echo "STRIPE_PUBLIC_BASE_URL must use HTTPS." >&2
+              exit 1
+            fi
+            if [[ "$STRIPE_WEBHOOK_SECRET" != whsec_* ]]; then
+              echo "STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret." >&2
+              exit 1
+            fi
+            for name in STRIPE_BASIC_PRICE_ID STRIPE_PROFESSIONAL_PRICE_ID STRIPE_ENTERPRISE_PRICE_ID; do
+              if [[ "${!name}" != price_* ]]; then
+                echo "Stripe plan price identifiers must start with price_: ${name}" >&2
+                exit 1
+              fi
+            done
+            annual_count=0
+            for name in STRIPE_BASIC_ANNUAL_PRICE_ID STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID STRIPE_ENTERPRISE_ANNUAL_PRICE_ID; do
+              if [[ -n "${!name:-}" ]]; then
+                annual_count=$((annual_count + 1))
+                if [[ "${!name}" != price_* ]]; then
+                  echo "Stripe annual price identifiers must start with price_: ${name}" >&2
+                  exit 1
+                fi
+              fi
+            done
+            if [[ "$annual_count" -ne 0 && "$annual_count" -ne 3 ]]; then
+              echo "Configure all three annual Stripe prices or leave all three empty." >&2
+              exit 1
+            fi
+            case "$STRIPE_MODE" in
+              test)
+                if [[ "$STRIPE_SECRET_KEY" != sk_test_* && "$STRIPE_SECRET_KEY" != rk_test_* ]]; then
+                  echo "STRIPE_MODE=test requires a Stripe test-mode secret key." >&2
+                  exit 1
+                fi
+                ;;
+              live)
+                if [[ "$STRIPE_SECRET_KEY" != sk_live_* && "$STRIPE_SECRET_KEY" != rk_live_* ]]; then
+                  echo "STRIPE_MODE=live requires a Stripe live-mode secret key." >&2
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "STRIPE_MODE must be test or live." >&2
+                exit 1
+                ;;
+            esac
+          elif [[ "$STRIPE_ENABLED" != "false" ]]; then
+            echo "STRIPE_ENABLED must be true or false." >&2
+            exit 1
+          fi
 
       - name: Sign in to Azure using GitHub OIDC
         uses: azure/login@v2
@@ -217,6 +290,16 @@ jobs:
               smtpPassword="$SMTP_PASSWORD" \
               smtpFromAddress="$SMTP_FROM_ADDRESS" \
               appBaseUrl="$APP_BASE_URL" \
+              stripeEnabled="$STRIPE_ENABLED" \
+              stripePublicBaseUrl="$STRIPE_PUBLIC_BASE_URL" \
+              stripeSecretKey="$STRIPE_SECRET_KEY" \
+              stripeWebhookSecret="$STRIPE_WEBHOOK_SECRET" \
+              stripeBasicPriceId="$STRIPE_BASIC_PRICE_ID" \
+              stripeProfessionalPriceId="$STRIPE_PROFESSIONAL_PRICE_ID" \
+              stripeEnterprisePriceId="$STRIPE_ENTERPRISE_PRICE_ID" \
+              stripeBasicAnnualPriceId="$STRIPE_BASIC_ANNUAL_PRICE_ID" \
+              stripeProfessionalAnnualPriceId="$STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID" \
+              stripeEnterpriseAnnualPriceId="$STRIPE_ENTERPRISE_ANNUAL_PRICE_ID" \
               deployApplications=false \
             --query properties.outputs \
             --output json)
@@ -224,6 +307,29 @@ jobs:
           acr_login_server=$(jq -r '.acrLoginServer.value' <<<"$outputs")
           echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
           echo "acr_login_server=$acr_login_server" >> "$GITHUB_OUTPUT"
+          echo "web_app_name=$(jq -r '.webAppName.value' <<<"$outputs")" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve existing custom domains
+        id: custom_domains
+        shell: bash
+        env:
+          WEB_APP_NAME: ${{ steps.foundation.outputs.web_app_name }}
+        run: |
+          set -euo pipefail
+          if az containerapp show \
+            --name "$WEB_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --output none 2>/dev/null; then
+            domains=$(az containerapp show \
+              --name "$WEB_APP_NAME" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query 'properties.configuration.ingress.customDomains' \
+              --output json)
+            domains=$(jq -c '(. // []) | map({name, bindingType, certificateId} | with_entries(select(.value != null)))' <<<"${domains:-[]}")
+          else
+            domains='[]'
+          fi
+          echo "domains=$domains" >> "$GITHUB_OUTPUT"
 
       - name: Refresh Azure OIDC session before registry login
         uses: azure/login@v2
@@ -252,6 +358,7 @@ jobs:
         shell: bash
         env:
           ACR_LOGIN_SERVER: ${{ steps.foundation.outputs.acr_login_server }}
+          WEB_CUSTOM_DOMAINS: ${{ steps.custom_domains.outputs.domains }}
         run: |
           set -euo pipefail
           outputs=$(az deployment group create \
@@ -296,6 +403,17 @@ jobs:
               smtpPassword="$SMTP_PASSWORD" \
               smtpFromAddress="$SMTP_FROM_ADDRESS" \
               appBaseUrl="$APP_BASE_URL" \
+              stripeEnabled="$STRIPE_ENABLED" \
+              stripePublicBaseUrl="$STRIPE_PUBLIC_BASE_URL" \
+              stripeSecretKey="$STRIPE_SECRET_KEY" \
+              stripeWebhookSecret="$STRIPE_WEBHOOK_SECRET" \
+              stripeBasicPriceId="$STRIPE_BASIC_PRICE_ID" \
+              stripeProfessionalPriceId="$STRIPE_PROFESSIONAL_PRICE_ID" \
+              stripeEnterprisePriceId="$STRIPE_ENTERPRISE_PRICE_ID" \
+              stripeBasicAnnualPriceId="$STRIPE_BASIC_ANNUAL_PRICE_ID" \
+              stripeProfessionalAnnualPriceId="$STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID" \
+              stripeEnterpriseAnnualPriceId="$STRIPE_ENTERPRISE_ANNUAL_PRICE_ID" \
+              webCustomDomains="$WEB_CUSTOM_DOMAINS" \
               deployApplications=true \
               webImage="$ACR_LOGIN_SERVER/listingstudio-web:$GITHUB_SHA" \
               workerImage="$ACR_LOGIN_SERVER/listingstudio-worker:$GITHUB_SHA" \
