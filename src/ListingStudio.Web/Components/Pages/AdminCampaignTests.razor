@@ -10,23 +10,26 @@
 <PageTitle>TikTok campaign review</PageTitle>
 <PropertyPageProviders />
 
-<section class="review-hero">
+<div class="section-row admin-page-heading">
     <div>
         <span class="eyebrow">CAMPAIGN QUALITY</span>
-        <h1>TikTok review studio</h1>
-        <p>Watch your workspace's vertical campaigns, record approval, and work through requested changes.</p>
+        <MudText Typo="Typo.h3" HtmlTag="h1">TikTok review studio</MudText>
+        <MudText Typo="Typo.body1">Watch your workspace's vertical campaigns, record approval, and work through requested changes.</MudText>
     </div>
-    <div class="review-toolbar">
-        <MudButton Href="/admin" Variant="Variant.Text">Admin overview</MudButton>
-        <MudButton Href="/properties" Variant="Variant.Outlined" Color="Color.Primary">Open properties</MudButton>
+    <div class="admin-heading-actions">
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="LoadAsync"
                    StartIcon="@Icons.Material.Filled.Refresh">@(busy ? "Refreshing…" : "Refresh gallery")</MudButton>
+        <MudButton Href="/properties" Variant="Variant.Outlined" Color="Color.Primary">Open properties</MudButton>
+        <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
     </div>
-</section>
+</div>
 
 <div class="review-guidance">
-    <strong>Your approval belongs to one video version.</strong>
-    <span>A replacement render needs a fresh review. Requesting changes saves your feedback; use the video chat to propose and render the edit.</span>
+    <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" aria-hidden="true" />
+    <p>
+        <strong>Your approval belongs to one video version.</strong>
+        <span>A replacement render needs a fresh review. Requesting changes saves your feedback; use the video chat to propose and render the edit.</span>
+    </p>
 </div>
 
 @if (error is not null)
@@ -47,22 +50,20 @@
 }
 else
 {
-    <dl class="review-summary" aria-label="Campaign review summary">
-        <div><dt>Awaiting review</dt><dd>@items.Count(item => CanReview(item) && item.Decision is null)</dd></div>
+    var awaiting = items.Count(item => CanReview(item) && item.Decision is null);
+    <dl class="workspace-metrics" aria-label="Campaign review summary">
+        <div class="@(awaiting > 0 ? "attention" : null)"><dt>Awaiting review</dt><dd>@awaiting</dd></div>
         <div><dt>Approved</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.Approved)</dd></div>
         <div><dt>Changes requested</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.ChangesRequested)</dd></div>
         <div><dt>In progress</dt><dd>@items.Count(item => item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)</dd></div>
     </dl>
 
     <section class="review-suite" aria-labelledby="suite-heading">
-        <div class="review-section-heading">
-            <div>
-                <span class="review-kicker">BACKGROUND TEST WORKER</span>
-                <h2 id="suite-heading">Run three TikTok cases</h2>
-            </div>
-            <span>Short voiceover · Music and text · Full voiceover</span>
+        <div class="review-suite-intro">
+            <span class="eyebrow">BACKGROUND TEST WORKER</span>
+            <MudText Typo="Typo.h5" HtmlTag="h2" id="suite-heading">Run three TikTok cases</MudText>
+            <p>Choose a test property. The worker generates three new vertical campaigns in sequence (short voiceover, music and text, full voiceover) and keeps running when you leave this page. Starting a suite uses generation credits and campaign allowance.</p>
         </div>
-        <p>Choose a test property. The worker generates three new vertical campaigns in sequence and keeps running when you leave this page. Starting a suite uses generation credits and campaign allowance.</p>
         <div class="review-suite-start">
             <div class="review-property-choice">
                 <label for="review-test-property">Test property</label>
@@ -84,18 +85,19 @@ else
                 {
                     <div class="review-suite-run" @key="suite.Id">
                         <div class="review-suite-run-title">
-                            <div><strong>@suite.Address</strong><span>@suite.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</span></div>
-                            <span class="review-status">@suite.Status</span>
+                            <div><strong>@suite.Address</strong><span>Started @suite.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</span></div>
+                            <span class="review-status @SuiteClass(suite.Status)">@suite.Status</span>
                         </div>
                         <ol class="review-case-list">
                             @for (var caseIndex = 0; caseIndex < TestCaseNames.Length; caseIndex++)
                             {
                                 var jobId = suite.CaseJobIds.ElementAtOrDefault(caseIndex);
-                                <li>
-                                    <strong>Case @(caseIndex + 1): @TestCaseNames[caseIndex]</strong>
+                                <li class="@(jobId.HasValue ? "started" : null)">
+                                    <span class="review-case-number" aria-hidden="true">@(caseIndex + 1)</span>
+                                    <strong><span class="visually-hidden">Case @(caseIndex + 1): </span>@TestCaseNames[caseIndex]</strong>
                                     @if (jobId.HasValue)
                                     {
-                                        <a href="@($"/admin/campaign-tests#campaign-{jobId.Value}")">View campaign →</a>
+                                        <a href="@($"/admin/campaign-tests#campaign-{jobId.Value}")">View video</a>
                                     }
                                     else
                                     {
@@ -106,11 +108,12 @@ else
                         </ol>
                         @if (!string.IsNullOrWhiteSpace(suite.Error))
                         {
-                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@suite.Error</MudAlert>
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">@suite.Error</MudAlert>
                         }
                         @if (suite.Status is TikTokTestSuiteStatus.Queued or TikTokTestSuiteStatus.Running)
                         {
-                            <MudButton Variant="Variant.Text" Color="Color.Warning" Disabled="busy" OnClick="() => CancelSuiteAsync(suite.Id)">Cancel remaining tests</MudButton>
+                            <MudButton Variant="Variant.Text" Color="Color.Warning" Size="Size.Small" Disabled="busy"
+                                       StartIcon="@Icons.Material.Filled.StopCircle" OnClick="() => CancelSuiteAsync(suite.Id)">Cancel remaining tests</MudButton>
                         }
                     </div>
                 }
@@ -118,14 +121,15 @@ else
         }
     </section>
 
-    <div class="review-section-heading">
-        <h2>Video gallery</h2>
+    <div class="section-row review-gallery-heading">
+        <MudText Typo="Typo.h5" HtmlTag="h2">Video gallery</MudText>
         <span>Latest @items.Count campaigns · your workspace only</span>
     </div>
 
     @if (items.Count == 0)
     {
         <div class="review-empty">
+            <MudIcon Icon="@Icons.Material.Filled.VideoLibrary" Size="Size.Large" aria-hidden="true" />
             <h3>No TikTok campaigns yet</h3>
             <p>Open a property and generate a vertical campaign. Its progress and video will appear here.</p>
             <MudButton Href="/properties" Variant="Variant.Filled" Color="Color.Primary">Choose a property</MudButton>
@@ -140,7 +144,7 @@ else
                 <article id="@($"campaign-{item.JobId}")" class="review-card" @key="item.JobId">
                     <header class="review-card-heading">
                         <div>
-                            <span class="review-kicker">TIKTOK · VERTICAL VIDEO</span>
+                            <span class="review-kicker">TikTok · 9:16</span>
                             <h3>@CaseTitle(item.JobId)</h3>
                             <p class="review-card-address">@item.Address</p>
                             <p>@item.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</p>
@@ -152,34 +156,46 @@ else
                     {
                         <div class="review-player">
                             <video @key="@($"{item.JobId}-{item.Version}")" controls preload="metadata" playsinline
-                                   style="width:100%;max-width:400px;aspect-ratio:9/16" aria-label="@($"TikTok video for {item.Address}, version {item.Version}")">
+                                   aria-label="@($"TikTok video for {item.Address}, version {item.Version}")">
                                 <source src="@VideoUrl(item)" type="video/mp4" />
                                 Your browser does not support MP4 playback.
                             </video>
                         </div>
                         <div class="review-video-links">
-                            <span>Version @item.Version · 9:16</span>
-                            <a href="@(VideoUrl(item) + "&download=true")">Download MP4</a>
+                            <span>Version @item.Version</span>
+                            <a href="@(VideoUrl(item) + "&download=true")">
+                                <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Small" aria-hidden="true" />Download MP4
+                            </a>
+                        </div>
+                    }
+                    else if (item.CampaignStatus is CampaignGenerationStatus.Failed or CampaignGenerationStatus.Cancelled)
+                    {
+                        <div class="review-pending stopped" role="status">
+                            <span class="review-pending-icon"><MudIcon Icon="@Icons.Material.Filled.ErrorOutline" aria-hidden="true" /></span>
+                            <strong>@(item.CampaignStatus == CampaignGenerationStatus.Failed ? "Campaign failed" : "Campaign cancelled")</strong>
+                            <span>Stopped while @StageText(item.Stage)</span>
                         </div>
                     }
                     else
                     {
                         <div class="review-pending" role="status">
-                            @if (item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
-                            {
-                                <MudProgressCircular Indeterminate="true" Size="Size.Medium" Color="Color.Primary" />
-                            }
-                            <strong>@item.CampaignStatus</strong>
-                            <span>@item.Stage</span>
+                            <MudProgressCircular Indeterminate="true" Size="Size.Medium" Color="Color.Primary" />
+                            <strong>@(item.CampaignStatus == CampaignGenerationStatus.Queued ? "Queued" : "In progress")</strong>
+                            <span>@(char.ToUpperInvariant(StageText(item.Stage)[0]) + StageText(item.Stage)[1..])</span>
                             <p>Refresh the gallery to check progress. You can leave this page while the campaign runs.</p>
                         </div>
                     }
 
                     <div class="review-card-content">
-                        <p class="review-settings">@item.Settings</p>
+                        <ul class="review-settings" aria-label="Campaign settings">
+                            @foreach (var setting in SettingLabels(item.Settings))
+                            {
+                                <li>@setting</li>
+                            }
+                        </ul>
                         @if (!string.IsNullOrWhiteSpace(item.Error))
                         {
-                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-3">@item.Error</MudAlert>
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true" Class="mb-3">@item.Error</MudAlert>
                         }
                         <a class="review-property-link" href="@($"/properties/{item.PropertyId}?tab=campaign")">Open property campaign →</a>
 
@@ -193,6 +209,7 @@ else
                                               Disabled="busy" />
                                 <div class="review-decision-actions">
                                     <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="busy"
+                                               StartIcon="@Icons.Material.Filled.Check"
                                                OnClick="() => DecideAsync(item, CampaignVideoReviewDecision.Approved)">
                                         Approve version @item.Version
                                     </MudButton>
@@ -421,15 +438,66 @@ else
     {
         CampaignVideoReviewDecision.Approved => $"Approved · v{item.Version}",
         CampaignVideoReviewDecision.ChangesRequested => "Changes requested",
-        _ => CanReview(item) ? "Awaiting review" : item.CampaignStatus.ToString(),
+        _ when CanReview(item) => "Awaiting review",
+        _ => item.CampaignStatus == CampaignGenerationStatus.Running ? "In progress" : item.CampaignStatus.ToString(),
     };
 
     private static string DecisionClass(CampaignReviewItem item) => item.Decision switch
     {
         CampaignVideoReviewDecision.Approved => "approved",
         CampaignVideoReviewDecision.ChangesRequested => "changes",
-        _ => "pending",
+        _ when CanReview(item) => "awaiting",
+        _ => item.CampaignStatus is CampaignGenerationStatus.Failed or CampaignGenerationStatus.Cancelled ? "failed" : "running",
     };
+
+    private static string SuiteClass(TikTokTestSuiteStatus status) => status switch
+    {
+        TikTokTestSuiteStatus.Completed => "approved",
+        TikTokTestSuiteStatus.Failed or TikTokTestSuiteStatus.Cancelled => "failed",
+        _ => "running",
+    };
+
+    private static string StageText(CampaignGenerationStage stage) => stage switch
+    {
+        CampaignGenerationStage.ValidateProperty => "checking the property",
+        CampaignGenerationStage.AnalyzeMedia => "analyzing photos",
+        CampaignGenerationStage.GenerateStory => "writing the story",
+        CampaignGenerationStage.GenerateMasterVideoPlan => "planning the video",
+        CampaignGenerationStage.GenerateNarration => "recording the voiceover",
+        CampaignGenerationStage.GenerateDerivativePlans => "planning the short edits",
+        CampaignGenerationStage.GenerateRequiredAiVideo => "generating AI video",
+        CampaignGenerationStage.RenderHero or CampaignGenerationStage.RenderFeature
+            or CampaignGenerationStage.RenderTeaser or CampaignGenerationStage.RenderLongForm => "rendering the video",
+        CampaignGenerationStage.GenerateSocialCopy => "writing social posts",
+        _ => "finishing up",
+    };
+
+    // Settings arrive as "Template · Pace · Voiceover · Soundtrack · Spoken/Caption" enum names; show plain words.
+    private static IEnumerable<string> SettingLabels(string settings)
+    {
+        var parts = settings.Split(" · ", StringSplitOptions.TrimEntries);
+        for (var index = 0; index < parts.Length; index++)
+        {
+            var part = parts[index];
+            yield return (index, part) switch
+            {
+                (2, nameof(CampaignVoiceoverMode.ShortHook)) => "Short voiceover",
+                (2, nameof(CampaignVoiceoverMode.None)) => "Music and text",
+                (2, nameof(CampaignVoiceoverMode.Full)) => "Full voiceover",
+                (3, nameof(CampaignSoundtrack.None)) => "No music",
+                (3, _) => $"{Words(part)} music",
+                (1, _) => $"{part} pace",
+                (4, _) when part.Split('/') is [var spoken, var caption] => spoken == caption
+                    ? spoken : $"{spoken} voice · {caption} captions",
+                _ => Words(part),
+            };
+        }
+    }
+
+    private static string Words(string pascalCase) =>
+        System.Text.RegularExpressions.Regex.Replace(pascalCase, "(?<=[a-z])(?=[A-Z])", " ").ToLowerInvariant() is { Length: > 0 } words
+            ? char.ToUpperInvariant(words[0]) + words[1..]
+            : pascalCase;
 
     protected override async ValueTask DisposeAsyncCore()
     {
