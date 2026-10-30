@@ -10,6 +10,7 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations;
 [Migration("20261030151000_AddTikTokTestSuites")]
 public sealed class AddTikTokTestSuites : Migration
 {
+    private static readonly string[] QueueIndexColumns = ["Status", "UpdatedAtUtc"];
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.CreateTable(name: "TikTokTestSuites", columns: table => new
@@ -27,7 +28,7 @@ public sealed class AddTikTokTestSuites : Migration
             CreatedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
             UpdatedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
         }, constraints: table => table.PrimaryKey("PK_TikTokTestSuites", x => x.Id));
-        migrationBuilder.CreateIndex(name: "IX_TikTokTestSuites_Status_UpdatedAtUtc", table: "TikTokTestSuites", columns: new[] { "Status", "UpdatedAtUtc" });
+        migrationBuilder.CreateIndex(name: "IX_TikTokTestSuites_Status_UpdatedAtUtc", table: "TikTokTestSuites", columns: QueueIndexColumns);
         migrationBuilder.CreateIndex(name: "IX_TikTokTestSuites_OrganizationId", table: "TikTokTestSuites", column: "OrganizationId",
             unique: true, filter: "\"Status\" IN ('Queued', 'Running')");
     }

@@ -4,6 +4,22 @@ The matrix covers short voiceover / fast cuts / 30 seconds, music and text only 
 fast cuts / 30 seconds, and full voiceover / cinematic glide / 60 seconds.
 It is the first regression slice, not exhaustive coverage of the campaign options.
 
+## Admin control center
+
+`/admin/campaign-tests` is the normal review surface. It requires the existing
+platform-admin role and keeps every query within that administrator's workspace.
+Choose a property and explicitly start a three-case suite. A durable Worker queue
+creates the cases sequentially, so they continue after the Admin page is closed.
+Cancel stops the remaining cases; an already running campaign continues separately.
+The gallery includes progress, failed stages, settings, private videos, approval,
+change requests, and history. Approval belongs to the exact video version; a new
+version starts unreviewed. Use the existing video chat to propose and render edits.
+
+Suites verify recorded completion, vertical aspect, expected duration and positive
+file size. They do not decode the video or perform AI editorial review. Use the
+browser runner for independent media checks and review the content yourself.
+No autonomous code-fixing or deployment agent is installed.
+
 ## CI rendering worker
 
 Normal CI runs `TikTokReviewOutputsArePlayable` with the real `ShortFormEditor` and
@@ -66,7 +82,7 @@ Campaign settings on this property are changed; use a dedicated test property.
 
 Live results contain private property media and screenshots. Keep them private;
 the public repository's CI artifact uploader is for synthetic test data only.
-Live browser automation has to be validated against the deployed UI before being
-scheduled. No recurring live job or autonomous code-fixing agent is installed by
-this initial change. A durable runner, protected test login, failure-to-fix handoff
-and regression expansion are follow-up work.
+The durable Admin suite uses the application workflow services. The optional
+browser runner exercises the UI separately and is not a scheduled cloud browser
+job. Broader test coverage, automatic editorial review and a code-fix handoff
+remain follow-up work.

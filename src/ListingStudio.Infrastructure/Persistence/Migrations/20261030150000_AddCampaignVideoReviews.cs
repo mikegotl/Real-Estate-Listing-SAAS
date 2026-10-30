@@ -12,6 +12,7 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations;
 [Migration("20261030150000_AddCampaignVideoReviews")]
 public sealed class AddCampaignVideoReviews : Migration
 {
+    private static readonly string[] ReviewIndexColumns = ["OrganizationId", "CampaignDeliverableId", "CreatedAtUtc"];
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.CreateTable(
@@ -33,7 +34,7 @@ public sealed class AddCampaignVideoReviews : Migration
         migrationBuilder.CreateIndex(
             name: "IX_CampaignVideoReviews_Organization_Deliverable_Created",
             table: "CampaignVideoReviews",
-            columns: new[] { "OrganizationId", "CampaignDeliverableId", "CreatedAtUtc" });
+            columns: ReviewIndexColumns);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
