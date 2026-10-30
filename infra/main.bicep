@@ -746,6 +746,10 @@ var webEnvironment = concat(providerSharedEnvironment, [
     name: 'Authentication__Google__Enabled'
     value: string(googleAuthenticationEnabled)
   }
+  {
+    name: 'TesterInvitations__AppBaseUrl'
+    value: !empty(appBaseUrl) ? appBaseUrl : 'https://creativelistingstudio.com'
+  }
 ], googleAuthenticationEnabled ? [
   {
     name: 'Authentication__Google__ClientId'
@@ -993,6 +997,18 @@ resource workerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicat
           name: 'worker'
           image: workerImage
           env: concat(providerSharedEnvironment, [
+            {
+              name: 'DataProtection__ApplicationName'
+              value: 'ListingStudio.Web'
+            }
+            {
+              name: 'DataProtection__BlobUri'
+              value: '${storageAccount.properties.primaryEndpoints.blob}${dataProtectionContainer.name}/keys.xml'
+            }
+            {
+              name: 'DataProtection__KeyVaultKeyIdentifier'
+              value: '${keyVault.properties.vaultUri}keys/${dataProtectionKey.name}'
+            }
             {
               name: 'OTEL_SERVICE_NAME'
               value: 'listingstudio-worker'

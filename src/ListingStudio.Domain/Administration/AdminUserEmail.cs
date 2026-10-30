@@ -23,7 +23,8 @@ public sealed class AdminUserEmail
         string recipientEmail,
         string subject,
         string body,
-        DateTimeOffset queuedAtUtc)
+        DateTimeOffset queuedAtUtc,
+        bool bodyIsProtected)
     {
         if (batchId == Guid.Empty)
         {
@@ -37,6 +38,7 @@ public sealed class AdminUserEmail
         RecipientEmail = Required(recipientEmail, MaximumEmailLength, nameof(recipientEmail));
         Subject = Required(subject, MaximumSubjectLength, nameof(subject));
         Body = Required(body, MaximumBodyLength, nameof(body));
+        BodyIsProtected = bodyIsProtected;
         QueuedAtUtc = queuedAtUtc;
     }
 
@@ -54,6 +56,9 @@ public sealed class AdminUserEmail
     public string Subject { get; private set; } = string.Empty;
 
     public string Body { get; private set; } = string.Empty;
+
+    /// <summary>True when the body is encrypted because it contains a temporary credential.</summary>
+    public bool BodyIsProtected { get; private set; }
 
     public DateTimeOffset QueuedAtUtc { get; private set; }
 
@@ -74,8 +79,9 @@ public sealed class AdminUserEmail
         string recipientEmail,
         string subject,
         string body,
-        DateTimeOffset queuedAtUtc) =>
-        new(batchId, sentByUserId, recipientUserId, recipientEmail, subject, body, queuedAtUtc);
+        DateTimeOffset queuedAtUtc,
+        bool bodyIsProtected = false) =>
+        new(batchId, sentByUserId, recipientUserId, recipientEmail, subject, body, queuedAtUtc, bodyIsProtected);
 
     public void MarkSent(DateTimeOffset sentAtUtc)
     {
@@ -83,6 +89,11 @@ public sealed class AdminUserEmail
         AttemptCount++;
         NextAttemptAtUtc = null;
         LastError = null;
+        if (BodyIsProtected)
+        {
+            Body = "Sensitive invitation details were removed after delivery.";
+            BodyIsProtected = false;
+        }
     }
 
     /// <summary>Records a failed send and backs off 1, 2, 4... minutes, capped at an hour. Returns whether it will be tried again.</summary>

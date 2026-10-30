@@ -8,6 +8,8 @@ public sealed class ApplicationUser : IdentityUser
 
     public bool IncludeAvatarInCampaigns { get; private set; }
 
+    public bool RequiresPasswordChange { get; private set; }
+
     public void RecordSuccessfulSignIn(DateTimeOffset occurredAtUtc)
     {
         if (LastSuccessfulSignInAtUtc is null || occurredAtUtc > LastSuccessfulSignInAtUtc)
@@ -19,5 +21,15 @@ public sealed class ApplicationUser : IdentityUser
     public void SetAvatarCampaignDefault(bool includeAvatarInCampaigns)
     {
         IncludeAvatarInCampaigns = includeAvatarInCampaigns;
+    }
+
+    public void RequirePasswordChange()
+    {
+        RequiresPasswordChange = true;
+    }
+
+    public void CompleteRequiredPasswordChange()
+    {
+        RequiresPasswordChange = false;
     }
 }

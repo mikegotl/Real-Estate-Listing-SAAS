@@ -1,8 +1,13 @@
 using Azure.Core;
 using Azure.Identity;
+using ListingStudio.Infrastructure.Configuration;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using ListingStudioDataProtectionOptions = ListingStudio.Infrastructure.Configuration.DataProtectionOptions;
 
-namespace ListingStudio.Web.Authentication;
+namespace ListingStudio.Infrastructure.DependencyInjection;
 
 public static class DataProtectionServiceCollectionExtensions
 {
@@ -11,8 +16,8 @@ public static class DataProtectionServiceCollectionExtensions
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        var options = configuration.GetSection(DataProtectionOptions.SectionName)
-            .Get<DataProtectionOptions>() ?? new DataProtectionOptions();
+        var options = configuration.GetSection(ListingStudioDataProtectionOptions.SectionName)
+            .Get<ListingStudioDataProtectionOptions>() ?? new ListingStudioDataProtectionOptions();
         var builder = services.AddDataProtection()
             .SetApplicationName(Required(options.ApplicationName, "DataProtection:ApplicationName"));
 
@@ -21,13 +26,9 @@ public static class DataProtectionServiceCollectionExtensions
             return services;
         }
 
-        var managedIdentityClientId = Required(
-            configuration["AZURE_CLIENT_ID"],
-            "AZURE_CLIENT_ID");
+        var managedIdentityClientId = Required(configuration["AZURE_CLIENT_ID"], "AZURE_CLIENT_ID");
         var blobUri = HttpsUri(options.BlobUri, "DataProtection:BlobUri");
-        var keyIdentifier = HttpsUri(
-            options.KeyVaultKeyIdentifier,
-            "DataProtection:KeyVaultKeyIdentifier");
+        var keyIdentifier = HttpsUri(options.KeyVaultKeyIdentifier, "DataProtection:KeyVaultKeyIdentifier");
         TokenCredential credential = new ManagedIdentityCredential(
             ManagedIdentityId.FromUserAssignedClientId(managedIdentityClientId));
 
@@ -42,8 +43,7 @@ public static class DataProtectionServiceCollectionExtensions
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new InvalidOperationException(
-                $"Production data protection requires {settingName}.");
+            throw new InvalidOperationException($"Production data protection requires {settingName}.");
         }
 
         return value;
@@ -52,8 +52,8 @@ public static class DataProtectionServiceCollectionExtensions
     private static Uri HttpsUri(string? value, string settingName)
     {
         var required = Required(value, settingName);
-        if (!Uri.TryCreate(required, UriKind.Absolute, out var uri) ||
-            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        if (!Uri.TryCreate(required, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 $"Production data protection requires {settingName} to be an absolute HTTPS URI.");

@@ -45,6 +45,19 @@ public sealed class AdminUserEmailTests
     }
 
     [Fact]
+    public void SendingASensitiveEmailRedactsItsProtectedBody()
+    {
+        var email = AdminUserEmail.Create(
+            Guid.NewGuid(), "admin", "user", "user@example.com", "Welcome", "encrypted-payload", Now,
+            bodyIsProtected: true);
+
+        email.MarkSent(Now.AddMinutes(1));
+
+        Assert.False(email.BodyIsProtected);
+        Assert.Equal("Sensitive invitation details were removed after delivery.", email.Body);
+    }
+
+    [Fact]
     public void RejectsMissingOrOversizedFields()
     {
         Assert.Throws<ArgumentException>(() => AdminUserEmail.Create(Guid.Empty, "admin", "user", "a@b.c", "s", "b", Now));

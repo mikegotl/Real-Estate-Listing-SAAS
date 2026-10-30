@@ -20,6 +20,22 @@
     </div>
 </div>
 
+<MudPaper Elevation="0" Class="admin-panel mb-5">
+    <MudText Typo="Typo.h5" HtmlTag="h2">Invite a tester</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Enter an email address. Existing users keep their sign-in; new users receive a private workspace, a temporary
+        password and a welcome email, and must choose a new password before using the site.
+    </MudText>
+    <form action="/admin/users/testers/invite" method="post" class="admin-user-search">
+        <AntiforgeryToken />
+        <label for="tester-invite-email" class="visually-hidden">Tester email address</label>
+        <input id="tester-invite-email" name="email" type="email" autocomplete="email" required maxlength="256"
+               placeholder="tester@example.com" />
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.PersonAdd">Invite tester</MudButton>
+    </form>
+</MudPaper>
+
 <form method="get" action="/admin/users" class="admin-user-search" role="search">
     <label for="admin-user-query" class="visually-hidden">Email, user name or workspace</label>
     <input id="admin-user-query" name="q" type="search" value="@Q" autocomplete="off" autofocus
@@ -217,6 +233,12 @@ else
         "tester-unchanged" => (Severity.Info, "Nothing changed; the user was already in that state."),
         "tester-UserNotFound" => (Severity.Warning, "That user no longer exists."),
         "tester-NotPlatformAdmin" => (Severity.Warning, "Your account no longer has platform administrator access."),
+        "tester-invited-new" => (Severity.Success, "Tester account created. Their welcome email with a temporary password is queued, and they must change it after signing in."),
+        "tester-invited-existing" => (Severity.Success, "The existing account was added to Testers and a welcome email is queued."),
+        "tester-invite-unchanged" => (Severity.Info, "That account is already in Testers; no email or password change was needed."),
+        "tester-invite-invalid-email" => (Severity.Warning, "Enter a valid tester email address."),
+        "tester-invite-account-failed" => (Severity.Warning, "The tester account could not be created. Check whether the email is already in use and try again."),
+        "tester-invite-not-admin" => (Severity.Warning, "Your account no longer has platform administrator access."),
         _ => null,
     };
 
