@@ -11,6 +11,20 @@
         <MudContainer MaxWidth="MaxWidth.Large" Class="page-container">
             @Body
         </MudContainer>
+        <footer class="site-footer">
+            <span>Creative Listing Studio · Listing videos and campaigns for real estate agents</span>
+            <nav aria-label="Site">
+                <a href="/">Home</a>
+                <a href="/articles">Articles</a>
+                <a href="/privacy">Privacy</a>
+                <AuthorizeView>
+                    <NotAuthorized>
+                        <a href="/Account/Register">Create an account</a>
+                        <a href="/Account/Login">Log in</a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </nav>
+        </footer>
     </MudMainContent>
     <AuthorizeView>
         <Authorized>

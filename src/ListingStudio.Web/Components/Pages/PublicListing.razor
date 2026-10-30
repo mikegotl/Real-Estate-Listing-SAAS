@@ -2,8 +2,21 @@
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
 @inherits OwningComponentBase<ILeadGenerationService>
+@using ListingStudio.Web.Seo
+@inject PublicSiteUrls Urls
+@inject NavigationManager Navigation
 
-<PageTitle>@(listing is null ? "Property listing" : listing.Address1)</PageTitle>
+@if (loaded && listing is null)
+{
+    <SeoHead Title="Property listing" NoIndex="true" />
+}
+else if (listing is not null)
+{
+    <SeoHead Title="@PublicListingSearchText.Title(listing)" Description="@PublicListingSearchText.Description(listing)"
+             PreviewTitle="@(listing.Headline ?? PublicListingSearchText.Title(listing))"
+             Path="@ListingPath" ImagePath="@CoverPath" ImageAlt="@($"Front view of {listing.Address1}")"
+             VideoPath="@VideoPath" StructuredData="@ListingStructuredData" />
+}
 
 @if (!loaded)
 {
@@ -30,7 +43,7 @@ else
 
     @if (listing.HasCover)
     {
-        <img src="@($"/public/listings/{listing.PublicSlug}/cover")"
+        <img src="@CoverPath"
              alt="Front view of @listing.Address1" style="width:100%;max-height:540px;object-fit:cover;border-radius:12px;" />
     }
 
@@ -49,7 +62,7 @@ else
             {
                 <MudPaper Class="pa-3 mb-4">
                     <video controls preload="metadata" style="width:100%;border-radius:8px;" aria-label="Property tour video">
-                        <source src="@($"/public/listings/{listing.PublicSlug}/video")" type="video/mp4" />
+                        <source src="@VideoPath" type="video/mp4" />
                     </video>
                 </MudPaper>
             }
@@ -102,6 +115,8 @@ else
             </MudPaper>
         </MudItem>
     </MudGrid>
+
+    <p class="listing-credit">Listing video and page made with <a href="/">Creative Listing Studio</a></p>
 }
 
 @code {
@@ -117,6 +132,9 @@ else
     [SupplyParameterFromQuery(Name = "utm_campaign")]
     public string? Campaign { get; set; }
 
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
     private PublicListingResult? listing;
     private InquiryForm form = new();
     private bool loaded;
@@ -128,6 +146,12 @@ else
     {
         listing = await Service.GetPublicListingAsync(PublicSlug);
         loaded = true;
+        if (listing is null && HttpContext is { Response.HasStarted: false } context)
+        {
+            // Unpublished and archived listings must drop out of search results instead of staying indexed as a thin page.
+            // The status code page then shows the site's not-found page.
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+        }
     }
 
     private async Task SubmitAsync()
@@ -150,6 +174,18 @@ else
         errors = result.Errors;
         busy = false;
     }
+
+    private string ListingPath => $"/listing/{listing!.PublicSlug}";
+
+    private string? CoverPath => listing is { HasCover: true } ? $"/public/listings/{listing.PublicSlug}/cover" : null;
+
+    private string? VideoPath => listing is { HasVideo: true } ? $"/public/listings/{listing.PublicSlug}/video" : null;
+
+    private string ListingStructuredData => SeoStructuredData.Serialize(SeoStructuredData.Listing(
+        listing!,
+        Urls.Absolute(ListingPath, Navigation.BaseUri),
+        CoverPath is null ? null : Urls.Absolute(CoverPath, Navigation.BaseUri),
+        VideoPath is null ? null : Urls.Absolute(VideoPath, Navigation.BaseUri)));
 
     private static string Display(string value) => string.Concat(value.Select((character, index) =>
         index > 0 && char.IsUpper(character) ? $" {character}" : character.ToString()));
