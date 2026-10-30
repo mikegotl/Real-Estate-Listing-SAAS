@@ -50,9 +50,36 @@ jobs:
         run: dotnet build ListingStudio.slnx --no-restore
 
       - name: Test
-        run: dotnet test ListingStudio.slnx --no-build --logger "console;verbosity=normal"
+        run: dotnet test ListingStudio.slnx --no-build --logger "console;verbosity=minimal" --logger "trx;LogFilePrefix=tests" --results-directory artifacts/test-results
         env:
           RUN_FFMPEG_E2E: "1"
+          TIKTOK_REVIEW_DIR: ${{ github.workspace }}/artifacts/tiktok-review
+          Logging__LogLevel__Default: Warning
+          Logging__LogLevel__Microsoft: Warning
+
+      - name: Retain test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Verify review tooling and build TikTok gallery
+        if: always()
+        run: |
+          python3 -m unittest discover -s tools/tiktok-tests -p 'test_*.py'
+          python3 tools/tiktok-tests/review.py gallery artifacts/tiktok-review
+
+      - name: Retain synthetic TikTok videos and review notes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/tiktok-review/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Publish production hosts
         run: |
@@ -94,3 +121,4 @@ jobs:
             listingstudio-worker:${{ github.sha }}
           curl --fail --show-error --silent --retry 12 --retry-delay 2 --retry-all-errors \
             http://localhost:18081/health/live
+

@@ -231,8 +231,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyPhotoFixService, PropertyPhotoFixService>();
         services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
+        services.AddScoped<ICampaignTestGenerationService, CampaignGenerationService>();
+        services.AddScoped<TikTokTestSuiteService>();
+        services.AddScoped<ITikTokTestSuiteService>(provider => provider.GetRequiredService<TikTokTestSuiteService>());
+        services.AddScoped<ITikTokTestSuiteProcessor>(provider => provider.GetRequiredService<TikTokTestSuiteService>());
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
         services.AddScoped<ICampaignVideoChatService, CampaignVideoChatService>();
+        services.AddScoped<ICampaignReviewService, CampaignReviewService>();
         services.AddScoped<IHelpChatService, HelpChatService>();
         services.AddScoped<IAgentPortraitService, AgentPortraitService>();
         services.AddScoped<IAgentProfileService, AgentProfileService>();
@@ -292,3 +297,4 @@ public static class ServiceCollectionExtensions
         return services;
     }
 }
+

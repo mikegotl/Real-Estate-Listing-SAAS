@@ -87,6 +87,7 @@ builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
 builder.Services.AddHostedService<PropertyVideoFrameExtractionWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
+builder.Services.AddHostedService<TikTokTestSuiteWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
 builder.Services.AddHostedService<AerialIntroWorker>();
 builder.Services.AddHostedService<PhotoFixWorker>();
@@ -105,3 +106,4 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     Predicate = registration => registration.Tags.Contains("ready"),
 });
 await app.RunAsync();
+

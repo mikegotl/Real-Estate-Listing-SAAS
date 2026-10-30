@@ -12,7 +12,7 @@ using Xunit;
 
 namespace ListingStudio.IntegrationTests;
 
-public sealed class FfmpegRenderingTests
+public sealed partial class FfmpegRenderingTests
 {
     private static readonly string[] SetupArguments = ["-hide_banner", "-loglevel", "error", "-nostdin", "-n"];
 
@@ -755,3 +755,4 @@ public sealed class FfmpegRenderingTests
         }
     }
 }
+

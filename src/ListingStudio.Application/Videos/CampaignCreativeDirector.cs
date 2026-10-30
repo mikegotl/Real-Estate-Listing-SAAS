@@ -312,7 +312,7 @@ public static class CampaignCreativeDirector
             inWord = !isSpace;
         }
 
-        var wordCount = chunks.Sum(chunk => chunk.Split(' ').Length);
+        var wordCount = chunks.Sum(chunk => CaptionWords(chunk).Length);
         if (wordStarts.Count != wordCount)
         {
             return null;
@@ -323,18 +323,23 @@ public static class CampaignCreativeDirector
         for (var index = 0; index < chunks.Length; index++)
         {
             starts[index] = wordStarts[word];
-            word += chunks[index].Split(' ').Length;
+            word += CaptionWords(chunks[index]).Length;
         }
 
         return starts;
     }
+
+    // Provider narration and accepted scripts may contain paragraphs or tabs. Caption overlays
+    // are single-line text, and the renderer correctly rejects control characters in overlays.
+    private static string[] CaptionWords(string text) =>
+        text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
     private static string[] ChunkCaption(string text, int maximumCharacters)
     {
         var chunks = new List<string>();
         var current = new List<string>();
         var length = 0;
-        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var word in CaptionWords(text))
         {
             if (current.Count > 0 && (current.Count == 5 || length + 1 + word.Length > maximumCharacters))
             {
@@ -436,3 +441,4 @@ public static class CampaignCreativeDirector
     private static bool IsNeighborhoodBinding(VideoProductionSpecification source, string key) =>
         source.FactBindings.Any(binding => binding.Key == key && binding.Source == FactSource.ApprovedNeighborhood);
 }
+

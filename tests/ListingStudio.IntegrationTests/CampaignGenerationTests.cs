@@ -21,7 +21,7 @@ using ListingStudio.Domain.Billing;
 
 namespace ListingStudio.IntegrationTests;
 
-public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixture)
+public sealed partial class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixture)
     : IClassFixture<PostgreSqlWebApplicationFixture>
 {
     private static readonly byte[] OnePixelPng = Convert.FromBase64String(
@@ -1553,3 +1553,4 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
 
     private sealed record OwnerProperty(string UserId, Guid OrganizationId, Guid PropertyId);
 }
+
