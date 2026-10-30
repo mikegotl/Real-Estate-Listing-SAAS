@@ -75,6 +75,21 @@ public sealed class LeadGenerationService(
             page.UpdatedAtUtc);
     }
 
+    public async Task<IReadOnlyList<PublishedListingEntry>> ListPublishedListingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var pages = await dbContext.LeadCapturePages.AsNoTracking()
+            .Where(page => page.IsPublished && page.Property.ArchivedAtUtc == null)
+            .Select(page => new { page.PublicSlug, PageUpdated = page.UpdatedAtUtc, PropertyUpdated = page.Property.UpdatedAtUtc })
+            .ToListAsync(cancellationToken);
+        return pages
+            .Select(page => new PublishedListingEntry(
+                page.PublicSlug,
+                page.PageUpdated > page.PropertyUpdated ? page.PageUpdated : page.PropertyUpdated))
+            .OrderByDescending(entry => entry.LastModifiedUtc)
+            .ToList();
+    }
+
     public async Task<PublicListingResult?> GetPublicListingAsync(
         string publicSlug,
         CancellationToken cancellationToken = default)

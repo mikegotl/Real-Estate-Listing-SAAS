@@ -1,5 +1,12 @@
 @page "/"
-<PageTitle>Creative Listing Studio</PageTitle>
+@using ListingStudio.Web.Seo
+@inject PublicSiteUrls Urls
+@inject NavigationManager Navigation
+
+<SeoHead Title="AI Real Estate Listing Videos for TikTok, Reels and YouTube | Creative Listing Studio" TitleIsComplete="true"
+         PreviewTitle="AI real estate listing videos for TikTok, Reels and YouTube"
+         Description="@Description" Path="/"
+         StructuredData="@SeoStructuredData.Serialize(SeoStructuredData.Site(Urls.BaseUri(Navigation.BaseUri), Description))" />
 
 <section class="hero-section">
     <div class="hero-copy">
@@ -81,6 +88,8 @@
 </section>
 
 @code {
+    private const string Description = "Turn listing photos and walkthrough clips into branded TikTok, Reels and YouTube videos with AI voiceover, captions and music, plus a property page that captures leads.";
+
     // Free-licensed stock photo; source and license are recorded in wwwroot/images/CREDITS.md.
     private const string HeroPhotoAlt = "Modern two-story home with dark siding, large windows and a green front lawn";
 }

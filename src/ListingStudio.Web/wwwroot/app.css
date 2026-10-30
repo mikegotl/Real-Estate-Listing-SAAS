@@ -212,7 +212,7 @@ h1:focus { outline: none; }
 .account-stage { display: grid; grid-template-columns: minmax(360px, .9fr) minmax(480px, 1.1fr); margin: -48px calc(50% - 50vw) -72px; min-height: calc(100vh - 72px); }
 .account-story { background: linear-gradient(145deg, var(--ls-night), var(--ls-night-2) 62%, var(--ls-night-3)); color: var(--ls-on-night); display: flex; flex-direction: column; justify-content: center; overflow: hidden; padding: 80px max(8vw, 64px); position: relative; }
 .account-story::after { border: 1px solid rgba(255,255,255,.10); border-radius: 50%; content: ""; height: 520px; position: absolute; right: -280px; top: -170px; width: 520px; }
-.account-story h2 { font-family: var(--ls-font-display); font-weight: 600; letter-spacing: -.02em; line-height: 1.1; max-width: 520px; }
+.account-story .account-story-title { color: inherit; font-family: var(--ls-font-display); font-weight: 600; letter-spacing: -.02em; line-height: 1.1; margin-top: 0; max-width: 520px; }
 .account-story p { color: var(--ls-on-night-muted); line-height: 1.75; margin-top: 18px; max-width: 480px; }
 .account-benefits { display: grid; gap: 15px; margin-top: 38px; }
 .account-benefits span { align-items: center; color: var(--ls-on-night); display: flex; font-size: .88rem; gap: 10px; }.account-benefits .mud-icon-root { color: var(--ls-accent-light); font-size: 20px; }
@@ -875,3 +875,11 @@ a.stage-pill:hover { text-decoration: underline; }
     .guest-actions .nav-articles .mud-button-label { font-size: 0; }
     .guest-actions .nav-articles .mud-button-icon-start { margin: 0; }
 }
+/* Public listing pages credit the studio, which also gives every published listing a link back to the home page. */
+.listing-credit { color: var(--mud-palette-text-secondary); font-size: .85rem; margin: 32px 0 8px; text-align: center; }
+.listing-credit a { color: inherit; font-weight: 600; }
+
+.site-footer { align-items: center; border-top: 1px solid var(--mud-palette-divider); color: var(--mud-palette-text-secondary); display: flex; flex-wrap: wrap; font-size: .85rem; gap: 12px 24px; justify-content: space-between; margin: 0 auto; max-width: 1280px; padding: 24px; }
+.site-footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.site-footer a { color: inherit; text-decoration: none; }
+.site-footer a:hover, .site-footer a:focus-visible { color: var(--mud-palette-primary); text-decoration: underline; }

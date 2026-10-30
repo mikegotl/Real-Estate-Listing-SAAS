@@ -4,8 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
+    <meta name="theme-color" content="#0E1B2B" />
+    <link rel="icon" href="@Assets["favicon.ico"]" sizes="48x48" />
+    <link rel="icon" href="@Assets["favicon.svg"]" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="@Assets["apple-touch-icon.png"]" />
+    @* MudBlazor's fingerprinted URL is served without compression (about 600 KB instead of 42 KB), so it keeps its plain URL. *@
     <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
-    <link rel="stylesheet" href="app.css" />
+    @* A fingerprinted URL lets browsers cache app.css for a year instead of re-checking it on every page. *@
+    <link rel="stylesheet" href="@Assets["app.css"]" />
     <HeadOutlet />
 </head>
 <body>

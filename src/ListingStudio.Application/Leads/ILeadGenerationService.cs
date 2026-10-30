@@ -22,6 +22,10 @@ public interface ILeadGenerationService
         string publicSlug,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Published, non-archived listings for the public sitemap, newest change first.</summary>
+    Task<IReadOnlyList<PublishedListingEntry>> ListPublishedListingsAsync(
+        CancellationToken cancellationToken = default);
+
     Task<PublicLeadSubmissionResult> SubmitAsync(
         string publicSlug,
         PublicLeadInput input,
@@ -94,6 +98,8 @@ public sealed record PublicListingResult(
     string? Headline,
     bool HasCover,
     bool HasVideo);
+
+public sealed record PublishedListingEntry(string PublicSlug, DateTimeOffset LastModifiedUtc);
 
 public sealed record PublicLeadInput(
     string Name,

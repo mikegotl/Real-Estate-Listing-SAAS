@@ -15,6 +15,7 @@ using ListingStudio.Web.Components;
 using ListingStudio.Web.Components.Properties;
 using ListingStudio.Web.Components.Account;
 using ListingStudio.Web.Authentication;
+using ListingStudio.Web.Seo;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -74,6 +75,7 @@ builder.Services
     .AddAI(builder.Configuration)
     .AddVideo(builder.Configuration);
 builder.Services.AddExternalLoginProviders(builder.Configuration);
+builder.Services.AddSingleton<PublicSiteUrls>();
 
 var app = builder.Build();
 
@@ -88,6 +90,8 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseMiddleware<PublicHostRedirectMiddleware>();
+app.UseMiddleware<HeadRequestMiddleware>();
 app.UseStatusCodePagesWithReExecute("/status/{0}", createScopeForStatusCodePages: true);
 
 app.UseHttpsRedirection();
@@ -103,6 +107,7 @@ app.UseMiddleware<RequiredPasswordChangeMiddleware>();
 app.UseMiddleware<OperationalTelemetryMiddleware>();
 app.UseAntiforgery();
 app.MapStaticAssets();
+app.MapSeoEndpoints();
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = registration => registration.Tags.Contains("live"),

@@ -1,0 +1,88 @@
+@using ListingStudio.Web.Seo
+@inject PublicSiteUrls Urls
+@inject NavigationManager Navigation
+
+@* One place for a page's title, description, canonical link and link-preview tags. *@
+<PageTitle>@FullTitle</PageTitle>
+<HeadContent>
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <meta name="description" content="@Description" />
+    }
+    @if (NoIndex)
+    {
+        <meta name="robots" content="noindex" />
+    }
+    else if (CanonicalUrl is not null)
+    {
+        <link rel="canonical" href="@CanonicalUrl" />
+    }
+    <meta property="og:site_name" content="@SiteName" />
+    <meta property="og:type" content="@Type" />
+    <meta property="og:title" content="@(PreviewTitle ?? Title)" />
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <meta property="og:description" content="@Description" />
+    }
+    @if (CanonicalUrl is not null)
+    {
+        <meta property="og:url" content="@CanonicalUrl" />
+    }
+    <meta property="og:image" content="@ImageUrl" />
+    <meta property="og:image:alt" content="@(ImageAlt ?? DefaultImageAlt)" />
+    @if (ImagePath is null)
+    {
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+    }
+    @if (VideoPath is not null)
+    {
+        <meta property="og:video" content="@Urls.Absolute(VideoPath, Navigation.BaseUri)" />
+        <meta property="og:video:type" content="video/mp4" />
+    }
+    <meta name="twitter:card" content="summary_large_image" />
+    @if (!string.IsNullOrWhiteSpace(StructuredData))
+    {
+        @* Razor drops literal script elements from components, so the JSON-LD block is emitted as markup. *@
+        @((MarkupString)$"<script type=\"application/ld+json\">{StructuredData}</script>")
+    }
+</HeadContent>
+
+@code {
+    public const string SiteName = "Creative Listing Studio";
+    private const string DefaultImagePath = "/images/og-default.jpg";
+    private const string DefaultImageAlt = "Creative Listing Studio: listing videos and campaigns for real estate agents";
+
+    /// <summary>The page's own title; the site name is appended unless <see cref="TitleIsComplete"/> is set.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public bool TitleIsComplete { get; set; }
+
+    /// <summary>A shorter title for link previews, where the site name is shown separately.</summary>
+    [Parameter] public string? PreviewTitle { get; set; }
+
+    [Parameter] public string? Description { get; set; }
+
+    /// <summary>The path search engines should index, without query string. Null leaves out the canonical link.</summary>
+    [Parameter] public string? Path { get; set; }
+
+    [Parameter] public string Type { get; set; } = "website";
+
+    /// <summary>A site path for the preview image; the site's default image is used when null.</summary>
+    [Parameter] public string? ImagePath { get; set; }
+
+    [Parameter] public string? ImageAlt { get; set; }
+
+    [Parameter] public string? VideoPath { get; set; }
+
+    [Parameter] public bool NoIndex { get; set; }
+
+    /// <summary>Serialized JSON-LD. <see cref="SeoStructuredData.Serialize"/> escapes it for use inside a script element.</summary>
+    [Parameter] public string? StructuredData { get; set; }
+
+    private string FullTitle => TitleIsComplete ? Title : $"{Title} | {SiteName}";
+
+    private string? CanonicalUrl => Path is null ? null : Urls.Absolute(Path, Navigation.BaseUri);
+
+    private string ImageUrl => Urls.Absolute(ImagePath ?? DefaultImagePath, Navigation.BaseUri);
+}
