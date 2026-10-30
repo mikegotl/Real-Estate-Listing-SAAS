@@ -98,7 +98,7 @@ Watch the entire video, check facts against the listing, and review captions, fr
 
 async def choose(page, label, value):
     await page.get_by_role("combobox", name=label, exact=True).click()
-    await page.get_by_role("option", name=value, exact=True).click()
+    await page.get_by_text(value, exact=True).click()
 
 
 async def browser_run(args):
@@ -116,75 +116,87 @@ async def browser_run(args):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=not args.headed)
         context = await browser.new_context(storage_state=args.storage_state, viewport={"width": 1440, "height": 1000})
-        page = await context.new_page()
-        page.set_default_timeout(30000)
-        cases = CASES[:args.max_new_campaigns] if args.generate else (("existing", None, None, None),)
-        for case_id, voiceover, pace, seconds in cases:
-            directory = root / case_id
-            directory.mkdir()
-            record = {"case_id": case_id, "scope": "live browser workflow" if args.generate else "existing output audit; no generation",
-                      "technical_status": "failed", "editorial_status": "needs human review",
-                      "voiceover": voiceover, "pace": pace, "expected_seconds": seconds}
+        try:
+            page = await context.new_page()
+            page.set_default_timeout(30000)
+            cases = CASES[:args.max_new_campaigns] if args.generate else (("existing", None, None, None),)
+            for case_id, voiceover, pace, seconds in cases:
+                directory = root / case_id
+                directory.mkdir()
+                record = {"case_id": case_id, "scope": "live browser workflow" if args.generate else "existing output audit; no generation",
+                          "technical_status": "failed", "editorial_status": "needs human review",
+                          "voiceover": voiceover, "pace": pace, "expected_seconds": seconds}
+                try:
+                    await page.goto(args.property_url, wait_until="domcontentloaded")
+                    await page.get_by_role("tab", name="Overview", exact=True).click()
+                    await page.screenshot(path=str(directory / "overview.png"), full_page=True)
+                    await page.get_by_role("tab", name="Story & script", exact=True).click()
+                    await page.screenshot(path=str(directory / "story.png"), full_page=True)
+                    await page.get_by_role("tab", name="Campaign", exact=True).click()
+                    if args.generate:
+                        # Keep each case to one supported vertical output. Never grant portrait consent.
+                        await page.get_by_role("checkbox", name="Vertical video for TikTok, Reels and Shorts", exact=True).check()
+                        for label in ("YouTube property tour", "Facebook Feed", "Facebook still-image post", "Full narrated tour"):
+                            box = page.get_by_role("checkbox", name=label, exact=True)
+                            if await box.is_enabled():
+                                await box.uncheck()
+                        await choose(page, "Marketing template", "Balanced showcase")
+                        await choose(page, "Voiceover", voiceover)
+                        await choose(page, "Style", pace)
+                        await choose(page, "Music", "Modern ambient")
+                        # Expand the advanced panel and disable paid presenter/motion for this initial matrix.
+                        await page.get_by_text("Advanced: on-screen elements and captions", exact=True).click()
+                        for label in ("AI agent presenter", "Agent photo on closing card", "Use walkthrough video and AI walk-through clips"):
+                            await page.get_by_role("checkbox", name=label, exact=True).uncheck()
+                        await page.screenshot(path=str(directory / "settings.png"), full_page=True)
+                        old = await page.get_by_role("link", name="Download MP4", exact=True).get_attribute("href") if await page.get_by_role("link", name="Download MP4", exact=True).count() == 1 else None
+                        await page.get_by_role("button", name="Generate updated campaign", exact=True).or_(
+                            page.get_by_role("button", name="Generate campaign", exact=True)).click()
+                        deadline = time.monotonic() + args.timeout_seconds
+                        while True:
+                            link = page.get_by_role("link", name="Download MP4", exact=True)
+                            ready = page.get_by_role("button", name="Generate updated campaign", exact=True)
+                            if (await link.count() == 1 and await link.get_attribute("href") != old
+                                    and await ready.count() == 1 and await ready.is_enabled()):
+                                break
+                            if await page.get_by_role("button", name="Retry failed stage", exact=True).count():
+                                raise RuntimeError("Campaign failed; evidence retained. Automatic rerender is disabled.")
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("Campaign did not produce a new output before its deadline")
+                            await asyncio.sleep(3)
+                            refresh = page.get_by_role("button", name="Refresh", exact=True)
+                            if await refresh.is_enabled():
+                                await refresh.click()
+                    await page.screenshot(path=str(directory / "campaign.png"), full_page=True)
+                    link = page.get_by_role("link", name="Download MP4", exact=True)
+                    await link.wait_for(state="visible")
+                    async with page.expect_download() as downloaded:
+                        await link.click()
+                    download = await downloaded.value
+                    await download.save_as(directory / "video.mp4")
+                    failures = await asyncio.to_thread(inspect_video, directory, seconds)
+                    record.update(technical_status="failed" if failures else "passed", findings=failures)
+                except Exception as exc:
+                    record["error"] = str(exc)
+                    if isinstance(exc, subprocess.CalledProcessError):
+                        diagnostic = exc.stderr or ""
+                        record["media_diagnostics"] = diagnostic.decode(errors="replace") if isinstance(diagnostic, bytes) else diagnostic
+                    try:
+                        await page.screenshot(path=str(directory / "failure.png"), full_page=True)
+                    except Exception as screenshot_error:
+                        record["screenshot_error"] = str(screenshot_error)
+                finally:
+                    (directory / "result.json").write_text(json.dumps(record, indent=2))
+                    results.append(record)
+                    gallery(root)
+                if record["technical_status"] != "passed":
+                    # Stop on the first failure; do not spend more credits on a broken workflow.
+                    break
+        finally:
             try:
-                await page.goto(args.property_url, wait_until="domcontentloaded")
-                await page.get_by_role("tab", name="Overview", exact=True).click()
-                await page.screenshot(path=str(directory / "overview.png"), full_page=True)
-                await page.get_by_role("tab", name="Story & script", exact=True).click()
-                await page.screenshot(path=str(directory / "story.png"), full_page=True)
-                await page.get_by_role("tab", name="Campaign", exact=True).click()
-                if args.generate:
-                    # Keep each case to one supported vertical output. Never grant portrait consent.
-                    await page.get_by_role("checkbox", name="Vertical video for TikTok, Reels and Shorts", exact=True).check()
-                    for label in ("YouTube property tour", "Facebook Feed", "Facebook still-image post", "Full narrated tour"):
-                        box = page.get_by_role("checkbox", name=label, exact=True)
-                        if await box.is_enabled():
-                            await box.uncheck()
-                    await choose(page, "Marketing template", "Balanced showcase")
-                    await choose(page, "Voiceover", voiceover)
-                    await choose(page, "Style", pace)
-                    await choose(page, "Music", "Modern ambient")
-                    # Expand the advanced panel and disable paid presenter/motion for this initial matrix.
-                    await page.get_by_text("Advanced: on-screen elements and captions", exact=True).click()
-                    for label in ("AI agent presenter", "Agent photo on closing card", "Use walkthrough video and AI walk-through clips"):
-                        await page.get_by_role("checkbox", name=label, exact=True).uncheck()
-                    await page.screenshot(path=str(directory / "settings.png"), full_page=True)
-                    old = await page.get_by_role("link", name="Download MP4", exact=True).get_attribute("href") if await page.get_by_role("link", name="Download MP4", exact=True).count() == 1 else None
-                    await page.get_by_role("button", name="Generate updated campaign", exact=True).or_(
-                        page.get_by_role("button", name="Generate campaign", exact=True)).click()
-                    deadline = time.monotonic() + args.timeout_seconds
-                    while True:
-                        link = page.get_by_role("link", name="Download MP4", exact=True)
-                        if await link.count() == 1 and await link.get_attribute("href") != old:
-                            break
-                        if await page.get_by_role("button", name="Retry failed stage", exact=True).count():
-                            raise RuntimeError("Campaign failed; evidence retained. Automatic rerender is disabled.")
-                        if time.monotonic() >= deadline:
-                            raise TimeoutError("Campaign did not produce a new output before its deadline")
-                        await asyncio.sleep(3)
-                        refresh = page.get_by_role("button", name="Refresh", exact=True)
-                        if await refresh.is_enabled():
-                            await refresh.click()
-                await page.screenshot(path=str(directory / "campaign.png"), full_page=True)
-                link = page.get_by_role("link", name="Download MP4", exact=True)
-                await link.wait_for(state="visible")
-                async with page.expect_download() as downloaded:
-                    await link.click()
-                download = await downloaded.value
-                await download.save_as(directory / "video.mp4")
-                failures = await asyncio.to_thread(inspect_video, directory, seconds)
-                record.update(technical_status="failed" if failures else "passed", findings=failures)
-            except Exception as exc:
-                record["error"] = str(exc)
-                await page.screenshot(path=str(directory / "failure.png"), full_page=True)
+                await context.close()
             finally:
-                (directory / "result.json").write_text(json.dumps(record, indent=2))
-                results.append(record)
-                gallery(root)
-            if record["technical_status"] != "passed":
-                # Stop on the first failure; do not spend more credits on a broken workflow.
-                break
-        await context.close()
-        await browser.close()
+                await browser.close()
     return 0 if all(r["technical_status"] == "passed" for r in results) else 1
 
 

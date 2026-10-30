@@ -12,6 +12,7 @@ namespace ListingStudio.IntegrationTests;
 
 public sealed partial class FfmpegRenderingTests
 {
+    private static readonly JsonSerializerOptions ReviewJsonOptions = new() { WriteIndented = true };
     // Real editor and renderer; synthetic pictures and tones. This is not a browser or AI-quality test.
     [Theory]
     [InlineData("short-voiceover", CampaignVoiceoverMode.ShortHook, CampaignPace.Fast, 30)]
@@ -102,8 +103,8 @@ public sealed partial class FfmpegRenderingTests
             Assert.Equal(0, rendered.ExitCode);
             using var probe = await ProbeAsync(options.Value.ProbeExecutablePath, output);
             var streams = probe.RootElement.GetProperty("streams").EnumerateArray().ToArray();
-            var video = Assert.Single(streams.Where(s => s.GetProperty("codec_type").GetString() == "video"));
-            var audio = Assert.Single(streams.Where(s => s.GetProperty("codec_type").GetString() == "audio"));
+            var video = Assert.Single(streams, s => s.GetProperty("codec_type").GetString() == "video");
+            var audio = Assert.Single(streams, s => s.GetProperty("codec_type").GetString() == "audio");
             Assert.Equal(1080, video.GetProperty("width").GetInt32());
             Assert.Equal(1920, video.GetProperty("height").GetInt32());
             Assert.Equal("h264", video.GetProperty("codec_name").GetString());
@@ -130,7 +131,7 @@ public sealed partial class FfmpegRenderingTests
         }
         finally
         {
-            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, ReviewJsonOptions));
         }
     }
 }
