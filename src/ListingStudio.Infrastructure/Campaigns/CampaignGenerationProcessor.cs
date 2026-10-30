@@ -1164,7 +1164,8 @@ public sealed partial class CampaignGenerationProcessor(
         string label,
         string assetPath,
         Func<long, Task> commit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isRevision = false)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-campaign-{job.Id:N}-{label}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -1197,7 +1198,7 @@ public sealed partial class CampaignGenerationProcessor(
                 specification,
                 directory,
                 cancellationToken);
-            var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, cancellationToken);
+            var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, isRevision, cancellationToken);
             var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
             var agentPresenter = await MaterializeAgentPresenterAsync(
                 job,
@@ -1722,11 +1723,13 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignGenerationJob job,
         VideoProductionSpecification specification,
         string directory,
+        bool isRevision,
         CancellationToken cancellationToken)
     {
         // The drone intro is generated motion, so the photos-only choice leaves it out like walk-through clips.
+        // A chat fix to an existing video keeps its drone intro after a downgrade; only new campaigns need the plan.
         if (!job.CreativeElements.HasFlag(CampaignVideoElement.WalkthroughMotion)
-            || !await IncludesPremiumAiAsync(job, cancellationToken))
+            || (!isRevision && !await IncludesPremiumAiAsync(job, cancellationToken)))
         {
             return null;
         }
