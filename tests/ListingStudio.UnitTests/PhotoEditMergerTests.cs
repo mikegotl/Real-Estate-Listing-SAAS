@@ -93,6 +93,45 @@ public sealed class PhotoEditMergerTests
     }
 
     [Fact]
+    public void MaskedMergeLeavesNoSeamAtTheEdgeOfTheMarkedBox()
+    {
+        var original = Room(withClutter: true);
+        // A half-size redraw with the shoe gone whose floor came back noticeably darker around the box.
+        var tidy = Room(withClutter: false);
+        var edited = Resize(Darken(tidy, new PhotoRegion(250, 270, 140, 90), amount: 30), Width / 2, Height / 2);
+        // The agent drew a generous box around the shoe: x 260-380, y 280-350.
+        PhotoEditRegion[] regions = [new(.4333m, .7m, .2m, .175m)];
+
+        var merge = PhotoEditMerger.MergeMasked(original, edited, regions);
+
+        // The shoe is gone, and the floor where it stood is the floor's color, not the redraw's darker one.
+        AssertClose(tidy, merge.Photo, Clutter.X + Clutter.Width / 2, Clutter.Y + Clutter.Height / 2, tolerance: 14);
+        // Parts of the box the edit did not change keep the uploaded pixels, so the box's outline never shows.
+        foreach (var (x, y) in new[] { (275, 285), (275, 340), (368, 288), (368, 340) })
+        {
+            Assert.Equal(Pixel(original, x, y), Pixel(merge.Photo, x, y));
+        }
+    }
+
+    [Fact]
+    public void MaskedMergeBlendsAPatchIntoTheSurroundingColor()
+    {
+        var original = Room(withClutter: true);
+        var tidy = Room(withClutter: false);
+        // The redraw's whole floor drifted darker, and the box is drawn tight around the shoe.
+        var edited = Resize(Darken(tidy, new PhotoRegion(0, 260, Width, Height - 260), amount: 30), Width / 2, Height / 2);
+        PhotoEditRegion[] regions = [new(.4967m, .7467m, .07m, .08m)];
+
+        var merge = PhotoEditMerger.MergeMasked(original, edited, regions);
+
+        // A few pixels inside the box edge the patch matches the floor beside it rather than stepping darker.
+        foreach (var (x, y) in new[] { (302, 315), (337, 315), (320, 302), (320, 327) })
+        {
+            AssertClose(tidy, merge.Photo, x, y, tolerance: 14);
+        }
+    }
+
+    [Fact]
     public void PhotoEditMaskRoundTripsAndLimitsTheAllowedArea()
     {
         PhotoEditRegion[] regions = [new(.1m, .2m, .2m, .3m), new(.6m, .5m, .1m, .1m)];
@@ -172,6 +211,24 @@ public sealed class PhotoEditMergerTests
         return new PhotoPixels(photo.Width, photo.Height, rgb);
     }
 
+    private static PhotoPixels Darken(PhotoPixels photo, PhotoRegion area, int amount)
+    {
+        var rgb = (byte[])photo.Rgb.Clone();
+        for (var y = area.Y; y < area.Y + area.Height; y++)
+        {
+            for (var x = area.X; x < area.X + area.Width; x++)
+            {
+                for (var channel = 0; channel < 3; channel++)
+                {
+                    var offset = (y * photo.Width + x) * 3 + channel;
+                    rgb[offset] = (byte)Math.Max(0, rgb[offset] - amount);
+                }
+            }
+        }
+
+        return new PhotoPixels(photo.Width, photo.Height, rgb);
+    }
+
     private static (byte, byte, byte) Pixel(PhotoPixels photo, int x, int y)
     {
         var offset = (y * photo.Width + x) * 3;
@@ -182,6 +239,8 @@ public sealed class PhotoEditMergerTests
     {
         var (er, eg, eb) = Pixel(expected, x, y);
         var (ar, ag, ab) = Pixel(actual, x, y);
+        Assert.True(Math.Abs(er - ar) <= tolerance && Math.Abs(eg - ag) <= tolerance && Math.Abs(eb - ab) <= tolerance,
+            $"At ({x}, {y}) expected {(er, eg, eb)} but got {(ar, ag, ab)}.");
         Assert.InRange(Math.Abs(er - ar), 0, tolerance);
         Assert.InRange(Math.Abs(eg - ag), 0, tolerance);
         Assert.InRange(Math.Abs(eb - ab), 0, tolerance);

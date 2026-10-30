@@ -229,6 +229,33 @@ public sealed class PropertyPhotoFixTests(PostgreSqlWebApplicationFixture fixtur
             note => note.Message == "The AI cleanup for a photo at 123 Main Street is ready. Compare it with the upload on the Media tab, then use or discard it.");
     }
 
+    // The Media tab keeps one service (and DbContext) open while the Worker finishes the cleanup in another.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ACleanupRequestedFromAnOpenPageCanBeUsedOrDiscardedFromTheSamePage(bool approve)
+    {
+        var owner = await CreateOwnerAndPropertyAsync(approve ? "photo-fix-open-use" : "photo-fix-open-discard");
+        var photo = await UploadAsync(owner, "Entry / foyer");
+        await using var page = fixture.Factory.Services.CreateAsyncScope();
+        var service = page.ServiceProvider.GetRequiredService<IPropertyPhotoFixService>();
+        Assert.True(await service.RequestClutterRemovalAsync(owner.UserId, owner.PropertyId, photo, CleanupRegions));
+        Assert.Single(await service.ListAsync(owner.UserId, owner.PropertyId));
+
+        Assert.True((await ProcessNextAsync()).Succeeded);
+
+        var cleanup = Assert.Single(await service.ListAsync(owner.UserId, owner.PropertyId), item => item.IsAwaitingApproval);
+        Assert.True(approve
+            ? await service.ApproveCandidateAsync(owner.UserId, owner.PropertyId, cleanup.FixId)
+            : await service.RejectCandidateAsync(owner.UserId, owner.PropertyId, cleanup.FixId));
+        Assert.Empty(await service.ListAsync(owner.UserId, owner.PropertyId));
+        Assert.Equal(approve ? PhotoFix.RemoveClutter : PhotoFix.None, (await GetMediaAsync(owner, photo)).AppliedFixes);
+        if (approve)
+        {
+            Assert.True(await service.RevertAsync(owner.UserId, owner.PropertyId, photo));
+        }
+    }
+
     [Fact]
     public async Task AClutterEditCanOnlyChangeTheSelectedAreaAndWaitsForReview()
     {
