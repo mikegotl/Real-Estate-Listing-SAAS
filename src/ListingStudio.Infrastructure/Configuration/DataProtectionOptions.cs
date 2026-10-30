@@ -1,4 +1,4 @@
-namespace ListingStudio.Web.Authentication;
+namespace ListingStudio.Infrastructure.Configuration;
 
 public sealed class DataProtectionOptions
 {

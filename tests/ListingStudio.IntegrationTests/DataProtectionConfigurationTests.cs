@@ -1,4 +1,4 @@
-using ListingStudio.Web.Authentication;
+using ListingStudio.Infrastructure.DependencyInjection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

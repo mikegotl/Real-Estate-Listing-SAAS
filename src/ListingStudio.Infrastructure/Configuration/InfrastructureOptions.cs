@@ -132,3 +132,11 @@ public sealed class FeatureSuggestionEmailOptions
     /// <summary>The site's public address, used for the links in comment emails. Links are left out when empty.</summary>
     public string AppBaseUrl { get; init; } = string.Empty;
 }
+
+public sealed class TesterInvitationOptions
+{
+    public const string SectionName = "TesterInvitations";
+
+    /// <summary>The public site address included in tester welcome emails.</summary>
+    public string AppBaseUrl { get; init; } = "https://creativelistingstudio.com";
+}

@@ -7,8 +7,12 @@ using ListingStudio.Application.Email;
 using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Domain.Organizations;
 using ListingStudio.Infrastructure.Administration;
+using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Infrastructure.Persistence;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +24,141 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
     : IClassFixture<PostgreSqlWebApplicationFixture>
 {
     private const string Password = "Password123";
+
+    [Fact]
+    public async Task AdminCanInviteANewTesterWhoMustReplaceTheTemporaryPassword()
+    {
+        var marker = Guid.NewGuid().ToString("N")[..10];
+        var admin = await RegisterAsync($"invite-admin-{marker}@example.com", $"Invite Admin {marker}");
+        await GrantPlatformAdminAsync(admin.Email);
+        var invitedEmail = $"new-tester-{marker}@example.com";
+
+        using (var adminClient = CookieClient())
+        {
+            await LogInAsync(adminClient, admin.Email);
+            using var page = await adminClient.GetAsync("/admin/users?testers=true");
+            page.EnsureSuccessStatusCode();
+            var pageHtml = await page.Content.ReadAsStringAsync();
+            Assert.Contains("Invite a tester", pageHtml, StringComparison.Ordinal);
+            Assert.Contains("name=\"email\"", pageHtml, StringComparison.Ordinal);
+            using var invite = await adminClient.PostAsync(
+                "/admin/users/testers/invite",
+                new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["__RequestVerificationToken"] = HiddenValue(pageHtml, "__RequestVerificationToken"),
+                    ["email"] = invitedEmail,
+                }));
+            Assert.Equal(HttpStatusCode.Redirect, invite.StatusCode);
+            Assert.Equal("/admin/users?testers=true&notice=tester-invited-new", LocationPath(invite));
+        }
+
+        string invitedUserId;
+        string temporaryPassword;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var services = scope.ServiceProvider;
+            var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await userManager.FindByEmailAsync(invitedEmail);
+            Assert.NotNull(user);
+            invitedUserId = user.Id;
+            Assert.Equal(invitedEmail, user.UserName);
+            Assert.True(user.RequiresPasswordChange);
+            Assert.True(await userManager.IsInRoleAsync(user, PlatformTesters.Role));
+
+            var dbContext = services.GetRequiredService<ApplicationDbContext>();
+            var membership = await dbContext.OrganizationMembers.AsNoTracking()
+                .SingleAsync(item => item.UserId == user.Id);
+            Assert.Equal(OrganizationMemberRole.Owner, membership.Role);
+            Assert.True(await dbContext.OrganizationBillingAccounts.AsNoTracking()
+                .AnyAsync(item => item.OrganizationId == membership.OrganizationId));
+
+            var queuedEmail = await dbContext.AdminUserEmails.AsNoTracking()
+                .SingleAsync(item => item.RecipientUserId == user.Id);
+            Assert.True(queuedEmail.BodyIsProtected);
+            Assert.DoesNotContain(invitedEmail, queuedEmail.Body, StringComparison.OrdinalIgnoreCase);
+            var decryptedBody = TesterInvitationEmailProtection
+                .CreateProtector(services.GetRequiredService<IDataProtectionProvider>())
+                .Unprotect(queuedEmail.Body);
+            Assert.Contains("https://creativelistingstudio.com/Account/Login", decryptedBody, StringComparison.Ordinal);
+            Assert.Contains($"Username: {invitedEmail}", decryptedBody, StringComparison.Ordinal);
+            temporaryPassword = Regex.Match(decryptedBody, "Temporary password: ([^\\r\\n]+)").Groups[1].Value;
+            Assert.NotEmpty(temporaryPassword);
+
+            var emailLog = await services.GetRequiredService<IAdminUserEmailService>().GetLogAsync();
+            Assert.Contains(emailLog, row => row.RecipientEmail == invitedEmail
+                && row.Body == "Sensitive invitation details are hidden.");
+        }
+
+        using var client = CookieClient();
+        using (var login = await PostLoginAsync(client, invitedEmail, temporaryPassword))
+        {
+            Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
+            Assert.Equal("/Account/ChangeTemporaryPassword", LocationPath(login));
+        }
+
+        using (var blocked = await client.GetAsync("/auth"))
+        {
+            Assert.Equal(HttpStatusCode.Redirect, blocked.StatusCode);
+            Assert.Equal("/Account/ChangeTemporaryPassword", LocationPath(blocked));
+        }
+
+        using var changePage = await client.GetAsync("/Account/ChangeTemporaryPassword");
+        changePage.EnsureSuccessStatusCode();
+        var changeHtml = await changePage.Content.ReadAsStringAsync();
+        const string newPassword = "A-New-Password-456";
+        using (var changed = await client.PostAsync(
+            "/Account/ChangeTemporaryPassword",
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["_handler"] = "change-temporary-password",
+                ["__RequestVerificationToken"] = HiddenValue(changeHtml, "__RequestVerificationToken"),
+                ["Input.CurrentPassword"] = temporaryPassword,
+                ["Input.NewPassword"] = newPassword,
+                ["Input.ConfirmPassword"] = newPassword,
+            })))
+        {
+            Assert.Equal(HttpStatusCode.Redirect, changed.StatusCode);
+            Assert.Equal("/auth", LocationPath(changed));
+        }
+
+        await using var verificationScope = fixture.Factory.Services.CreateAsyncScope();
+        var verificationManager = verificationScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var updated = await verificationManager.FindByIdAsync(invitedUserId);
+        Assert.NotNull(updated);
+        Assert.False(updated.RequiresPasswordChange);
+        Assert.False(await verificationManager.CheckPasswordAsync(updated, temporaryPassword));
+        Assert.True(await verificationManager.CheckPasswordAsync(updated, newPassword));
+    }
+
+    [Fact]
+    public async Task InvitingAnExistingAccountKeepsItsPasswordAndAddsTesterAccess()
+    {
+        var marker = Guid.NewGuid().ToString("N")[..10];
+        var admin = await RegisterAsync($"existing-invite-admin-{marker}@example.com", $"Admin {marker}");
+        await GrantPlatformAdminAsync(admin.Email);
+        var existing = await RegisterAsync($"existing-invite-{marker}@example.com", $"Existing {marker}");
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var result = await services.GetRequiredService<IPlatformAdminTesterInvitationService>()
+            .InviteAsync(admin.UserId, existing.Email);
+        Assert.True(result.Succeeded);
+        Assert.False(result.AccountCreated);
+        Assert.True(result.TesterAccessAdded);
+        Assert.True(result.WelcomeEmailQueued);
+
+        var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+        var user = await userManager.FindByIdAsync(existing.UserId);
+        Assert.NotNull(user);
+        Assert.False(user.RequiresPasswordChange);
+        Assert.True(await userManager.CheckPasswordAsync(user, Password));
+        Assert.True(await userManager.IsInRoleAsync(user, PlatformTesters.Role));
+
+        var email = await services.GetRequiredService<ApplicationDbContext>().AdminUserEmails.AsNoTracking()
+            .SingleAsync(item => item.RecipientUserId == existing.UserId);
+        Assert.False(email.BodyIsProtected);
+        Assert.Contains("Use your existing password", email.Body, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task AdminCanAddAndRemoveATesterFromFindUsersAndEachChangeIsAudited()
@@ -308,17 +447,22 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
 
     private static async Task LogInAsync(HttpClient client, string email)
     {
+        using var response = await PostLoginAsync(client, email, Password);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+    }
+
+    private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient client, string email, string password)
+    {
         using var form = await client.GetAsync("/Account/Login");
         form.EnsureSuccessStatusCode();
         var html = await form.Content.ReadAsStringAsync();
-        using var response = await client.PostAsync("/Account/Login", new FormUrlEncodedContent(new Dictionary<string, string>
+        return await client.PostAsync("/Account/Login", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["_handler"] = "login",
             ["__RequestVerificationToken"] = HiddenValue(html, "__RequestVerificationToken"),
             ["Input.Email"] = email,
-            ["Input.Password"] = Password,
+            ["Input.Password"] = password,
         }));
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
     private async Task<(string UserId, string Email)> RegisterAsync(string email, string workspace)
@@ -351,6 +495,11 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
         Assert.True(match.Success, $"The page has no {name} field.");
         return System.Net.WebUtility.HtmlDecode(match.Groups[1].Value);
     }
+
+    private static string? LocationPath(HttpResponseMessage response) =>
+        response.Headers.Location is { IsAbsoluteUri: true } absolute
+            ? absolute.AbsolutePath
+            : response.Headers.Location?.OriginalString;
 
     private sealed class RecordingEmailSender : IOutboundEmailSender
     {

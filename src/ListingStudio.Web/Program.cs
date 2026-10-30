@@ -98,6 +98,7 @@ app.UseRequestLocalization(new RequestLocalizationOptions()
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<RequiredPasswordChangeMiddleware>();
 app.UseMiddleware<OperationalTelemetryMiddleware>();
 app.UseAntiforgery();
 app.MapStaticAssets();
@@ -244,6 +245,36 @@ app.MapPost("/admin/users/testers", async (
         ? "testers=true"
         : $"q={Uri.EscapeDataString(form["q"].ToString())}";
     return Results.LocalRedirect($"/admin/users?{returnQuery}&notice={notice}");
+}).RequireAuthorization(PlatformAdministration.Policy);
+
+app.MapPost("/admin/users/testers/invite", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    IPlatformAdminTesterInvitationService invitationService,
+    CancellationToken cancellationToken) =>
+{
+    await antiforgery.ValidateRequestAsync(context);
+    var administratorId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (administratorId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var form = await context.Request.ReadFormAsync(cancellationToken);
+    var result = await invitationService.InviteAsync(
+        administratorId,
+        form["email"].ToString(),
+        cancellationToken);
+    var notice = result.Failure switch
+    {
+        TesterInvitationFailure.None when result.AccountCreated => "tester-invited-new",
+        TesterInvitationFailure.None when result.TesterAccessAdded => "tester-invited-existing",
+        TesterInvitationFailure.None => "tester-invite-unchanged",
+        TesterInvitationFailure.InvalidEmail => "tester-invite-invalid-email",
+        TesterInvitationFailure.NotPlatformAdmin => "tester-invite-not-admin",
+        _ => "tester-invite-account-failed",
+    };
+    return Results.LocalRedirect($"/admin/users?testers=true&notice={notice}");
 }).RequireAuthorization(PlatformAdministration.Policy);
 
 app.MapPost("/admin/impersonation/stop", async (

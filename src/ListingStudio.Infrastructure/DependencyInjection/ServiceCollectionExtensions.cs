@@ -132,6 +132,11 @@ public static class ServiceCollectionExtensions
             .Validate(options => string.IsNullOrWhiteSpace(options.AppBaseUrl)
                     || Uri.TryCreate(options.AppBaseUrl, UriKind.Absolute, out _),
                 "Email:Comments:AppBaseUrl must be an absolute URL.");
+        services.AddOptions<TesterInvitationOptions>()
+            .Bind(configuration.GetSection(TesterInvitationOptions.SectionName))
+            .Validate(options => Uri.TryCreate(options.AppBaseUrl, UriKind.Absolute, out var uri)
+                    && (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback),
+                "TesterInvitations:AppBaseUrl must be an HTTPS URL (HTTP is allowed only for loopback).");
 
         services.AddDbContext<ApplicationDbContext>((provider, options) =>
         {
@@ -153,6 +158,7 @@ public static class ServiceCollectionExtensions
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddSignInManager()
             .AddDefaultTokenProviders();
+        services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, ListingStudioUserClaimsPrincipalFactory>();
 
         services
             .AddAuthentication(options =>
@@ -171,6 +177,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPlatformAdminAccountDirectory, PlatformAdminAccountDirectory>();
         services.AddScoped<IPlatformAdminImpersonationAudit, PlatformAdminImpersonationAudit>();
         services.AddScoped<IPlatformAdminTesterAccess, PlatformAdminTesterAccess>();
+        services.AddScoped<IPlatformAdminTesterInvitationService, PlatformAdminTesterInvitationService>();
         services.AddScoped<IAdminUserEmailService, AdminUserEmailService>();
         services.AddScoped<IAdminUserEmailProcessor, AdminUserEmailProcessor>();
         // Identity rebuilds the cookie principal when it revalidates the security stamp; keep the impersonation

@@ -10,6 +10,7 @@ public static class PlatformTesters
 
     public const string AddAction = "platform-admin.testers.add";
     public const string RemoveAction = "platform-admin.testers.remove";
+    public const string InviteAction = "platform-admin.testers.invite";
 
     /// <summary>Queued automatically, from the admin who added them, when someone joins the Testers group.</summary>
     public const string WelcomeEmailSubject = "You're now a Creative Listing Studio tester";
@@ -24,6 +25,46 @@ public static class PlatformTesters
         Thanks for helping,
         The Creative Listing Studio team
         """;
+}
+
+public enum TesterInvitationFailure
+{
+    None = 0,
+    NotPlatformAdmin = 1,
+    InvalidEmail = 2,
+    AccountCreationFailed = 3,
+}
+
+/// <summary>
+/// Result of inviting an email address to test the product. New accounts receive a temporary password; existing
+/// accounts keep their current credentials.
+/// </summary>
+public sealed record TesterInvitationResult(
+    TesterInvitationFailure Failure,
+    bool AccountCreated,
+    bool TesterAccessAdded,
+    bool WelcomeEmailQueued,
+    string? UserEmail,
+    IReadOnlyCollection<string> Errors)
+{
+    public bool Succeeded => Failure == TesterInvitationFailure.None;
+
+    public static TesterInvitationResult Failed(
+        TesterInvitationFailure failure,
+        params string[] errors) =>
+        new(failure, false, false, false, null, errors);
+}
+
+public interface IPlatformAdminTesterInvitationService
+{
+    /// <summary>
+    /// Adds an existing account to Testers or creates a private tester workspace and queues a secure welcome email
+    /// for an email address that does not yet have an account.
+    /// </summary>
+    Task<TesterInvitationResult> InviteAsync(
+        string administratorUserId,
+        string email,
+        CancellationToken cancellationToken = default);
 }
 
 public enum TesterChangeFailure

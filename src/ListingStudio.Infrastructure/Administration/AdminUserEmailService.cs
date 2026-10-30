@@ -4,6 +4,7 @@ using ListingStudio.Application.Email;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace ListingStudio.Infrastructure.Administration;
 
@@ -123,6 +124,7 @@ public sealed class AdminUserEmailService(
                     email.RecipientEmail,
                     email.Subject,
                     email.Body,
+                    email.BodyIsProtected,
                     email.SentAtUtc,
                     email.AttemptCount,
                     email.LastError,
@@ -137,7 +139,7 @@ public sealed class AdminUserEmailService(
                 row.SentByEmail,
                 row.RecipientEmail,
                 row.Subject,
-                row.Body,
+                row.BodyIsProtected ? "Sensitive invitation details are hidden." : row.Body,
                 row.SentAtUtc is not null ? AdminUserEmailStatus.Sent
                     : row.AttemptCount >= AdminUserEmail.MaximumAttempts ? AdminUserEmailStatus.Failed
                     : AdminUserEmailStatus.Queued,
@@ -164,7 +166,8 @@ public sealed class AdminUserEmailService(
 public sealed class AdminUserEmailProcessor(
     ApplicationDbContext dbContext,
     IOutboundEmailSender emailSender,
-    TimeProvider timeProvider) : IAdminUserEmailProcessor
+    TimeProvider timeProvider,
+    IDataProtectionProvider? dataProtectionProvider = null) : IAdminUserEmailProcessor
 {
     public async Task<AdminUserEmailRunResult?> ProcessNextAsync(CancellationToken cancellationToken = default)
     {
@@ -204,7 +207,7 @@ public sealed class AdminUserEmailProcessor(
                 new OutboundEmail(
                     [],
                     email.Subject,
-                    Compose(email),
+                    Compose(email, dataProtectionProvider),
                     replyTo,
                     ToRecipients: [email.RecipientEmail]),
                 cancellationToken);
@@ -225,9 +228,24 @@ public sealed class AdminUserEmailProcessor(
         return new AdminUserEmailRunResult(email.Id, AdminUserEmailSendOutcome.Sent, email.AttemptCount, false, null);
     }
 
-    private static string Compose(AdminUserEmail email) =>
-        email.Body
+    private static string Compose(AdminUserEmail email, IDataProtectionProvider? dataProtectionProvider) =>
+        Body(email, dataProtectionProvider)
         + Environment.NewLine + Environment.NewLine
         + "----" + Environment.NewLine
         + "Sent by the Creative Listing Studio team because you have a Creative Listing Studio account. Reply to this email to reach us.";
+
+    private static string Body(AdminUserEmail email, IDataProtectionProvider? dataProtectionProvider)
+    {
+        if (!email.BodyIsProtected)
+        {
+            return email.Body;
+        }
+
+        if (dataProtectionProvider is null)
+        {
+            throw new InvalidOperationException("Sensitive invitation email protection is unavailable.");
+        }
+
+        return TesterInvitationEmailProtection.CreateProtector(dataProtectionProvider).Unprotect(email.Body);
+    }
 }

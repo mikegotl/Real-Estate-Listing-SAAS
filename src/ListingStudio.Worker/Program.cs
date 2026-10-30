@@ -12,6 +12,8 @@ using Microsoft.AspNetCore.Builder;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddListingStudioDataProtection(builder.Configuration, builder.Environment);
+
 if (builder.Environment.IsProduction())
 {
     builder.Logging.ClearProviders();

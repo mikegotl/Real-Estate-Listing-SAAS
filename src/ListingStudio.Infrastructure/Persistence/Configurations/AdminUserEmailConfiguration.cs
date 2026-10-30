@@ -15,6 +15,7 @@ public sealed class AdminUserEmailConfiguration : IEntityTypeConfiguration<Admin
         builder.Property(email => email.RecipientEmail).HasMaxLength(AdminUserEmail.MaximumEmailLength).IsRequired();
         builder.Property(email => email.Subject).HasMaxLength(AdminUserEmail.MaximumSubjectLength).IsRequired();
         builder.Property(email => email.Body).HasMaxLength(AdminUserEmail.MaximumBodyLength).IsRequired();
+        builder.Property(email => email.BodyIsProtected).HasDefaultValue(false).IsRequired();
         builder.Property(email => email.LastError).HasMaxLength(AdminUserEmail.MaximumErrorLength);
         builder.Ignore(email => email.IsPending);
         builder.HasIndex(email => email.QueuedAtUtc);

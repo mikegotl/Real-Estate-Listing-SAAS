@@ -80,6 +80,11 @@
                     user.Id,
                     "password",
                     TimeProvider.GetUtcNow());
+                if (user.RequiresPasswordChange)
+                {
+                    RedirectManager.RedirectTo("Account/ChangeTemporaryPassword");
+                    return;
+                }
             }
             RedirectManager.RedirectAfterSignIn(ReturnUrl);
             return;
