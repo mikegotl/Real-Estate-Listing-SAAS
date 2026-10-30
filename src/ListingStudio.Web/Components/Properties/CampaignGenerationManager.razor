@@ -46,7 +46,7 @@
         <MudPaper Outlined="true" Class="pa-4 mb-4">
             <MudText Typo="Typo.subtitle1">Choose your deliverables</MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-                Listing Studio creates one verified story and narration, then produces only the formats you select.
+                Creative Listing Studio creates one verified story and narration, then produces only the formats you select.
                 Standard formats count as one successful property campaign.
             </MudText>
             <MudGrid Spacing="2">
@@ -335,7 +335,7 @@
                 </MudItem>
             </MudGrid>
             <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
-                Accent is an AI voice direction and may vary by voice. Listing Studio always discloses that narration is AI-generated.
+                Accent is an AI voice direction and may vary by voice. Creative Listing Studio always discloses that narration is AI-generated.
             </MudAlert>
             <MudDivider Class="my-4" />
             <MudText Typo="Typo.subtitle2">Agent presenter</MudText>
@@ -368,7 +368,7 @@
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
                     @if (AgentAvatarVideoService.IsEnabled)
                     {
-                        <span>Listing Studio will create short lip-synced opening and closing clips from your approved portrait and the selected AI narration. If the presenter provider is unavailable, the campaign continues with your static portrait.</span>
+                        <span>Creative Listing Studio will create short lip-synced opening and closing clips from your approved portrait and the selected AI narration. If the presenter provider is unavailable, the campaign continues with your static portrait.</span>
                     }
                     else
                     {
@@ -402,7 +402,7 @@
     @if (failedAnalysisCount > 0 && job?.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
     {
         <MudAlert Severity="Severity.Warning" Class="mb-4">
-            Analysis failed for @failedAnalysisCount @(failedAnalysisCount == 1 ? "photo" : "photos"). Listing Studio is retrying,
+            Analysis failed for @failedAnalysisCount @(failedAnalysisCount == 1 ? "photo" : "photos"). Creative Listing Studio is retrying,
             and the campaign will stop if a photo runs out of attempts. See Listing photos for details.
         </MudAlert>
     }
@@ -418,7 +418,7 @@
     @if (mediaCount is > 0 and < 3)
     {
         <MudAlert Severity="Severity.Warning" Class="mb-4">
-            Only @mediaCount @(mediaCount == 1 ? "photo is" : "photos are") available. Listing Studio can create a conservative
+            Only @mediaCount @(mediaCount == 1 ? "photo is" : "photos are") available. Creative Listing Studio can create a conservative
             fallback plan, but at least three analyzed interior and exterior photos are recommended for a varied video.
         </MudAlert>
     }
@@ -730,7 +730,7 @@
         catch (Exception exception)
         {
             Logger.LogWarning(exception, "Refreshing campaign status for property {PropertyId} failed", PropertyId);
-            refreshError = "Campaign status could not be refreshed. Listing Studio will keep trying.";
+            refreshError = "Campaign status could not be refreshed. Creative Listing Studio will keep trying.";
         }
     }
 
@@ -1238,13 +1238,13 @@
     private static string DisplayError(CampaignGenerationResult campaign) =>
         campaign.CurrentStage == CampaignGenerationStage.GenerateMasterVideoPlan
         && campaign.LastError == "A campaign provider returned invalid data."
-            ? "Listing Studio could not validate the generated master video plan. Retry the failed stage to use guided repair and the single-photo fallback, or add more analyzed interior and exterior photos for a more varied result."
+            ? "Creative Listing Studio could not validate the generated master video plan. Retry the failed stage to use guided repair and the single-photo fallback, or add more analyzed interior and exterior photos for a more varied result."
             : campaign.CurrentStage == CampaignGenerationStage.GenerateNarration
               && campaign.LastError == "Voice:Provider must be ElevenLabs for narration generation."
                 ? "Narration was not configured when this attempt ran. Retry the failed stage to generate narration with the configured OpenAI voice."
             : campaign.CurrentStage == CampaignGenerationStage.GenerateNarration
               && campaign.LastError == "A campaign provider returned invalid data."
-                ? "Listing Studio could not process the narration audio returned by OpenAI. The audio-format handling has been updated; retry the failed stage."
+                ? "Creative Listing Studio could not process the narration audio returned by OpenAI. The audio-format handling has been updated; retry the failed stage."
             : campaign.LastError!;
 
     private static Color StatusColor(CampaignGenerationStatus status) => status switch

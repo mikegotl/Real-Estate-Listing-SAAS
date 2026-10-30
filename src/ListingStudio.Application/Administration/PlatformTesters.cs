@@ -1,7 +1,7 @@
 namespace ListingStudio.Application.Administration;
 
 /// <summary>
-/// Testers are people the Listing Studio team lets use the site for free. Membership is an Identity role that only
+/// Testers are people the Creative Listing Studio team lets use the site for free. Membership is an Identity role that only
 /// platform administrators can grant or remove from Find users; every change is written to the audit log.
 /// </summary>
 public static class PlatformTesters
@@ -12,17 +12,17 @@ public static class PlatformTesters
     public const string RemoveAction = "platform-admin.testers.remove";
 
     /// <summary>Queued automatically, from the admin who added them, when someone joins the Testers group.</summary>
-    public const string WelcomeEmailSubject = "You're now a Listing Studio tester";
+    public const string WelcomeEmailSubject = "You're now a Creative Listing Studio tester";
 
     public const string WelcomeEmailBody = """
         Hi,
 
-        You've been added to the Listing Studio Testers group, so you can use Listing Studio for free while you help us test it. Campaigns you create don't need a plan and don't count toward your workspace's allowance.
+        You've been added to the Creative Listing Studio Testers group, so you can use Creative Listing Studio for free while you help us test it. Campaigns you create don't need a plan and don't count toward your workspace's allowance.
 
         Sign in as usual to get started. Reply to this email with anything that feels off or could be better.
 
         Thanks for helping,
-        The Listing Studio team
+        The Creative Listing Studio team
         """;
 }
 

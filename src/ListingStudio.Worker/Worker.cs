@@ -59,10 +59,10 @@ public sealed partial class Worker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio media-analysis worker started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio media-analysis worker started")]
     private partial void LogWorkerStarted();
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio media analysis is disabled")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio media analysis is disabled")]
     private partial void LogMediaAnalysisDisabled();
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "No property media is ready for analysis")]

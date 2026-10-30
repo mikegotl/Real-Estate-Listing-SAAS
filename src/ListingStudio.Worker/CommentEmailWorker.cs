@@ -63,7 +63,7 @@ public sealed partial class CommentEmailWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio comment email worker started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio comment email worker started")]
     private partial void LogStarted();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Comment {SuggestionId} emailed to {RecipientCount} platform admins")]

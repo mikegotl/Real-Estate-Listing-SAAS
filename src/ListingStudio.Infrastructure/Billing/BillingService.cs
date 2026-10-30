@@ -236,7 +236,7 @@ public sealed class BillingService(
                 FOR UPDATE
                 """)
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException("The Stripe customer is not linked to a Listing Studio organization.");
+            ?? throw new InvalidOperationException("The Stripe customer is not linked to a Creative Listing Studio organization.");
         var plan = Plan(subscription.PriceId);
         account.ApplySubscription(
             subscription.StripeCustomerId,

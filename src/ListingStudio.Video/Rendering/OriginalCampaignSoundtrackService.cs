@@ -27,7 +27,7 @@ public sealed class OriginalCampaignSoundtrackService : ICampaignSoundtrackServi
                 CampaignCreativeDirector.BeatsPerMinute(assetId), [220.00, 277.18, 329.63], 0.13, 0.75, true),
             CampaignCreativeDirector.UpbeatLifestyleAssetId => new Profile(
                 CampaignCreativeDirector.BeatsPerMinute(assetId), [293.66, 369.99, 440.00], 0.14, 1.0, true),
-            _ => throw new InvalidDataException("The selected soundtrack is not part of the Listing Studio music library."),
+            _ => throw new InvalidDataException("The selected soundtrack is not part of the Creative Listing Studio music library."),
         };
 
         Directory.CreateDirectory(outputDirectory);

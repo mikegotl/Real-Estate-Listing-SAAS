@@ -60,7 +60,7 @@ public sealed partial class HelpChatService(
         if (await MessagesLeftTodayAsync(organizationId, userId, cancellationToken) <= 0)
         {
             throw new InvalidOperationException(
-                $"You've asked {IHelpChatService.MaximumMessagesPerDay} questions today, the daily limit. The assistant will be back tomorrow; the Comments button still reaches the Listing Studio team.");
+                $"You've asked {IHelpChatService.MaximumMessagesPerDay} questions today, the daily limit. The assistant will be back tomorrow; the Comments button still reaches the Creative Listing Studio team.");
         }
 
         // Only a property in the user's own workspace gives the assistant context; any other id is ignored.

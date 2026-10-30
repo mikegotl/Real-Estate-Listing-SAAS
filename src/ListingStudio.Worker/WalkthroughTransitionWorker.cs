@@ -57,10 +57,10 @@ public sealed partial class WalkthroughTransitionWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio walk-through clip processor started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio walk-through clip processor started")]
     private partial void LogStarted();
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio walk-through clip processing is disabled")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio walk-through clip processing is disabled")]
     private partial void LogDisabled();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Walk-through transition {TransitionId} completed on attempt {AttemptNumber}")]

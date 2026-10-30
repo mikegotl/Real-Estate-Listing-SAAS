@@ -55,10 +55,10 @@ public sealed partial class PropertyVideoProcessingWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio property-video processor started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio property-video processor started")]
     private partial void LogStarted();
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio property-video processing is disabled")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio property-video processing is disabled")]
     private partial void LogDisabled();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Property video {VideoId} processing completed on attempt {AttemptNumber}")]

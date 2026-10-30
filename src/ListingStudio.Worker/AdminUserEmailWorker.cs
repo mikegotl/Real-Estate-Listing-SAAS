@@ -60,7 +60,7 @@ public sealed partial class AdminUserEmailWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio admin user email worker started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio admin user email worker started")]
     private partial void LogStarted();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Admin email {EmailId} sent")]

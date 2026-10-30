@@ -59,7 +59,7 @@ public sealed partial class PropertyVideoFrameExtractionWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio video room-photo worker started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio video room-photo worker started")]
     private partial void LogStarted();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Video room photos are disabled because media analysis is disabled")]

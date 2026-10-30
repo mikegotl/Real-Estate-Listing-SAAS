@@ -79,7 +79,7 @@ public sealed class AdminImpersonationTests(PostgreSqlWebApplicationFixture fixt
         using var property = await client.GetAsync($"/properties/{propertyId}");
         property.EnsureSuccessStatusCode();
         var propertyHtml = await property.Content.ReadAsStringAsync();
-        Assert.Contains($"You are viewing Listing Studio as {customer.Email}.", propertyHtml, StringComparison.Ordinal);
+        Assert.Contains($"You are viewing Creative Listing Studio as {customer.Email}.", propertyHtml, StringComparison.Ordinal);
         Assert.Contains($"{marker} Harbor Lane", propertyHtml, StringComparison.Ordinal);
         Assert.Contains("Stop impersonating", propertyHtml, StringComparison.Ordinal);
 
@@ -102,7 +102,7 @@ public sealed class AdminImpersonationTests(PostgreSqlWebApplicationFixture fixt
 
         using var adminAgain = await client.GetAsync("/admin/users");
         adminAgain.EnsureSuccessStatusCode();
-        Assert.DoesNotContain("You are viewing Listing Studio as", await adminAgain.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain("You are viewing Creative Listing Studio as", await adminAgain.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
