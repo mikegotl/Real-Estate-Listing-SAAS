@@ -1,6 +1,6 @@
 # Lead generation
 
-Listing Studio uses first-party inbound lead capture. It does not scrape consumers, buy lead lists, automatically send
+Creative Listing Studio uses first-party inbound lead capture. It does not scrape consumers, buy lead lists, automatically send
 marketing messages, or disclose one organization's leads to another organization or to platform administrators.
 
 ## Agent workflow

@@ -197,7 +197,7 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
             new AdminUserEmailRequest(
                 [first.UserId, second.UserId, first.UserId, "missing-user"],
                 $"Welcome {marker}\r\nto testing",
-                "Thanks for helping us test Listing Studio."));
+                "Thanks for helping us test Creative Listing Studio."));
         Assert.True(queued.Succeeded);
         Assert.Equal(2, queued.QueuedCount);
         Assert.Equal(1, queued.SkippedCount);
@@ -225,8 +225,8 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
         {
             Assert.Empty(message.BlindCopyRecipients);
             Assert.Equal(admin.Email, message.ReplyTo);
-            Assert.Contains("Thanks for helping us test Listing Studio.", message.TextBody, StringComparison.Ordinal);
-            Assert.Contains("Sent by the Listing Studio team", message.TextBody, StringComparison.Ordinal);
+            Assert.Contains("Thanks for helping us test Creative Listing Studio.", message.TextBody, StringComparison.Ordinal);
+            Assert.Contains("Sent by the Creative Listing Studio team", message.TextBody, StringComparison.Ordinal);
         });
         Assert.Equal(
             [first.Email, second.Email],

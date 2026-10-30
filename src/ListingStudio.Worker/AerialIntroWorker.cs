@@ -57,10 +57,10 @@ public sealed partial class AerialIntroWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio drone intro processor started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio drone intro processor started")]
     private partial void LogStarted();
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio drone intro processing is disabled")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio drone intro processing is disabled")]
     private partial void LogDisabled();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Drone intro {ClipId} completed on attempt {AttemptNumber}")]

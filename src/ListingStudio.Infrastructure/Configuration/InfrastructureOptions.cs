@@ -119,7 +119,7 @@ public sealed class SmtpEmailOptions
     public string Username { get; init; } = string.Empty;
     public string Password { get; init; } = string.Empty;
     public string FromAddress { get; init; } = string.Empty;
-    public string FromName { get; init; } = "Listing Studio";
+    public string FromName { get; init; } = "Creative Listing Studio";
     public int TimeoutSeconds { get; init; } = 30;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(FromAddress);

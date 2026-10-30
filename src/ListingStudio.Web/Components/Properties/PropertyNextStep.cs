@@ -37,7 +37,7 @@ public static class PropertyNextSteps
         {
             return failedAnalysisCount > 0
                 ? new("Campaign waiting on photo analysis", "Some photos failed analysis and are being retried. Check them in Media.", "Review photos", PropertyDetailsTab.Media)
-                : new("Campaign in progress", "Listing Studio is producing your videos and social copy. You can leave this page; progress is saved.", "View progress", PropertyDetailsTab.Campaign);
+                : new("Campaign in progress", "Creative Listing Studio is producing your videos and social copy. You can leave this page; progress is saved.", "View progress", PropertyDetailsTab.Campaign);
         }
 
         if (campaignStatus == CampaignGenerationStatus.Failed)

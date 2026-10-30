@@ -4,7 +4,7 @@ using ListingStudio.Domain.Help;
 namespace ListingStudio.Application.Help;
 
 /// <summary>
-/// The "Ask AI" chat on every signed-in page. It answers questions about using Listing Studio; questions about one
+/// The "Ask AI" chat on every signed-in page. It answers questions about using Creative Listing Studio; questions about one
 /// campaign video, and changes to it, go to that video's own chat (<see cref="Campaigns.ICampaignVideoChatService"/>).
 /// </summary>
 public interface IHelpChatService
@@ -50,7 +50,7 @@ public sealed record HelpChatEntry(Guid Id, HelpChatRole Role, string Text, Date
 
 public sealed record HelpChatVideo(Guid JobId, CampaignOutputKind Kind, string Name);
 
-/// <summary>Answers questions about using Listing Studio from its built-in product guide.</summary>
+/// <summary>Answers questions about using Creative Listing Studio from its built-in product guide.</summary>
 public interface IHelpChatAssistant
 {
     Task<HelpChatAssistantReply> ReplyAsync(HelpChatRequest request, CancellationToken cancellationToken = default);

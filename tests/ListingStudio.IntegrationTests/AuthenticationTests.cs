@@ -206,7 +206,7 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
 
         response.EnsureSuccessStatusCode();
         var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("Listing Studio", content, StringComparison.Ordinal);
+        Assert.Contains("Creative Listing Studio", content, StringComparison.Ordinal);
         Assert.Contains("Every listing deserves", content, StringComparison.Ordinal);
         Assert.Contains("_content/MudBlazor/MudBlazor.min.css", content, StringComparison.Ordinal);
         Assert.Contains("app-header", content, StringComparison.Ordinal);
@@ -290,7 +290,7 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
             loginContent,
             StringComparison.Ordinal);
         Assert.Contains(
-            "open Listing Studio in Safari or Chrome and try again.",
+            "open Creative Listing Studio in Safari or Chrome and try again.",
             registrationContent,
             StringComparison.Ordinal);
     }

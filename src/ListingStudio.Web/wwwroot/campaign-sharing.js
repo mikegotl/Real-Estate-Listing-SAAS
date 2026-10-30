@@ -7,7 +7,7 @@ window.listingStudioCampaign = {
 
         const file = new File([await response.blob()], fileName, { type: "image/jpeg" });
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], text: caption, title: "Listing Studio property post" });
+            await navigator.share({ files: [file], text: caption, title: "Creative Listing Studio property post" });
             return "shared";
         }
 

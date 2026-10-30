@@ -659,7 +659,7 @@ h1:focus { outline: none; }
     .map-direction-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.map-direction { border-radius: 10px; justify-content: center; min-height: 40px; }.walkthrough-route-drag { display: none; }
     .app-header .mud-toolbar { min-height: 64px; }.app-content { padding-top: 64px; }.page-container { padding-inline: 18px; }
     .notification-panel, .comments-panel { left: 16px; position: fixed; right: 16px; top: 72px; width: auto; }.notification-toast-region { bottom: 76px; left: 16px; right: 16px; }.notification-toast { width: 100%; }
-    .nav-shell { padding: 0 16px; }.brand-copy small { display: none; }.brand-mark { height: 36px; width: 36px; }.guest-actions { gap: 2px; }.guest-actions .mud-button-root { min-width: auto; padding-inline: 10px; }
+    .nav-shell { gap: 8px; padding: 0 12px; }.brand-link { gap: 8px; min-width: 0; }.brand-copy strong { font-size: .78rem; line-height: 1.05; max-width: 100px; }.brand-copy small { display: none; }.brand-mark { height: 36px; width: 36px; }.account-actions, .guest-actions { gap: 2px; }.guest-actions .mud-button-root { min-width: auto; padding-inline: 10px; }
     .hero-title { font-size: 3.1rem !important; }.hero-actions { align-items: stretch !important; flex-direction: column; }.hero-actions .mud-button-root { width: 100%; }
     .hero-visual { min-height: 430px; }.hero-photo { inset: 0; }.visual-glow { inset: 0; }.story-card { bottom: 20px; left: 12px; min-width: 250px; }.media-card-float { right: 12px; top: 16px; }
     .feature-section { padding-top: 56px; }.workspace-hero { padding: 30px; }.primary-workspace-card { display: block; }.primary-workspace-card .feature-icon { margin-bottom: 18px; }

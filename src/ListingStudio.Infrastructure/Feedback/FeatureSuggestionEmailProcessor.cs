@@ -134,8 +134,8 @@ public sealed class FeatureSuggestionEmailProcessor(
             _ => "Feature request",
         };
         var subject = suggestion.RequiredForActiveCampaign
-            ? $"[HIGH PRIORITY] Listing Studio {typeLabel.ToLowerInvariant()} from {details.OrganizationName}"
-            : $"Listing Studio {typeLabel.ToLowerInvariant()} from {details.OrganizationName}";
+            ? $"[HIGH PRIORITY] Creative Listing Studio {typeLabel.ToLowerInvariant()} from {details.OrganizationName}"
+            : $"Creative Listing Studio {typeLabel.ToLowerInvariant()} from {details.OrganizationName}";
 
         var body = new StringBuilder()
             .AppendLine(CultureInfo.InvariantCulture, $"{from} ({details.OrganizationName}) sent a {typeLabel.ToLowerInvariant()}:")
@@ -162,7 +162,7 @@ public sealed class FeatureSuggestionEmailProcessor(
 
         body.AppendLine(CultureInfo.InvariantCulture, $"Sent at: {suggestion.SubmittedAtUtc:yyyy-MM-dd HH:mm} UTC")
             .AppendLine()
-            .AppendLine("You get this email because you are a Listing Studio platform admin. Reply to answer the sender.");
+            .AppendLine("You get this email because you are a Creative Listing Studio platform admin. Reply to answer the sender.");
 
         return new OutboundEmail(
             recipients,

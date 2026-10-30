@@ -134,7 +134,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
             type = "image",
             image = new { type = "asset_id", asset_id = portraitAssetId },
             audio_asset_id = audioAssetId,
-            title = "Listing Studio agent presenter",
+            title = "Creative Listing Studio agent presenter",
             aspect_ratio = "1:1",
             resolution = configuration.Resolution,
             fit = "cover",

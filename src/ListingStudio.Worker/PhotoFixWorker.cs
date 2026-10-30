@@ -60,7 +60,7 @@ public sealed partial class PhotoFixWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio photo fix worker started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio photo fix worker started")]
     private partial void LogStarted();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Photo fix {FixId} ({Kind}) replaced photo {MediaId} on attempt {AttemptNumber}")]

@@ -64,10 +64,10 @@ public sealed partial class CampaignGenerationWorker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio campaign-generation worker started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio campaign-generation worker started")]
     private partial void LogStarted();
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Listing Studio campaign generation is disabled")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Creative Listing Studio campaign generation is disabled")]
     private partial void LogDisabled();
 
     [LoggerMessage(

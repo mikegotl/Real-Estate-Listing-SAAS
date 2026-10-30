@@ -229,5 +229,5 @@ public sealed class AdminUserEmailProcessor(
         email.Body
         + Environment.NewLine + Environment.NewLine
         + "----" + Environment.NewLine
-        + "Sent by the Listing Studio team because you have a Listing Studio account. Reply to this email to reach us.";
+        + "Sent by the Creative Listing Studio team because you have a Creative Listing Studio account. Reply to this email to reach us.";
 }

@@ -36,7 +36,7 @@
                 <div class="help-chat-topic">
                     <label for="help-chat-topic">Ask about</label>
                     <select id="help-chat-topic" class="help-chat-select" value="@topic" @onchange="OnTopicChanged">
-                        <option value="@GeneralTopic">Using Listing Studio</option>
+                        <option value="@GeneralTopic">Using Creative Listing Studio</option>
                         @foreach (var video in videos)
                         {
                             <option value="@TopicOf(video)">@video.Name</option>
@@ -74,7 +74,7 @@
                         {
                             <div class="video-chat-message assistant">
                                 <MudText Typo="Typo.body2">
-                                    Hi! Ask me how to do anything in Listing Studio, like placing photos on the Tour Map, choosing music or getting a campaign started.
+                                    Hi! Ask me how to do anything in Creative Listing Studio, like placing photos on the Tour Map, choosing music or getting a campaign started.
                                 </MudText>
                             </div>
                             @if (videos.Count > 0)

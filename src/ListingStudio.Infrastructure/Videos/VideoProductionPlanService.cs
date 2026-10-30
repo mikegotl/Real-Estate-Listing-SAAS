@@ -234,7 +234,7 @@ public sealed partial class VideoProductionPlanService(
         if (request.Media.Count != 1)
         {
             throw new VideoPlanValidationException(
-                "Listing Studio could not create a valid master video plan after a guided repair. "
+                "Creative Listing Studio could not create a valid master video plan after a guided repair. "
                 + "Confirm that every photo finished analysis, add clear interior and exterior photos if coverage is limited, "
                 + "then retry the failed stage.",
                 validationErrors);
@@ -246,7 +246,7 @@ public sealed partial class VideoProductionPlanService(
         if (!fallbackValidation.IsValid)
         {
             throw new VideoPlanValidationException(
-                "Listing Studio could not create a valid master video plan from the available photo. "
+                "Creative Listing Studio could not create a valid master video plan from the available photo. "
                 + "Upload additional analyzed interior and exterior photos, then retry the failed stage.",
                 fallbackValidation.Errors);
         }
