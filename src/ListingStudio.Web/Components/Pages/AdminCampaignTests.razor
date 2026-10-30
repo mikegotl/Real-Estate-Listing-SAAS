@@ -92,10 +92,10 @@ else
                             {
                                 var jobId = suite.CaseJobIds.ElementAtOrDefault(caseIndex);
                                 <li>
-                                    <span>@TestCaseNames[caseIndex]</span>
+                                    <strong>Case @(caseIndex + 1): @TestCaseNames[caseIndex]</strong>
                                     @if (jobId.HasValue)
                                     {
-                                        <a href="@($"#campaign-{jobId.Value}")">View campaign</a>
+                                        <a href="@($"/admin/campaign-tests#campaign-{jobId.Value}")">View campaign →</a>
                                     }
                                     else
                                     {
@@ -141,7 +141,8 @@ else
                     <header class="review-card-heading">
                         <div>
                             <span class="review-kicker">TIKTOK · VERTICAL VIDEO</span>
-                            <h3>@item.Address</h3>
+                            <h3>@CaseTitle(item.JobId)</h3>
+                            <p class="review-card-address">@item.Address</p>
                             <p>@item.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</p>
                         </div>
                         <span class="review-status @DecisionClass(item)">@DecisionText(item)</span>
@@ -151,7 +152,7 @@ else
                     {
                         <div class="review-player">
                             <video @key="@($"{item.JobId}-{item.Version}")" controls preload="metadata" playsinline
-                                   aria-label="@($"TikTok video for {item.Address}, version {item.Version}")">
+                                   style="width:100%;max-width:400px;aspect-ratio:9/16" aria-label="@($"TikTok video for {item.Address}, version {item.Version}")">
                                 <source src="@VideoUrl(item)" type="video/mp4" />
                                 Your browser does not support MP4 playback.
                             </video>
@@ -393,6 +394,22 @@ else
         }
 
         return draft;
+    }
+
+    private string CaseTitle(Guid jobId)
+    {
+        foreach (var suite in suites)
+        {
+            for (var index = 0; index < TestCaseNames.Length; index++)
+            {
+                if (suite.CaseJobIds.ElementAtOrDefault(index) == jobId)
+                {
+                    return $"Case {index + 1}: {TestCaseNames[index]}";
+                }
+            }
+        }
+
+        return "TikTok vertical campaign";
     }
 
     private static bool CanReview(CampaignReviewItem item) => item.CampaignStatus == CampaignGenerationStatus.Completed
