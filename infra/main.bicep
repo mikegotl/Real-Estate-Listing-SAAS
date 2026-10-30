@@ -748,7 +748,7 @@ var webEnvironment = concat(providerSharedEnvironment, [
   }
   {
     name: 'TesterInvitations__AppBaseUrl'
-    value: !empty(appBaseUrl) ? appBaseUrl : (deployApplications ? 'https://${webApp!.properties.configuration.ingress.fqdn}' : 'https://creativelistingstudio.com')
+    value: !empty(appBaseUrl) ? appBaseUrl : 'https://creativelistingstudio.com'
   }
 ], googleAuthenticationEnabled ? [
   {
