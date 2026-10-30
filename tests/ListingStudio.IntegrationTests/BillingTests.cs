@@ -42,7 +42,7 @@ public sealed class BillingTests(PostgreSqlWebApplicationFixture fixture)
         {
             var billing = scope.ServiceProvider.GetRequiredService<IBillingService>();
             var initial = await billing.GetOverviewAsync(registration.UserId!);
-            Assert.Equal(SubscriptionPlan.Free, initial.Plan);
+            Assert.Equal(SubscriptionPlan.Trial, initial.Plan);
             Assert.Equal(BillingSubscriptionStatus.None, initial.SubscriptionStatus);
             Assert.True(initial.IsFreeTrial);
             Assert.Equal(1, initial.MonthlyCampaignAllowance);
@@ -51,13 +51,14 @@ public sealed class BillingTests(PostgreSqlWebApplicationFixture fixture)
 
             var checkout = await billing.CreateCheckoutSessionAsync(
                 registration.UserId!,
-                SubscriptionPlan.Starter,
+                SubscriptionPlan.Basic,
+                BillingInterval.Monthly,
                 "https://listing.test/billing?checkout=success",
                 "https://listing.test/billing?checkout=cancelled");
             Assert.Equal("https://checkout.stripe.test/session", checkout.Url);
             Assert.Equal(customerCallsBefore + 1, fixture.Factory.BillingProvider.CustomerCallCount);
             Assert.Equal(checkoutCallsBefore + 1, fixture.Factory.BillingProvider.CheckoutCallCount);
-            Assert.Equal(FakeBillingProviderGateway.StarterPriceId,
+            Assert.Equal(FakeBillingProviderGateway.BasicPriceId,
                 fixture.Factory.BillingProvider.LastCheckoutRequest?.PriceId);
 
             var portal = await billing.CreatePortalSessionAsync(
@@ -90,7 +91,7 @@ public sealed class BillingTests(PostgreSqlWebApplicationFixture fixture)
         {
             var billing = scope.ServiceProvider.GetRequiredService<IBillingService>();
             var overview = await billing.GetOverviewAsync(registration.UserId!);
-            Assert.Equal(SubscriptionPlan.Starter, overview.Plan);
+            Assert.Equal(SubscriptionPlan.Basic, overview.Plan);
             Assert.Equal(BillingSubscriptionStatus.Active, overview.SubscriptionStatus);
             Assert.Equal(2, overview.MonthlyCampaignAllowance);
             Assert.Equal($"cus_test_{registration.OrganizationId:N}", overview.StripeCustomerId);
@@ -142,6 +143,7 @@ public sealed class BillingTests(PostgreSqlWebApplicationFixture fixture)
         await billing.CreateCheckoutSessionAsync(
             owner.UserId!,
             SubscriptionPlan.Professional,
+            BillingInterval.Monthly,
             "https://listing.test/success",
             "https://listing.test/cancel");
 
@@ -189,7 +191,7 @@ public sealed class BillingTests(PostgreSqlWebApplicationFixture fixture)
                     {
                         data = new[]
                         {
-                            new { price = new { id = FakeBillingProviderGateway.StarterPriceId } },
+                            new { price = new { id = FakeBillingProviderGateway.BasicPriceId } },
                         },
                     },
                 },

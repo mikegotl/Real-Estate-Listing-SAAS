@@ -42,10 +42,10 @@ public sealed class AuthenticationTests(PostgreSqlWebApplicationFixture fixture)
         Assert.Equal(OrganizationMemberRole.Owner, membership.Role);
         var billing = await dbContext.OrganizationBillingAccounts.SingleAsync(
             account => account.OrganizationId == organization.Id);
-        Assert.Equal(SubscriptionPlan.Free, billing.Plan);
+        Assert.Equal(SubscriptionPlan.Trial, billing.Plan);
         Assert.Equal(BillingSubscriptionStatus.None, billing.SubscriptionStatus);
         Assert.Equal(1, billing.MonthlyCampaignAllowance);
-        Assert.Equal(fixture.Factory.TimeProvider.GetUtcNow().AddDays(30), billing.CurrentPeriodEndUtc);
+        Assert.Equal(fixture.Factory.TimeProvider.GetUtcNow().AddDays(14), billing.CurrentPeriodEndUtc);
     }
 
     [Fact]

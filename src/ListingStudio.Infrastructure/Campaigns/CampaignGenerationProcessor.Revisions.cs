@@ -200,7 +200,8 @@ public sealed partial class CampaignGenerationProcessor
                     cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
             },
-            cancellationToken);
+            cancellationToken,
+            isRevision: true);
     }
 
     /// <summary>

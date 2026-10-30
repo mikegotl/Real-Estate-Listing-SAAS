@@ -14,6 +14,11 @@ public sealed class OrganizationBillingAccountConfiguration : IEntityTypeConfigu
         builder.Property(account => account.StripeSubscriptionId).HasMaxLength(255);
         builder.Property(account => account.Plan).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(account => account.SubscriptionStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(account => account.BillingInterval)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .HasDefaultValue(BillingInterval.Monthly)
+            .IsRequired();
         builder.HasIndex(account => account.StripeCustomerId).IsUnique();
         builder.HasIndex(account => account.StripeSubscriptionId).IsUnique();
         builder.HasOne(account => account.Organization)

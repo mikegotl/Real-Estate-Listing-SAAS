@@ -6,12 +6,33 @@
 
 @if (loaded && (intro is not null || (service?.IsEnabled == true && !IsReadOnly)))
 {
-    <section class="aerial-intro" aria-labelledby="aerial-intro-heading">
+    <section class="@($"aerial-intro {(planIncludesIntro ? "" : "is-plan-locked")}")" aria-labelledby="aerial-intro-heading">
         <div class="aerial-intro-head">
             <MudIcon Icon="@Icons.Material.Filled.FlightLand" Size="Size.Small" />
-            <strong id="aerial-intro-heading">AI drone intro</strong>
-            <span class="@($"aerial-intro-status {StatusClass}")">@StatusText</span>
+            <strong id="aerial-intro-heading">AI drone fly-in</strong>
+            @if (planIncludesIntro)
+            {
+                <span class="@($"aerial-intro-status {StatusClass}")">@StatusText</span>
+            }
+            else
+            {
+                <span class="aerial-intro-status">Professional and Enterprise</span>
+            }
         </div>
+        @if (!planIncludesIntro)
+        {
+            <div class="plan-unlock-row">
+                <PlanUnlock Feature="AI drone fly-in" />
+            </div>
+        }
+
+        @if (!planIncludesIntro && intro is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="my-2" data-testid="aerial-plan-note">
+                The AI drone intro is included with the Professional and Enterprise plans, so campaign videos on your current plan
+                don't use it.
+            </MudAlert>
+        }
 
         @if (intro is { IsReady: true } ready && !choosing)
         {
@@ -32,17 +53,17 @@
                     var choice = option.Feet;
                     var active = heightFeet == choice;
                     <button type="button" role="radio" class="@($"map-direction {(active ? "is-active" : "")}")"
-                            aria-checked="@(active ? "true" : "false")" disabled="@busy" @onclick="@(() => heightFeet = choice)">
+                            aria-checked="@(active ? "true" : "false")" disabled="@(busy || !planIncludesIntro)" @onclick="@(() => heightFeet = choice)">
                         @option.Label
                     </button>
                 }
             </div>
             <p class="aerial-intro-hint">@HeightHint</p>
-            <MudCheckBox T="bool" @bind-Value="acknowledged" Disabled="@busy" Color="Color.Primary" Dense="true"
+            <MudCheckBox T="bool" @bind-Value="acknowledged" Disabled="@(busy || !planIncludesIntro)" Color="Color.Primary" Dense="true"
                          Label="I understand this is AI-generated, may not match the real roof, yard or surroundings, and must not be presented as real footage." />
             <div class="aerial-intro-actions">
                 <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoAwesome"
-                           Disabled="@(busy || !acknowledged)" OnClick="RequestAsync">
+                           Disabled="@(busy || !acknowledged || !planIncludesIntro)" OnClick="RequestAsync">
                     @(intro is null ? "Create drone intro" : "Make a new one")
                 </MudButton>
                 @if (choosing)
@@ -96,7 +117,7 @@
             {
                 <div class="aerial-intro-actions">
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check"
-                               Disabled="@busy" OnClick="ApproveAsync">Approve for videos</MudButton>
+                               Disabled="@(busy || !planIncludesIntro)" OnClick="ApproveAsync">Approve for videos</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="@busy" OnClick="StartChoosing">Make a new one</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="@busy" OnClick="RemoveAsync">Remove</MudButton>
                 </div>
@@ -148,6 +169,7 @@
     private AerialIntroItem? intro;
     private (Guid PropertyId, string FrontPhotoKey)? loadedFor;
     private bool loaded;
+    private bool planIncludesIntro = true;
     private bool busy;
     private bool choosing;
     private bool acknowledged;
@@ -202,6 +224,8 @@
         try
         {
             intro = await service.GetAsync(userId, PropertyId);
+            planIncludesIntro = (await scope.Value.ServiceProvider.GetRequiredService<IPlanFeatureGate>()
+                .GetAccessAsync(userId)).IncludesPremiumAi;
         }
         finally
         {

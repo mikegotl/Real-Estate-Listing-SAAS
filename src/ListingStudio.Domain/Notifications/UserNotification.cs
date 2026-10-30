@@ -13,6 +13,12 @@ public enum UserNotificationKind
     PhotoFixes,
     Lead,
     AerialIntro,
+
+    /// <summary>
+    /// Sent to platform admins when a tester starts their last campaign of the month. It is stored in the tester's
+    /// workspace and property, and opens the Testers list.
+    /// </summary>
+    TesterCampaignLimit,
 }
 
 public enum UserNotificationOutcome

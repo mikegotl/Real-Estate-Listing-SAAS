@@ -38,11 +38,20 @@ else
         </MudAlert>
     }
 
-    @if (overview.IsTester)
+    @if (overview.IsPlatformAdmin)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.AdminPanelSettings" Class="mb-5 tester-billing-note">
+            <strong>Platform admin access.</strong> You have every feature and unlimited campaigns. Campaigns you create
+            don't need a plan and don't use the allowance below.
+        </MudAlert>
+    }
+    else if (overview.IsTester)
     {
         <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Science" Class="mb-5 tester-billing-note">
-            <strong>Tester access.</strong> The Creative Listing Studio team added you to the Testers group, so you can use the
-            site for free. Campaigns you create don't need a plan and don't use the allowance below.
+            <strong>Tester access.</strong> The Creative Listing Studio team added you to the Testers group, so you can use
+            every feature for free. You've started @overview.TesterCampaignsThisMonth of your @overview.TesterMonthlyCampaignLimit
+            tester campaigns this month; regenerating a property you already made a campaign for doesn't count again.
+            Campaigns you create don't need a plan and don't use the allowance below.
         </MudAlert>
     }
 
@@ -50,7 +59,7 @@ else
         <MudItem xs="12" md="4">
             <MudPaper Elevation="0" Class="metric-card">
                 <span class="metric-icon indigo"><MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" /></span>
-                <div><small>CURRENT PLAN</small><MudText Typo="Typo.h4">@(overview.IsFreeTrial ? "Free trial" : Display(overview.Plan))</MudText></div>
+                <div><small>CURRENT PLAN</small><MudText Typo="Typo.h4">@(overview.IsFreeTrial ? "Free trial" : SubscriptionPlanFeatures.DisplayName(overview.Plan))@(overview.BillingInterval == BillingInterval.Annual && !overview.IsFreeTrial ? " · yearly" : "")</MudText></div>
                 <MudChip T="string" Size="Size.Small" Color="@StatusColor(overview.SubscriptionStatus)">
                     @(overview.IsFreeTrial ? "Active" : Display(overview.SubscriptionStatus))
                 </MudChip>
@@ -62,6 +71,10 @@ else
                 <div>
                     <small>@(overview.IsFreeTrial ? "TRIAL PERIOD" : "CURRENT PERIOD")</small>
                     <MudText Typo="Typo.h6">@overview.CurrentPeriodStartUtc.ToString("MMM d") – @overview.CurrentPeriodEndUtc.ToString("MMM d")</MudText>
+                    @if (overview.BillingInterval == BillingInterval.Annual && overview.PaidThroughUtc is { } paidThrough && !overview.IsFreeTrial)
+                    {
+                        <MudText Typo="Typo.caption">Yearly plan renews @paidThrough.ToString("MMM d, yyyy"). Campaigns reset monthly.</MudText>
+                    }
                 </div>
             </MudPaper>
         </MudItem>
@@ -106,46 +119,93 @@ else
         </MudAlert>
     }
 
-    <div class="section-heading left billing-plan-heading">
+    <div class="section-heading left billing-plan-heading" id="plans">
         <span class="eyebrow">PLANS</span>
         <MudText Typo="Typo.h4" HtmlTag="h2">Choose the capacity that fits your business</MudText>
     </div>
-    <MudGrid Spacing="3">
-            <MudItem xs="12" md="6">
-                <MudPaper Elevation="0" Class="plan-card">
-                    <MudText Typo="Typo.h5">Starter</MudText>
-                    <MudText Typo="Typo.h4">$@StripeOptions.Value.StarterMonthlyPriceUsd <span class="metric-total">/ month</span></MudText>
-                    <MudText Typo="Typo.body2">A focused foundation for independent agents.</MudText>
+    <nav class="billing-interval-toggle" aria-label="Billing period">
+        <a href="/billing" class="@(Annual ? "" : "is-active")" aria-current="@(Annual ? null : "true")">Monthly</a>
+        <a href="/billing?interval=annual" class="@(Annual ? "is-active" : "")" aria-current="@(Annual ? "true" : null)">
+            Yearly <span class="billing-interval-save">Save @StripeOptions.Value.AnnualDiscountPercent%</span>
+        </a>
+    </nav>
+    <MudGrid Spacing="3" Class="billing-plan-grid">
+        @foreach (var plan in Plans)
+        {
+            var isCurrent = !overview.IsTester && overview.Plan == plan.Plan
+                && (plan.Plan == SubscriptionPlan.Trial
+                    ? overview.IsFreeTrial
+                    : overview.SubscriptionStatus is BillingSubscriptionStatus.Active or BillingSubscriptionStatus.Trialing
+                        && overview.BillingInterval == Interval);
+            var canBuy = plan.Plan == SubscriptionPlan.Trial || !Annual || plan.HasAnnualPrice;
+            <MudItem xs="12" sm="6" lg="3">
+                <MudPaper Elevation="0" Class="@($"plan-card {(plan.Badge is null ? "" : "featured")}")" data-plan="@plan.Plan">
+                    @if (plan.Badge is not null)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Class="plan-badge">@plan.Badge</MudChip>
+                    }
+                    <MudText Typo="Typo.h5">@SubscriptionPlanFeatures.DisplayName(plan.Plan)</MudText>
+                    <MudText Typo="Typo.h4">
+                        @if (plan.PriceUsd is { } price && Annual)
+                        {
+                            <text>@Money(StripeOptions.Value.AnnualPriceUsd(price) / 12m) <span class="metric-total">/ month</span></text>
+                        }
+                        else if (plan.PriceUsd is { } monthly)
+                        {
+                            <text>$@monthly <span class="metric-total">/ month</span></text>
+                        }
+                        else
+                        {
+                            <text>Free <span class="metric-total">for @StripeOptions.Value.FreeTrialDays days</span></text>
+                        }
+                    </MudText>
+                    @if (plan.PriceUsd is { } yearly && Annual)
+                    {
+                        <MudText Typo="Typo.caption" Class="plan-annual-note">
+                            Billed @Money(StripeOptions.Value.AnnualPriceUsd(yearly)) a year <s>@Money(yearly * 12m)</s>
+                        </MudText>
+                    }
+                    <MudText Typo="Typo.body2">@plan.Summary</MudText>
                     <MudList T="string" Dense="true" Class="plan-features">
-                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">@StripeOptions.Value.StarterMonthlyCampaignAllowance completed campaigns per month</MudListItem>
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">
+                            @plan.Campaigns @(plan.Plan == SubscriptionPlan.Trial ? "campaigns during the trial" : "completed campaigns per month")
+                        </MudListItem>
                         <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Failed attempts and retries are free</MudListItem>
+                        @if (SubscriptionPlanFeatures.IncludesPremiumAi(plan.Plan))
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check">AI drone fly-in intro</MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check">AI agent presenter (avatar)</MudListItem>
+                        }
+                        else
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Close" Class="plan-feature-missing">No AI drone fly-in intro</MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Close" Class="plan-feature-missing">No AI agent presenter (avatar)</MudListItem>
+                        }
                     </MudList>
-                    <form action="/billing/checkout" method="post">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="plan" value="Starter" />
-                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Outlined" Color="Color.Primary"
-                                   Disabled="@(!StripeOptions.Value.Enabled)">Choose Starter</MudButton>
-                    </form>
+                    @if (plan.Plan == SubscriptionPlan.Trial)
+                    {
+                        <MudButton FullWidth="true" Variant="Variant.Text" Color="Color.Primary" Disabled="true">
+                            @(isCurrent ? "Your current plan" : "Included with every new workspace")
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <form action="/billing/checkout" method="post">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="plan" value="@plan.Plan" />
+                            <input type="hidden" name="interval" value="@Interval" />
+                            <MudButton ButtonType="ButtonType.Submit" FullWidth="true"
+                                       Variant="@(plan.Badge is null ? Variant.Outlined : Variant.Filled)" Color="Color.Primary"
+                                       Disabled="@(!StripeOptions.Value.Enabled || isCurrent || !canBuy)">
+                                @(isCurrent ? "Your current plan"
+                                    : !canBuy ? "Yearly billing coming soon"
+                                    : $"Choose {SubscriptionPlanFeatures.DisplayName(plan.Plan)}{(Annual ? " yearly" : "")}")
+                            </MudButton>
+                        </form>
+                    }
                 </MudPaper>
             </MudItem>
-            <MudItem xs="12" md="6">
-                <MudPaper Elevation="0" Class="plan-card featured">
-                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="plan-badge">FOR GROWING TEAMS</MudChip>
-                    <MudText Typo="Typo.h5">Professional</MudText>
-                    <MudText Typo="Typo.h4">$@StripeOptions.Value.ProfessionalMonthlyPriceUsd <span class="metric-total">/ month</span></MudText>
-                    <MudText Typo="Typo.body2">More campaign capacity for active listing operations.</MudText>
-                    <MudList T="string" Dense="true" Class="plan-features">
-                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">Everything in Starter</MudListItem>
-                        <MudListItem T="string" Icon="@Icons.Material.Filled.Check">@StripeOptions.Value.ProfessionalMonthlyCampaignAllowance completed campaigns per month</MudListItem>
-                    </MudList>
-                    <form action="/billing/checkout" method="post">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="plan" value="Professional" />
-                        <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary"
-                                   Disabled="@(!StripeOptions.Value.Enabled)">Choose Professional</MudButton>
-                    </form>
-                </MudPaper>
-            </MudItem>
+        }
     </MudGrid>
 }
 
@@ -154,6 +214,40 @@ else
     private NavigationManager NavigationManager { get; set; } = null!;
 
     private BillingOverview? overview;
+
+    [SupplyParameterFromQuery(Name = "interval")]
+    private string? IntervalQuery { get; set; }
+
+    private bool Annual => string.Equals(IntervalQuery, "annual", StringComparison.OrdinalIgnoreCase);
+
+    private BillingInterval Interval => Annual ? BillingInterval.Annual : BillingInterval.Monthly;
+
+    private static string Money(decimal amount) => amount == decimal.Truncate(amount)
+        ? amount.ToString("$#,0", System.Globalization.CultureInfo.InvariantCulture)
+        : amount.ToString("$#,0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    private IReadOnlyList<PlanOption> Plans =>
+    [
+        new(SubscriptionPlan.Trial, null, StripeOptions.Value.FreeTrialCampaignAllowance,
+            "Try Creative Listing Studio on a couple of listings.", null, false),
+        new(SubscriptionPlan.Basic, StripeOptions.Value.BasicMonthlyPriceUsd, StripeOptions.Value.BasicMonthlyCampaignAllowance,
+            "A focused foundation for independent agents.", null,
+            !string.IsNullOrWhiteSpace(StripeOptions.Value.BasicAnnualPriceId)),
+        new(SubscriptionPlan.Professional, StripeOptions.Value.ProfessionalMonthlyPriceUsd, StripeOptions.Value.ProfessionalMonthlyCampaignAllowance,
+            "More campaigns, plus the AI drone fly-in and AI agent presenter (avatar).", null,
+            !string.IsNullOrWhiteSpace(StripeOptions.Value.ProfessionalAnnualPriceId)),
+        new(SubscriptionPlan.Enterprise, StripeOptions.Value.EnterpriseMonthlyPriceUsd, StripeOptions.Value.EnterpriseMonthlyCampaignAllowance,
+            "Everything in Professional, with the most campaigns each month.", "BEST DEAL FOR PROFESSIONALS",
+            !string.IsNullOrWhiteSpace(StripeOptions.Value.EnterpriseAnnualPriceId)),
+    ];
+
+    private sealed record PlanOption(
+        SubscriptionPlan Plan,
+        int? PriceUsd,
+        int Campaigns,
+        string Summary,
+        string? Badge,
+        bool HasAnnualPrice);
 
     private double UsagePercent => overview is null || overview.MonthlyCampaignAllowance <= 0
         ? 0

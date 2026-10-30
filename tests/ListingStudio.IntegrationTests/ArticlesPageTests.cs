@@ -41,10 +41,10 @@ public sealed class ArticlesPageTests(PostgreSqlWebApplicationFixture fixture)
         Assert.Contains("application/ld+json", html);
         Assert.Contains("\"@type\":\"Article\"", html);
         Assert.Contains("datePublished", html);
-        // The comparison reads plan prices from billing settings ($49 / $99 by default) and adds up the separate tools.
+        // The comparison reads plan prices from billing settings ($99 / $299 by default) and adds up the separate tools.
         Assert.Contains("$91.99", html);
-        Assert.Contains("$49", html);
         Assert.Contains("$99", html);
+        Assert.Contains("$299", html);
         Assert.Contains("https://cms.nar.realtor/", html);
     }
 

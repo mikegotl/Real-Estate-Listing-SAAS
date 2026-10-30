@@ -1,6 +1,10 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using ListingStudio.Application.Administration;
+using ListingStudio.Domain.Notifications;
+using ListingStudio.Domain.Billing;
+using ListingStudio.Application.Notifications;
+using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Authentication;
 using ListingStudio.Application.Billing;
 using ListingStudio.Application.Email;
@@ -174,7 +178,7 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
         search.EnsureSuccessStatusCode();
         var searchHtml = await search.Content.ReadAsStringAsync();
         Assert.Contains("Add to Testers", searchHtml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Tester · free", searchHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tester · 0 of 10 campaigns this month", searchHtml, StringComparison.Ordinal);
 
         using var add = await PostTesterAsync(client, searchHtml, customer.UserId, isTester: true, marker);
         Assert.Equal(HttpStatusCode.Redirect, add.StatusCode);
@@ -184,7 +188,7 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
         testers.EnsureSuccessStatusCode();
         var testersHtml = await testers.Content.ReadAsStringAsync();
         Assert.Contains(customer.Email, testersHtml, StringComparison.Ordinal);
-        Assert.Contains("Tester · free", testersHtml, StringComparison.Ordinal);
+        Assert.Contains("Tester · 0 of 10 campaigns this month", testersHtml, StringComparison.Ordinal);
         Assert.Contains("Remove from Testers", testersHtml, StringComparison.Ordinal);
 
         using var remove = await PostTesterAsync(client, testersHtml, customer.UserId, isTester: false, marker, testersView: true);
@@ -463,6 +467,184 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
             ["Input.Email"] = email,
             ["Input.Password"] = password,
         }));
+    }
+
+    [Fact]
+    public async Task TestersHaveEveryFeatureAMonthlyLimitAndAdminsHearAboutTheLastCampaign()
+    {
+        var marker = Guid.NewGuid().ToString("N")[..10];
+        var admin = await RegisterAsync($"limit-admin-{marker}@example.com", $"Limit Admin {marker}");
+        await GrantPlatformAdminAsync(admin.Email);
+        var tester = await RegisterAsync($"limit-tester-{marker}@example.com", $"Limit Tester {marker}");
+        var first = await CreatePropertyAsync(tester.UserId, $"{marker} First Street");
+        var second = await CreatePropertyAsync(tester.UserId, $"{marker} Second Street");
+        var third = await CreatePropertyAsync(tester.UserId, $"{marker} Third Street");
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var dbContext = services.GetRequiredService<ApplicationDbContext>();
+        var access = services.GetRequiredService<IPlatformAdminTesterAccess>();
+        var gate = services.GetRequiredService<ICampaignBillingGate>();
+        var features = services.GetRequiredService<IPlanFeatureGate>();
+        Assert.False((await features.GetAccessAsync(tester.UserId)).IncludesPremiumAi);
+        Assert.True((await access.SetTesterAsync(admin.UserId, tester.UserId, isTester: true)).Succeeded);
+        Assert.True((await features.GetAccessAsync(tester.UserId)).IncludesPremiumAi);
+        var organizationId = (await services.GetRequiredService<IBillingService>().GetOverviewAsync(tester.UserId))
+            .OrganizationId;
+
+        // Only admins can change the limit, and the default is 10.
+        Assert.Equal(TesterChangeFailure.NotPlatformAdmin,
+            (await access.SetMonthlyCampaignLimitAsync(tester.UserId, tester.UserId, 50)).Failure);
+        var tester0 = Assert.Single(
+            (await services.GetRequiredService<IPlatformAdminAccountDirectory>().ListTestersAsync()).Accounts,
+            account => account.UserId == tester.UserId);
+        Assert.Equal(PlatformTesters.DefaultMonthlyCampaignLimit, tester0.TesterMonthlyCampaignLimit);
+        Assert.True((await access.SetMonthlyCampaignLimitAsync(admin.UserId, tester.UserId, 2)).Changed);
+
+        async Task StartAsync(Guid propertyId)
+        {
+            await gate.EnsureCampaignCapacityAsync(organizationId, propertyId, tester.UserId);
+            dbContext.CampaignGenerationJobs.Add(CampaignGenerationJob.Create(
+                organizationId,
+                propertyId,
+                tester.UserId,
+                Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
+                CampaignOutputSelection.LegacyStandard,
+                fixture.Factory.TimeProvider.GetUtcNow()));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await StartAsync(first);
+        Assert.False(await dbContext.UserNotifications.AnyAsync(notification =>
+            notification.UserId == admin.UserId && notification.OrganizationId == organizationId));
+
+        // The last campaign of the month tells every admin, in the app and by email.
+        await StartAsync(second);
+        var notification = await dbContext.UserNotifications.SingleAsync(candidate =>
+            candidate.UserId == admin.UserId && candidate.OrganizationId == organizationId);
+        Assert.Equal(UserNotificationKind.TesterCampaignLimit, notification.Kind);
+        Assert.Contains(tester.Email, notification.Title, StringComparison.Ordinal);
+        var inbox = await services.GetRequiredService<IUserNotificationService>().GetInboxAsync(admin.UserId);
+        Assert.Contains(inbox.Items, item => item.Id == notification.Id && item.Link == "/admin/users?testers=true");
+        var email = await dbContext.AdminUserEmails.SingleAsync(candidate =>
+            candidate.RecipientUserId == admin.UserId && candidate.Subject.Contains(tester.Email));
+        Assert.Equal(admin.Email, email.RecipientEmail);
+        Assert.Contains("(2 of 2)", email.Body, StringComparison.Ordinal);
+
+        // Regenerating a property already counted is free; a new property is over the limit.
+        await gate.EnsureCampaignCapacityAsync(organizationId, first, tester.UserId);
+        var exceeded = await Assert.ThrowsAsync<CampaignAllowanceExceededException>(() =>
+            gate.EnsureCampaignCapacityAsync(organizationId, third, tester.UserId));
+        Assert.Contains("all 2 tester campaigns", exceeded.Message, StringComparison.Ordinal);
+        var listed = Assert.Single(
+            (await services.GetRequiredService<IPlatformAdminAccountDirectory>().ListTestersAsync()).Accounts,
+            account => account.UserId == tester.UserId);
+        Assert.Equal(2, listed.TesterMonthlyCampaignLimit);
+        Assert.Equal(2, listed.TesterCampaignsThisMonth);
+
+        // Raising the limit lets them continue right away.
+        Assert.True((await access.SetMonthlyCampaignLimitAsync(admin.UserId, tester.UserId, 5)).Changed);
+        await gate.EnsureCampaignCapacityAsync(organizationId, third, tester.UserId);
+        Assert.Equal(1, await dbContext.UserNotifications.CountAsync(candidate =>
+            candidate.UserId == admin.UserId && candidate.OrganizationId == organizationId));
+    }
+
+    [Fact]
+    public async Task PlatformAdminsHaveEveryFeatureAndUnlimitedCampaigns()
+    {
+        var marker = Guid.NewGuid().ToString("N")[..10];
+        var admin = await RegisterAsync($"unlimited-admin-{marker}@example.com", $"Unlimited Admin {marker}");
+        await GrantPlatformAdminAsync(admin.Email);
+        var propertyId = await CreatePropertyAsync(admin.UserId, $"{marker} Admin Street");
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var dbContext = services.GetRequiredService<ApplicationDbContext>();
+        var billing = services.GetRequiredService<IBillingService>();
+        var overview = await billing.GetOverviewAsync(admin.UserId);
+        Assert.True(overview.IsPlatformAdmin);
+        Assert.True(overview.IncludesPremiumAi);
+        Assert.True((await services.GetRequiredService<IPlanFeatureGate>().GetAccessAsync(admin.UserId)).IncludesPremiumAi);
+        await dbContext.OrganizationBillingAccounts
+            .Where(account => account.OrganizationId == overview.OrganizationId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(account => account.MonthlyCampaignAllowance, 0));
+        dbContext.ChangeTracker.Clear();
+
+        await services.GetRequiredService<ICampaignBillingGate>()
+            .EnsureCampaignCapacityAsync(overview.OrganizationId, propertyId, admin.UserId);
+    }
+
+    [Fact]
+    public async Task OnlyProfessionalAndEnterpriseIncludeTheDroneIntroAndAgentPresenter()
+    {
+        var marker = Guid.NewGuid().ToString("N")[..10];
+        var customer = await RegisterAsync($"plan-gate-{marker}@example.com", $"Plan Gate {marker}");
+        var propertyId = await CreatePropertyAsync(customer.UserId, $"{marker} Plan Street");
+        var now = fixture.Factory.TimeProvider.GetUtcNow();
+        var presenter = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = (CampaignCreativeOptions.SocialDefault.Elements & ~CampaignVideoElement.AgentPortrait)
+                | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = Guid.NewGuid(),
+            AgentAvatarConsentConfirmed = true,
+        };
+
+        async Task AssertLockedAsync()
+        {
+            await using var scope = fixture.Factory.Services.CreateAsyncScope();
+            var services = scope.ServiceProvider;
+            Assert.False((await services.GetRequiredService<IPlanFeatureGate>().GetAccessAsync(customer.UserId)).IncludesPremiumAi);
+            await Assert.ThrowsAsync<PlanFeatureUnavailableException>(() => services
+                .GetRequiredService<IAerialIntroService>()
+                .RequestAsync(customer.UserId, propertyId, ListingStudio.Domain.Properties.AerialIntroClip.LowHeightFeet, true));
+            await Assert.ThrowsAsync<PlanFeatureUnavailableException>(() => services
+                .GetRequiredService<ICampaignGenerationService>()
+                .EnqueueAsync(customer.UserId, propertyId, CampaignOutputSelectionPolicy.Recommended, presenter));
+        }
+
+        await AssertLockedAsync();
+        await BillingPlanTestData.SubscribeAsync(fixture.Factory.Services, customer.UserId, SubscriptionPlan.Basic, now);
+        await AssertLockedAsync();
+
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services, customer.UserId, SubscriptionPlan.Enterprise, now, BillingInterval.Annual);
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var access = await scope.ServiceProvider.GetRequiredService<IPlanFeatureGate>().GetAccessAsync(customer.UserId);
+            Assert.Equal(SubscriptionPlan.Enterprise, access.Plan);
+            Assert.True(access.IncludesPremiumAi);
+            var overview = await scope.ServiceProvider.GetRequiredService<IBillingService>().GetOverviewAsync(customer.UserId);
+            Assert.Equal(BillingInterval.Annual, overview.BillingInterval);
+            Assert.Equal(30, overview.MonthlyCampaignAllowance);
+            Assert.True(overview.PaidThroughUtc > overview.CurrentPeriodEndUtc);
+        }
+    }
+
+    [Fact]
+    public async Task BillingPageShowsTheFourPlansYearlyPricesAndTheEnterpriseBadge()
+    {
+        var marker = Guid.NewGuid().ToString("N")[..10];
+        var customer = await RegisterAsync($"plans-page-{marker}@example.com", $"Plans Page {marker}");
+        using var client = CookieClient();
+        await LogInAsync(client, customer.Email);
+
+        var monthly = await client.GetStringAsync("/billing");
+        foreach (var plan in new[] { "Trial", "Basic", "Professional", "Enterprise" })
+        {
+            Assert.Contains($"data-plan=\"{plan}\"", monthly, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("BEST DEAL FOR PROFESSIONALS", monthly, StringComparison.Ordinal);
+        Assert.Contains("$99", monthly, StringComparison.Ordinal);
+        Assert.Contains("$299", monthly, StringComparison.Ordinal);
+        Assert.Contains("$499", monthly, StringComparison.Ordinal);
+        Assert.Contains("No AI drone fly-in intro", monthly, StringComparison.Ordinal);
+
+        var yearly = await client.GetStringAsync("/billing?interval=annual");
+        // 20% off twelve months: $99 -> $950.40 a year ($79.20 a month).
+        Assert.Contains("$79.20", yearly, StringComparison.Ordinal);
+        Assert.Contains("$950.40", yearly, StringComparison.Ordinal);
+        Assert.Contains("$4,790.40", yearly, StringComparison.Ordinal);
     }
 
     private async Task<(string UserId, string Email)> RegisterAsync(string email, string workspace)

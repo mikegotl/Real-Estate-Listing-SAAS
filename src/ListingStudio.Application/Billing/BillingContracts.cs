@@ -16,7 +16,13 @@ public sealed record BillingOverview(
     int AdditionalCampaignUsage,
     int ReservedCampaignUsage,
     bool IsFreeTrial,
-    bool IsTester = false)
+    bool IsTester = false,
+    bool IncludesPremiumAi = false,
+    BillingInterval BillingInterval = BillingInterval.Monthly,
+    DateTimeOffset? PaidThroughUtc = null,
+    bool IsPlatformAdmin = false,
+    int TesterMonthlyCampaignLimit = 0,
+    int TesterCampaignsThisMonth = 0)
 {
     public int RemainingCampaignUsage => Math.Max(
         0,
@@ -35,6 +41,7 @@ public sealed record BillingProviderCheckoutRequest(
     Guid OrganizationId,
     string StripeCustomerId,
     SubscriptionPlan Plan,
+    BillingInterval Interval,
     string PriceId,
     string SuccessUrl,
     string CancelUrl,

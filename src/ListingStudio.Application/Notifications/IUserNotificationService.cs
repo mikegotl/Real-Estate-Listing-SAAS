@@ -29,7 +29,10 @@ public sealed record UserNotificationItem(
     bool IsRead)
 {
     public static string LinkFor(Guid propertyId, string tab, UserNotificationKind kind) =>
-        kind == UserNotificationKind.Lead
-            ? $"/leads?propertyId={propertyId}"
-            : $"/properties/{propertyId}?tab={Uri.EscapeDataString(tab)}";
+        kind switch
+        {
+            UserNotificationKind.Lead => $"/leads?propertyId={propertyId}",
+            UserNotificationKind.TesterCampaignLimit => "/admin/users?testers=true",
+            _ => $"/properties/{propertyId}?tab={Uri.EscapeDataString(tab)}",
+        };
 }

@@ -1,5 +1,6 @@
 using System.Data;
 using ListingStudio.Application.Audio;
+using ListingStudio.Application.Billing;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Properties;
@@ -14,6 +15,7 @@ public sealed partial class AerialIntroService(
     ICampaignAssetStorage campaignAssetStorage,
     IWalkthroughVideoProvider provider,
     TimeProvider timeProvider,
+    IPlanFeatureGate planFeatureGate,
     ILogger<AerialIntroService> logger) : IAerialIntroService
 {
     public bool IsEnabled => provider.IsEnabled;
@@ -60,6 +62,7 @@ public sealed partial class AerialIntroService(
         }
 
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        await EnsureIncludedInPlanAsync(organizationId, userId, cancellationToken);
         string? replacedAsset;
         AerialIntroClip clip;
         await using (var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -119,6 +122,7 @@ public sealed partial class AerialIntroService(
             return false;
         }
 
+        await EnsureIncludedInPlanAsync(organizationId, userId, cancellationToken);
         var front = await AerialIntroSource.LoadFrontPhotoAsync(dbContext, organizationId, propertyId, cancellationToken);
         if (!AerialIntroSource.IsCurrent(clip, front, provider.AerialIntroGenerationVersion))
         {
@@ -203,6 +207,15 @@ public sealed partial class AerialIntroService(
         clip.CanRetry,
         clip.ApprovedAtUtc,
         isCurrent);
+
+    private async Task EnsureIncludedInPlanAsync(Guid organizationId, string userId, CancellationToken cancellationToken)
+    {
+        var access = await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken);
+        if (!access.IncludesPremiumAi)
+        {
+            throw new PlanFeatureUnavailableException(PlanFeatureAccess.PremiumAiUpgradeMessage);
+        }
+    }
 
     private async Task<Guid> GetOrganizationIdAsync(string userId, CancellationToken cancellationToken)
     {

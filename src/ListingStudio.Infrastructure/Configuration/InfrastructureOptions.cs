@@ -60,15 +60,27 @@ public sealed class StripeOptions
     public string PublicBaseUrl { get; init; } = string.Empty;
     public string SecretKey { get; init; } = string.Empty;
     public string WebhookSecret { get; init; } = string.Empty;
-    public string StarterPriceId { get; init; } = string.Empty;
+    public string BasicPriceId { get; init; } = string.Empty;
     public string ProfessionalPriceId { get; init; } = string.Empty;
-    public int FreeTrialCampaignAllowance { get; init; } = 10;
-    public int FreeTrialDays { get; init; } = 30;
-    public int StarterMonthlyCampaignAllowance { get; init; } = 4;
+    public string EnterprisePriceId { get; init; } = string.Empty;
+    // Optional yearly prices; a plan without one is offered monthly only.
+    public string BasicAnnualPriceId { get; init; } = string.Empty;
+    public string ProfessionalAnnualPriceId { get; init; } = string.Empty;
+    public string EnterpriseAnnualPriceId { get; init; } = string.Empty;
+    public int AnnualDiscountPercent { get; init; } = 20;
+    public int FreeTrialCampaignAllowance { get; init; } = 2;
+    public int FreeTrialDays { get; init; } = 14;
+    public int BasicMonthlyCampaignAllowance { get; init; } = 4;
     public int ProfessionalMonthlyCampaignAllowance { get; init; } = 12;
-    public int StarterMonthlyPriceUsd { get; init; } = 49;
-    public int ProfessionalMonthlyPriceUsd { get; init; } = 99;
+    public int EnterpriseMonthlyCampaignAllowance { get; init; } = 30;
+    public int BasicMonthlyPriceUsd { get; init; } = 99;
+    public int ProfessionalMonthlyPriceUsd { get; init; } = 299;
+    public int EnterpriseMonthlyPriceUsd { get; init; } = 499;
     public int WebhookToleranceSeconds { get; init; } = 300;
+
+    /// <summary>The yearly price shown for a monthly price: twelve months less the annual discount.</summary>
+    public decimal AnnualPriceUsd(int monthlyPriceUsd) =>
+        Math.Round(monthlyPriceUsd * 12m * (100 - AnnualDiscountPercent) / 100m, 2);
 }
 
 public sealed class CampaignGenerationOptions

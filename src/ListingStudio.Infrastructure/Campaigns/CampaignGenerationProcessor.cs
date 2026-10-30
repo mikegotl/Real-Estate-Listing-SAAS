@@ -39,6 +39,7 @@ public sealed partial class CampaignGenerationProcessor(
     IPropertyVideoClipFinder videoClipFinder,
     ICampaignAssetStorage campaignAssetStorage,
     ICampaignBillingGate campaignBillingGate,
+    IPlanFeatureGate planFeatureGate,
     IOptions<CampaignGenerationOptions> options,
     TimeProvider timeProvider,
     ILogger<CampaignGenerationProcessor> logger) : ICampaignGenerationProcessor
@@ -1163,7 +1164,8 @@ public sealed partial class CampaignGenerationProcessor(
         string label,
         string assetPath,
         Func<long, Task> commit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isRevision = false)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-campaign-{job.Id:N}-{label}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -1196,7 +1198,7 @@ public sealed partial class CampaignGenerationProcessor(
                 specification,
                 directory,
                 cancellationToken);
-            var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, cancellationToken);
+            var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, isRevision, cancellationToken);
             var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
             var agentPresenter = await MaterializeAgentPresenterAsync(
                 job,
@@ -1290,7 +1292,8 @@ public sealed partial class CampaignGenerationProcessor(
         if (job.CreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
             && job.AgentAvatarConsentConfirmed
             && job.AgentPortraitId is { } portraitId
-            && agentAvatarVideoService.IsEnabled)
+            && agentAvatarVideoService.IsEnabled
+            && await IncludesPremiumAiAsync(job, cancellationToken))
         {
             var narrationIds = await dbContext.CampaignDeliverables.AsNoTracking()
                 .Where(candidate => candidate.CampaignGenerationJobId == jobId)
@@ -1711,14 +1714,22 @@ public sealed partial class CampaignGenerationProcessor(
     /// Copies the property's drone intro when the agent approved it, it still lands on the Exterior front photo as the
     /// tour shows it today, and the video opens on that photo. Otherwise the video opens on the photo as before.
     /// </summary>
+    // The plan can change between request and render, so the paid AI features are checked again here.
+    private async Task<bool> IncludesPremiumAiAsync(CampaignGenerationJob job, CancellationToken cancellationToken) =>
+        (await planFeatureGate.GetAccessAsync(job.OrganizationId, job.RequestedByUserId, cancellationToken))
+            .IncludesPremiumAi;
+
     private async Task<VideoRenderAerialIntroAsset?> MaterializeAerialIntroAsync(
         CampaignGenerationJob job,
         VideoProductionSpecification specification,
         string directory,
+        bool isRevision,
         CancellationToken cancellationToken)
     {
         // The drone intro is generated motion, so the photos-only choice leaves it out like walk-through clips.
-        if (!job.CreativeElements.HasFlag(CampaignVideoElement.WalkthroughMotion))
+        // A chat fix to an existing video keeps its drone intro after a downgrade; only new campaigns need the plan.
+        if (!job.CreativeElements.HasFlag(CampaignVideoElement.WalkthroughMotion)
+            || (!isRevision && !await IncludesPremiumAiAsync(job, cancellationToken)))
         {
             return null;
         }

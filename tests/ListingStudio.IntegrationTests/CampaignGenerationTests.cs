@@ -164,6 +164,11 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
     {
         var owner = await CreateOwnerAndPropertyAsync("avatar-video-owner");
         var outsider = await CreateOwnerAndPropertyAsync("avatar-video-outsider");
+        // The AI agent presenter comes with Professional and Enterprise.
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services, owner.UserId, SubscriptionPlan.Enterprise, fixture.Factory.TimeProvider.GetUtcNow());
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services, outsider.UserId, SubscriptionPlan.Professional, fixture.Factory.TimeProvider.GetUtcNow());
         await UploadAsync(owner);
         Guid portraitId;
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
@@ -517,6 +522,8 @@ public sealed class CampaignGenerationTests(PostgreSqlWebApplicationFixture fixt
 
     private async Task CreateFinishedDroneIntroAsync(OwnerProperty owner)
     {
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services, owner.UserId, SubscriptionPlan.Professional, fixture.Factory.TimeProvider.GetUtcNow());
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var intro = await scope.ServiceProvider.GetRequiredService<IAerialIntroService>()
             .RequestAsync(owner.UserId, owner.PropertyId, AerialIntroClip.LowHeightFeet, true);

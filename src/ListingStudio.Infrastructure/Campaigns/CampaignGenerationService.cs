@@ -18,6 +18,7 @@ public sealed class CampaignGenerationService(
     ICampaignAssetStorage assetStorage,
     TimeProvider timeProvider,
     ICampaignBillingGate campaignBillingGate,
+    IPlanFeatureGate planFeatureGate,
     IWalkthroughTransitionService walkthroughTransitionService) : ICampaignGenerationService
 {
     private const string WorkflowVersion = "campaign-localization-v9";
@@ -76,6 +77,12 @@ public sealed class CampaignGenerationService(
         }
 
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        var planAccess = await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken);
+        if (creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) && !planAccess.IncludesPremiumAi)
+        {
+            throw new PlanFeatureUnavailableException(PlanFeatureAccess.PremiumAiUpgradeMessage);
+        }
+
         DateTimeOffset? portraitUpdatedAtUtc = null;
         if (creativeOptions.AgentPortraitId is { } portraitId)
         {
@@ -205,11 +212,13 @@ public sealed class CampaignGenerationService(
             })
             .ToArrayAsync(cancellationToken);
         // Approving, replacing or removing the drone intro changes how the videos open, so it is part of the source.
+        // Plans without the drone intro never open with one, so it is left out of their source.
         var aerialIntro = await dbContext.AerialIntroClips
             .AsNoTracking()
             .Where(clip => clip.OrganizationId == organizationId
                 && clip.PropertyId == propertyId
-                && clip.ApprovedAtUtc != null)
+                && clip.ApprovedAtUtc != null
+                && planAccess.IncludesPremiumAi)
             .Select(clip => new { clip.Id, clip.PropertyMediaId, clip.SourceBlobPath, clip.ApprovedAtUtc })
             .SingleOrDefaultAsync(cancellationToken);
         var fingerprint = CreateFingerprint(

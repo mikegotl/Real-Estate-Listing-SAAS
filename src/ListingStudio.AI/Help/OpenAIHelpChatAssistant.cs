@@ -94,8 +94,9 @@ public sealed class OpenAIHelpChatAssistant(
         - Lead destination (Campaign tab) and Leads page: a lead page and QR code for the listing; inquiries appear
           under Leads where you can review them and add notes.
         - Profile: agent details used on contact cards, a Campaign headshot, and an optional Agent presenter.
-        - Billing: shows your plan (Free trial, Starter or Professional), the campaigns used in this period and the
-          monthly campaign allowance; each successful campaign counts once, and video chat updates do not count.
+        - Billing: shows your plan (Trial, Basic, Professional or Enterprise), the campaigns used in this period and the
+          monthly campaign allowance; each successful campaign counts once, and video chat updates do not count. The
+          AI drone intro and the AI agent presenter are included only with Professional and Enterprise.
         """;
 
     private static readonly JsonElement OutputSchema = JsonDocument.Parse(JsonSerializer.Serialize(new
