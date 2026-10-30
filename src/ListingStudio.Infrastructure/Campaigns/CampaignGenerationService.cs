@@ -19,7 +19,7 @@ public sealed class CampaignGenerationService(
     TimeProvider timeProvider,
     ICampaignBillingGate campaignBillingGate,
     IPlanFeatureGate planFeatureGate,
-    IWalkthroughTransitionService walkthroughTransitionService) : ICampaignGenerationService
+    IWalkthroughTransitionService walkthroughTransitionService) : ICampaignGenerationService, ICampaignTestGenerationService
 {
     private const string WorkflowVersion = "campaign-localization-v9";
 
@@ -56,13 +56,27 @@ public sealed class CampaignGenerationService(
             CampaignNarrationPreferences.Default,
             cancellationToken);
 
-    public async Task<CampaignGenerationResult?> EnqueueAsync(
+    public Task<CampaignGenerationResult?> EnqueueAsync(
         string userId,
         Guid propertyId,
         CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions,
         CampaignNarrationPreferences narrationPreferences,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        EnqueueCoreAsync(userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken);
+
+    public Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
+        CampaignCreativeOptions options, Guid caseRequestId, CancellationToken cancellationToken = default)
+    {
+        if (caseRequestId == Guid.Empty) throw new ArgumentException("A test case key is required.", nameof(caseRequestId));
+        return EnqueueCoreAsync(userId, propertyId, CampaignOutputSelection.TikTok, options,
+            CampaignNarrationPreferences.Default, caseRequestId.ToString("N"), cancellationToken);
+    }
+
+    private async Task<CampaignGenerationResult?> EnqueueCoreAsync(
+        string userId, Guid propertyId, CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions, CampaignNarrationPreferences narrationPreferences,
+        string? testCaseKey, CancellationToken cancellationToken)
     {
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
         ArgumentNullException.ThrowIfNull(creativeOptions);
@@ -237,18 +251,24 @@ public sealed class CampaignGenerationService(
             creativeOptions,
             narrationPreferences,
             portraitUpdatedAtUtc);
+        if (testCaseKey is not null)
+        {
+            fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                $"tiktok-test:{testCaseKey}"))).ToLowerInvariant();
+        }
         var existing = await dbContext.CampaignGenerationJobs
             .Include(candidate => candidate.Deliverables)
             .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId
                 && (candidate.Status == CampaignGenerationStatus.Queued
                     || candidate.Status == CampaignGenerationStatus.Running
-                    || (candidate.Status == CampaignGenerationStatus.Completed
-                        && candidate.SourceFingerprint == fingerprint)))
+                    || (candidate.SourceFingerprint == fingerprint
+                        && (testCaseKey != null || candidate.Status == CampaignGenerationStatus.Completed))))
             .OrderByDescending(candidate => candidate.CreatedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
         if (existing is not null)
         {
             await transaction.CommitAsync(cancellationToken);
+            if (testCaseKey is not null && existing.SourceFingerprint != fingerprint) return null;
             return ToResult(existing);
         }
 
@@ -538,3 +558,4 @@ public sealed class CampaignGenerationService(
         };
     }
 }
+

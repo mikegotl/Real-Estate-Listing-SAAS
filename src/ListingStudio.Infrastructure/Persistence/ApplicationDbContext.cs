@@ -55,6 +55,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<CampaignGenerationJob> CampaignGenerationJobs => Set<CampaignGenerationJob>();
 
+    public DbSet<TikTokTestSuite> TikTokTestSuites => Set<TikTokTestSuite>();
+
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
 
     public DbSet<CampaignStillPost> CampaignStillPosts => Set<CampaignStillPost>();
@@ -64,6 +66,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<CampaignVideoChatMessage> CampaignVideoChatMessages => Set<CampaignVideoChatMessage>();
 
     public DbSet<CampaignVideoRevision> CampaignVideoRevisions => Set<CampaignVideoRevision>();
+
+    public DbSet<CampaignVideoReview> CampaignVideoReviews => Set<CampaignVideoReview>();
 
     public DbSet<AgentPortrait> AgentPortraits => Set<AgentPortrait>();
 
@@ -119,6 +123,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     private void RejectAuditMutation()
     {
+        if (ChangeTracker.Entries<CampaignVideoReview>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Campaign video review decisions are append-only.");
+        }
+
         if (ChangeTracker.Entries<PlatformAdminAuditEvent>()
             .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
@@ -132,3 +142,4 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         }
     }
 }
+

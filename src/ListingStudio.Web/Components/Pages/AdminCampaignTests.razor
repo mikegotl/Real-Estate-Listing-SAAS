@@ -1,0 +1,428 @@
+@page "/admin/campaign-tests"
+@attribute [Authorize(Policy = PlatformAdministration.Policy)]
+@attribute [StreamRendering]
+@rendermode InteractiveServer
+@inherits OwningComponentBase<ICampaignReviewService>
+@using Microsoft.Extensions.DependencyInjection
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<AdminCampaignTests> Logger
+
+<PageTitle>TikTok campaign review</PageTitle>
+<PropertyPageProviders />
+
+<section class="review-hero">
+    <div>
+        <span class="eyebrow">CAMPAIGN QUALITY</span>
+        <h1>TikTok review studio</h1>
+        <p>Watch your workspace's vertical campaigns, record approval, and work through requested changes.</p>
+    </div>
+    <div class="review-toolbar">
+        <MudButton Href="/admin" Variant="Variant.Text">Admin overview</MudButton>
+        <MudButton Href="/properties" Variant="Variant.Outlined" Color="Color.Primary">Open properties</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="LoadAsync"
+                   StartIcon="@Icons.Material.Filled.Refresh">@(busy ? "Refreshing…" : "Refresh gallery")</MudButton>
+    </div>
+</section>
+
+<div class="review-guidance">
+    <strong>Your approval belongs to one video version.</strong>
+    <span>A replacement render needs a fresh review. Requesting changes saves your feedback; use the video chat to propose and render the edit.</span>
+</div>
+
+@if (error is not null)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">@error</MudAlert>
+}
+@if (notice is not null)
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">@notice</MudAlert>
+}
+
+@if (items is null)
+{
+    @if (error is null)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" aria-label="Loading campaign gallery" />
+    }
+}
+else
+{
+    <dl class="review-summary" aria-label="Campaign review summary">
+        <div><dt>Awaiting review</dt><dd>@items.Count(item => CanReview(item) && item.Decision is null)</dd></div>
+        <div><dt>Approved</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.Approved)</dd></div>
+        <div><dt>Changes requested</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.ChangesRequested)</dd></div>
+        <div><dt>In progress</dt><dd>@items.Count(item => item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)</dd></div>
+    </dl>
+
+    <section class="review-suite" aria-labelledby="suite-heading">
+        <div class="review-section-heading">
+            <div>
+                <span class="review-kicker">BACKGROUND TEST WORKER</span>
+                <h2 id="suite-heading">Run three TikTok cases</h2>
+            </div>
+            <span>Short voiceover · Music and text · Full voiceover</span>
+        </div>
+        <p>Choose a test property. The worker generates three new vertical campaigns in sequence and keeps running when you leave this page. Starting a suite uses generation credits and campaign allowance.</p>
+        <div class="review-suite-start">
+            <div class="review-property-choice">
+                <label for="review-test-property">Test property</label>
+                <select id="review-test-property" @bind="selectedPropertyId" disabled="@busy">
+                    <option value="">Choose a property</option>
+                    @foreach (var property in propertyChoices)
+                    {
+                        <option value="@property.Id">@property.Address</option>
+                    }
+                </select>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || !Guid.TryParse(selectedPropertyId, out _))"
+                       OnClick="StartSuiteAsync" StartIcon="@Icons.Material.Filled.PlayArrow">Start three TikTok tests</MudButton>
+        </div>
+        @if (suites.Count > 0)
+        {
+            <div class="review-suite-runs">
+                @foreach (var suite in suites)
+                {
+                    <div class="review-suite-run" @key="suite.Id">
+                        <div class="review-suite-run-title">
+                            <div><strong>@suite.Address</strong><span>@suite.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</span></div>
+                            <span class="review-status">@suite.Status</span>
+                        </div>
+                        <ol class="review-case-list">
+                            @for (var caseIndex = 0; caseIndex < TestCaseNames.Length; caseIndex++)
+                            {
+                                var jobId = suite.CaseJobIds.ElementAtOrDefault(caseIndex);
+                                <li>
+                                    <span>@TestCaseNames[caseIndex]</span>
+                                    @if (jobId.HasValue)
+                                    {
+                                        <a href="@($"#campaign-{jobId.Value}")">View campaign</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="review-case-waiting">@(suite.Status == TikTokTestSuiteStatus.Cancelled ? "Not started" : "Waiting")</span>
+                                    }
+                                </li>
+                            }
+                        </ol>
+                        @if (!string.IsNullOrWhiteSpace(suite.Error))
+                        {
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@suite.Error</MudAlert>
+                        }
+                        @if (suite.Status is TikTokTestSuiteStatus.Queued or TikTokTestSuiteStatus.Running)
+                        {
+                            <MudButton Variant="Variant.Text" Color="Color.Warning" Disabled="busy" OnClick="() => CancelSuiteAsync(suite.Id)">Cancel remaining tests</MudButton>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <div class="review-section-heading">
+        <h2>Video gallery</h2>
+        <span>Latest @items.Count campaigns · your workspace only</span>
+    </div>
+
+    @if (items.Count == 0)
+    {
+        <div class="review-empty">
+            <h3>No TikTok campaigns yet</h3>
+            <p>Open a property and generate a vertical campaign. Its progress and video will appear here.</p>
+            <MudButton Href="/properties" Variant="Variant.Filled" Color="Color.Primary">Choose a property</MudButton>
+        </div>
+    }
+    else
+    {
+        <div class="review-grid">
+            @foreach (var item in items)
+            {
+                var draft = DraftFor(item.JobId, item.Version);
+                <article id="@($"campaign-{item.JobId}")" class="review-card" @key="item.JobId">
+                    <header class="review-card-heading">
+                        <div>
+                            <span class="review-kicker">TIKTOK · VERTICAL VIDEO</span>
+                            <h3>@item.Address</h3>
+                            <p>@item.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</p>
+                        </div>
+                        <span class="review-status @DecisionClass(item)">@DecisionText(item)</span>
+                    </header>
+
+                    @if (CanReview(item))
+                    {
+                        <div class="review-player">
+                            <video @key="@($"{item.JobId}-{item.Version}")" controls preload="metadata" playsinline
+                                   aria-label="@($"TikTok video for {item.Address}, version {item.Version}")">
+                                <source src="@VideoUrl(item)" type="video/mp4" />
+                                Your browser does not support MP4 playback.
+                            </video>
+                        </div>
+                        <div class="review-video-links">
+                            <span>Version @item.Version · 9:16</span>
+                            <a href="@(VideoUrl(item) + "&download=true")">Download MP4</a>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="review-pending" role="status">
+                            @if (item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
+                            {
+                                <MudProgressCircular Indeterminate="true" Size="Size.Medium" Color="Color.Primary" />
+                            }
+                            <strong>@item.CampaignStatus</strong>
+                            <span>@item.Stage</span>
+                            <p>Refresh the gallery to check progress. You can leave this page while the campaign runs.</p>
+                        </div>
+                    }
+
+                    <div class="review-card-content">
+                        <p class="review-settings">@item.Settings</p>
+                        @if (!string.IsNullOrWhiteSpace(item.Error))
+                        {
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-3">@item.Error</MudAlert>
+                        }
+                        <a class="review-property-link" href="@($"/properties/{item.PropertyId}?tab=campaign")">Open property campaign →</a>
+
+                        @if (CanReview(item))
+                        {
+                            <div class="review-decision">
+                                <h4>Review version @item.Version</h4>
+                                <p>Check the property facts, framing, captions, voice, music and closing card.</p>
+                                <MudTextField T="string" @bind-Value="draft.Feedback" Label="Review notes or requested changes"
+                                              Variant="Variant.Outlined" Lines="3" MaxLength="1000" Counter="1000"
+                                              Disabled="busy" />
+                                <div class="review-decision-actions">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="busy"
+                                               OnClick="() => DecideAsync(item, CampaignVideoReviewDecision.Approved)">
+                                        Approve version @item.Version
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Warning"
+                                               Disabled="@(busy || string.IsNullOrWhiteSpace(draft.Feedback))"
+                                               OnClick="() => DecideAsync(item, CampaignVideoReviewDecision.ChangesRequested)">
+                                        Request changes
+                                    </MudButton>
+                                </div>
+                            </div>
+                            <CampaignVideoChatPanel @key="@($"chat-{item.JobId}-{item.Version}")"
+                                                    JobId="item.JobId" Kind="CampaignOutputKind.TikTok"
+                                                    VideoName="TikTok video" VersionChanged="LoadAsync" />
+                        }
+
+                        @if (item.History.Count > 0)
+                        {
+                            <details class="review-history">
+                                <summary>Review history (@item.History.Count)</summary>
+                                <ol>
+                                    @foreach (var entry in item.History)
+                                    {
+                                        <li>
+                                            <strong>Version @entry.Version · @(entry.Decision == CampaignVideoReviewDecision.Approved ? "Approved" : "Changes requested")</strong>
+                                            <time>@entry.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
+                                            @if (!string.IsNullOrWhiteSpace(entry.Feedback))
+                                            {
+                                                <p>@entry.Feedback</p>
+                                            }
+                                        </li>
+                                    }
+                                </ol>
+                            </details>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+}
+
+@code {
+    private readonly CancellationTokenSource disposal = new();
+    private readonly Dictionary<(Guid JobId, int Version), ReviewDraft> drafts = [];
+    private static readonly string[] TestCaseNames = ["Short voiceover · 30s", "Music and text · 30s", "Full voiceover · 60s"];
+    private IReadOnlyList<CampaignReviewItem>? items;
+    private IReadOnlyList<TikTokTestPropertyChoice> propertyChoices = [];
+    private IReadOnlyList<TikTokTestSuiteResult> suites = [];
+    private string? selectedPropertyId;
+    private bool busy;
+    private string? error;
+    private string? notice;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private ITikTokTestSuiteService SuiteService => ScopedServices.GetRequiredService<ITikTokTestSuiteService>();
+
+    private async Task LoadAsync()
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        notice = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await LoadDataAsync(userId);
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "This gallery requires platform administrator access to your current workspace.";
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Loading the campaign review gallery failed");
+            error = "The gallery could not be loaded. Try refreshing in a moment.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task LoadDataAsync(string userId)
+    {
+        // Both services share this component's owning scope; keep EF operations sequential.
+        items = await Service.ListAsync(userId, disposal.Token);
+        propertyChoices = await SuiteService.PropertyChoicesAsync(userId, disposal.Token);
+        suites = await SuiteService.ListAsync(userId, disposal.Token);
+    }
+
+    private Task StartSuiteAsync() => Guid.TryParse(selectedPropertyId, out var propertyId)
+        ? MutateSuiteAsync(async userId =>
+        {
+            await SuiteService.StartAsync(userId, propertyId, disposal.Token);
+            notice = "The three-case suite is queued. You can leave this page; refresh later to review the outputs.";
+        })
+        : Task.CompletedTask;
+
+    private Task CancelSuiteAsync(Guid suiteId) => MutateSuiteAsync(async userId =>
+    {
+        await SuiteService.CancelAsync(userId, suiteId, disposal.Token);
+        notice = "Remaining tests were cancelled. Any campaign already started keeps its own progress and output.";
+    });
+
+    private async Task MutateSuiteAsync(Func<string, Task> action)
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        notice = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await action(userId);
+            await LoadDataAsync(userId);
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "This test suite is not available in your current workspace.";
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Updating a TikTok test suite failed");
+            error = "The test suite could not be updated. Refresh the gallery before trying again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DecideAsync(CampaignReviewItem item, CampaignVideoReviewDecision decision)
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        notice = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await Service.DecideAsync(userId, item.JobId, item.Version, decision, DraftFor(item.JobId, item.Version).Feedback, disposal.Token);
+            items = await Service.ListAsync(userId, disposal.Token);
+            DraftFor(item.JobId, item.Version).Feedback = null;
+            notice = decision == CampaignVideoReviewDecision.Approved
+                ? $"Version {item.Version} approved. Future renders will need a new review."
+                : $"Changes requested for version {item.Version}. Use the video chat to propose and render the update.";
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "This review is not available in your current workspace.";
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Saving a campaign review decision failed");
+            error = "Your review could not be saved. Refresh the gallery before trying again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private ReviewDraft DraftFor(Guid jobId, int version)
+    {
+        if (!drafts.TryGetValue((jobId, version), out var draft))
+        {
+            draft = new ReviewDraft();
+            drafts.Add((jobId, version), draft);
+        }
+
+        return draft;
+    }
+
+    private static bool CanReview(CampaignReviewItem item) => item.CampaignStatus == CampaignGenerationStatus.Completed
+        && item.DeliverableStatus == CampaignDeliverableStatus.Rendered;
+
+    private static string VideoUrl(CampaignReviewItem item) => $"/campaigns/{item.JobId}/deliverables/TikTok?v={item.Version}";
+
+    private static string DecisionText(CampaignReviewItem item) => item.Decision switch
+    {
+        CampaignVideoReviewDecision.Approved => $"Approved · v{item.Version}",
+        CampaignVideoReviewDecision.ChangesRequested => "Changes requested",
+        _ => CanReview(item) ? "Awaiting review" : item.CampaignStatus.ToString(),
+    };
+
+    private static string DecisionClass(CampaignReviewItem item) => item.Decision switch
+    {
+        CampaignVideoReviewDecision.Approved => "approved",
+        CampaignVideoReviewDecision.ChangesRequested => "changes",
+        _ => "pending",
+    };
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await disposal.CancelAsync();
+        disposal.Dispose();
+        await base.DisposeAsyncCore();
+    }
+
+    private sealed class ReviewDraft
+    {
+        public string? Feedback { get; set; }
+    }
+}

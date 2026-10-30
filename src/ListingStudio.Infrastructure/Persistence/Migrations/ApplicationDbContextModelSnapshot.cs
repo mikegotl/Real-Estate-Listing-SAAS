@@ -22,6 +22,46 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.TikTokTestSuite", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<Guid>("OrganizationId").HasColumnType("uuid");
+                    b.Property<Guid>("PropertyId").HasColumnType("uuid");
+                    b.Property<string>("RequestedByUserId").IsRequired().HasMaxLength(450).HasColumnType("character varying(450)");
+                    b.Property<string>("Status").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
+                    b.Property<int>("CurrentCaseIndex").HasColumnType("integer");
+                    b.Property<string>("Error").HasMaxLength(500).HasColumnType("character varying(500)");
+                    b.Property<Guid?>("ShortVoiceoverJobId").HasColumnType("uuid");
+                    b.Property<Guid?>("MusicOnlyJobId").HasColumnType("uuid");
+                    b.Property<Guid?>("FullVoiceoverJobId").HasColumnType("uuid");
+                    b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.HasKey("Id");
+                    b.HasIndex("Status", "UpdatedAtUtc");
+                    b.HasIndex("OrganizationId").IsUnique().HasFilter("\"Status\" IN ('Queued', 'Running')");
+                    b.ToTable("TikTokTestSuites", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+                    b.Property<long>("Sequence").ValueGeneratedOnAdd().HasColumnType("bigint");
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Sequence"));
+                    b.Property<Guid>("OrganizationId").HasColumnType("uuid");
+                    b.Property<Guid>("CampaignDeliverableId").HasColumnType("uuid");
+                    b.Property<int>("VideoVersion").HasColumnType("integer");
+                    b.Property<string>("Decision").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
+                    b.Property<string>("ReviewerUserId").IsRequired().HasMaxLength(450).HasColumnType("character varying(450)");
+                    b.Property<string>("Feedback").HasMaxLength(1000).HasColumnType("character varying(1000)");
+                    b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.HasKey("Id");
+                    b.HasIndex("OrganizationId", "CampaignDeliverableId", "CreatedAtUtc")
+                        .HasDatabaseName("IX_CampaignVideoReviews_Organization_Deliverable_Created");
+                    b.ToTable("CampaignVideoReviews", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Administration.AdminUserEmail", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3711,3 +3751,4 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
         }
     }
 }
+
