@@ -1037,12 +1037,16 @@
                 photoFixGate.Release();
             }
 
+            await LoadAsync();
             if (changed)
             {
-                await LoadAsync();
                 ShowMessage(
                     approve ? "AI cleanup approved and applied." : "AI cleanup discarded. The current photo was not changed.",
                     Severity.Success);
+            }
+            else
+            {
+                ShowMessage("This cleanup was already used or discarded. The Media tab now shows the latest photos.", Severity.Info);
             }
         }
         catch (InvalidOperationException exception)
@@ -1104,11 +1108,10 @@
                 photoFixGate.Release();
             }
 
-            if (reverted)
-            {
-                await ReloadAfterChangeAsync();
-                ShowMessage("The original photo is back in place.", Severity.Success);
-            }
+            await ReloadAfterChangeAsync();
+            ShowMessage(
+                reverted ? "The original photo is back in place." : "This photo is already the original. The Media tab now shows the latest photos.",
+                reverted ? Severity.Success : Severity.Info);
         }
         catch (InvalidOperationException exception)
         {

@@ -105,6 +105,7 @@ public sealed partial class PropertyPhotoFixService(
         CancellationToken cancellationToken)
     {
 
+        ForgetLoadedRows();
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
@@ -135,6 +136,7 @@ public sealed partial class PropertyPhotoFixService(
         Guid fixId,
         CancellationToken cancellationToken = default)
     {
+        ForgetLoadedRows();
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         string? superseded;
         await using (var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -186,6 +188,7 @@ public sealed partial class PropertyPhotoFixService(
         Guid fixId,
         CancellationToken cancellationToken = default)
     {
+        ForgetLoadedRows();
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         string candidatePath;
         await using (var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -217,6 +220,7 @@ public sealed partial class PropertyPhotoFixService(
         Guid mediaId,
         CancellationToken cancellationToken = default)
     {
+        ForgetLoadedRows();
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         string fixedBlobPath;
         await using (var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -332,6 +336,12 @@ public sealed partial class PropertyPhotoFixService(
             LogClipRefreshFailed(exception, propertyId);
         }
     }
+
+    // The Media tab keeps one instance of this service for as long as the page is open, while the Worker moves
+    // fixes along in the database. A fix or photo still tracked from an earlier call would hide those changes (EF
+    // returns the tracked copy, not the row), so a cleanup that became ready later looked unreviewable and Use or
+    // Discard did nothing until the page was reloaded. Every change starts from the rows as they are now.
+    private void ForgetLoadedRows() => dbContext.ChangeTracker.Clear();
 
     private async Task<Guid> GetOrganizationIdAsync(string userId, CancellationToken cancellationToken)
     {
