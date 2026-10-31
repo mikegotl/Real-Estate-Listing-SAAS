@@ -13,6 +13,7 @@ using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Organizations;
 using ListingStudio.Infrastructure.Administration;
+using ListingStudio.Infrastructure.Configuration;
 using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
@@ -20,6 +21,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace ListingStudio.IntegrationTests;
@@ -144,6 +146,9 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
 
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var services = scope.ServiceProvider;
+        var dbContext = services.GetRequiredService<ApplicationDbContext>();
+        await dbContext.AdminUserEmails.ExecuteUpdateAsync(setters => setters
+            .SetProperty(item => item.SentAtUtc, fixture.Factory.TimeProvider.GetUtcNow()));
         var result = await services.GetRequiredService<IPlatformAdminTesterInvitationService>()
             .InviteAsync(admin.UserId, existing.Email);
         Assert.True(result.Succeeded);
@@ -158,10 +163,29 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
         Assert.True(await userManager.CheckPasswordAsync(user, Password));
         Assert.True(await userManager.IsInRoleAsync(user, PlatformTesters.Role));
 
-        var email = await services.GetRequiredService<ApplicationDbContext>().AdminUserEmails.AsNoTracking()
+        var email = await dbContext.AdminUserEmails.AsNoTracking()
             .SingleAsync(item => item.RecipientUserId == existing.UserId);
         Assert.False(email.BodyIsProtected);
         Assert.Contains("Use your existing password", email.Body, StringComparison.Ordinal);
+        Assert.Contains("https://creativelistingstudio.com/Account/Login", email.Body, StringComparison.Ordinal);
+
+        var sender = new RecordingEmailSender();
+        var processor = new AdminUserEmailProcessor(
+            dbContext,
+            sender,
+            fixture.Factory.TimeProvider,
+            invitationOptions: Options.Create(new TesterInvitationOptions
+            {
+                AppBaseUrl = "https://creativelistingstudio.com",
+            }));
+        Assert.Equal(AdminUserEmailSendOutcome.Sent, (await processor.ProcessNextAsync())?.Outcome);
+        var delivered = Assert.Single(sender.Sent);
+        Assert.Contains("https://creativelistingstudio.com/Account/Login", delivered.TextBody, StringComparison.Ordinal);
+        Assert.Contains("Open CreativeListingStudio.com", delivered.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "href=\"https://creativelistingstudio.com/Account/Login\"",
+            delivered.HtmlBody,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -223,6 +247,7 @@ public sealed class AdminTestersAndEmailTests(PostgreSqlWebApplicationFixture fi
         Assert.Equal(customer.Email, welcome.RecipientEmail);
         Assert.Equal(admin.UserId, welcome.SentByUserId);
         Assert.Null(welcome.SentAtUtc);
+        Assert.Contains("https://creativelistingstudio.com/Account/Login", welcome.Body, StringComparison.Ordinal);
     }
 
     [Fact]

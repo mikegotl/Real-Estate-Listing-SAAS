@@ -30,6 +30,8 @@ public static class PlatformTesters
 
         You've been added to the Creative Listing Studio Testers group, so you can use Creative Listing Studio for free while you help us test it. You get every feature, including the AI drone fly-in and the AI agent presenter, and up to 10 new property campaigns each month. Campaigns you create don't need a plan and don't count toward your workspace's allowance.
 
+        Open Creative Listing Studio: https://creativelistingstudio.com/Account/Login
+
         Sign in as usual to get started. Reply to this email with anything that feels off or could be better.
 
         Thanks for helping,
