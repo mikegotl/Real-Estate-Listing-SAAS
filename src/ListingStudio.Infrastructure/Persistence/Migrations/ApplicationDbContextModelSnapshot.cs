@@ -34,6 +34,7 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("ShortVoiceoverJobId").HasColumnType("uuid");
                     b.Property<Guid?>("MusicOnlyJobId").HasColumnType("uuid");
                     b.Property<Guid?>("FullVoiceoverJobId").HasColumnType("uuid");
+                    b.Property<DateTimeOffset?>("ArchivedAtUtc").HasColumnType("timestamp with time zone");
                     b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
                     b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
                     b.HasKey("Id");

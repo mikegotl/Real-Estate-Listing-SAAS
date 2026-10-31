@@ -18,6 +18,7 @@ public sealed class TikTokTestSuite
     public Guid? MusicOnlyJobId { get; private set; }
     public Guid? FullVoiceoverJobId { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
+    public DateTimeOffset? ArchivedAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
     public static TikTokTestSuite Create(Guid organizationId, Guid propertyId, string userId, DateTimeOffset now)
@@ -55,6 +56,14 @@ public sealed class TikTokTestSuite
             throw new InvalidOperationException("A running campaign is required.");
         CurrentCaseIndex++;
         Status = CurrentCaseIndex == 3 ? TikTokTestSuiteStatus.Completed : TikTokTestSuiteStatus.Queued;
+        UpdatedAtUtc = now;
+    }
+
+    public void SetArchived(bool archived, DateTimeOffset now)
+    {
+        if (archived && (Status is TikTokTestSuiteStatus.Queued or TikTokTestSuiteStatus.Running))
+            throw new InvalidOperationException("Cancel this active session before archiving it.");
+        ArchivedAtUtc = archived ? ArchivedAtUtc ?? now : null;
         UpdatedAtUtc = now;
     }
 

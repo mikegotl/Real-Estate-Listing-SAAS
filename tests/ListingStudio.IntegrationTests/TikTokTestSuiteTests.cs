@@ -178,6 +178,81 @@ public sealed partial class CampaignGenerationTests
         Assert.All(stopped.CaseJobIds, id => Assert.Null(id));
     }
 
+    [Fact]
+    public async Task SessionArchiveIsPersistentReversibleAndScopedAndActiveSessionsMustBeCancelled()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("archive-session-owner");
+        var outsider = await CreateOwnerAndPropertyAsync("archive-session-outsider");
+        await GrantReviewAdminAsync(owner.UserId);
+        await GrantReviewAdminAsync(outsider.UserId);
+        Guid sessionId;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<ITikTokTestSuiteService>();
+            sessionId = (await service.StartAsync(owner.UserId, owner.PropertyId)).Id;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.SetArchivedAsync(owner.UserId, sessionId, true));
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => service.SetArchivedAsync(outsider.UserId, sessionId, true));
+            await service.CancelAsync(owner.UserId, sessionId);
+            await service.SetArchivedAsync(owner.UserId, sessionId, true);
+        }
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<ITikTokTestSuiteService>();
+            var archived = Assert.Single(await service.ListAsync(owner.UserId));
+            Assert.NotNull(archived.ArchivedAtUtc);
+            Assert.Equal(TikTokTestSuiteStatus.Cancelled, archived.Status);
+            Assert.Empty(await service.ListAsync(outsider.UserId));
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => scope.ServiceProvider.GetRequiredService<ICampaignReviewService>()
+                .ListSessionAsync(outsider.UserId, sessionId));
+            await service.SetArchivedAsync(owner.UserId, sessionId, false);
+        }
+        await using var read = fixture.Factory.Services.CreateAsyncScope();
+        var restored = Assert.Single(await read.ServiceProvider.GetRequiredService<ITikTokTestSuiteService>().ListAsync(owner.UserId));
+        Assert.Null(restored.ArchivedAtUtc);
+        Assert.Equal(sessionId, restored.Id);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellingASessionCancelsItsCampaignAndDoesNotEnqueueMoreCases(bool running)
+    {
+        var owner = await CreateOwnerAndPropertyAsync("cancel-whole-session");
+        await GrantReviewAdminAsync(owner.UserId);
+        await UploadAsync(owner);
+        await using var factory = fixture.CreateFactory(_ => { });
+        Guid sessionId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+            sessionId = (await scope.ServiceProvider.GetRequiredService<ITikTokTestSuiteService>().StartAsync(owner.UserId, owner.PropertyId)).Id;
+        await TickTikTokSuiteAsync(factory);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            if (running)
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var activeJob = await db.CampaignGenerationJobs.SingleAsync(j => j.OrganizationId == owner.OrganizationId);
+                activeJob.BeginStage(factory.TimeProvider.GetUtcNow(), TimeSpan.FromMinutes(5));
+                await db.SaveChangesAsync();
+            }
+            await scope.ServiceProvider.GetRequiredService<ITikTokTestSuiteService>().CancelAsync(owner.UserId, sessionId);
+        }
+        await TickTikTokSuiteAsync(factory);
+        await using var read = factory.Services.CreateAsyncScope();
+        var service = read.ServiceProvider.GetRequiredService<ITikTokTestSuiteService>();
+        var cancelled = Assert.Single(await service.ListAsync(owner.UserId));
+        Assert.Equal(TikTokTestSuiteStatus.Cancelled, cancelled.Status);
+        Assert.NotNull(cancelled.CaseJobIds[0]);
+        Assert.Null(cancelled.CaseJobIds[1]);
+        var job = await read.ServiceProvider.GetRequiredService<ICampaignGenerationService>()
+            .GetAsync(owner.UserId, cancelled.CaseJobIds[0]!.Value);
+        Assert.NotNull(job);
+        Assert.True(job.CancellationRequested);
+        Assert.Equal(running ? CampaignGenerationStatus.Running : CampaignGenerationStatus.Cancelled, job.Status);
+        await service.SetArchivedAsync(owner.UserId, sessionId, true);
+        Assert.Equal(cancelled.CaseJobIds.ToArray(), Assert.Single(await service.ListAsync(owner.UserId)).CaseJobIds.ToArray());
+        Assert.Single(await read.ServiceProvider.GetRequiredService<ICampaignReviewService>().ListSessionAsync(owner.UserId, sessionId));
+    }
+
     private async Task TickTikTokSuiteAsync(ListingStudioWebApplicationFactory? factory = null)
     {
         await using var scope = (factory ?? fixture.Factory).Services.CreateAsyncScope();

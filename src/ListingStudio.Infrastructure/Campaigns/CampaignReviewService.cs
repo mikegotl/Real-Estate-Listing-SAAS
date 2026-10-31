@@ -15,12 +15,31 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         string userId, CancellationToken cancellationToken = default)
     {
         var organizationId = await AuthorizeAsync(userId, cancellationToken);
+        return await ListCoreAsync(organizationId, null, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<CampaignReviewItem>> ListSessionAsync(
+        string userId, Guid suiteId, CancellationToken cancellationToken = default)
+    {
+        var organizationId = await AuthorizeAsync(userId, cancellationToken);
+        var suite = await dbContext.TikTokTestSuites.AsNoTracking()
+            .SingleOrDefaultAsync(s => s.Id == suiteId && s.OrganizationId == organizationId, cancellationToken)
+            ?? throw new KeyNotFoundException("This test session is unavailable in your workspace.");
+        Guid[] jobIds = new Guid?[] { suite.ShortVoiceoverJobId, suite.MusicOnlyJobId, suite.FullVoiceoverJobId }
+            .Where(id => id.HasValue).Select(id => id!.Value).ToArray();
+        return await ListCoreAsync(organizationId, jobIds, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<CampaignReviewItem>> ListCoreAsync(
+        Guid organizationId, Guid[]? sessionJobIds, CancellationToken cancellationToken)
+    {
         // RequestedOutputs is stored through a string converter; SQL bitwise operators cannot inspect it.
         // Stream only this workspace's ordered jobs and stop after 100 matching vertical campaigns.
         var jobs = new List<CampaignGenerationJob>();
-        await foreach (var job in dbContext.CampaignGenerationJobs.AsNoTracking().Include(job => job.Property)
-            .Where(job => job.OrganizationId == organizationId)
-            .OrderByDescending(job => job.CreatedAtUtc).ThenByDescending(job => job.Id)
+        var query = dbContext.CampaignGenerationJobs.AsNoTracking().Include(job => job.Property)
+            .Where(job => job.OrganizationId == organizationId);
+        if (sessionJobIds is not null) query = query.Where(job => sessionJobIds.Contains(job.Id));
+        await foreach (var job in query.OrderByDescending(job => job.CreatedAtUtc).ThenByDescending(job => job.Id)
             .AsAsyncEnumerable().WithCancellation(cancellationToken))
         {
             if (!job.RequestedOutputs.HasFlag(CampaignOutputSelection.TikTok))

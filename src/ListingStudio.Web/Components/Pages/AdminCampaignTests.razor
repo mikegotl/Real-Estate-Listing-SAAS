@@ -50,12 +50,13 @@
 }
 else
 {
-    var awaiting = items.Count(item => CanReview(item) && item.Decision is null);
+    var visibleItems = SessionGroups().SelectMany(group => group.Items).ToArray();
+    var awaiting = visibleItems.Count(item => CanReview(item) && item.Decision is null);
     <dl class="workspace-metrics" aria-label="Campaign review summary">
         <div class="@(awaiting > 0 ? "attention" : null)"><dt>Awaiting review</dt><dd>@awaiting</dd></div>
-        <div><dt>Approved</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.Approved)</dd></div>
+        <div><dt>Approved</dt><dd>@visibleItems.Count(item => item.Decision == CampaignVideoReviewDecision.Approved)</dd></div>
         <div><dt>Changes requested</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.ChangesRequested)</dd></div>
-        <div><dt>In progress</dt><dd>@items.Count(item => item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)</dd></div>
+        <div><dt>In progress</dt><dd>@visibleItems.Count(item => item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)</dd></div>
     </dl>
 
     <section class="review-suite" aria-labelledby="suite-heading">
@@ -78,55 +79,14 @@ else
             <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || !Guid.TryParse(selectedPropertyId, out _))"
                        OnClick="StartSuiteAsync" StartIcon="@Icons.Material.Filled.PlayArrow">Start three TikTok tests</MudButton>
         </div>
-        @if (suites.Count > 0)
-        {
-            <div class="review-suite-runs">
-                @foreach (var suite in suites)
-                {
-                    <div class="review-suite-run" @key="suite.Id">
-                        <div class="review-suite-run-title">
-                            <div><strong>@suite.Address</strong><span>Started @suite.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</span></div>
-                            <span class="review-status @SuiteClass(suite.Status)">@suite.Status</span>
-                        </div>
-                        <ol class="review-case-list">
-                            @for (var caseIndex = 0; caseIndex < TestCaseNames.Length; caseIndex++)
-                            {
-                                var jobId = suite.CaseJobIds.ElementAtOrDefault(caseIndex);
-                                <li class="@(jobId.HasValue ? "started" : null)">
-                                    <span class="review-case-number" aria-hidden="true">@(caseIndex + 1)</span>
-                                    <strong><span class="visually-hidden">Case @(caseIndex + 1): </span>@TestCaseNames[caseIndex]</strong>
-                                    @if (jobId.HasValue)
-                                    {
-                                        <a href="@($"/admin/campaign-tests#campaign-{jobId.Value}")">View video</a>
-                                    }
-                                    else
-                                    {
-                                        <span class="review-case-waiting">@(suite.Status == TikTokTestSuiteStatus.Cancelled ? "Not started" : "Waiting")</span>
-                                    }
-                                </li>
-                            }
-                        </ol>
-                        @if (!string.IsNullOrWhiteSpace(suite.Error))
-                        {
-                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">@suite.Error</MudAlert>
-                        }
-                        @if (suite.Status is TikTokTestSuiteStatus.Queued or TikTokTestSuiteStatus.Running)
-                        {
-                            <MudButton Variant="Variant.Text" Color="Color.Warning" Size="Size.Small" Disabled="busy"
-                                       StartIcon="@Icons.Material.Filled.StopCircle" OnClick="() => CancelSuiteAsync(suite.Id)">Cancel remaining tests</MudButton>
-                        }
-                    </div>
-                }
-            </div>
-        }
     </section>
 
     <div class="section-row review-gallery-heading">
         <MudText Typo="Typo.h5" HtmlTag="h2">Video gallery</MudText>
-        <span>Latest @items.Count campaigns · your workspace only</span>
+        <span>@visibleItems.Length loaded campaigns · newest sessions first · your workspace only</span>
     </div>
 
-    @if (items.Count == 0)
+    @if (items.Count == 0 && suites.Count == 0)
     {
         <div class="review-empty">
             <MudIcon Icon="@Icons.Material.Filled.VideoLibrary" Size="Size.Large" aria-hidden="true" />
@@ -137,8 +97,81 @@ else
     }
     else
     {
-        <div class="review-grid">
-            @foreach (var item in items)
+        <label class="review-archive-filter">
+            <input type="checkbox" @bind="showArchived" />
+            Show archived sessions (@suites.Count(s => s.ArchivedAtUtc is not null))
+        </label>
+        @foreach (var group in SessionGroups())
+        {
+            var expanded = !collapsedSessions.Contains(group.Id);
+            <section class="review-session" @key="group.Id" aria-label="@group.Title">
+                <header class="review-session-header">
+                    <button type="button" class="review-session-toggle" aria-expanded="@(expanded ? "true" : "false")"
+                            aria-controls="@($"session-body-{group.Id}")" @onclick="() => ToggleSession(group.Id)">
+                        <span class="review-session-chevron" aria-hidden="true">@(expanded ? "▾" : "▸")</span>
+                        <span>
+                            <strong>@group.Title</strong>
+                            @if (group.Suite is { } details)
+                            {
+                                <span class="review-session-meta">@details.Address</span>
+                            }
+                            <span class="review-session-meta">@group.Items.Count video campaigns · @(expanded ? "Collapse" : "Expand")</span>
+                        </span>
+                    </button>
+                    @if (group.Suite is { } session)
+                    {
+                        <span class="review-status @SuiteClass(session.Status)">@session.Status</span>
+                        @if (session.ArchivedAtUtc is not null)
+                        {
+                            <span class="review-status">Archived</span>
+                        }
+                        <div class="review-session-actions">
+                            <MudButton Size="Size.Small" Color="Color.Warning" Disabled="@(busy || !IsActive(session))"
+                                       OnClick="() => CancelSuiteAsync(session.Id)">Cancel session</MudButton>
+                            <MudButton Size="Size.Small" Disabled="@(busy || IsActive(session))"
+                                       OnClick="() => ArchiveSuiteAsync(session.Id, session.ArchivedAtUtc is null)">
+                                @(session.ArchivedAtUtc is null ? "Archive session" : "Restore session")
+                            </MudButton>
+                        </div>
+                    }
+                </header>
+                @if (expanded)
+                {
+                    <div class="review-session-body" id="@($"session-body-{group.Id}")">
+                        @if (group.Suite is { } sessionInfo)
+                        {
+                            @if (IsActive(sessionInfo))
+                            {
+                                <p class="review-session-help">Cancel stops remaining cases and requests cancellation of the active campaign. Cancel before archiving.</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(sessionInfo.Error))
+                            {
+                                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">@sessionInfo.Error</MudAlert>
+                            }
+                            <ol class="review-case-list">
+                                @for (var index = 0; index < TestCaseNames.Length; index++)
+                                {
+                                    var jobId = sessionInfo.CaseJobIds.ElementAtOrDefault(index);
+                                    <li>
+                                        <strong>Case @(index + 1): @TestCaseNames[index]</strong>
+                                        @if (jobId.HasValue && group.Items.Any(i => i.JobId == jobId))
+                                        {
+                                            <a href="@($"/admin/campaign-tests#campaign-{jobId.Value}")">View campaign</a>
+                                        }
+                                        else if (jobId.HasValue)
+                                        {
+                                            <a href="@($"/properties/{sessionInfo.PropertyId}?tab=campaign")">Open older campaign</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="review-case-waiting">@(IsActive(sessionInfo) ? "Waiting" : "Not started")</span>
+                                        }
+                                    </li>
+                                }
+                            </ol>
+                        }
+                        <div class="review-grid">
+            @foreach (var item in group.Items)
             {
                 var draft = DraftFor(item.JobId, item.Version);
                 <article id="@($"campaign-{item.JobId}")" class="review-card" @key="item.JobId">
@@ -248,6 +281,11 @@ else
                 </article>
             }
         </div>
+                    </div>
+                }
+            </section>
+        }
+
     }
 }
 
@@ -259,6 +297,9 @@ else
     private IReadOnlyList<TikTokTestPropertyChoice> propertyChoices = [];
     private IReadOnlyList<TikTokTestSuiteResult> suites = [];
     private string? selectedPropertyId;
+    private bool showArchived;
+    private readonly HashSet<Guid> collapsedSessions = [];
+    private readonly HashSet<Guid> knownSessions = [];
     private bool busy;
     private string? error;
     private string? notice;
@@ -306,6 +347,19 @@ else
         items = await Service.ListAsync(userId, disposal.Token);
         propertyChoices = await SuiteService.PropertyChoicesAsync(userId, disposal.Token);
         suites = await SuiteService.ListAsync(userId, disposal.Token);
+        var latest = suites.Where(s => s.ArchivedAtUtc is null).OrderByDescending(s => s.CreatedAtUtc).ThenByDescending(s => s.Id).FirstOrDefault()?.Id;
+        foreach (var suite in suites)
+        {
+            if (knownSessions.Add(suite.Id) && (suite.Id != latest || suite.ArchivedAtUtc is not null))
+                collapsedSessions.Add(suite.Id);
+        }
+        if (knownSessions.Add(Guid.Empty)) collapsedSessions.Add(Guid.Empty);
+        foreach (var suite in suites.Where(s => !collapsedSessions.Contains(s.Id) && (showArchived || s.ArchivedAtUtc is null)))
+        {
+            var sessionItems = await Service.ListSessionAsync(userId, suite.Id, disposal.Token);
+            items = (items ?? []).Where(item => !sessionItems.Any(video => video.JobId == item.JobId))
+                .Concat(sessionItems).OrderByDescending(item => item.CreatedAtUtc).ToArray();
+        }
     }
 
     private Task StartSuiteAsync() => Guid.TryParse(selectedPropertyId, out var propertyId)
@@ -319,7 +373,13 @@ else
     private Task CancelSuiteAsync(Guid suiteId) => MutateSuiteAsync(async userId =>
     {
         await SuiteService.CancelAsync(userId, suiteId, disposal.Token);
-        notice = "Remaining tests were cancelled. Any campaign already started keeps its own progress and output.";
+        notice = "Session cancelled. The active campaign was asked to stop; completed videos are kept.";
+    });
+
+    private Task ArchiveSuiteAsync(Guid suiteId, bool archived) => MutateSuiteAsync(async userId =>
+    {
+        await SuiteService.SetArchivedAsync(userId, suiteId, archived, disposal.Token);
+        notice = archived ? "Session archived. Use Show archived sessions to restore it." : "Session restored.";
     });
 
     private async Task MutateSuiteAsync(Func<string, Task> action)
@@ -374,7 +434,7 @@ else
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
             await Service.DecideAsync(userId, item.JobId, item.Version, decision, DraftFor(item.JobId, item.Version).Feedback, disposal.Token);
-            items = await Service.ListAsync(userId, disposal.Token);
+            await LoadDataAsync(userId);
             DraftFor(item.JobId, item.Version).Feedback = null;
             notice = decision == CampaignVideoReviewDecision.Approved
                 ? $"Version {item.Version} approved. Future renders will need a new review."
@@ -412,6 +472,59 @@ else
 
         return draft;
     }
+
+    private async Task ToggleSession(Guid id)
+    {
+        if (busy) return;
+        if (!collapsedSessions.Contains(id))
+        {
+            collapsedSessions.Add(id);
+            return;
+        }
+        if (id == Guid.Empty)
+        {
+            collapsedSessions.Remove(id);
+            return;
+        }
+        busy = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var sessionItems = await Service.ListSessionAsync(userId, id, disposal.Token);
+            items = (items ?? []).Where(item => !sessionItems.Any(video => video.JobId == item.JobId))
+                .Concat(sessionItems).OrderByDescending(item => item.CreatedAtUtc).ToArray();
+            collapsedSessions.Remove(id);
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Loading a test session failed");
+            error = "The session videos could not be loaded. Refresh and try again.";
+        }
+        finally { busy = false; }
+    }
+
+    private static bool IsActive(TikTokTestSuiteResult suite) =>
+        suite.Status is TikTokTestSuiteStatus.Queued or TikTokTestSuiteStatus.Running;
+
+    private IEnumerable<SessionGroup> SessionGroups()
+    {
+        var assigned = suites.SelectMany(s => s.CaseJobIds).Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
+        var byId = (items ?? []).ToDictionary(i => i.JobId);
+        foreach (var suite in suites.OrderByDescending(s => s.CreatedAtUtc).ThenByDescending(s => s.Id))
+        {
+            if (!showArchived && suite.ArchivedAtUtc is not null) continue;
+            var videos = suite.CaseJobIds.Where(id => id.HasValue && byId.ContainsKey(id.Value))
+                .Select(id => byId[id!.Value]).ToArray();
+            yield return new SessionGroup(suite.Id, $"Test session · {suite.CreatedAtUtc.ToLocalTime():MMM d, yyyy · h:mm tt}", suite, videos);
+        }
+        var other = (items ?? []).Where(i => !assigned.Contains(i.JobId)).ToArray();
+        if (other.Length > 0)
+            yield return new SessionGroup(Guid.Empty, "Other campaigns · outside test sessions", null, other);
+    }
+
+    private sealed record SessionGroup(Guid Id, string Title, TikTokTestSuiteResult? Suite, IReadOnlyList<CampaignReviewItem> Items);
 
     private string CaseTitle(Guid jobId)
     {

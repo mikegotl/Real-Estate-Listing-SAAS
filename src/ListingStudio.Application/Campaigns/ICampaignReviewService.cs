@@ -5,6 +5,7 @@ namespace ListingStudio.Application.Campaigns;
 public interface ICampaignReviewService
 {
     Task<IReadOnlyList<CampaignReviewItem>> ListAsync(string userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CampaignReviewItem>> ListSessionAsync(string userId, Guid suiteId, CancellationToken cancellationToken = default);
     Task DecideAsync(string userId, Guid jobId, int expectedVersion, CampaignVideoReviewDecision decision,
         string? feedback, CancellationToken cancellationToken = default);
 }
