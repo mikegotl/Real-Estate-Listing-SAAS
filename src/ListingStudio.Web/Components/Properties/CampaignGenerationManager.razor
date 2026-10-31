@@ -265,11 +265,32 @@
                     or choose "None, I'll add a sound in TikTok or Instagram" if you'll add one there.
                 </MudAlert>
             }
+            @if (aerialIntro is { IsUsedInVideos: true })
+            {
+                <MudPaper Outlined="true" Class="pa-3 mt-3" data-testid="approved-aerial-campaign-option">
+                    <MudCheckBox T="bool"
+                                 Value="@IsCreativeElementSelected(CampaignVideoElement.WalkthroughMotion)"
+                                 ValueChanged="@(value => SetCreativeElement(CampaignVideoElement.WalkthroughMotion, value))"
+                                 Disabled="@(busy || IsReadOnly)"
+                                 Label="Start campaign videos with this approved AI drone flyover"
+                                 Color="Color.Primary" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                        Opening sequence: approved flyover → Exterior front and front door → entryway walk-through clip,
+                        when that finished transition is available → the remaining Tour Map. This also turns on uploaded
+                        walkthrough video and finished AI walk-through clips; leave it unchecked for photos only.
+                    </MudText>
+                </MudPaper>
+            }
             <MudExpansionPanels Elevation="0" Outlined="true" Class="mt-3">
                 <MudExpansionPanel Text="Advanced: on-screen elements and captions">
             <MudGrid Spacing="2">
                 @foreach (var option in CreativeElementOptions)
                 {
+                    if (option.Element == CampaignVideoElement.WalkthroughMotion && aerialIntro is { IsUsedInVideos: true })
+                    {
+                        continue;
+                    }
+
                     var lockedByPlan = option.Element == CampaignVideoElement.AgentAvatar && !planIncludesPresenter;
                     <MudItem xs="12" sm="6" Class="@(lockedByPlan ? "is-plan-locked" : null)">
                         <MudCheckBox T="bool"
@@ -623,6 +644,7 @@
     private int failedAnalysisCount;
     private bool longFormAvailable;
     private AgentPortraitItem? portrait;
+    private AerialIntroItem? aerialIntro;
     private CampaignVideoElement selectedCreativeElements = CampaignCreativeOptions.SocialDefault.Elements;
     private CampaignSoundtrack selectedSoundtrack = CampaignCreativeOptions.SocialDefault.Soundtrack;
     private CampaignCaptionStyle selectedCaptionStyle = CampaignCreativeOptions.SocialDefault.CaptionStyle;
@@ -663,6 +685,7 @@
             captionStyleChosen = false;
             templateNote = null;
             job = null;
+            aerialIntro = null;
             statusLoaded = false;
             reportedStatus = null;
         }
@@ -683,6 +706,7 @@
             profileIncludesPresenter = profile.IncludeAvatarInCampaigns;
             planIncludesPresenter = (await PlanFeatureGate.GetAccessAsync(userId, pollingCancellation.Token)).IncludesPremiumAi;
             roomNarration = await LoadRoomNarrationAsync(userId, pollingCancellation.Token);
+            aerialIntro = await LoadAerialIntroAsync(userId, pollingCancellation.Token);
             longFormAvailable = roomNarration.IsInUse
                 ? roomNarration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
                 : script is { MarketingUseAccepted: true } && NarrationScriptPolicy.RequiresLongForm(script.ExtractedText);
@@ -765,6 +789,14 @@
     {
         await using var scope = ScopeFactory.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<IRoomNarrationService>()
+            .GetAsync(userId, PropertyId, cancellationToken);
+    }
+
+    // The drone intro uses its own scope so campaign polling never shares a DbContext with its status check.
+    private async Task<AerialIntroItem?> LoadAerialIntroAsync(string userId, CancellationToken cancellationToken)
+    {
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IAerialIntroService>()
             .GetAsync(userId, PropertyId, cancellationToken);
     }
 
@@ -1228,7 +1260,7 @@
         new(CampaignVideoElement.PropertyFacts, "Property facts", "Verified facts only, shown as compact feature callouts."),
         new(CampaignVideoElement.NarrationCaptions, "Narration captions", "Short, timed caption bursts designed for mobile viewing."),
         new(CampaignVideoElement.NeighborhoodHighlights, "Neighborhood highlights", "Approved neighborhood facts and licensed images."),
-        new(CampaignVideoElement.WalkthroughMotion, "Use walkthrough video and AI walk-through clips", "Play your walkthrough videos, finished AI walk-through clips and the approved AI drone intro. Turn this off for photos only."),
+        new(CampaignVideoElement.WalkthroughMotion, "Use walkthrough video and AI walk-through clips", "Play uploaded walkthrough video and finished AI transition clips in Tour Map order. Turn this off for photos only."),
         new(CampaignVideoElement.AgentPortrait, "Agent photo on closing card", "Place the uploaded agent photo beside the final call to action."),
         new(CampaignVideoElement.AgentAvatar, "AI agent presenter", "Create short lip-synced opening and closing clips from the approved profile headshot, with a static-photo fallback."),
         new(CampaignVideoElement.ClosingCallToAction, "Closing call to action", "End with the campaign's verified contact call to action."),
