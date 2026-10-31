@@ -230,8 +230,8 @@ public sealed partial class CampaignGenerationTests
             if (running)
             {
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var job = await db.CampaignGenerationJobs.SingleAsync(j => j.OrganizationId == owner.OrganizationId);
-                job.BeginStage(factory.TimeProvider.GetUtcNow(), TimeSpan.FromMinutes(5));
+                var activeJob = await db.CampaignGenerationJobs.SingleAsync(j => j.OrganizationId == owner.OrganizationId);
+                activeJob.BeginStage(factory.TimeProvider.GetUtcNow(), TimeSpan.FromMinutes(5));
                 await db.SaveChangesAsync();
             }
             await scope.ServiceProvider.GetRequiredService<ITikTokTestSuiteService>().CancelAsync(owner.UserId, sessionId);
