@@ -232,7 +232,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
         services.AddSingleton<FeatureStateCache>();
         services.AddScoped<IFeatureStateService, FeatureStateService>();
-        services.AddScoped<IVerticalFormatRecommendationService, VerticalFormatRecommendationService>();
+        services.AddScoped<VerticalFormatRecommendationService>();
+        services.AddScoped<IVerticalFormatRecommendationService>(provider => provider.GetRequiredService<VerticalFormatRecommendationService>());
+        services.AddScoped<IVerticalCreativePlanningService>(provider => provider.GetRequiredService<VerticalFormatRecommendationService>());
+        services.AddScoped<IVerticalMediaRoleService, VerticalMediaRoleService>();
+        services.AddScoped<IListingCreativeClaimService, ListingCreativeClaimService>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignTestGenerationService, CampaignGenerationService>();
         services.AddScoped<TikTokTestSuiteService>();

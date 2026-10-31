@@ -1914,6 +1914,53 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("AerialIntroClips", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Properties.ListingCreativeClaim", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConfirmedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<bool>("IsWithdrawn")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PrimaryText")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SecondaryText")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("ValidUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "Kind", "ConfirmedAtUtc");
+
+                    b.ToTable("ListingCreativeClaims", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Properties.ListingProperty", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2208,6 +2255,57 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId", "PropertyId", "SourceVideoId");
 
                     b.ToTable("PropertyMedia", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyMediaRoleAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PropertyMediaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PropertyVideoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset>("SetAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SetByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyMediaId");
+
+                    b.HasIndex("PropertyVideoId");
+
+                    b.HasIndex("PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "SetAtUtc");
+
+                    b.ToTable("PropertyMediaRoleAssignments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PropertyMediaRoleAssignments_OneTarget", "(\"PropertyMediaId\" IS NULL) <> (\"PropertyVideoId\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyNarrationScript", b =>
@@ -3683,6 +3781,16 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("Property");
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Properties.ListingCreativeClaim", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Properties.ListingProperty", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
@@ -3716,6 +3824,26 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyMediaRoleAssignment", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Properties.PropertyMedia", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyMediaId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ListingStudio.Domain.Properties.PropertyVideo", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyVideoId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ListingStudio.Domain.Properties.ListingProperty", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Properties.PropertyNarrationScript", b =>

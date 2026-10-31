@@ -109,6 +109,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<CampaignVideoVariant> CampaignVideoVariants => Set<CampaignVideoVariant>();
 
+    public DbSet<PropertyMediaRoleAssignment> PropertyMediaRoleAssignments => Set<PropertyMediaRoleAssignment>();
+
+    public DbSet<ListingCreativeClaim> ListingCreativeClaims => Set<ListingCreativeClaim>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

@@ -161,7 +161,7 @@ public sealed class VerticalFormatRecommendationTests
     {
         var result = VerticalFormatRules.Evaluate(PhotoListing() with
         {
-            Footage = [new VerticalFootageInput(Id(100), 50_000, true)],
+            Footage = [new VerticalFootageInput(Id(100), 50_000, true, IsHostFootage: true)],
             HasApprovedNarration = true,
         });
 
@@ -170,6 +170,23 @@ public sealed class VerticalFormatRecommendationTests
         Assert.Equal(75, hosted.Score);
         Assert.Equal(VerticalCampaignPurpose.LeadGeneration, hosted.Purpose);
         Assert.Equal(3, result.Recommended.Count);
+    }
+
+    [Fact]
+    public void UntaggedFootageCountsForExclusiveAccessButNotForHostedPov()
+    {
+        var result = VerticalFormatRules.Evaluate(PhotoListing() with
+        {
+            Footage = [new VerticalFootageInput(Id(100), 50_000, true)],
+            Confirmations = new VerticalAgentConfirmations(AccessOrTiming: true),
+        });
+
+        var hosted = result.For(VerticalCreativeFormat.HostedPov);
+        Assert.False(hosted.IsEligible);
+        Assert.Contains(hosted.MissingInputs, item => item.Contains("none is tagged", StringComparison.Ordinal));
+        Assert.True(result.For(VerticalCreativeFormat.ExclusiveAccess).IsEligible);
+        Assert.Equal(50, result.Inputs.ReadyFootageSeconds);
+        Assert.Equal(0, result.Inputs.HostFootageSeconds);
     }
 
     [Fact]
@@ -275,7 +292,7 @@ public sealed class VerticalFormatRecommendationTests
         var result = VerticalFormatRules.Evaluate(PhotoListing() with
         {
             Photos = PlainPhotos(),
-            Footage = [new VerticalFootageInput(Id(100), 45_000, true)],
+            Footage = [new VerticalFootageInput(Id(100), 45_000, true, IsHostFootage: true)],
             HasApprovedNarration = true,
         });
 
@@ -297,7 +314,7 @@ public sealed class VerticalFormatRecommendationTests
             Photos = [.. PlainPhotos(), Photo(30, PropertyMediaCategory.Kitchen, 70, 60),
                 Photo(31, PropertyMediaCategory.Bedroom, 40, 60, VerticalPhotoStoryRole.Before),
                 Photo(32, PropertyMediaCategory.Bedroom, 40, 60, VerticalPhotoStoryRole.After)],
-            Footage = [new VerticalFootageInput(Id(100), 60_000, true)],
+            Footage = [new VerticalFootageInput(Id(100), 60_000, true, IsHostFootage: true)],
             HasApprovedNarration = true,
             Presenter = new VerticalPresenterInput(true, true),
             Confirmations = new VerticalAgentConfirmations(true, true, true),
@@ -379,9 +396,10 @@ public sealed class VerticalFormatRecommendationTests
         };
 
         var context = VerticalRecommendationContext.From(options);
-        Assert.Equal(new VerticalRecommendationContext(portrait, true, true), context);
+        Assert.Equal(new VerticalRecommendationContext(portrait, true, 10_000), context);
+        Assert.True(context.ValuePositioningConfirmed);
         Assert.Equal(
-            new VerticalRecommendationContext(null, false, false),
+            new VerticalRecommendationContext(null, false, null),
             VerticalRecommendationContext.From(CampaignCreativeOptions.SocialDefault with
             {
                 AgentAvatarConsentConfirmed = true,

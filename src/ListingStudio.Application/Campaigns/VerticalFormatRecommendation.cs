@@ -31,9 +31,12 @@ public interface IVerticalFormatRecommendationService
 public sealed record VerticalRecommendationContext(
     Guid? AgentPortraitId = null,
     bool PresenterConsentConfirmed = false,
-    bool ValuePositioningConfirmed = false)
+    decimal? VerifiedPriceChangeAmount = null)
 {
     public static VerticalRecommendationContext None { get; } = new();
+
+    /// <summary>A verified price change is the only agent-confirmed value message today.</summary>
+    public bool ValuePositioningConfirmed => VerifiedPriceChangeAmount > 0;
 
     public static VerticalRecommendationContext From(CampaignCreativeOptions options)
     {
@@ -41,7 +44,7 @@ public sealed record VerticalRecommendationContext(
         return new VerticalRecommendationContext(
             options.AgentPortraitId,
             options.AgentPortraitId.HasValue && options.AgentAvatarConsentConfirmed,
-            options.PriceReductionVerified && options.PriceReductionAmount > 0);
+            options.PriceReductionVerified && options.PriceReductionAmount > 0 ? options.PriceReductionAmount : null);
     }
 }
 
@@ -81,8 +84,11 @@ public sealed record VerticalPhotoInput(
     int Height,
     VerticalPhotoStoryRole StoryRole = VerticalPhotoStoryRole.None);
 
-/// <summary>One uploaded property video.</summary>
-public sealed record VerticalFootageInput(Guid VideoId, int DurationMs, bool IsReady);
+/// <summary>
+/// One uploaded property video. <paramref name="IsHostFootage"/> is set when it is tagged (by the agent or a
+/// suggestion) as an agent intro, a hosted walk-through or a live replay; only such footage can carry Hosted POV.
+/// </summary>
+public sealed record VerticalFootageInput(Guid VideoId, int DurationMs, bool IsReady, bool IsHostFootage = false);
 
 /// <summary>An agent portrait on file, and whether this request confirmed consent to use it as a presenter.</summary>
 public sealed record VerticalPresenterInput(bool HasPortrait, bool ConsentConfirmed)
@@ -237,6 +243,7 @@ public sealed record VerticalRecommendationInputSummary(
     int UsablePhotos,
     int StandoutFeaturePhotos,
     int ReadyFootageSeconds,
+    int HostFootageSeconds,
     bool HasApprovedNarration,
     bool HasPresenterPortrait,
     bool PresenterConsentConfirmed,
@@ -547,16 +554,20 @@ public static class VerticalFormatRules
         var reasons = new List<string>();
         var missing = new List<string>();
         var score = 0;
-        var footageSeconds = facts.ReadyFootageSeconds;
+        var footageSeconds = facts.HostFootageSeconds;
         var hasFootage = footageSeconds >= MinimumHostedFootageSeconds;
         if (hasFootage)
         {
             score += Math.Min(footageSeconds, 45) * 35 / 45;
-            reasons.Add($"{footageSeconds} seconds of the agent's property video is ready.");
+            reasons.Add($"{footageSeconds} seconds of hosted or intro footage is ready.");
+        }
+        else if (facts.ReadyFootageSeconds >= MinimumHostedFootageSeconds)
+        {
+            missing.Add("Host footage: the property video is ready, but none is tagged as an agent intro, hosted walk-through or live replay.");
         }
         else
         {
-            missing.Add($"At least {MinimumHostedFootageSeconds} seconds of uploaded, processed property video.");
+            missing.Add($"At least {MinimumHostedFootageSeconds} seconds of processed host footage (agent intro, hosted walk-through or live replay).");
         }
 
         if (facts.Inputs.HasApprovedNarration)
@@ -757,6 +768,10 @@ public static class VerticalFormatRules
             ReadyFootageSeconds = (int)Math.Min(
                 (inputs.Footage ?? []).Where(video => video.IsReady && video.DurationMs > 0).Sum(video => (long)video.DurationMs) / 1000,
                 int.MaxValue);
+            HostFootageSeconds = (int)Math.Min(
+                (inputs.Footage ?? []).Where(video => video.IsReady && video.IsHostFootage && video.DurationMs > 0)
+                    .Sum(video => (long)video.DurationMs) / 1000,
+                int.MaxValue);
             HasBeforeAndAfter = usable.Any(photo => photo.StoryRole == VerticalPhotoStoryRole.Before)
                 && usable.Any(photo => photo.StoryRole == VerticalPhotoStoryRole.After);
             HasAfterOnly = !HasBeforeAndAfter && usable.Any(photo => photo.StoryRole == VerticalPhotoStoryRole.After);
@@ -790,6 +805,8 @@ public static class VerticalFormatRules
 
         public int ReadyFootageSeconds { get; }
 
+        public int HostFootageSeconds { get; }
+
         public bool HasBeforeAndAfter { get; }
 
         public bool HasAfterOnly { get; }
@@ -814,6 +831,7 @@ public static class VerticalFormatRules
             UsablePhotos,
             StandoutFeaturePhotos,
             ReadyFootageSeconds,
+            HostFootageSeconds,
             Inputs.HasApprovedNarration,
             Inputs.Presenter.HasPortrait,
             Inputs.Presenter.ConsentConfirmed,
