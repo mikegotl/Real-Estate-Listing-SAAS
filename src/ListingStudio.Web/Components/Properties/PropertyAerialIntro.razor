@@ -162,6 +162,9 @@
     [Parameter]
     public bool IsReadOnly { get; set; }
 
+    [Parameter]
+    public EventCallback<AerialIntroItem?> StatusChanged { get; set; }
+
     private readonly CancellationTokenSource polling = new();
     private readonly SemaphoreSlim gate = new(1, 1);
     private AsyncServiceScope? scope;
@@ -231,6 +234,8 @@
         {
             gate.Release();
         }
+
+        await StatusChanged.InvokeAsync(intro);
 
         if (intro?.IsInProgress == true && !pollingStarted)
         {
