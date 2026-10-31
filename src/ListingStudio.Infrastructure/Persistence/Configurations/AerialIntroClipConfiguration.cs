@@ -12,6 +12,7 @@ public sealed class AerialIntroClipConfiguration : IEntityTypeConfiguration<Aeri
         builder.HasKey(clip => clip.Id);
         builder.Property(clip => clip.SourceBlobPath).HasMaxLength(1_024).IsRequired();
         builder.Property(clip => clip.GenerationVersion).HasMaxLength(100).IsRequired();
+        builder.Property(clip => clip.PlaybackRate).HasPrecision(3, 2).HasDefaultValue(AerialIntroClip.BriskPlaybackRate);
         builder.Property(clip => clip.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(clip => clip.ProviderRequestId).HasMaxLength(200);
         builder.Property(clip => clip.LastError).HasMaxLength(AerialIntroClip.MaximumErrorLength);

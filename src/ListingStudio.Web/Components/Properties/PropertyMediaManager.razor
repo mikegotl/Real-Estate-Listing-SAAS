@@ -4,6 +4,7 @@
 @inject IDialogService DialogService
 @inject PhotoAssistantSelectionState PhotoAssistantState
 @inject Microsoft.Extensions.Options.IOptions<MediaAnalysisOptions> MediaAnalysisOptions
+@inject IJSRuntime JSRuntime
 
 <MudPaper Class="pa-6 mt-6 storyboard">
     <div class="storyboard-header">
@@ -138,7 +139,7 @@
             }
             @if (MapStops.Count > 0)
             {
-                <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" IsReadOnly="IsReadOnly"
+                <PropertyWalkthroughMap Stops="MapStops" Directions="directions" Transitions="transitions" AerialIntro="aerialIntro" IsReadOnly="IsReadOnly"
                                         DirectionChanged="SetStopDirectionAsync" StopMoved="MoveMapStopAsync"
                                         FixedStopCount="FixedMapStopCount" FocusStop="@mapFocusStop" FocusRequest="mapFocusRequest"
                                         Narration="roomNarration"
@@ -343,7 +344,10 @@
     private AsyncServiceScope? transitionScope;
     private IWalkthroughTransitionService? transitionService;
     private Dictionary<Guid, WalkthroughTransitionItem> transitions = [];
+    private AerialIntroItem? aerialIntro;
     private Guid? playingFromId;
+    private bool playingAerialIntro;
+    private ElementReference walkthroughVideo;
     private bool queueing;
     private bool transitionPollingStarted;
 
@@ -416,7 +420,8 @@
         {
             var front = stop.Items[0];
             <PropertyAerialIntro PropertyId="PropertyId" IsReadOnly="IsReadOnly"
-                                 FrontPhotoKey="@($"{front.Id:N}:{front.EditedAtUtc?.UtcTicks}:{front.AppliedFixes}")" />
+                                 FrontPhotoKey="@($"{front.Id:N}:{front.EditedAtUtc?.UtcTicks}:{front.AppliedFixes}")"
+                                 StatusChanged="OnAerialIntroChanged" />
         }
     };
 
@@ -428,6 +433,7 @@
         var suggestion = item.Analysis is null ? null : WalkthroughStoryboard.SuggestStop(item.Analysis.Category);
         var transition = transitions.GetValueOrDefault(item.Id);
         var shotNumber = sequence.GetValueOrDefault(item.Id) + 1;
+        var openingSequence = IsOpeningSequence(item.Id, transition);
         var photoFix = photoFixes.GetValueOrDefault(item.Id);
         <article class="storyboard-photo">
             <div class="storyboard-photo-image" style="@($"background-image: url('{PhotoUrl(item)}')")"
@@ -441,9 +447,19 @@
                 {
                     @if (playingFromId == item.Id)
                     {
-                        <video class="walkthrough-video" src="@($"/walkthrough-transitions/{transition.TransitionId}")"
-                               autoplay muted playsinline controls @onended="StopWalkthrough"
-                               aria-label="@($"Walk-through from shot {shotNumber} to shot {shotNumber + 1}")"></video>
+                        var playingUrl = playingAerialIntro
+                            ? $"/aerial-intros/{aerialIntro!.Id}"
+                            : $"/walkthrough-transitions/{transition.TransitionId}";
+                        <video @key="playingUrl" @ref="walkthroughVideo" class="walkthrough-video" src="@playingUrl"
+                               autoplay muted playsinline controls @onended="OnWalkthroughVideoEnded"
+                               @onplay="SetWalkthroughPreviewRateAsync"
+                               aria-label="@(playingAerialIntro
+                                   ? "Approved AI drone flyover, first part of the campaign opening"
+                                   : $"Walk-through from shot {shotNumber} to shot {shotNumber + 1}")"></video>
+                        @if (openingSequence)
+                        {
+                            <span class="opening-sequence-stage">@(playingAerialIntro ? "1 of 2 · Drone flyover" : "2 of 2 · Walk into the entry")</span>
+                        }
                         <button type="button" class="walkthrough-close" aria-label="Close walk-through" @onclick="StopWalkthrough">
                             <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
                         </button>
@@ -451,9 +467,11 @@
                     else
                     {
                         <button type="button" class="walkthrough-play" @onclick="@(() => PlayWalkthrough(item.Id))"
-                                aria-label="@($"Play the walk-through from shot {shotNumber} to shot {shotNumber + 1}")"
-                                title="@($"Walk into shot {shotNumber + 1}")">
-                            <MudIcon Icon="@Icons.Material.Filled.PlayArrow" />
+                                aria-label="@(openingSequence
+                                    ? "Play the approved drone flyover and walk-through into shot 2"
+                                    : $"Play the walk-through from shot {shotNumber} to shot {shotNumber + 1}")"
+                                title="@(openingSequence ? "Preview complete opening sequence" : $"Walk into shot {shotNumber + 1}")">
+                            <MudIcon Icon="@(openingSequence ? Icons.Material.Filled.FlightLand : Icons.Material.Filled.PlayArrow)" />
                         </button>
                     }
                 }
@@ -722,6 +740,8 @@
         }
 
         loadedPropertyId = PropertyId;
+        aerialIntro = null;
+        StopWalkthrough();
         pendingStops.Clear();
         await LoadAsync();
     }
@@ -841,9 +861,52 @@
         }
     }
 
-    private void PlayWalkthrough(Guid fromMediaId) => playingFromId = fromMediaId;
+    private void PlayWalkthrough(Guid fromMediaId)
+    {
+        playingFromId = fromMediaId;
+        playingAerialIntro = IsOpeningSequence(fromMediaId, transitions.GetValueOrDefault(fromMediaId));
+    }
 
-    private void StopWalkthrough() => playingFromId = null;
+    private void OnWalkthroughVideoEnded()
+    {
+        if (playingAerialIntro)
+        {
+            playingAerialIntro = false;
+            return;
+        }
+
+        StopWalkthrough();
+    }
+
+    private async Task SetWalkthroughPreviewRateAsync() => await JSRuntime.InvokeVoidAsync(
+        "listingStudioMedia.setPlaybackRate",
+        walkthroughVideo,
+        (double)(playingAerialIntro
+            ? aerialIntro?.PlaybackRate ?? AerialIntroClip.BriskPlaybackRate
+            : 1m));
+
+    private void StopWalkthrough()
+    {
+        playingFromId = null;
+        playingAerialIntro = false;
+    }
+
+    private bool IsOpeningSequence(Guid fromMediaId, WalkthroughTransitionItem? transition) =>
+        sequence.TryGetValue(fromMediaId, out var position)
+        && position == 0
+        && transition?.IsReady == true
+        && aerialIntro is { IsUsedInVideos: true };
+
+    private Task OnAerialIntroChanged(AerialIntroItem? item)
+    {
+        aerialIntro = item;
+        if (playingAerialIntro && item is not { IsUsedInVideos: true })
+        {
+            StopWalkthrough();
+        }
+
+        return Task.CompletedTask;
+    }
 
     // Photo fixes use their own scope too, so their polling never shares a DbContext with the other services.
     private async Task LoadPhotoFixesAsync(string userId)

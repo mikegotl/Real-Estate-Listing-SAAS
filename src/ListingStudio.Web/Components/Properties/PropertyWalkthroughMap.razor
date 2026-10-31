@@ -1,5 +1,6 @@
 @* The walkthrough map: the storyboard's stops drawn as connected spaces, each placed in the direction the buyer walks
    from the stop before it. Selecting a space shows its shot and the walk-through clips into and out of it. *@
+@inject IJSRuntime JSRuntime
 
 <section class="walkthrough-map" aria-labelledby="walkthrough-map-heading">
     <div class="walkthrough-map-header">
@@ -57,7 +58,9 @@
                 {
                     var target = edge.To;
                     <g class="map-edge-play" role="button" tabindex="0"
-                       aria-label="@($"Play the walk-through from {spaces[target.Index - 1].Name} into {target.Name}")"
+                       aria-label="@(IsOpeningEdge(target.Index)
+                           ? $"Play the approved drone flyover and walk-through into {target.Name}"
+                           : $"Play the walk-through from {spaces[target.Index - 1].Name} into {target.Name}")"
                        @onclick="@(() => PlayInto(target.Index))"
                        @onkeydown="@(eventArgs => OnKey(eventArgs, () => PlayInto(target.Index)))">
                         <circle cx="@Px((edge.X1 + edge.X2) / 2)" cy="@Px((edge.Y1 + edge.Y2) / 2)" r="11" />
@@ -105,9 +108,17 @@
                      role="img" aria-label="@($"First shot of {chosen.Name}")">
                     @if (playing is { } clip)
                     {
-                        <video class="walkthrough-video" src="@($"/walkthrough-transitions/{clip.TransitionId}")"
-                               autoplay muted playsinline controls @onended="StopPlaying"
-                               aria-label="@playingLabel"></video>
+                        var playingUrl = playingAerialIntro
+                            ? $"/aerial-intros/{AerialIntro!.Id}"
+                            : $"/walkthrough-transitions/{clip.TransitionId}";
+                        <video @key="playingUrl" @ref="walkthroughVideo" class="walkthrough-video" src="@playingUrl"
+                               autoplay muted playsinline controls @onended="OnPlayingEnded"
+                               @onplay="SetPreviewPlaybackRateAsync"
+                               aria-label="@(playingAerialIntro ? "Approved AI drone flyover, first part of the campaign opening" : playingLabel)"></video>
+                        @if (playingOpeningSequence)
+                        {
+                            <span class="opening-sequence-stage">@(playingAerialIntro ? "1 of 2 · Drone flyover" : "2 of 2 · Walk into the entry")</span>
+                        }
                         <button type="button" class="walkthrough-close" aria-label="Close walk-through" @onclick="StopPlaying">
                             <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
                         </button>
@@ -235,6 +246,9 @@
     public IReadOnlyDictionary<Guid, WalkthroughTransitionItem> Transitions { get; set; } = new Dictionary<Guid, WalkthroughTransitionItem>();
 
     [Parameter]
+    public AerialIntroItem? AerialIntro { get; set; }
+
+    [Parameter]
     public bool IsReadOnly { get; set; }
 
     [Parameter]
@@ -289,6 +303,9 @@
     private string? selectedStop;
     private WalkthroughTransitionItem? playing;
     private string? playingLabel;
+    private bool playingAerialIntro;
+    private bool playingOpeningSequence;
+    private ElementReference walkthroughVideo;
     private bool savingDirection;
     private int? draggedStopIndex;
 
@@ -475,13 +492,39 @@
 
         await Select(index);
         playing = clip;
-        playingLabel = $"Walk-through from {spaces[index - 1].Name} into {spaces[index].Name}";
+        playingOpeningSequence = IsOpeningEdge(index);
+        playingAerialIntro = playingOpeningSequence;
+        playingLabel = playingOpeningSequence
+            ? $"Opening sequence from the approved drone flyover into {spaces[index].Name}"
+            : $"Walk-through from {spaces[index - 1].Name} into {spaces[index].Name}";
     }
+
+    private void OnPlayingEnded()
+    {
+        if (playingAerialIntro)
+        {
+            playingAerialIntro = false;
+            return;
+        }
+
+        StopPlaying();
+    }
+
+    private async Task SetPreviewPlaybackRateAsync() => await JSRuntime.InvokeVoidAsync(
+        "listingStudioMedia.setPlaybackRate",
+        walkthroughVideo,
+        (double)(playingAerialIntro
+            ? AerialIntro?.PlaybackRate ?? AerialIntroClip.BriskPlaybackRate
+            : 1m));
+
+    private bool IsOpeningEdge(int index) => index == 1 && AerialIntro is { IsUsedInVideos: true };
 
     private void StopPlaying()
     {
         playing = null;
         playingLabel = null;
+        playingAerialIntro = false;
+        playingOpeningSequence = false;
     }
 
     private RenderFragment NarrationEditor((WalkthroughMapSpace Space, WalkthroughMapSpace? Previous) context) => __builder =>

@@ -20,6 +20,7 @@ public sealed class AerialIntroClipTests
     public void AnIntroRecordsTheAcknowledgementAndIsApprovedOnlyOnceFinished()
     {
         var clip = Create(AerialIntroClip.LowHeightFeet);
+        Assert.Equal(AerialIntroClip.BriskPlaybackRate, clip.PlaybackRate);
         Assert.Equal(Now, clip.DisclosureAcknowledgedAtUtc);
         Assert.Equal("agent-1", clip.RequestedByUserId);
         Assert.True(clip.IsInProgress);
@@ -34,6 +35,30 @@ public sealed class AerialIntroClipTests
         clip.Approve("agent-2", Now.AddMinutes(3));
         Assert.True(clip.IsApproved);
         Assert.Equal("agent-2", clip.ApprovedByUserId);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1.5)]
+    [InlineData(2)]
+    public void AnIntroAcceptsOnlyTheOfferedPlaybackRates(decimal playbackRate)
+    {
+        var clip = Create(AerialIntroClip.LowHeightFeet);
+
+        clip.SetPlaybackRate(playbackRate);
+
+        Assert.Equal(playbackRate, clip.PlaybackRate);
+    }
+
+    [Theory]
+    [InlineData(0.5)]
+    [InlineData(1.25)]
+    [InlineData(2.5)]
+    public void AnIntroRejectsAnUnsupportedPlaybackRate(decimal playbackRate)
+    {
+        var clip = Create(AerialIntroClip.LowHeightFeet);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => clip.SetPlaybackRate(playbackRate));
     }
 
     [Fact]

@@ -3,6 +3,7 @@
 @implements IAsyncDisposable
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IServiceScopeFactory ScopeFactory
+@inject IJSRuntime JSRuntime
 
 @if (loaded && (intro is not null || (service?.IsEnabled == true && !IsReadOnly)))
 {
@@ -36,8 +37,25 @@
 
         @if (intro is { IsReady: true } ready && !choosing)
         {
-            <video class="aerial-intro-video" src="@($"/aerial-intros/{ready.Id}")" controls muted playsinline preload="metadata"
+            <video @ref="aerialPreview" class="aerial-intro-video" src="@($"/aerial-intros/{ready.Id}")" controls muted playsinline preload="metadata"
+                   @onplay="SetPreviewPlaybackRateAsync"
                    aria-label="AI-generated drone intro, descending onto the Exterior front photo"></video>
+            <div class="aerial-speed-picker">
+                <span>Flyover speed</span>
+                <div class="map-direction-picker" role="radiogroup" aria-label="Flyover playback speed">
+                    @foreach (var option in PlaybackRates)
+                    {
+                        var rate = option.Rate;
+                        var active = intro.PlaybackRate == rate;
+                        <button type="button" role="radio" class="@($"map-direction {(active ? "is-active" : "")}")"
+                                aria-checked="@(active ? "true" : "false")" disabled="@(busy || IsReadOnly || !planIncludesIntro)"
+                                @onclick="@(() => SetPlaybackRateAsync(rate))">
+                            @option.Label
+                        </button>
+                    }
+                </div>
+                <small>Brisk is recommended. Changing speed reuses this clip and does not make another paid AI video.</small>
+            </div>
         }
 
         @if (intro is null || choosing)
@@ -149,6 +167,13 @@
         (AerialIntroClip.HighHeightFeet, "High aerial · approximately 100 ft"),
     ];
 
+    private static readonly (decimal Rate, string Label)[] PlaybackRates =
+    [
+        (AerialIntroClip.SmoothPlaybackRate, "Smooth · 1×"),
+        (AerialIntroClip.BriskPlaybackRate, "Brisk · 1.5×"),
+        (AerialIntroClip.FastPlaybackRate, "Fast · 2×"),
+    ];
+
     [Parameter, EditorRequired]
     public Guid PropertyId { get; set; }
 
@@ -161,6 +186,9 @@
 
     [Parameter]
     public bool IsReadOnly { get; set; }
+
+    [Parameter]
+    public EventCallback<AerialIntroItem?> StatusChanged { get; set; }
 
     private readonly CancellationTokenSource polling = new();
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -176,6 +204,7 @@
     private bool pollingStarted;
     private int heightFeet = AerialIntroClip.LowHeightFeet;
     private string? error;
+    private ElementReference aerialPreview;
 
     private string HeightHint => heightFeet == AerialIntroClip.LowHeightFeet
         ? "Recommended. Uses an 8-second climb above the roofline while limiting how much the AI must invent."
@@ -232,6 +261,8 @@
             gate.Release();
         }
 
+        await StatusChanged.InvokeAsync(intro);
+
         if (intro?.IsInProgress == true && !pollingStarted)
         {
             pollingStarted = true;
@@ -281,6 +312,20 @@
     {
         await aerial.ApproveAsync(userId, PropertyId);
     });
+
+    private async Task SetPlaybackRateAsync(decimal playbackRate)
+    {
+        await RunAsync(async (userId, aerial) =>
+        {
+            await aerial.SetPlaybackRateAsync(userId, PropertyId, playbackRate);
+        });
+        await SetPreviewPlaybackRateAsync();
+    }
+
+    private async Task SetPreviewPlaybackRateAsync() => await JSRuntime.InvokeVoidAsync(
+        "listingStudioMedia.setPlaybackRate",
+        aerialPreview,
+        (double)(intro?.PlaybackRate ?? AerialIntroClip.BriskPlaybackRate));
 
     private Task RemoveAsync() => RunAsync(async (userId, aerial) =>
     {

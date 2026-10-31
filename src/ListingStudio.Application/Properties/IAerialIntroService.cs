@@ -34,6 +34,13 @@ public interface IAerialIntroService
         Guid propertyId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Changes how quickly the approved clip plays in previews and future campaign renders.</summary>
+    Task<bool> SetPlaybackRateAsync(
+        string userId,
+        Guid propertyId,
+        decimal playbackRate,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Removes the drone intro and its clip. Returns false when the property has none.</summary>
     Task<bool> RemoveAsync(
         string userId,
@@ -58,7 +65,8 @@ public sealed record AerialIntroItem(
     string? Error,
     bool CanRetry,
     DateTimeOffset? ApprovedAtUtc,
-    bool IsCurrent)
+    bool IsCurrent,
+    decimal PlaybackRate)
 {
     public bool IsReady => Status == AerialIntroClipStatus.Completed;
 

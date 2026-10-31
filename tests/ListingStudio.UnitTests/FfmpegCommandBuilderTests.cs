@@ -1,5 +1,6 @@
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Video.Configuration;
 using ListingStudio.Video.Rendering;
@@ -676,7 +677,11 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         var intro = CreateFile("aerial-5000.mp4");
         request = request with
         {
-            AerialIntro = new VideoRenderAerialIntroAsset(request.PropertyMedia[0].PropertyMediaId, intro, 5_000),
+            AerialIntro = new VideoRenderAerialIntroAsset(
+                request.PropertyMedia[0].PropertyMediaId,
+                intro,
+                5_000,
+                AerialIntroClip.SmoothPlaybackRate),
         };
 
         var command = FfmpegCommandBuilder.Build(request);
@@ -694,13 +699,42 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
-    public void BuildPlaysOnlyTheEndOfALongDroneIntroAtUpToDoubleSpeed()
+    public void BuildUsesTheSelectedBriskDroneIntroSpeed()
+    {
+        var request = CreateRequest();
+        var intro = CreateFile("aerial-brisk.mp4");
+        request = request with
+        {
+            AerialIntro = new VideoRenderAerialIntroAsset(
+                request.PropertyMedia[0].PropertyMediaId,
+                intro,
+                5_000,
+                AerialIntroClip.BriskPlaybackRate),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var arguments = command.Arguments.ToList();
+        var input = arguments.IndexOf(intro);
+        Assert.Equal(["-ss", "0", "-t", "5", "-i"], arguments.GetRange(input - 5, 5));
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("setpts=0.6666*(PTS-STARTPTS)", graph, StringComparison.Ordinal);
+        Assert.Contains("trim=duration=3.333,setpts=PTS-STARTPTS[scene0intro]", graph, StringComparison.Ordinal);
+        Assert.Contains("[scene0still]trim=duration=4.167,setpts=PTS-STARTPTS[scene0body]", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildPlaysOnlyTheEndOfALongDroneIntroAtTheSelectedFastSpeed()
     {
         var request = CreateRequest();
         var intro = CreateFile("aerial-14000.mp4");
         request = request with
         {
-            AerialIntro = new VideoRenderAerialIntroAsset(request.PropertyMedia[0].PropertyMediaId, intro, 14_000),
+            AerialIntro = new VideoRenderAerialIntroAsset(
+                request.PropertyMedia[0].PropertyMediaId,
+                intro,
+                14_000,
+                AerialIntroClip.FastPlaybackRate),
         };
 
         var command = FfmpegCommandBuilder.Build(request);
@@ -721,7 +755,11 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
         var intro = CreateFile("aerial-with-walk.mp4");
         request = request with
         {
-            AerialIntro = new VideoRenderAerialIntroAsset(request.PropertyMedia[0].PropertyMediaId, intro, 5_000),
+            AerialIntro = new VideoRenderAerialIntroAsset(
+                request.PropertyMedia[0].PropertyMediaId,
+                intro,
+                5_000,
+                AerialIntroClip.FastPlaybackRate),
         };
 
         var command = FfmpegCommandBuilder.Build(request);

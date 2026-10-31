@@ -160,6 +160,31 @@ public sealed partial class AerialIntroService(
         return true;
     }
 
+    public async Task<bool> SetPlaybackRateAsync(
+        string userId,
+        Guid propertyId,
+        decimal playbackRate,
+        CancellationToken cancellationToken = default)
+    {
+        if (!AerialIntroClip.IsSupportedPlaybackRate(playbackRate))
+        {
+            throw new InvalidOperationException("Choose Smooth, Brisk, or Fast flyover speed.");
+        }
+
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        var clip = await dbContext.AerialIntroClips.SingleOrDefaultAsync(
+            candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId,
+            cancellationToken);
+        if (clip is null)
+        {
+            return false;
+        }
+
+        clip.SetPlaybackRate(playbackRate);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<AerialIntroContent?> OpenReadAsync(
         string userId,
         Guid clipId,
@@ -206,7 +231,8 @@ public sealed partial class AerialIntroService(
         clip.Status == AerialIntroClipStatus.Failed ? clip.LastError : null,
         clip.CanRetry,
         clip.ApprovedAtUtc,
-        isCurrent);
+        isCurrent,
+        clip.PlaybackRate);
 
     private async Task EnsureIncludedInPlanAsync(Guid organizationId, string userId, CancellationToken cancellationToken)
     {
