@@ -50,12 +50,13 @@
 }
 else
 {
-    var awaiting = items.Count(item => CanReview(item) && item.Decision is null);
+    var visibleItems = SessionGroups().SelectMany(group => group.Items).ToArray();
+    var awaiting = visibleItems.Count(item => CanReview(item) && item.Decision is null);
     <dl class="workspace-metrics" aria-label="Campaign review summary">
         <div class="@(awaiting > 0 ? "attention" : null)"><dt>Awaiting review</dt><dd>@awaiting</dd></div>
-        <div><dt>Approved</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.Approved)</dd></div>
+        <div><dt>Approved</dt><dd>@visibleItems.Count(item => item.Decision == CampaignVideoReviewDecision.Approved)</dd></div>
         <div><dt>Changes requested</dt><dd>@items.Count(item => item.Decision == CampaignVideoReviewDecision.ChangesRequested)</dd></div>
-        <div><dt>In progress</dt><dd>@items.Count(item => item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)</dd></div>
+        <div><dt>In progress</dt><dd>@visibleItems.Count(item => item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)</dd></div>
     </dl>
 
     <section class="review-suite" aria-labelledby="suite-heading">
@@ -82,7 +83,7 @@ else
 
     <div class="section-row review-gallery-heading">
         <MudText Typo="Typo.h5" HtmlTag="h2">Video gallery</MudText>
-        <span>Latest @items.Count campaigns · your workspace only</span>
+        <span>@visibleItems.Length loaded campaigns · newest sessions first · your workspace only</span>
     </div>
 
     @if (items.Count == 0 && suites.Count == 0)
@@ -112,7 +113,7 @@ else
                             <strong>@group.Title</strong>
                             @if (group.Suite is { } details)
                             {
-                                <span class="review-session-meta">@details.Address · @details.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</span>
+                                <span class="review-session-meta">@details.Address</span>
                             }
                             <span class="review-session-meta">@group.Items.Count video campaigns · @(expanded ? "Collapse" : "Expand")</span>
                         </span>
@@ -516,7 +517,7 @@ else
             if (!showArchived && suite.ArchivedAtUtc is not null) continue;
             var videos = suite.CaseJobIds.Where(id => id.HasValue && byId.ContainsKey(id.Value))
                 .Select(id => byId[id!.Value]).ToArray();
-            yield return new SessionGroup(suite.Id, $"Test session · {suite.Id.ToString("N")[..8]}", suite, videos);
+            yield return new SessionGroup(suite.Id, $"Test session · {suite.CreatedAtUtc.ToLocalTime():MMM d, yyyy · h:mm tt}", suite, videos);
         }
         var other = (items ?? []).Where(i => !assigned.Contains(i.JobId)).ToArray();
         if (other.Length > 0)
