@@ -218,13 +218,7 @@ public sealed class PlatformAdminTesterInvitationService(
         """;
 
     private string LoginUrl()
-    {
-        var configured = invitationOptions.Value.AppBaseUrl?.Trim();
-        var baseUrl = Uri.TryCreate(configured, UriKind.Absolute, out var uri)
-            ? uri.GetLeftPart(UriPartial.Authority).TrimEnd('/')
-            : "https://creativelistingstudio.com";
-        return $"{baseUrl}/Account/Login";
-    }
+        => TesterWelcomeEmailTemplate.LoginUrl(invitationOptions.Value.AppBaseUrl);
 
     private static string WorkspaceName(string email)
     {

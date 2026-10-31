@@ -2,9 +2,11 @@ using System.Data;
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Email;
 using ListingStudio.Domain.Administration;
+using ListingStudio.Infrastructure.Configuration;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
 
 namespace ListingStudio.Infrastructure.Administration;
 
@@ -167,7 +169,8 @@ public sealed class AdminUserEmailProcessor(
     ApplicationDbContext dbContext,
     IOutboundEmailSender emailSender,
     TimeProvider timeProvider,
-    IDataProtectionProvider? dataProtectionProvider = null) : IAdminUserEmailProcessor
+    IDataProtectionProvider? dataProtectionProvider = null,
+    IOptions<TesterInvitationOptions>? invitationOptions = null) : IAdminUserEmailProcessor
 {
     public async Task<AdminUserEmailRunResult?> ProcessNextAsync(CancellationToken cancellationToken = default)
     {
@@ -203,13 +206,20 @@ public sealed class AdminUserEmailProcessor(
             .SingleOrDefaultAsync(cancellationToken);
         try
         {
+            var textBody = Compose(email, dataProtectionProvider);
+            var htmlBody = string.Equals(email.Subject, PlatformTesters.WelcomeEmailSubject, StringComparison.Ordinal)
+                ? TesterWelcomeEmailTemplate.CreateHtml(
+                    textBody,
+                    TesterWelcomeEmailTemplate.LoginUrl(invitationOptions?.Value.AppBaseUrl))
+                : null;
             await emailSender.SendAsync(
                 new OutboundEmail(
                     [],
                     email.Subject,
-                    Compose(email, dataProtectionProvider),
+                    textBody,
                     replyTo,
-                    ToRecipients: [email.RecipientEmail]),
+                    ToRecipients: [email.RecipientEmail],
+                    HtmlBody: htmlBody),
                 cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)

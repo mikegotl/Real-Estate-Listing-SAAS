@@ -51,7 +51,17 @@ public sealed class SmtpOutboundEmailSender(IOptions<SmtpEmailOptions> options) 
         }
 
         message.Subject = email.Subject;
-        message.Body = new TextPart("plain") { Text = email.TextBody };
+        var plainBody = new TextPart("plain") { Text = email.TextBody };
+        if (string.IsNullOrWhiteSpace(email.HtmlBody))
+        {
+            message.Body = plainBody;
+        }
+        else
+        {
+            var alternatives = new MultipartAlternative { plainBody };
+            alternatives.Add(new TextPart("html") { Text = email.HtmlBody });
+            message.Body = alternatives;
+        }
         if (email.Priority == OutboundEmailPriority.High)
         {
             message.Importance = MessageImportance.High;
