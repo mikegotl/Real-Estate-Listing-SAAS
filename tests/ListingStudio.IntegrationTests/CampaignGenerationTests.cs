@@ -124,13 +124,65 @@ public sealed partial class CampaignGenerationTests(PostgreSqlWebApplicationFixt
         Assert.True((await profile.GetAsync(owner.UserId)).IncludeAvatarInCampaigns);
 
         var previews = scope.ServiceProvider.GetRequiredService<IAgentAvatarPreviewService>();
-        Assert.True(await previews.PrepareAsync(owner.UserId, saved.Id));
-        Assert.False(await previews.PrepareAsync(outsider.UserId, saved.Id));
+        Assert.Equal(new AgentAvatarPreviewResult(LipSynced: false), await previews.PrepareAsync(owner.UserId, saved.Id));
+        Assert.Null(await previews.PrepareAsync(outsider.UserId, saved.Id));
         var preview = await previews.OpenReadAsync(owner.UserId, saved.Id);
         Assert.NotNull(preview);
         Assert.Equal("video/mp4", preview.ContentType);
         await preview.Content.DisposeAsync();
         Assert.Null(await previews.OpenReadAsync(outsider.UserId, saved.Id));
+    }
+
+    [Fact]
+    public async Task PresenterPreviewIsLipSyncedOnceOnPremiumPlansAndFallsBackToTheLayoutPreview()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("talking-preview-owner");
+        var basic = await CreateOwnerAndPropertyAsync("talking-preview-basic");
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services, owner.UserId, SubscriptionPlan.Professional, fixture.Factory.TimeProvider.GetUtcNow());
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services, basic.UserId, SubscriptionPlan.Basic, fixture.Factory.TimeProvider.GetUtcNow());
+        await using var factory = fixture.CreateFactory(_ => { });
+        factory.AgentAvatarVideoProvider.IsEnabled = true;
+        factory.VoiceProvider.Enqueue(_ => new VoiceGenerationResult([1, 2, 3, 4], "audio/mpeg", ".mp3", 3_800, null));
+        await using var scope = factory.Services.CreateAsyncScope();
+        var portraits = scope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+        var previews = scope.ServiceProvider.GetRequiredService<IAgentAvatarPreviewService>();
+        Guid ownerPortraitId;
+        Guid basicPortraitId;
+        await using (var upload = new MemoryStream(OnePixelPng))
+        {
+            ownerPortraitId = (await portraits.UploadAsync(
+                owner.UserId,
+                new AgentPortraitUpload("agent.png", "image/png", upload.Length, upload))).Id;
+        }
+
+        await using (var upload = new MemoryStream(OnePixelPng))
+        {
+            basicPortraitId = (await portraits.UploadAsync(
+                basic.UserId,
+                new AgentPortraitUpload("agent.png", "image/png", upload.Length, upload))).Id;
+        }
+
+        Assert.Equal(new AgentAvatarPreviewResult(LipSynced: true), await previews.PrepareAsync(owner.UserId, ownerPortraitId));
+        Assert.Equal(1, factory.VoiceProvider.CallCount);
+        Assert.Equal(1, factory.AgentAvatarVideoProvider.CallCount);
+        Assert.Equal(3_800, factory.AgentAvatarVideoProvider.LastRequest!.DurationMs);
+        Assert.Equal("audio/mpeg", factory.AgentAvatarVideoProvider.LastRequest.AudioContentType);
+        Assert.Equal(0, factory.AgentAvatarPreviewRenderer.CallCount);
+
+        // The talking clip is saved, so asking again costs nothing.
+        Assert.Equal(new AgentAvatarPreviewResult(LipSynced: true), await previews.PrepareAsync(owner.UserId, ownerPortraitId));
+        Assert.Equal(1, factory.AgentAvatarVideoProvider.CallCount);
+        var talking = await previews.OpenReadAsync(owner.UserId, ownerPortraitId);
+        Assert.NotNull(talking);
+        await talking.Content.DisposeAsync();
+
+        // Plans without the presenter keep the free layout preview and never call the paid providers.
+        Assert.Equal(new AgentAvatarPreviewResult(LipSynced: false), await previews.PrepareAsync(basic.UserId, basicPortraitId));
+        Assert.Equal(1, factory.AgentAvatarVideoProvider.CallCount);
+        Assert.Equal(1, factory.VoiceProvider.CallCount);
+        Assert.Equal(1, factory.AgentAvatarPreviewRenderer.CallCount);
     }
 
     [Fact]
