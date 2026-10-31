@@ -15,7 +15,8 @@ public static class CampaignCreativeDirector
         CampaignCreativeOptions options,
         int? yearBuilt,
         IReadOnlyDictionary<string, string>? captionTextBySegmentId = null,
-        VoiceTimingMetadata? narrationTiming = null)
+        VoiceTimingMetadata? narrationTiming = null,
+        CaptionSceneGrounding? captionGrounding = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
@@ -24,7 +25,7 @@ public static class CampaignCreativeDirector
         var scenes = source.Scenes.Select(scene => ApplyScene(scene, source, options)).ToArray();
         if (options.Elements.HasFlag(CampaignVideoElement.NarrationCaptions))
         {
-            AddCaptions(source, options, scenes, captionTextBySegmentId, narrationTiming);
+            AddCaptions(source, options, scenes, captionTextBySegmentId, narrationTiming, captionGrounding);
         }
 
         var factBindings = source.FactBindings.ToList();
@@ -135,7 +136,8 @@ public static class CampaignCreativeDirector
         VideoProductionSpecification source,
         CampaignCaptionStyle style,
         IReadOnlyDictionary<string, string>? captionTextBySegmentId,
-        VoiceTimingMetadata? narrationTiming)
+        VoiceTimingMetadata? narrationTiming,
+        CaptionSceneGrounding? captionGrounding = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         var scenes = source.Scenes
@@ -149,7 +151,8 @@ public static class CampaignCreativeDirector
             CampaignCreativeOptions.SocialDefault with { CaptionStyle = style },
             scenes,
             captionTextBySegmentId,
-            narrationTiming);
+            narrationTiming,
+            captionGrounding);
         return source with { Scenes = scenes };
     }
 
@@ -293,7 +296,10 @@ public static class CampaignCreativeDirector
         VoiceSegmentTiming? audio)
     {
         if (timing is null || audio is null || timing.Characters.Count == 0
-            || !string.Equals(captionText.Trim(), spokenText.Trim(), StringComparison.Ordinal))
+            || !string.Equals(
+                CaptionSceneGrounding.CleanCaptionText(captionText),
+                CaptionSceneGrounding.CleanCaptionText(spokenText),
+                StringComparison.Ordinal))
         {
             return null;
         }
@@ -370,7 +376,8 @@ public static class CampaignCreativeDirector
         CampaignCreativeOptions options,
         VideoScene[] scenes,
         IReadOnlyDictionary<string, string>? captionTextBySegmentId,
-        VoiceTimingMetadata? narrationTiming)
+        VoiceTimingMetadata? narrationTiming,
+        CaptionSceneGrounding? captionGrounding)
     {
         var programMs = (int)source.RequestedDuration * 1_000;
         var segments = source.Audio.NarrationSegments.ToDictionary(segment => segment.Id, StringComparer.Ordinal);
@@ -384,11 +391,12 @@ public static class CampaignCreativeDirector
         foreach (var placed in NarrationPlacement.Place(source.Audio.NarrationSegments, narrationTiming, programMs))
         {
             var segment = segments[placed.SegmentId];
-            var captionText = captionTextBySegmentId is not null
+            // Blank, whitespace-only or invisible caption text never reaches FFmpeg, which rejects it.
+            var captionText = CaptionSceneGrounding.CleanCaptionText(captionTextBySegmentId is not null
                 && captionTextBySegmentId.TryGetValue(segment.Id, out var localizedCaption)
                 ? localizedCaption
-                : segment.Text;
-            if (string.IsNullOrWhiteSpace(captionText))
+                : segment.Text);
+            if (captionText.Length == 0)
             {
                 continue;
             }
@@ -411,6 +419,12 @@ public static class CampaignCreativeDirector
 
                 var sceneIndex = Array.FindLastIndex(scenes, scene => scene.StartMs <= startMs);
                 var scene = scenes[sceneIndex];
+                // A caption about one room is shown only over that room: when the edit has cut to another room by
+                // the time these words are spoken, the voice carries on without the caption.
+                if (captionGrounding is not null && !captionGrounding.Fits(segment.Id, segment.Text, captionText, scene))
+                {
+                    continue;
+                }
                 var localStart = startMs - scene.StartMs;
                 var duration = Math.Min(Math.Max(250, endMs - startMs), scene.DurationMs - localStart);
                 if (duration <= 0)

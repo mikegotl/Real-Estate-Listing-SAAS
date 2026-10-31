@@ -78,6 +78,10 @@ public static class ShortFormEditor
         }
 
         planned.Add((shots[0], Move.EndPullBack, endCardMs));
+        if (request.Copy.KeptNarration is { Count: > 0 } kept)
+        {
+            AlignShotsToNarration(planned, shots, kept, request.Master);
+        }
 
         var copy = request.Copy;
         var scenes = new List<VideoScene>(planned.Count);
@@ -181,6 +185,79 @@ public static class ShortFormEditor
             Audio = new AudioPlan(narration, music),
             Scenes = scenes,
         };
+    }
+
+    /// <summary>
+    /// With the full tour voiceover, each middle shot shows the room being described: the photo the tour plan put
+    /// that line on (a moving version of it when there is one). A line the plan spread over several photos walks
+    /// through them in order. Shots with no matching photo in the edit keep the beat-cut order.
+    /// </summary>
+    private static void AlignShotsToNarration(
+        List<(Shot Shot, Move Move, int DurationMs)> planned,
+        List<Shot> shots,
+        IReadOnlyList<NarrationSegment> narration,
+        VideoProductionSpecification master)
+    {
+        var mediaBySegment = new Dictionary<string, List<Guid>>(StringComparer.Ordinal);
+        foreach (var scene in master.Scenes.OrderBy(scene => scene.StartMs))
+        {
+            var mediaId = scene.VisualSource.PropertyMediaId ?? scene.VisualSource.FallbackPropertyMediaId;
+            if (mediaId is null)
+            {
+                continue;
+            }
+
+            foreach (var segmentId in scene.NarrationSegmentIds)
+            {
+                if (!mediaBySegment.TryGetValue(segmentId, out var list))
+                {
+                    mediaBySegment[segmentId] = list = [];
+                }
+
+                if (!list.Contains(mediaId.Value))
+                {
+                    list.Add(mediaId.Value);
+                }
+            }
+        }
+
+        var startMs = planned[0].DurationMs;
+        for (var index = 1; index < planned.Count - 1; index++)
+        {
+            var (shot, move, duration) = planned[index];
+            var middle = startMs + (duration / 2);
+            startMs += duration;
+            var segment = narration.FirstOrDefault(candidate =>
+                candidate.StartMs <= middle && middle < candidate.StartMs + candidate.DurationMs);
+            if (segment is null || !mediaBySegment.TryGetValue(segment.Id, out var media) || media.Count == 0)
+            {
+                continue;
+            }
+
+            var progress = Math.Clamp((double)(middle - segment.StartMs) / Math.Max(1, segment.DurationMs), 0, 0.999);
+            var wanted = media[(int)(progress * media.Count)];
+            if (shot.Photo?.MediaId == wanted)
+            {
+                continue;
+            }
+
+            var candidates = shots.Where(candidate => candidate.Photo?.MediaId == wanted && candidate.Walkthrough is null)
+                .ToList();
+            if (candidates.Count == 0)
+            {
+                candidates = shots.Where(candidate => candidate.Photo is not null
+                        && candidate.Walkthrough is null && media.Contains(candidate.Photo.MediaId))
+                    .ToList();
+            }
+
+            if (candidates.Count == 0
+                || (shot.Photo is not null && media.Contains(shot.Photo.MediaId)))
+            {
+                continue;
+            }
+
+            planned[index] = (candidates.FirstOrDefault(candidate => candidate.IsMoving) ?? candidates[0], move, duration);
+        }
     }
 
     /// <summary>Whole beats closest to the target length, at least one.</summary>

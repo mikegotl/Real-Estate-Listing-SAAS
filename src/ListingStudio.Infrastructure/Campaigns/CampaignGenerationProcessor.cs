@@ -32,6 +32,7 @@ public sealed partial class CampaignGenerationProcessor(
     IGeneratedVideoClipService generatedVideoClipService,
     IAgentAvatarVideoService agentAvatarVideoService,
     IVideoRenderer videoRenderer,
+    IRenderedVideoValidator renderedVideoValidator,
     ICampaignSoundtrackService campaignSoundtrackService,
     IWalkthroughVideoProvider walkthroughVideoProvider,
     IPhotoImageCodec photoImageCodec,
@@ -615,6 +616,7 @@ public sealed partial class CampaignGenerationProcessor(
                 candidate.SourceVideoId,
                 candidate.SourceVideoTimestampMs))
             .ToArrayAsync(cancellationToken);
+        var captionGrounding = CaptionSceneGrounding.From(master, await RoomsByMediaAsync(job, cancellationToken));
         IReadOnlyList<ShortFormVideoClip> videoClips = [];
         IReadOnlyList<ShortFormWalkthroughClip> walkthroughClips = [];
         if (options.Elements.HasFlag(CampaignVideoElement.WalkthroughMotion))
@@ -657,7 +659,8 @@ public sealed partial class CampaignGenerationProcessor(
             // voiceover the edit has no narration segments and the master audio is never mixed in.
             return new ShortFormDeliverable(
                 masterNarrationId,
-                CampaignCreativeDirector.Apply(edit, options, yearBuilt, masterCaptionText, masterTiming));
+                Grounded(CampaignCreativeDirector.Apply(
+                    edit, options, yearBuilt, masterCaptionText, masterTiming, captionGrounding), captionGrounding));
         }
 
         var localized = await GetOrCreateShortFormLocalizationAsync(job, edit, cancellationToken);
@@ -692,7 +695,9 @@ public sealed partial class CampaignGenerationProcessor(
             edit = Edit(ShortFormVoiceoverDetail.HighlightRich, silentOptions);
             return new ShortFormDeliverable(
                 masterNarrationId,
-                CampaignCreativeDirector.Apply(edit, silentOptions, yearBuilt, masterCaptionText, masterTiming));
+                Grounded(CampaignCreativeDirector.Apply(
+                    edit, silentOptions, yearBuilt, masterCaptionText, masterTiming, captionGrounding),
+                    captionGrounding));
         }
 
         var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
@@ -707,12 +712,47 @@ public sealed partial class CampaignGenerationProcessor(
         };
         return new ShortFormDeliverable(
             narration.Id,
-            CampaignCreativeDirector.Apply(
+            Grounded(CampaignCreativeDirector.Apply(
                 edit,
                 options,
                 yearBuilt,
                 localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text),
-                narration.Timing));
+                narration.Timing,
+                captionGrounding), captionGrounding));
+    }
+
+    /// <summary>
+    /// The room each storyboard photo shows (its storyboard stop, or the room the media analysis recognised), so a
+    /// caption about one room is never burned in over another.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string?>> RoomsByMediaAsync(
+        CampaignGenerationJob job,
+        CancellationToken cancellationToken)
+    {
+        var rooms = await dbContext.PropertyMedia.AsNoTracking()
+            .Where(candidate => candidate.PropertyId == job.PropertyId && candidate.OrganizationId == job.OrganizationId)
+            .Select(candidate => new { candidate.Id, candidate.WalkthroughStop, candidate.RoomType })
+            .ToArrayAsync(cancellationToken);
+        return rooms.ToDictionary(
+            room => room.Id,
+            room => CaptionSceneGrounding.CanonicalRoom(room.WalkthroughStop) is not null
+                ? room.WalkthroughStop
+                : room.RoomType);
+    }
+
+    /// <summary>A last check that no room caption landed over another room; placement already prevents it.</summary>
+    private static VideoProductionSpecification Grounded(
+        VideoProductionSpecification specification,
+        CaptionSceneGrounding grounding)
+    {
+        var mismatches = CaptionSceneGrounding.FindMismatches(specification, grounding);
+        if (mismatches.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"A caption would appear over the wrong room. {string.Join(" ", mismatches.Take(3))}");
+        }
+
+        return specification;
     }
 
     private static bool NarrationRunsPastVideo(InvalidDataException exception) =>
@@ -1224,21 +1264,31 @@ public sealed partial class CampaignGenerationProcessor(
                 walkthroughTransitions,
                 agentPresenter,
                 aerialIntro);
+            var expectations = Mp4Expectations.For(specification);
             try
             {
                 await videoRenderer.RenderAsync(renderRequest, cancellationToken);
+                await ValidateRenderedVideoAsync(job.Id, label, outputPath, expectations, cancellationToken);
             }
-            catch (VideoRenderException exception) when (walkthroughTransitions.Length > 0 || aerialIntro is not null)
+            catch (Exception exception) when (
+                exception is VideoRenderException or RenderedVideoValidationException
+                && (walkthroughTransitions.Length > 0 || aerialIntro is not null))
             {
                 // Provider-generated walk-throughs and the drone intro are optional polish. If FFmpeg cannot decode
-                // or compose one of those clips, preserve the approved tour-map photos and narration instead of
-                // failing the entire campaign. The retry is deterministic and never admits media outside the
-                // campaign allowlist.
+                // or compose one of those clips, or the result does not play cleanly, preserve the approved tour-map
+                // photos and narration instead of failing the entire campaign. The retry is deterministic and never
+                // admits media outside the campaign allowlist.
                 LogWalkthroughRenderFallback(
                     exception, job.Id, label, walkthroughTransitions.Length + (aerialIntro is null ? 0 : 1));
+                if (File.Exists(outputPath))
+                {
+                    File.Delete(outputPath);
+                }
+
                 await videoRenderer.RenderAsync(
                     renderRequest with { WalkthroughTransitions = [], AerialIntro = null },
                     cancellationToken);
+                await ValidateRenderedVideoAsync(job.Id, label, outputPath, expectations, cancellationToken);
             }
             var stored = false;
             try
@@ -1276,6 +1326,27 @@ public sealed partial class CampaignGenerationProcessor(
                 Directory.Delete(directory, recursive: true);
             }
         }
+    }
+
+    /// <summary>
+    /// Refuses to store a render that does not play cleanly from start to finish at the expected size, codecs and
+    /// length. The deliverable stays unrendered, so the job's normal retry renders it again.
+    /// </summary>
+    private async Task ValidateRenderedVideoAsync(
+        Guid jobId,
+        string label,
+        string outputPath,
+        Mp4Expectations expectations,
+        CancellationToken cancellationToken)
+    {
+        var validation = await renderedVideoValidator.ValidateAsync(outputPath, expectations, cancellationToken);
+        if (!validation.IsValid)
+        {
+            LogTechnicalValidationFailed(jobId, label, validation.Summary);
+            throw new RenderedVideoValidationException(validation);
+        }
+
+        LogTechnicalValidationPassed(jobId, label, validation.Summary);
     }
 
     private Task<bool> RenderLongFormAsync(Guid jobId, CancellationToken cancellationToken) =>
@@ -2112,6 +2183,7 @@ public sealed partial class CampaignGenerationProcessor(
         || exception is HttpRequestException
             or TimeoutException
             or VideoRenderException
+            or RenderedVideoValidationException
             or IOException;
 
     [LoggerMessage(
@@ -2132,6 +2204,16 @@ public sealed partial class CampaignGenerationProcessor(
         Guid jobId,
         string label,
         int transitionCount);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} deliverable {Label} failed its technical check: {Summary}")]
+    private partial void LogTechnicalValidationFailed(Guid jobId, string label, string summary);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Campaign {JobId} deliverable {Label} passed its technical check: {Summary}")]
+    private partial void LogTechnicalValidationPassed(Guid jobId, string label, string summary);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

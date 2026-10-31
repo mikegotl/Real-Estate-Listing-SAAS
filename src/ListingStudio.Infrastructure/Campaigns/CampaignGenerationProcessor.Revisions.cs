@@ -253,7 +253,8 @@ public sealed partial class CampaignGenerationProcessor
                 specification,
                 style.Value,
                 CaptionText(job, deliverable.Kind),
-                narration.Timing);
+                narration.Timing,
+                CaptionSceneGrounding.FromRooms(await RoomsByMediaAsync(job, cancellationToken)));
         }
 
         return (specification, narration.Id);

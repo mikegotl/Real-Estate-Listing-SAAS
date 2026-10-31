@@ -91,6 +91,8 @@ public sealed class ListingStudioWebApplicationFactory(
 
     public FakeVideoRenderer VideoRenderer { get; } = new();
 
+    public FakeRenderedVideoValidator RenderedVideoValidator { get; } = new();
+
     public FakeAiVideoProvider AiVideoProvider { get; } = new();
 
     public FakeWalkthroughVideoProvider WalkthroughVideoProvider { get; } = new();
@@ -159,6 +161,8 @@ public sealed class ListingStudioWebApplicationFactory(
             services.AddSingleton<IHelpChatAssistant>(HelpChatAssistant);
             services.RemoveAll<IVideoRenderer>();
             services.AddSingleton<IVideoRenderer>(VideoRenderer);
+            services.RemoveAll<IRenderedVideoValidator>();
+            services.AddSingleton<IRenderedVideoValidator>(RenderedVideoValidator);
             services.RemoveAll<IAiVideoProvider>();
             services.AddSingleton<IAiVideoProvider>(AiVideoProvider);
             services.RemoveAll<IWalkthroughVideoProvider>();
@@ -429,6 +433,39 @@ public sealed class FakeBillingProviderGateway : IBillingProviderGateway
             }),
             TimeProvider.System);
         return gateway.ParseAndVerifyWebhook(payload, signatureHeader);
+    }
+}
+
+/// <summary>Accepts the fake renderer's files unless a test queues a failed technical check.</summary>
+public sealed class FakeRenderedVideoValidator : IRenderedVideoValidator
+{
+    private readonly ConcurrentQueue<string> failures = new();
+    private int callCount;
+
+    public int CallCount => callCount;
+
+    public Mp4Expectations? LastExpectations { get; private set; }
+
+    public void EnqueueFailure(string problem) => failures.Enqueue(problem);
+
+    public Task<RenderedVideoValidation> ValidateAsync(
+        string path,
+        Mp4Expectations expectations,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref callCount);
+        LastExpectations = expectations;
+        if (!File.Exists(path) || new FileInfo(path).Length == 0)
+        {
+            return Task.FromResult(new RenderedVideoValidation(
+                false, ["The file does not exist."], null, null, null, null, null, false));
+        }
+
+        return Task.FromResult(failures.TryDequeue(out var problem)
+            ? new RenderedVideoValidation(false, [problem], expectations.Width, expectations.Height,
+                expectations.VideoCodec, expectations.AudioCodec, expectations.DurationSeconds, false)
+            : new RenderedVideoValidation(true, [], expectations.Width, expectations.Height,
+                expectations.VideoCodec, expectations.AudioCodec, expectations.DurationSeconds, true));
     }
 }
 
