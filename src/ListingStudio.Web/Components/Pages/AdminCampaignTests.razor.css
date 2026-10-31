@@ -2,6 +2,7 @@
 .review-guidance { align-items: flex-start; background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 14px; box-shadow: inset 4px 0 0 var(--ls-primary); color: var(--ls-primary); display: flex; gap: 12px; margin: 0 0 24px; padding: 14px 18px; }
 .review-guidance p { color: var(--ls-ink); display: grid; font-size: .9rem; gap: 2px; line-height: 1.5; margin: 0; }
 .review-guidance span { color: var(--ls-muted); }
+.review-auto-refresh { align-items: center; color: var(--ls-muted); display: inline-flex; font-size: .8rem; gap: 5px; }
 
 /* Test suite */
 .review-suite { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 16px; margin-bottom: 32px; padding: 24px; }

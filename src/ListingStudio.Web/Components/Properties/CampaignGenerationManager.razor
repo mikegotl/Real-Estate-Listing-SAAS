@@ -448,7 +448,16 @@
 
         @if (!string.IsNullOrWhiteSpace(job.LastError))
         {
-            <MudAlert Severity="Severity.Error" Class="mb-4">@DisplayError(job)</MudAlert>
+            <MudAlert Severity="@(job.Status == CampaignGenerationStatus.Failed ? Severity.Error : Severity.Warning)" Class="mb-4">
+                @if (job.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
+                {
+                    <span><strong>Previous attempt:</strong> @DisplayError(job) Retrying automatically.</span>
+                }
+                else
+                {
+                    @DisplayError(job)
+                }
+            </MudAlert>
         }
 
         <MudList T="CampaignStageResult" Dense="true" Class="mb-4">

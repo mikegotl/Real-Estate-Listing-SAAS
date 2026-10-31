@@ -4,7 +4,9 @@
 @rendermode InteractiveServer
 @inherits OwningComponentBase<ICampaignReviewService>
 @using Microsoft.Extensions.DependencyInjection
+@using Microsoft.JSInterop
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
 @inject ILogger<AdminCampaignTests> Logger
 
 <PageTitle>TikTok campaign review</PageTitle>
@@ -17,6 +19,13 @@
         <MudText Typo="Typo.body1">Watch your workspace's vertical campaigns, record approval, and work through requested changes.</MudText>
     </div>
     <div class="admin-heading-actions">
+        @if (HasActiveWork())
+        {
+            <span class="review-auto-refresh" role="status">
+                <MudIcon Icon="@Icons.Material.Filled.Sync" Size="Size.Small" aria-hidden="true" />
+                Updates automatically every 5 seconds
+            </span>
+        }
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="LoadAsync"
                    StartIcon="@Icons.Material.Filled.Refresh">@(busy ? "Refreshing…" : "Refresh gallery")</MudButton>
         <MudButton Href="/properties" Variant="Variant.Outlined" Color="Color.Primary">Open properties</MudButton>
@@ -215,7 +224,7 @@ else
                             <MudProgressCircular Indeterminate="true" Size="Size.Medium" Color="Color.Primary" />
                             <strong>@(item.CampaignStatus == CampaignGenerationStatus.Queued ? "Queued" : "In progress")</strong>
                             <span>@(char.ToUpperInvariant(StageText(item.Stage)[0]) + StageText(item.Stage)[1..])</span>
-                            <p>Refresh the gallery to check progress. You can leave this page while the campaign runs.</p>
+                            <p>This gallery updates automatically while the campaign runs. You can safely leave this page.</p>
                         </div>
                     }
 
@@ -228,7 +237,17 @@ else
                         </ul>
                         @if (!string.IsNullOrWhiteSpace(item.Error))
                         {
-                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true" Class="mb-3">@item.Error</MudAlert>
+                            <MudAlert Severity="@(item.CampaignStatus == CampaignGenerationStatus.Failed ? Severity.Error : Severity.Warning)"
+                                      Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                                @if (item.CampaignStatus is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
+                                {
+                                    <span><strong>Previous attempt:</strong> @item.Error Retrying automatically.</span>
+                                }
+                                else
+                                {
+                                    @item.Error
+                                }
+                            </MudAlert>
                         }
                         <a class="review-property-link" href="@($"/properties/{item.PropertyId}?tab=campaign")">Open property campaign →</a>
 
@@ -291,6 +310,7 @@ else
 
 @code {
     private readonly CancellationTokenSource disposal = new();
+    private Task? pollingTask;
     private readonly Dictionary<(Guid JobId, int Version), ReviewDraft> drafts = [];
     private static readonly string[] TestCaseNames = ["Short voiceover · 30s", "Music and text · 30s", "Full voiceover · 60s"];
     private IReadOnlyList<CampaignReviewItem>? items;
@@ -305,6 +325,16 @@ else
     private string? notice;
 
     protected override Task OnInitializedAsync() => LoadAsync();
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && RendererInfo.IsInteractive)
+        {
+            pollingTask = PollAsync();
+        }
+
+        return base.OnAfterRenderAsync(firstRender);
+    }
 
     private ITikTokTestSuiteService SuiteService => ScopedServices.GetRequiredService<ITikTokTestSuiteService>();
 
@@ -508,6 +538,45 @@ else
     private static bool IsActive(TikTokTestSuiteResult suite) =>
         suite.Status is TikTokTestSuiteStatus.Queued or TikTokTestSuiteStatus.Running;
 
+    private bool HasActiveWork() => suites.Any(IsActive)
+        || (items?.Any(item => item.CampaignStatus is CampaignGenerationStatus.Queued
+            or CampaignGenerationStatus.Running) ?? false);
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(disposal.Token))
+            {
+                if (busy || !HasActiveWork())
+                {
+                    continue;
+                }
+
+                if (!await JSRuntime.InvokeAsync<bool>(
+                        "listingStudioPage.isVisible", disposal.Token))
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    await LoadAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+            // The page or circuit closed.
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser disconnected before the component was disposed.
+        }
+    }
+
     private IEnumerable<SessionGroup> SessionGroups()
     {
         var assigned = suites.SelectMany(s => s.CaseJobIds).Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
@@ -615,6 +684,10 @@ else
     protected override async ValueTask DisposeAsyncCore()
     {
         await disposal.CancelAsync();
+        if (pollingTask is not null)
+        {
+            await pollingTask;
+        }
         disposal.Dispose();
         await base.DisposeAsyncCore();
     }

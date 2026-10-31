@@ -8,7 +8,7 @@ public sealed class FfmpegOptions
 
     public string ProbeExecutablePath { get; init; } = "ffprobe";
 
-    public int RenderTimeoutSeconds { get; init; } = 300;
+    public int RenderTimeoutSeconds { get; init; } = 600;
 
     public int EnhancementTimeoutSeconds { get; init; } = 1_800;
 }

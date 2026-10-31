@@ -28,3 +28,9 @@ window.listingStudioCampaign = {
         return true;
     }
 };
+
+window.listingStudioPage = {
+    isVisible: function () {
+        return document.visibilityState === "visible";
+    }
+};
