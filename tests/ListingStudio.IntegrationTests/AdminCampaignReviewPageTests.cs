@@ -87,5 +87,7 @@ public sealed class AdminCampaignReviewPageTests(PostgreSqlWebApplicationFixture
         await db.SaveChangesAsync();
         var restoredPage = await client.GetStringAsync("/admin/campaign-tests");
         Assert.Contains($"session-body-{older.Id}", restoredPage, StringComparison.Ordinal);
+        newest.Stop(true, "Test cleanup", now);
+        await db.SaveChangesAsync();
     }
 }

@@ -346,17 +346,17 @@ else
         items = await Service.ListAsync(userId, disposal.Token);
         propertyChoices = await SuiteService.PropertyChoicesAsync(userId, disposal.Token);
         suites = await SuiteService.ListAsync(userId, disposal.Token);
-        var latest = suites.OrderByDescending(s => s.CreatedAtUtc).ThenByDescending(s => s.Id).FirstOrDefault()?.Id;
+        var latest = suites.Where(s => s.ArchivedAtUtc is null).OrderByDescending(s => s.CreatedAtUtc).ThenByDescending(s => s.Id).FirstOrDefault()?.Id;
         foreach (var suite in suites)
         {
-            if (knownSessions.Add(suite.Id) && suite.Id != latest)
+            if (knownSessions.Add(suite.Id) && (suite.Id != latest || suite.ArchivedAtUtc is not null))
                 collapsedSessions.Add(suite.Id);
         }
         if (knownSessions.Add(Guid.Empty)) collapsedSessions.Add(Guid.Empty);
         foreach (var suite in suites.Where(s => !collapsedSessions.Contains(s.Id) && (showArchived || s.ArchivedAtUtc is null)))
         {
             var sessionItems = await Service.ListSessionAsync(userId, suite.Id, disposal.Token);
-            items = items.Where(item => !sessionItems.Any(video => video.JobId == item.JobId))
+            items = (items ?? []).Where(item => !sessionItems.Any(video => video.JobId == item.JobId))
                 .Concat(sessionItems).OrderByDescending(item => item.CreatedAtUtc).ToArray();
         }
     }
