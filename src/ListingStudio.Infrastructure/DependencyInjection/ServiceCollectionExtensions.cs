@@ -232,6 +232,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
         services.AddSingleton<FeatureStateCache>();
         services.AddScoped<IFeatureStateService, FeatureStateService>();
+        services.AddScoped<IVerticalFormatRecommendationService, VerticalFormatRecommendationService>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignTestGenerationService, CampaignGenerationService>();
         services.AddScoped<TikTokTestSuiteService>();
