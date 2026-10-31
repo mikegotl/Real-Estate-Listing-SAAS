@@ -142,22 +142,46 @@
                            Class="mt-3">
                     Preview presenter
                 </MudButton>
+                @if (preparingAvatarPreview && AgentAvatarVideoService.IsEnabled)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+                        Making your talking preview. This usually takes a minute or two.
+                    </MudText>
+                }
                 @if (avatarPreviewReady)
                 {
                     <MudPaper Outlined="true" Class="pa-3 mt-3 avatar-preview-window">
                         <MudText Typo="Typo.subtitle2">Presenter preview</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
-                            Silent six-second layout preview. A paid lip-sync preview is not generated here; enabled campaigns create only the short final presenter clips they need.
-                        </MudText>
-                        <video @key="portrait.Id"
-                               src="@AvatarPreviewUrl"
-                               controls
-                               autoplay
-                               muted
-                               loop
-                               playsinline
-                               style="width:100%;max-height:560px;border-radius:12px;background:#0d1b2a;"
-                               aria-label="Preview the agent presenter in a campaign video"></video>
+                        @if (avatarPreviewLipSynced)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                                Your presenter saying a short greeting, lip-synced from this photo. Campaign videos use the same treatment with each video's own narration.
+                            </MudText>
+                            <video @key="@($"{portrait.Id}-talking")"
+                                   src="@AvatarPreviewUrl"
+                                   controls
+                                   autoplay
+                                   playsinline
+                                   style="width:100%;max-height:560px;border-radius:12px;background:#0d1b2a;"
+                                   aria-label="Your agent presenter saying a short greeting"></video>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                                @(AgentAvatarVideoService.IsEnabled
+                                    ? "Silent layout preview of where your photo appears."
+                                    : "Silent layout preview. Lip-sync is not enabled in this environment, so campaigns use this still-photo presenter.")
+                            </MudText>
+                            <video @key="portrait.Id"
+                                   src="@AvatarPreviewUrl"
+                                   controls
+                                   autoplay
+                                   muted
+                                   loop
+                                   playsinline
+                                   style="width:100%;max-height:560px;border-radius:12px;background:#0d1b2a;"
+                                   aria-label="Preview the agent presenter in a campaign video"></video>
+                        }
                     </MudPaper>
                 }
                 </div>
@@ -193,12 +217,14 @@
     private bool includeAvatarInCampaigns;
     private bool planIncludesPresenter = true;
     private bool avatarPreviewReady;
+    private bool avatarPreviewLipSynced;
+    private bool preparingAvatarPreview;
 
     private string PortraitUrl => portrait is null ? string.Empty : $"/agent-portraits/{portrait.Id}?v={portrait.UpdatedAtUtc.ToUnixTimeMilliseconds()}";
     private string CropShapeClass => cropShape == AgentPortraitCropShape.Square ? "square" : "portrait";
     private string AvatarPreviewUrl => portrait is null
         ? string.Empty
-        : $"/agent-portraits/{portrait.Id}/avatar-preview?v={portrait.UpdatedAtUtc.ToUnixTimeMilliseconds()}";
+        : $"/agent-portraits/{portrait.Id}/avatar-preview?v={portrait.UpdatedAtUtc.ToUnixTimeMilliseconds()}{(avatarPreviewLipSynced ? "&talking=1" : string.Empty)}";
     private string PreviewStyle => FormattableString.Invariant(
         $"object-position:{focusX * 100:0}% {focusY * 100:0}%;transform:scale({cropZoom:0.00});");
 
@@ -221,6 +247,7 @@
             new AgentPortraitUpload(file.Name, file.ContentType, file.Size, stream));
         ResetCrop();
         avatarPreviewReady = false;
+        avatarPreviewLipSynced = false;
         success = "Headshot uploaded. You can now crop it, run AI Fix, or select it in a campaign.";
     });
 
@@ -238,6 +265,7 @@
             ?? throw new InvalidOperationException("The headshot is no longer available.");
         ResetCrop();
         avatarPreviewReady = false;
+        avatarPreviewLipSynced = false;
         success = "The manual crop is saved and will be used by new campaigns.";
     });
 
@@ -252,6 +280,7 @@
             ?? throw new InvalidOperationException("The headshot is no longer available.");
         ResetCrop();
         avatarPreviewReady = false;
+        avatarPreviewLipSynced = false;
         success = "AI Fix completed. Review the result before using it in a campaign.";
     });
 
@@ -266,14 +295,31 @@
 
     private async Task PrepareAvatarPreviewAsync() => await RunAsync(async userId =>
     {
-        if (portrait is null
-            || !await AgentAvatarPreviewService.PrepareAsync(userId, portrait.Id))
+        if (portrait is null)
         {
             throw new InvalidOperationException("The headshot is no longer available.");
         }
 
-        avatarPreviewReady = true;
-        success = "Presenter preview is ready.";
+        preparingAvatarPreview = true;
+        try
+        {
+            var preview = await AgentAvatarPreviewService.PrepareAsync(userId, portrait.Id)
+                ?? throw new InvalidOperationException("The headshot is no longer available.");
+            avatarPreviewReady = true;
+            avatarPreviewLipSynced = preview.LipSynced;
+            if (preview.FallbackReason is null)
+            {
+                success = "Presenter preview is ready.";
+            }
+            else
+            {
+                error = preview.FallbackReason;
+            }
+        }
+        finally
+        {
+            preparingAvatarPreview = false;
+        }
     });
 
     private async Task RunAsync(Func<string, Task> action)

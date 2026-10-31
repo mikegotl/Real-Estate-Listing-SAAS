@@ -16,7 +16,12 @@ public sealed record AgentProfilePreferences(bool IncludeAvatarInCampaigns);
 
 public interface IAgentAvatarPreviewService
 {
-    Task<bool> PrepareAsync(
+    /// <summary>
+    /// Makes the presenter preview for an owned headshot: a short lip-synced greeting when the presenter provider
+    /// is enabled and the plan includes it, otherwise the free silent layout preview. Returns null when the
+    /// headshot is not the user's.
+    /// </summary>
+    Task<AgentAvatarPreviewResult?> PrepareAsync(
         string userId,
         Guid portraitId,
         CancellationToken cancellationToken = default);
@@ -36,3 +41,7 @@ public interface IAgentAvatarPreviewRenderer
 }
 
 public sealed record AgentAvatarPreviewContent(Stream Content, string ContentType);
+
+/// <param name="LipSynced">True for a talking, lip-synced preview; false for the silent layout preview.</param>
+/// <param name="FallbackReason">Why a talking preview was wanted but could not be made, for the user.</param>
+public sealed record AgentAvatarPreviewResult(bool LipSynced, string? FallbackReason = null);
