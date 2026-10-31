@@ -29,7 +29,7 @@ public sealed class TikTokTestSuiteService(ApplicationDbContext dbContext, UserM
     {
         var org = await AuthorizeAsync(userId, cancellationToken);
         var suites = await dbContext.TikTokTestSuites.AsNoTracking().Where(s => s.OrganizationId == org)
-            .OrderByDescending(s => s.CreatedAtUtc).Take(30).ToListAsync(cancellationToken);
+            .OrderByDescending(s => s.CreatedAtUtc).ThenByDescending(s => s.Id).ToListAsync(cancellationToken);
         var ids = suites.Select(s => s.PropertyId).ToArray();
         var properties = await dbContext.Properties.AsNoTracking().Where(p => p.OrganizationId == org && ids.Contains(p.Id))
             .ToDictionaryAsync(p => p.Id, p => p.Address1 + ", " + p.City + ", " + p.State, cancellationToken);
@@ -64,7 +64,29 @@ public sealed class TikTokTestSuiteService(ApplicationDbContext dbContext, UserM
         {
             var suite = await dbContext.TikTokTestSuites.SingleOrDefaultAsync(s => s.Id == suiteId && s.OrganizationId == org, cancellationToken)
                 ?? throw new KeyNotFoundException("This test suite is unavailable in your workspace.");
-            suite.Stop(true, "Remaining cases cancelled. Any campaign already running continues separately.", timeProvider.GetUtcNow());
+            if ((suite.Status is TikTokTestSuiteStatus.Queued or TikTokTestSuiteStatus.Running)
+                && suite.CurrentJobId is { } jobId)
+            {
+                var job = await dbContext.CampaignGenerationJobs.SingleOrDefaultAsync(j =>
+                    j.Id == jobId && j.OrganizationId == org && j.PropertyId == suite.PropertyId, cancellationToken);
+                if (job is not null && (job.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running))
+                    job.RequestCancellation(timeProvider.GetUtcNow());
+            }
+            suite.Stop(true, "Session cancelled. Cancellation was requested for its active campaign; completed videos are kept.", timeProvider.GetUtcNow());
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        finally { await UnlockAsync(); }
+    }
+
+    public async Task SetArchivedAsync(string userId, Guid suiteId, bool archived, CancellationToken cancellationToken = default)
+    {
+        var org = await AuthorizeAsync(userId, cancellationToken);
+        if (!await LockAsync(cancellationToken)) throw new InvalidOperationException("A test worker is updating the queue. Try again shortly.");
+        try
+        {
+            var suite = await dbContext.TikTokTestSuites.SingleOrDefaultAsync(s => s.Id == suiteId && s.OrganizationId == org, cancellationToken)
+                ?? throw new KeyNotFoundException("This test session is unavailable in your workspace.");
+            suite.SetArchived(archived, timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         finally { await UnlockAsync(); }
@@ -184,5 +206,5 @@ public sealed class TikTokTestSuiteService(ApplicationDbContext dbContext, UserM
     }
 
     private static TikTokTestSuiteResult ToResult(TikTokTestSuite s, string address) => new(s.Id, s.PropertyId, address,
-        s.Status, s.CurrentCaseIndex, s.Error, [s.ShortVoiceoverJobId, s.MusicOnlyJobId, s.FullVoiceoverJobId], s.CreatedAtUtc);
+        s.Status, s.CurrentCaseIndex, s.Error, [s.ShortVoiceoverJobId, s.MusicOnlyJobId, s.FullVoiceoverJobId], s.CreatedAtUtc, s.ArchivedAtUtc);
 }

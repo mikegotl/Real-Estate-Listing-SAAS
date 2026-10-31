@@ -82,3 +82,19 @@
     .review-card-heading, .review-card-content { padding-inline: 16px; }
     .review-video-links { padding-inline: 16px; }
 }
+
+/* Every test run owns its campaign cards and remains controllable while collapsed. */
+.review-archive-filter { display:flex; align-items:center; gap:8px; margin:0 0 16px; font-size:.9rem; }
+.review-session { border:1px solid var(--ls-line-strong); border-radius:16px; margin:0 0 24px; overflow:hidden; background:var(--ls-surface); }
+.review-session-header { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:16px; background:var(--ls-surface-muted); }
+.review-session-toggle { display:flex; align-items:center; gap:12px; flex:1 1 300px; min-width:0; border:0; background:transparent; color:var(--ls-ink); font:inherit; text-align:left; cursor:pointer; padding:4px; }
+.review-session-toggle:focus-visible { outline:2px solid var(--ls-primary); outline-offset:4px; border-radius:4px; }
+.review-session-toggle strong { display:block; font-size:1.1rem; }
+.review-session-chevron { font-size:1.4rem; flex:none; }
+.review-session-meta { display:block; font-size:.8rem; color:var(--ls-muted); overflow-wrap:anywhere; margin-top:4px; }
+.review-session-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.review-session-body { border-top:1px solid var(--ls-line); padding:20px; }
+.review-session-help { color:var(--ls-muted); font-size:.85rem; margin-bottom:12px; }
+.review-session-body > .review-case-list { border-bottom:1px solid var(--ls-line); padding-bottom:12px; margin:0 0 20px; }
+.review-player video { max-width:400px; }
+@media (max-width:600px) { .review-session-body { padding:12px; } .review-session-header { padding:12px; } .review-case-list li { flex-wrap:wrap; } }

@@ -1,4 +1,7 @@
 using System.Net;
+using ListingStudio.Domain.Campaigns;
+using ListingStudio.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Authentication;
@@ -55,5 +58,34 @@ public sealed class AdminCampaignReviewPageTests(PostgreSqlWebApplicationFixture
         Assert.Contains("generation credits and campaign allowance", content, StringComparison.Ordinal);
         Assert.Contains("A replacement render needs a fresh review", content, StringComparison.Ordinal);
         Assert.Contains("/admin/campaign-tests", dashboardContent, StringComparison.Ordinal);
+
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var org = await db.OrganizationMembers.Where(m => m.UserId == registered.UserId)
+            .Select(m => m.OrganizationId).SingleAsync();
+        var now = DateTimeOffset.UtcNow;
+        var older = TikTokTestSuite.Create(org, Guid.NewGuid(), registered.UserId!, now.AddMinutes(-1));
+        older.Stop(true, "Cancelled", now);
+        var newest = TikTokTestSuite.Create(org, Guid.NewGuid(), registered.UserId!, now);
+        db.TikTokTestSuites.AddRange(older, newest);
+        await db.SaveChangesAsync();
+
+        var grouped = await client.GetStringAsync("/admin/campaign-tests");
+        // IDs also appear in aria-controls and section-body IDs, independent of HTML text encoding.
+        Assert.True(grouped.IndexOf($"session-body-{newest.Id}", StringComparison.Ordinal)
+            < grouped.IndexOf($"session-body-{older.Id}", StringComparison.Ordinal));
+        Assert.Contains("Cancel session", grouped, StringComparison.Ordinal);
+        Assert.Contains("Archive session", grouped, StringComparison.Ordinal);
+        Assert.Contains("aria-expanded=\"true\"", grouped, StringComparison.Ordinal);
+        Assert.Contains("aria-expanded=\"false\"", grouped, StringComparison.Ordinal);
+
+        older.SetArchived(true, now);
+        await db.SaveChangesAsync();
+        var archivedPage = await client.GetStringAsync("/admin/campaign-tests");
+        Assert.Contains("Show archived sessions", archivedPage, StringComparison.Ordinal);
+        Assert.DoesNotContain($"session-body-{older.Id}", archivedPage, StringComparison.Ordinal);
+        older.SetArchived(false, now);
+        await db.SaveChangesAsync();
+        var restoredPage = await client.GetStringAsync("/admin/campaign-tests");
+        Assert.Contains($"session-body-{older.Id}", restoredPage, StringComparison.Ordinal);
     }
 }
