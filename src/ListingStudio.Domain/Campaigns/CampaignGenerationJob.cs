@@ -218,7 +218,6 @@ public sealed class CampaignGenerationJob
         TotalStageAttempts++;
         LeaseExpiresAtUtc = now.Add(leaseDuration);
         NextAttemptAtUtc = null;
-        LastError = null;
         UpdatedAtUtc = now;
     }
 

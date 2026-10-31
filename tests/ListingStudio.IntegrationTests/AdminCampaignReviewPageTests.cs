@@ -75,6 +75,7 @@ public sealed class AdminCampaignReviewPageTests(PostgreSqlWebApplicationFixture
             < grouped.IndexOf($"session-body-{older.Id}", StringComparison.Ordinal));
         Assert.Contains("Cancel session", grouped, StringComparison.Ordinal);
         Assert.Contains("Archive session", grouped, StringComparison.Ordinal);
+        Assert.Contains("Updates automatically every 5 seconds", grouped, StringComparison.Ordinal);
         Assert.Contains("aria-expanded=\"true\"", grouped, StringComparison.Ordinal);
         Assert.Contains("aria-expanded=\"false\"", grouped, StringComparison.Ordinal);
 

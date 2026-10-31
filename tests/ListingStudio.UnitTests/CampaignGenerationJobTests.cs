@@ -40,6 +40,24 @@ public sealed class CampaignGenerationJobTests
     }
 
     [Fact]
+    public void RetryErrorRemainsVisibleUntilTheStageSucceeds()
+    {
+        var job = CreateJob();
+        job.BeginStage(Now, TimeSpan.FromMinutes(10));
+        job.ScheduleRetry("Rendering took longer than expected.", Now.AddSeconds(1), TimeSpan.FromSeconds(2));
+
+        job.BeginStage(Now.AddSeconds(3), TimeSpan.FromMinutes(10));
+
+        Assert.Equal(CampaignGenerationStatus.Running, job.Status);
+        Assert.Equal(2, job.StageAttemptCount);
+        Assert.Equal("Rendering took longer than expected.", job.LastError);
+
+        job.CompleteStage(CampaignGenerationStage.AnalyzeMedia, Now.AddSeconds(4));
+
+        Assert.Null(job.LastError);
+    }
+
+    [Fact]
     public void RunningCancellationIsObservedAtTheNextWorkerBoundary()
     {
         var job = CreateJob();
