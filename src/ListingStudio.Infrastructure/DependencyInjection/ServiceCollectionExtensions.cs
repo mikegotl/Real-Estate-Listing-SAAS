@@ -230,6 +230,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAerialIntroProcessor, AerialIntroProcessor>();
         services.AddScoped<IPropertyPhotoFixService, PropertyPhotoFixService>();
         services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
+        services.AddSingleton<FeatureStateCache>();
+        services.AddScoped<IFeatureStateService, FeatureStateService>();
         services.AddScoped<ICampaignGenerationService, CampaignGenerationService>();
         services.AddScoped<ICampaignTestGenerationService, CampaignGenerationService>();
         services.AddScoped<TikTokTestSuiteService>();

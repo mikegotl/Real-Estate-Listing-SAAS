@@ -141,6 +141,49 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("AiUsageEvents", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Administration.FeatureFlag", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsEnabledForAllOrganizations")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsGloballyEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("FeatureFlags", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Administration.FeatureFlagOrganization", b =>
+                {
+                    b.Property<string>("FeatureFlagKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AddedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("FeatureFlagKey", "OrganizationId");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.ToTable("FeatureFlagOrganizations", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Administration.OperationalEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -433,6 +476,9 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CampaignGenerationJobId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("CampaignVideoVariantId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ContentType")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -482,10 +528,14 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.HasIndex("AssetPath")
                         .IsUnique();
 
+                    b.HasIndex("CampaignVideoVariantId")
+                        .IsUnique();
+
                     b.HasIndex("CampaignGenerationJobId", "PropertyId", "OrganizationId");
 
                     b.HasIndex("OrganizationId", "CampaignGenerationJobId", "Kind")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"CampaignVideoVariantId\" IS NULL");
 
                     b.HasIndex("VideoNarrationId", "PropertyId", "OrganizationId");
 
@@ -890,6 +940,60 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("CampaignVideoChatMessages", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoLibrary", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CampaignGenerationJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RecommendationSnapshotJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("RuleVersion")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Selection")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampaignGenerationJobId")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "UpdatedAtUtc");
+
+                    b.HasIndex("CampaignGenerationJobId", "PropertyId", "OrganizationId");
+
+                    b.HasIndex("OrganizationId", "PropertyId", "CreatedAtUtc");
+
+                    b.ToTable("CampaignVideoLibraries", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoReview", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1037,6 +1141,101 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId", "CampaignDeliverableId", "CreatedAtUtc");
 
                     b.ToTable("CampaignVideoRevisions", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoVariant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CallToAction")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid>("CampaignVideoLibraryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CaptionsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DurationSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("HookGroundingKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("HookText")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsEligible")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PrimaryPropertyMediaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RecipeJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("RecipeVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VoiceoverMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "CampaignVideoLibraryId");
+
+                    b.HasIndex("CampaignVideoLibraryId", "Format", "Sequence")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "Format", "Status");
+
+                    b.ToTable("CampaignVideoVariants", (string)null);
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.TikTokTestSuite", b =>
@@ -3122,6 +3321,21 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Administration.FeatureFlagOrganization", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Administration.FeatureFlag", null)
+                        .WithMany("Organizations")
+                        .HasForeignKey("FeatureFlagKey")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ListingStudio.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Billing.CampaignUsageRecord", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Organizations.Organization", "Organization")
@@ -3172,6 +3386,11 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignDeliverable", b =>
                 {
+                    b.HasOne("ListingStudio.Domain.Campaigns.CampaignVideoVariant", null)
+                        .WithOne("Deliverable")
+                        .HasForeignKey("ListingStudio.Domain.Campaigns.CampaignDeliverable", "CampaignVideoVariantId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ListingStudio.Domain.Campaigns.CampaignGenerationJob", "CampaignGenerationJob")
                         .WithMany("Deliverables")
                         .HasForeignKey("CampaignGenerationJobId", "PropertyId", "OrganizationId")
@@ -3268,6 +3487,16 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Navigation("CampaignGenerationJob");
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoLibrary", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Campaigns.CampaignGenerationJob", null)
+                        .WithMany()
+                        .HasForeignKey("CampaignGenerationJobId", "PropertyId", "OrganizationId")
+                        .HasPrincipalKey("Id", "PropertyId", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoRevision", b =>
                 {
                     b.HasOne("ListingStudio.Domain.Campaigns.CampaignDeliverable", null)
@@ -3281,6 +3510,17 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ChatMessageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoVariant", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Campaigns.CampaignVideoLibrary", "Library")
+                        .WithMany("Variants")
+                        .HasForeignKey("CampaignVideoLibraryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Library");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Feedback.FeatureSuggestion", b =>
@@ -3782,11 +4022,26 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Administration.FeatureFlag", b =>
+                {
+                    b.Navigation("Organizations");
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignGenerationJob", b =>
                 {
                     b.Navigation("Deliverables");
 
                     b.Navigation("StillPosts");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoLibrary", b =>
+                {
+                    b.Navigation("Variants");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoVariant", b =>
+                {
+                    b.Navigation("Deliverable");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Leads.PropertyLead", b =>

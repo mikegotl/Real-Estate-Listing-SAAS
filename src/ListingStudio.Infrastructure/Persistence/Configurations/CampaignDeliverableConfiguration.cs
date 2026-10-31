@@ -19,12 +19,15 @@ public sealed class CampaignDeliverableConfiguration : IEntityTypeConfiguration<
         builder.Property(deliverable => deliverable.ContentType).HasMaxLength(100);
         builder.Property(deliverable => deliverable.Version).HasDefaultValue(1).IsRequired();
         builder.HasIndex(deliverable => deliverable.AssetPath).IsUnique();
+        // One output of each kind per campaign, outside the vertical video library. Library videos share the
+        // vertical kind and are told apart by their library entry, so the rule leaves them out; the backfill links
+        // legacy vertical outputs too, so it also leaves out those (each already unique per kind).
         builder.HasIndex(deliverable => new
         {
             deliverable.OrganizationId,
             deliverable.CampaignGenerationJobId,
             deliverable.Kind,
-        }).IsUnique();
+        }).IsUnique().HasFilter("\"CampaignVideoVariantId\" IS NULL");
 
         builder.HasOne(deliverable => deliverable.CampaignGenerationJob)
             .WithMany(job => job.Deliverables)

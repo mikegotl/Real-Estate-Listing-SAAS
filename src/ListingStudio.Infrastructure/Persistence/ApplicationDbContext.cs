@@ -101,6 +101,14 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<AdminUserEmail> AdminUserEmails => Set<AdminUserEmail>();
 
+    public DbSet<FeatureFlag> FeatureFlags => Set<FeatureFlag>();
+
+    public DbSet<FeatureFlagOrganization> FeatureFlagOrganizations => Set<FeatureFlagOrganization>();
+
+    public DbSet<CampaignVideoLibrary> CampaignVideoLibraries => Set<CampaignVideoLibrary>();
+
+    public DbSet<CampaignVideoVariant> CampaignVideoVariants => Set<CampaignVideoVariant>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

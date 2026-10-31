@@ -132,6 +132,12 @@ public sealed class CampaignDeliverable
     /// <summary>Which version of the video this is: 1 as the campaign rendered it, higher after chat revisions.</summary>
     public int Version { get; private set; } = 1;
 
+    /// <summary>
+    /// The vertical video library entry this render belongs to, or null for a campaign output made outside the
+    /// library (every landscape output, and legacy vertical outputs not yet linked).
+    /// </summary>
+    public Guid? CampaignVideoVariantId { get; private set; }
+
     public CampaignGenerationJob CampaignGenerationJob { get; private set; } = null!;
 
     public VideoNarration VideoNarration { get; private set; } = null!;
@@ -209,6 +215,22 @@ public sealed class CampaignDeliverable
         FileSize = fileSize;
         Version = version;
         RenderedAtUtc = now;
+    }
+
+    /// <summary>Links this render to the library video it was made for. A render belongs to one video for good.</summary>
+    public void AttachToVariant(Guid variantId)
+    {
+        if (variantId == Guid.Empty)
+        {
+            throw new ArgumentException("A library video is required.", nameof(variantId));
+        }
+
+        if (CampaignVideoVariantId is { } current && current != variantId)
+        {
+            throw new InvalidOperationException("This render already belongs to another library video.");
+        }
+
+        CampaignVideoVariantId = variantId;
     }
 
     public void UpdateSpecification(string specificationJson)
