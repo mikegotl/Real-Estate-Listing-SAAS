@@ -64,6 +64,12 @@ public sealed class AerialIntroTests(PostgreSqlWebApplicationFixture fixture)
             var item = (await service.GetAsync(owner.UserId, owner.PropertyId))!;
             Assert.True(item.IsReady);
             Assert.False(item.IsUsedInVideos);
+            Assert.Equal(AerialIntroClip.BriskPlaybackRate, item.PlaybackRate);
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.SetPlaybackRateAsync(owner.UserId, owner.PropertyId, 1.25m));
+            Assert.False(await service.SetPlaybackRateAsync(outsider.UserId, owner.PropertyId, AerialIntroClip.FastPlaybackRate));
+            Assert.True(await service.SetPlaybackRateAsync(owner.UserId, owner.PropertyId, AerialIntroClip.FastPlaybackRate));
+            Assert.Equal(AerialIntroClip.FastPlaybackRate, (await service.GetAsync(owner.UserId, owner.PropertyId))!.PlaybackRate);
             var clip = await service.OpenReadAsync(owner.UserId, requested.Id);
             Assert.NotNull(clip);
             await using (clip.Content)

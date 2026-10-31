@@ -23,6 +23,9 @@ public sealed class AerialIntroClip
     public const int MaximumErrorLength = 500;
     public const int LowHeightFeet = 50;
     public const int HighHeightFeet = 100;
+    public const decimal SmoothPlaybackRate = 1m;
+    public const decimal BriskPlaybackRate = 1.5m;
+    public const decimal FastPlaybackRate = 2m;
 
     private AerialIntroClip()
     {
@@ -39,6 +42,7 @@ public sealed class AerialIntroClip
     public string SourceBlobPath { get; private set; } = string.Empty;
 
     public int HeightFeet { get; private set; }
+    public decimal PlaybackRate { get; private set; } = BriskPlaybackRate;
     public string GenerationVersion { get; private set; } = string.Empty;
     public AerialIntroClipStatus Status { get; private set; }
     public int AttemptCount { get; private set; }
@@ -77,6 +81,9 @@ public sealed class AerialIntroClip
 
     public static bool IsSupportedHeight(int heightFeet) => heightFeet is LowHeightFeet or HighHeightFeet;
 
+    public static bool IsSupportedPlaybackRate(decimal playbackRate) =>
+        playbackRate is SmoothPlaybackRate or BriskPlaybackRate or FastPlaybackRate;
+
     public static AerialIntroClip Create(
         Guid organizationId,
         Guid propertyId,
@@ -105,6 +112,7 @@ public sealed class AerialIntroClip
             PropertyMediaId = propertyMediaId,
             SourceBlobPath = Required(sourceBlobPath, 1_024, nameof(sourceBlobPath)),
             HeightFeet = heightFeet,
+            PlaybackRate = BriskPlaybackRate,
             GenerationVersion = Required(generationVersion, 100, nameof(generationVersion)),
             RequestedByUserId = Required(requestedByUserId, 450, nameof(requestedByUserId)),
             DisclosureAcknowledgedAtUtc = now,
@@ -201,6 +209,16 @@ public sealed class AerialIntroClip
         EnsureStatus(AerialIntroClipStatus.Completed);
         ApprovedByUserId = Required(userId, 450, nameof(userId));
         ApprovedAtUtc = now;
+    }
+
+    public void SetPlaybackRate(decimal playbackRate)
+    {
+        if (!IsSupportedPlaybackRate(playbackRate))
+        {
+            throw new ArgumentOutOfRangeException(nameof(playbackRate));
+        }
+
+        PlaybackRate = playbackRate;
     }
 
     private void EnsureStatus(AerialIntroClipStatus expected)

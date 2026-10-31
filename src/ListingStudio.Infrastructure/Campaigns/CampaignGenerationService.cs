@@ -233,7 +233,7 @@ public sealed class CampaignGenerationService(
                 && clip.PropertyId == propertyId
                 && clip.ApprovedAtUtc != null
                 && planAccess.IncludesPremiumAi)
-            .Select(clip => new { clip.Id, clip.PropertyMediaId, clip.SourceBlobPath, clip.ApprovedAtUtc })
+            .Select(clip => new { clip.Id, clip.PropertyMediaId, clip.SourceBlobPath, clip.ApprovedAtUtc, clip.PlaybackRate })
             .SingleOrDefaultAsync(cancellationToken);
         var fingerprint = CreateFingerprint(
             property.UpdatedAtUtc,

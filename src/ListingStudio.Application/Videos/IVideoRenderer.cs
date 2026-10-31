@@ -1,4 +1,5 @@
 using ListingStudio.Application.Audio;
+using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
 
 namespace ListingStudio.Application.Videos;
@@ -76,7 +77,8 @@ public sealed record VideoRenderWalkthroughTransitionAsset(
 public sealed record VideoRenderAerialIntroAsset(
     Guid PropertyMediaId,
     string FilePath,
-    int DurationMs);
+    int DurationMs,
+    decimal PlaybackRate = AerialIntroClip.BriskPlaybackRate);
 
 /// <summary>
 /// A lip-synced agent presenter whose first and optional second source sections align with the campaign narration.

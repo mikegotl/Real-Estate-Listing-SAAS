@@ -1,5 +1,6 @@
 @* The walkthrough map: the storyboard's stops drawn as connected spaces, each placed in the direction the buyer walks
    from the stop before it. Selecting a space shows its shot and the walk-through clips into and out of it. *@
+@inject IJSRuntime JSRuntime
 
 <section class="walkthrough-map" aria-labelledby="walkthrough-map-heading">
     <div class="walkthrough-map-header">
@@ -110,8 +111,9 @@
                         var playingUrl = playingAerialIntro
                             ? $"/aerial-intros/{AerialIntro!.Id}"
                             : $"/walkthrough-transitions/{clip.TransitionId}";
-                        <video @key="playingUrl" class="walkthrough-video" src="@playingUrl"
+                        <video @key="playingUrl" @ref="walkthroughVideo" class="walkthrough-video" src="@playingUrl"
                                autoplay muted playsinline controls @onended="OnPlayingEnded"
+                               @onplay="SetPreviewPlaybackRateAsync"
                                aria-label="@(playingAerialIntro ? "Approved AI drone flyover, first part of the campaign opening" : playingLabel)"></video>
                         @if (playingOpeningSequence)
                         {
@@ -303,6 +305,7 @@
     private string? playingLabel;
     private bool playingAerialIntro;
     private bool playingOpeningSequence;
+    private ElementReference walkthroughVideo;
     private bool savingDirection;
     private int? draggedStopIndex;
 
@@ -506,6 +509,13 @@
 
         StopPlaying();
     }
+
+    private async Task SetPreviewPlaybackRateAsync() => await JSRuntime.InvokeVoidAsync(
+        "listingStudioMedia.setPlaybackRate",
+        walkthroughVideo,
+        (double)(playingAerialIntro
+            ? AerialIntro?.PlaybackRate ?? AerialIntroClip.BriskPlaybackRate
+            : 1m));
 
     private bool IsOpeningEdge(int index) => index == 1 && AerialIntro is { IsUsedInVideos: true };
 

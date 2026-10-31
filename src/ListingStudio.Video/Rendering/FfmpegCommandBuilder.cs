@@ -1,6 +1,7 @@
 using System.Globalization;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Video.Configuration;
 
@@ -441,8 +442,8 @@ public static class FfmpegCommandBuilder
     /// <summary>
     /// Opens the video with the drone intro when the first scene shows the photo it lands on. The scene keeps its
     /// planned length: the intro takes the time left after a one-second hold on the photo (and after any walk-through
-    /// out of it), playing up to twice as fast; a short scene plays only the end of the descent. A scene too short for
-    /// one second of intro keeps its photo.
+    /// out of it), using the agent's selected playback rate. A short scene plays only the end of the descent. A scene
+    /// too short for one second of intro keeps its photo.
     /// </summary>
     private static SceneAerialIntro? PlanAerialIntro(
         IReadOnlyList<VideoScene> scenes,
@@ -459,6 +460,11 @@ public static class FfmpegCommandBuilder
             throw new ArgumentException("The drone intro must be an existing clip.");
         }
 
+        if (!AerialIntroClip.IsSupportedPlaybackRate(asset.PlaybackRate))
+        {
+            throw new ArgumentException("The drone intro playback rate must be Smooth, Brisk, or Fast.");
+        }
+
         var first = scenes[0];
         if (first.VisualSource.Kind != VisualSourceKind.PropertyMedia
             || first.VisualSource.PropertyMediaId != asset.PropertyMediaId)
@@ -467,13 +473,14 @@ public static class FfmpegCommandBuilder
         }
 
         var stillMs = walkthroughs.TryGetValue(0, out var walkthrough) ? walkthrough.HoldMs : first.DurationMs;
-        var playMs = Math.Min(asset.DurationMs, stillMs - MinimumWalkthroughHoldMs);
+        var availablePlayMs = stillMs - MinimumWalkthroughHoldMs;
+        var sourceMs = (int)Math.Min(asset.DurationMs, Math.Floor(availablePlayMs * asset.PlaybackRate));
+        var playMs = (int)Math.Floor(sourceMs / asset.PlaybackRate);
         if (playMs < MinimumWalkthroughMs)
         {
             return null;
         }
 
-        var sourceMs = (int)Math.Min(asset.DurationMs, playMs * MaximumWalkthroughSpeedUp);
         return new SceneAerialIntro(asset, asset.DurationMs - sourceMs, playMs);
     }
 

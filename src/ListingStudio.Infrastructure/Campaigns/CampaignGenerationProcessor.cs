@@ -1769,7 +1769,7 @@ public sealed partial class CampaignGenerationProcessor(
         var path = Path.Combine(directory, $"aerial-intro-{clip.Id:N}.mp4");
         await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         await source.CopyToAsync(target, cancellationToken);
-        return new VideoRenderAerialIntroAsset(openingPhotoId, path, durationMs);
+        return new VideoRenderAerialIntroAsset(openingPhotoId, path, durationMs, clip.PlaybackRate);
     }
 
     private async Task<VideoRenderPropertyVideoAsset[]> MaterializePropertyVideosAsync(

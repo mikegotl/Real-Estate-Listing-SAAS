@@ -4,6 +4,7 @@
 @inject IDialogService DialogService
 @inject PhotoAssistantSelectionState PhotoAssistantState
 @inject Microsoft.Extensions.Options.IOptions<MediaAnalysisOptions> MediaAnalysisOptions
+@inject IJSRuntime JSRuntime
 
 <MudPaper Class="pa-6 mt-6 storyboard">
     <div class="storyboard-header">
@@ -346,6 +347,7 @@
     private AerialIntroItem? aerialIntro;
     private Guid? playingFromId;
     private bool playingAerialIntro;
+    private ElementReference walkthroughVideo;
     private bool queueing;
     private bool transitionPollingStarted;
 
@@ -448,8 +450,9 @@
                         var playingUrl = playingAerialIntro
                             ? $"/aerial-intros/{aerialIntro!.Id}"
                             : $"/walkthrough-transitions/{transition.TransitionId}";
-                        <video @key="playingUrl" class="walkthrough-video" src="@playingUrl"
+                        <video @key="playingUrl" @ref="walkthroughVideo" class="walkthrough-video" src="@playingUrl"
                                autoplay muted playsinline controls @onended="OnWalkthroughVideoEnded"
+                               @onplay="SetWalkthroughPreviewRateAsync"
                                aria-label="@(playingAerialIntro
                                    ? "Approved AI drone flyover, first part of the campaign opening"
                                    : $"Walk-through from shot {shotNumber} to shot {shotNumber + 1}")"></video>
@@ -874,6 +877,13 @@
 
         StopWalkthrough();
     }
+
+    private async Task SetWalkthroughPreviewRateAsync() => await JSRuntime.InvokeVoidAsync(
+        "listingStudioMedia.setPlaybackRate",
+        walkthroughVideo,
+        (double)(playingAerialIntro
+            ? aerialIntro?.PlaybackRate ?? AerialIntroClip.BriskPlaybackRate
+            : 1m));
 
     private void StopWalkthrough()
     {
