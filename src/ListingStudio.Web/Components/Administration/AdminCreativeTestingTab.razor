@@ -110,6 +110,8 @@
                 }
             </fieldset>
 
+            <CaptionStylePicker @bind-Value="captionStyle" Disabled="busy" Heading="Caption style for every test video" />
+
             <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="my-3" aria-live="polite" data-testid="creative-estimate">
                 @EstimateText
             </MudAlert>
@@ -133,7 +135,7 @@
             <header class="creative-suite-head">
                 <div>
                     <strong>@ModeText(suite.Mode)@(suite.Format is { } format ? $" · {VerticalFormatNames.Name(format)}" : null)</strong>
-                    <span>@suite.Address · @suite.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt") · rules @suite.RuleVersion</span>
+                    <span>@suite.Address · @suite.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt") · rules @suite.RuleVersion · captions @CaptionStyleCatalog.Label(suite.CaptionStyle)</span>
                 </div>
                 <span class="creative-chip @SuiteClass(suite.Status)">@suite.Status</span>
                 @if (suite.IsActive)
@@ -335,6 +337,7 @@
     private string? selectedPropertyId;
     private string? selectedFormat;
     private VerticalCreativeTestMode mode = VerticalCreativeTestMode.RecommendedThree;
+    private CampaignCaptionStyle captionStyle = CampaignCaptionStyles.Default;
     private bool busy;
     private string? error;
     private string? notice;
@@ -473,7 +476,7 @@
         ? Task.CompletedTask
         : RunAsync(async userId =>
         {
-            await Service.StartAsync(userId, preview.PropertyId, mode, ChosenFormat, disposal.Token);
+            await Service.StartAsync(userId, preview.PropertyId, mode, ChosenFormat, captionStyle, disposal.Token);
             await LoadSuitesAsync(userId);
             notice = "The creative test is queued. Cases run one at a time in the background; you can leave this page.";
         });

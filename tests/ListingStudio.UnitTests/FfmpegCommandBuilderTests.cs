@@ -301,6 +301,70 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildDrawsAPickerCaptionLookWithItsBundledFontColorsAndAlternatingCaptionAccent()
+    {
+        var branded = CreateBrandedRequest();
+        var scenes = branded.Specification.Scenes.ToArray();
+        scenes[1] = scenes[1] with
+        {
+            TextOverlays =
+            [
+                .. scenes[1].TextOverlays,
+                new TextOverlay("caption-2-narration-01-0", "OPEN KITCHEN", "story.voiceover.1", 500, 1_000,
+                    OverlayAnchor.Center, new NormalizedRect(0.08m, 0.56m, 0.84m, 0.12m), TextOverlayStyle.PopCaption),
+                new TextOverlay("caption-2-narration-01-1", "FOR HOSTING", "story.voiceover.1", 1_500, 1_000,
+                    OverlayAnchor.Center, new NormalizedRect(0.08m, 0.56m, 0.84m, 0.12m), TextOverlayStyle.PopCaption),
+            ],
+        };
+        var request = branded with
+        {
+            Specification = branded.Specification with { Scenes = scenes },
+            CaptionStyle = ListingStudio.Domain.Campaigns.CampaignCaptionStyle.NeonNight,
+        };
+
+        var graph = Graph(FfmpegCommandBuilder.Build(request, new VideoBrandingTemplateOptions()));
+
+        var look = CaptionLooks.For(ListingStudio.Domain.Campaigns.CampaignCaptionStyle.NeonNight)!;
+        Assert.True(File.Exists(look.FontPath));
+        Assert.DoesNotContain("font='Sans'", graph, StringComparison.Ordinal);
+        Assert.Contains("BebasNeue-Regular.ttf", graph, StringComparison.Ordinal);
+        Assert.Contains("text='123 MAIN STREET\\, RALEIGH':fontcolor=0x00F5D4", graph, StringComparison.Ordinal);
+        Assert.Contains("text='OPEN KITCHEN':fontcolor=white", graph, StringComparison.Ordinal);
+        Assert.Contains("text='FOR HOSTING':fontcolor=0xFF4FD8", graph, StringComparison.Ordinal);
+        Assert.Contains("boxcolor=0x111122@0.78", graph, StringComparison.Ordinal);
+        Assert.Contains("bordercolor=0x3A0030", graph, StringComparison.Ordinal);
+
+        // The original look (A) and classic captions keep the configured branding template.
+        var original = Graph(FfmpegCommandBuilder.Build(
+            branded with { CaptionStyle = ListingStudio.Domain.Campaigns.CampaignCaptionStyle.Pop }, new VideoBrandingTemplateOptions()));
+        Assert.Contains("drawtext=font='Sans'", original, StringComparison.Ordinal);
+        Assert.DoesNotContain("BebasNeue", original, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EveryPickerLookHasItsBundledFontNextToTheBinaries()
+    {
+        foreach (var style in ListingStudio.Domain.Campaigns.CampaignCaptionStyles.Picker)
+        {
+            var look = CaptionLooks.For(style);
+            if (style == ListingStudio.Domain.Campaigns.CampaignCaptionStyle.Pop)
+            {
+                Assert.Null(look);
+                continue;
+            }
+
+            Assert.NotNull(look);
+            Assert.True(File.Exists(look.FontPath), look.FontFile);
+        }
+    }
+
+    private static string Graph(FfmpegRenderCommand command)
+    {
+        var arguments = command.Arguments.ToList();
+        return arguments[arguments.IndexOf("-filter_complex") + 1];
+    }
+
+    [Fact]
     public void BuildRejectsMissingBrandAndMusicAssets()
     {
         var request = CreateBrandedRequest() with { BrandAssets = [], Music = null };

@@ -1281,7 +1281,8 @@ public sealed partial class CampaignGenerationProcessor(
                 propertyVideos,
                 walkthroughTransitions,
                 agentPresenter,
-                aerialIntro);
+                aerialIntro,
+                job.CaptionStyle);
             var expectations = Mp4Expectations.For(specification);
             try
             {

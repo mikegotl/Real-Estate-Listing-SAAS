@@ -28,6 +28,7 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
         "20261101002451_AddVerticalCampaignGoal",
         "20261101012216_AddVerticalCreativeTests",
         "20261101015629_AddVerticalPerformanceMetrics",
+        "20261101150821_AddCreativeTestCaptionStyle",
     ];
 
     [Fact]

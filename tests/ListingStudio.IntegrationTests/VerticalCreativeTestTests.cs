@@ -28,8 +28,10 @@ public sealed partial class CampaignGenerationTests
                 var preview = (await service.PreviewAsync(owner.UserId, owner.PropertyId))!;
                 Assert.Equal(VerticalFormatRules.Formats.Count, preview.Formats.Count);
                 Assert.All(preview.Formats, option => Assert.False(string.IsNullOrWhiteSpace(option.RecipeVersion)));
-                var suite = await service.StartAsync(owner.UserId, owner.PropertyId, VerticalCreativeTestMode.HookAb, VerticalCreativeFormat.PriceFirst);
+                var suite = await service.StartAsync(owner.UserId, owner.PropertyId, VerticalCreativeTestMode.HookAb, VerticalCreativeFormat.PriceFirst,
+                    CampaignCaptionStyle.Comic);
                 suiteId = suite.Id;
+                Assert.Equal(CampaignCaptionStyle.Comic, suite.CaptionStyle);
                 Assert.Equal(["a", "b"], suite.Cases.Select(item => item.HookVariant));
                 Assert.All(suite.Cases, item => Assert.Equal(VerticalCreativeTestCaseStatus.Pending, item.Status));
                 await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -48,6 +50,16 @@ public sealed partial class CampaignGenerationTests
                 Assert.Null(item.Decision);
             });
             Assert.NotEqual(finished.Cases[0].JobId, finished.Cases[1].JobId);
+            await using (var styled = factory.Services.CreateAsyncScope())
+            {
+                // Every test campaign renders with the caption look picked for the test.
+                var jobIds = finished.Cases.Select(item => item.JobId!.Value).ToArray();
+                var styles = await styled.ServiceProvider.GetRequiredService<ListingStudio.Infrastructure.Persistence.ApplicationDbContext>()
+                    .CampaignGenerationJobs.Where(job => jobIds.Contains(job.Id)).Select(job => job.CaptionStyle).ToListAsync();
+                Assert.Equal([CampaignCaptionStyle.Comic, CampaignCaptionStyle.Comic], styles);
+                Assert.Equal(CampaignCaptionStyle.Comic, factory.VideoRenderer.LastRequest!.CaptionStyle);
+            }
+
             Assert.StartsWith("What ", finished.Cases[1].Hook, StringComparison.Ordinal);
             Assert.DoesNotContain("What ", finished.Cases[0].Hook, StringComparison.Ordinal);
             // Each case's own file got a full technical check after its campaign finished (in addition to the render's).

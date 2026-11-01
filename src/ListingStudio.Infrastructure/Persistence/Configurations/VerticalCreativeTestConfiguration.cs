@@ -15,6 +15,7 @@ public sealed class VerticalCreativeTestSuiteConfiguration : IEntityTypeConfigur
         builder.Property(suite => suite.Format).HasConversion<string>().HasMaxLength(32);
         builder.Property(suite => suite.RuleVersion).HasMaxLength(40).IsRequired();
         builder.Property(suite => suite.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(suite => suite.CaptionStyle).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(suite => suite.Error).HasMaxLength(VerticalCreativeTestSuite.MaximumErrorLength);
         builder.Ignore(suite => suite.IsActive);
         builder.Ignore(suite => suite.RunningCase);

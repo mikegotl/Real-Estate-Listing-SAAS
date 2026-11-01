@@ -1,0 +1,66 @@
+@using ListingStudio.Domain.Campaigns
+
+@* Caption look picker, A to H. Collapsed it shows the chosen look; opened it shows every look as the renderer draws it. *@
+<section class="caption-picker" aria-labelledby="@headingId" data-testid="caption-picker">
+    <div class="caption-picker-summary">
+        <img src="@Selected.Thumbnail" alt="" class="caption-picker-mini" width="45" height="80" />
+        <div class="caption-picker-text">
+            <span class="caption-picker-heading" id="@headingId">@Heading</span>
+            <strong data-testid="caption-picker-current">@CaptionStyleCatalog.Label(Value)</strong>
+            <span class="caption-picker-detail">@(Value == CampaignCaptionStyle.Classic ? "Smaller captions on a light bar, from older campaigns" : Selected.Description)</span>
+        </div>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Disabled="Disabled"
+                   OnClick="Toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@gridId" data-testid="caption-picker-toggle">
+            @(open ? "Close" : "Change")
+        </MudButton>
+    </div>
+
+    @if (open)
+    {
+        <div class="caption-picker-grid" id="@gridId" role="radiogroup" aria-labelledby="@headingId" data-testid="caption-picker-grid">
+            @foreach (var choice in CaptionStyleCatalog.Choices)
+            {
+                var selected = choice.Style == Value;
+                <button type="button" role="radio" aria-checked="@(selected ? "true" : "false")" disabled="@Disabled"
+                        class="@($"caption-picker-card{(selected ? " selected" : string.Empty)}")"
+                        @onclick="() => ChooseAsync(choice.Style)" data-testid="@($"caption-style-{choice.Letter}")">
+                    <span class="caption-picker-label"><span class="caption-picker-letter">@choice.Letter</span> @choice.Name</span>
+                    <img src="@choice.Thumbnail" alt="@($"{choice.Name} caption style preview")" width="360" height="640" loading="lazy" />
+                </button>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private readonly string headingId = $"caption-picker-{Guid.NewGuid():N}";
+    private readonly string gridId = $"caption-grid-{Guid.NewGuid():N}";
+    private bool open;
+
+    [Parameter] public CampaignCaptionStyle Value { get; set; } = CampaignCaptionStyles.Default;
+
+    [Parameter] public EventCallback<CampaignCaptionStyle> ValueChanged { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public string Heading { get; set; } = "Caption style";
+
+    /// <summary>Starts opened (used by screenshots and tests).</summary>
+    [Parameter] public bool StartOpen { get; set; }
+
+    private CaptionStyleChoice Selected => CaptionStyleCatalog.For(Value);
+
+    protected override void OnInitialized() => open = StartOpen;
+
+    private void Toggle() => open = !open;
+
+    private async Task ChooseAsync(CampaignCaptionStyle style)
+    {
+        open = false;
+        if (style != Value)
+        {
+            Value = style;
+            await ValueChanged.InvokeAsync(style);
+        }
+    }
+}

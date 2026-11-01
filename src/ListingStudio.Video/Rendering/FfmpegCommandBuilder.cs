@@ -1,6 +1,7 @@
 using System.Globalization;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
 using ListingStudio.Video.Configuration;
@@ -704,6 +705,7 @@ public static class FfmpegCommandBuilder
         var brand = request.Specification.Brand;
         var current = sourceLabel;
         var filterNumber = 0;
+        var look = CaptionLooks.For(request.CaptionStyle) is { } chosen && File.Exists(chosen.FontPath) ? chosen : null;
         foreach (var (scene, overlay) in request.Specification.Scenes
             .SelectMany(scene => scene.TextOverlays.Select(overlay => (scene, overlay)))
             .OrderBy(item => item.scene.StartMs + item.overlay.StartOffsetMs)
@@ -715,6 +717,14 @@ public static class FfmpegCommandBuilder
             var startMs = scene.StartMs + overlay.StartOffsetMs;
             var endMs = startMs + overlay.DurationMs;
             var next = $"brand{filterNumber++}";
+            if (look is not null)
+            {
+                filters.Add($"[{current}]{LookDrawText(look, overlay, template, box, position, output)}"
+                    + $":enable='between(t,{Seconds(startMs)},{Seconds(endMs)})'[{next}]");
+                current = next;
+                continue;
+            }
+
             var font = string.IsNullOrWhiteSpace(brandingTemplate.FontFilePath)
                 ? "font='Sans'"
                 : $"fontfile='{EscapeFilterLiteral(Path.GetFullPath(brandingTemplate.FontFilePath))}'";
@@ -1145,6 +1155,61 @@ public static class FfmpegCommandBuilder
     /// Template sizes are for a 1080-pixel short side, so they scale with the output. drawtext does not wrap, so a
     /// line too long for its box is set smaller instead of running off the frame (about 0.56 em per character).
     /// </summary>
+    /// <summary>
+    /// One overlay in a picker caption look: the look's font, colors, outline, shadow and pill. Captions alternate
+    /// between the look's caption and accent colors chunk by chunk, so consecutive phrases change color.
+    /// </summary>
+    private static string LookDrawText(
+        CaptionLook look,
+        TextOverlay overlay,
+        TextOverlayTemplateOptions template,
+        PixelBox box,
+        (string X, string Y) position,
+        VideoOutputProfile output)
+    {
+        var text = look.For(overlay.StyleToken);
+        if (overlay.StyleToken is TextOverlayStyle.PopCaption or TextOverlayStyle.LowerThird && IsAccentChunk(overlay.Id))
+        {
+            text = look.CaptionAccent;
+        }
+
+        var unit = Math.Min(output.Width, output.Height) / 1_080m;
+        var scaled = template.FontSize * text.SizeScale * unit;
+        var padding = text.BoxColor is null ? 0 : template.Padding;
+        var available = Math.Max(1, box.Width - 2 * padding - 2 * text.BorderWidth);
+        var words = look.Uppercase ? overlay.Text.ToUpperInvariant() : overlay.Text;
+        var fitting = available / (look.CharacterWidth * Math.Max(1, words.Length));
+        var size = Math.Max(8, (int)Math.Floor(Math.Min(scaled, fitting)));
+        var filter = $"drawtext=fontfile='{EscapeFilterLiteral(look.FontPath)}':text='{EscapeFilterLiteral(words)}'"
+            + $":fontcolor={text.TextColor}:fontsize={size}";
+        if (text.BorderWidth > 0)
+        {
+            filter += $":borderw={Math.Max(1, (int)Math.Round(text.BorderWidth * unit))}:bordercolor={text.BorderColor}";
+        }
+
+        if (text.ShadowOffset > 0)
+        {
+            var shadow = Math.Max(1, (int)Math.Round(text.ShadowOffset * unit));
+            filter += $":shadowx={shadow}:shadowy={shadow}:shadowcolor={text.ShadowColor}";
+        }
+
+        if (text.BoxColor is not null)
+        {
+            filter += $":box=1:boxcolor={text.BoxColor}@{Number(text.BoxOpacity)}:boxborderw={template.Padding}";
+        }
+
+        return filter + $":x='{position.X}':y='{position.Y}':fix_bounds=1";
+    }
+
+    /// <summary>Caption overlays end in their chunk number ("caption-3-narration-02-1"); odd chunks use the accent.</summary>
+    private static bool IsAccentChunk(string overlayId)
+    {
+        var dash = overlayId.LastIndexOf('-');
+        return dash >= 0
+            && int.TryParse(overlayId.AsSpan(dash + 1), NumberStyles.None, CultureInfo.InvariantCulture, out var chunk)
+            && chunk % 2 == 1;
+    }
+
     private static int FontSize(TextOverlayTemplateOptions template, string text, PixelBox box, VideoOutputProfile output)
     {
         var scaled = template.FontSize * Math.Min(output.Width, output.Height) / 1_080m;

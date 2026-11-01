@@ -440,7 +440,7 @@ public static class CampaignCreativeDirector
                     duration,
                     OverlayAnchor.BottomCenter,
                     captionBox,
-                    options.CaptionStyle == CampaignCaptionStyle.Pop
+                    CampaignCaptionStyles.IsBold(options.CaptionStyle)
                         ? TextOverlayStyle.PopCaption
                         : TextOverlayStyle.LowerThird));
             }
