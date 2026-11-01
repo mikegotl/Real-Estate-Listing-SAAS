@@ -9,7 +9,13 @@ public static class FeatureFlagKeys
     /// </summary>
     public const string VerticalVideoLibraryV1 = "VerticalVideoLibraryV1";
 
-    public static IReadOnlyList<string> All { get; } = [VerticalVideoLibraryV1];
+    /// <summary>
+    /// Experimental 30-second Kling 4 tour assembled from the approved Tour Map. Off keeps the established
+    /// scene-by-scene campaign renderer as the control.
+    /// </summary>
+    public const string Kling4FullTourV1 = "Kling4FullTourV1";
+
+    public static IReadOnlyList<string> All { get; } = [VerticalVideoLibraryV1, Kling4FullTourV1];
 
     public static bool IsKnown(string key) => All.Contains(key, StringComparer.Ordinal);
 }

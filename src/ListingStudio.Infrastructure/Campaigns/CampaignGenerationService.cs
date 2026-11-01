@@ -103,10 +103,44 @@ public sealed class CampaignGenerationService(
             userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken, verticalRequest);
     }
 
+    public Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        CampaignVideoStrategy videoStrategy,
+        VerticalLibraryRequest? verticalRequest = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(videoStrategy))
+        {
+            throw new ArgumentOutOfRangeException(nameof(videoStrategy));
+        }
+
+        verticalRequest?.Validate();
+        return EnqueueCoreAsync(
+            userId,
+            propertyId,
+            requestedOutputs,
+            creativeOptions,
+            narrationPreferences,
+            null,
+            cancellationToken,
+            verticalRequest,
+            videoStrategy: videoStrategy);
+    }
+
     public async Task<bool> IsVerticalLibraryEnabledAsync(string userId, CancellationToken cancellationToken = default)
     {
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         return await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken);
+    }
+
+    public async Task<bool> IsKlingFullTourEnabledAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return await featureStateService.IsEnabledAsync(FeatureFlagKeys.Kling4FullTourV1, organizationId, cancellationToken);
     }
 
     public Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
@@ -141,7 +175,8 @@ public sealed class CampaignGenerationService(
         string userId, Guid propertyId, CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions, CampaignNarrationPreferences narrationPreferences,
         string? testCaseKey, CancellationToken cancellationToken,
-        VerticalLibraryRequest? verticalRequest = null, string? hookVariant = null, bool requireLibrary = false)
+        VerticalLibraryRequest? verticalRequest = null, string? hookVariant = null, bool requireLibrary = false,
+        CampaignVideoStrategy videoStrategy = CampaignVideoStrategy.Established)
     {
         var verticalSelection = verticalRequest?.Selection ?? VerticalVideoSelection.LegacySingle;
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
@@ -157,6 +192,12 @@ public sealed class CampaignGenerationService(
         }
 
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        var usesKlingFullTour = videoStrategy == CampaignVideoStrategy.Kling4FullTour
+            && testCaseKey is null
+            && await featureStateService.IsEnabledAsync(
+                FeatureFlagKeys.Kling4FullTourV1,
+                organizationId,
+                cancellationToken);
         // The library is decided here, before anything is queued: with the switch off (globally, or for this
         // workspace) the request is the legacy campaign, with the same fingerprint it always had.
         // Render regression test cases (a test key with no library request) always make the legacy vertical edit.
@@ -177,6 +218,10 @@ public sealed class CampaignGenerationService(
         }
 
         var planAccess = await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken);
+        if (usesKlingFullTour && !planAccess.IncludesPremiumAi)
+        {
+            throw new PlanFeatureUnavailableException(PlanFeatureAccess.PremiumAiUpgradeMessage);
+        }
         if (creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) && !planAccess.IncludesPremiumAi)
         {
             throw new PlanFeatureUnavailableException(PlanFeatureAccess.PremiumAiUpgradeMessage);
@@ -236,6 +281,10 @@ public sealed class CampaignGenerationService(
         if (media.Length == 0)
         {
             throw new InvalidOperationException("At least one property image is required to generate a campaign.");
+        }
+        if (usesKlingFullTour && media.Length < 2)
+        {
+            throw new InvalidOperationException("The Kling 4 full tour needs at least two approved Tour Map photos.");
         }
         if (creativeOptions.Elements.HasFlag(CampaignVideoElement.KitchenIslandOrbit))
         {
@@ -341,6 +390,11 @@ public sealed class CampaignGenerationService(
             fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                 VerticalFingerprintSuffix(fingerprint, verticalRequest!)))).ToLowerInvariant();
         }
+        if (usesKlingFullTour)
+        {
+            fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                $"{fingerprint}:kling4-full-tour-v1"))).ToLowerInvariant();
+        }
 
         if (testCaseKey is not null)
         {
@@ -373,6 +427,10 @@ public sealed class CampaignGenerationService(
             timeProvider.GetUtcNow(),
             creativeOptions,
             narrationPreferences);
+        if (usesKlingFullTour)
+        {
+            job.RequestVideoStrategy(CampaignVideoStrategy.Kling4FullTour);
+        }
         if (usesLibrary)
         {
             job.RequestVerticalLibrary(
@@ -658,7 +716,8 @@ public sealed class CampaignGenerationService(
             stillPosts,
             job.VerticalSelection is { } selection
                 ? new CampaignVerticalRequestResult(selection, job.VerticalGoal, job.VerticalFormats)
-                : null);
+                : null,
+            job.VideoStrategy);
     }
 
     // The goal and an agent's format list are part of what was asked for, so a different choice is a new campaign.

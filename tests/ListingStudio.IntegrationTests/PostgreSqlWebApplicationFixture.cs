@@ -481,11 +481,14 @@ public sealed class FakeVideoRenderer : IVideoRenderer
     private int walkthroughShotCount;
     private int agentPresenterInputCount;
     private int aerialIntroInputCount;
+    private int fullTourInputCount;
 
     public int CallCount => callCount;
 
     /// <summary>Renders that received the approved drone intro.</summary>
     public int AerialIntroInputCount => aerialIntroInputCount;
+
+    public int FullTourInputCount => fullTourInputCount;
 
     public VideoRenderRequest? LastRequest { get; private set; }
 
@@ -525,6 +528,12 @@ public sealed class FakeVideoRenderer : IVideoRenderer
             Assert.Equal(request.Specification.Scenes[0].VisualSource.PropertyMediaId, request.AerialIntro.PropertyMediaId);
             Interlocked.Increment(ref aerialIntroInputCount);
         }
+        if (request.FullTour is not null)
+        {
+            Assert.True(File.Exists(request.FullTour.FilePath));
+            Assert.Equal(30_000, request.FullTour.DurationMs);
+            Interlocked.Increment(ref fullTourInputCount);
+        }
 
         var walkthroughShots = (request.GeneratedClips ?? []).Where(clip => clip.FitToScene).ToArray();
         Assert.All(walkthroughShots, clip => Assert.True(File.Exists(clip.FilePath) && clip.Width > 0 && clip.LeadInMs > 0));
@@ -548,6 +557,7 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
 {
     private readonly ConcurrentQueue<Exception> submissionFailures = new();
     private readonly ConcurrentDictionary<string, ConcurrentQueue<WalkthroughVideoState>> polls = new();
+    private readonly ConcurrentDictionary<string, FullTourVideoSubmission> fullTourRequests = new();
     private int submitCount;
 
     public bool IsEnabled => true;
@@ -555,6 +565,10 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
     public string GenerationVersion => "fake-walkthrough-v1";
 
     public int ClipDurationMs => 5_000;
+
+    public string FullTourGenerationVersion => "fake-kling4-full-tour-v1";
+
+    public int FullTourDurationMs => 30_000;
 
     public int SubmitCount => submitCount;
 
@@ -599,10 +613,40 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
             : Task.FromResult($"fake-{submission.IdempotencyKey}");
     }
 
+    public Task<string> SubmitFullTourAsync(
+        FullTourVideoSubmission submission,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref submitCount);
+        Assert.InRange(
+            submission.Frames.Count,
+            FullTourVideoPolicy.MinimumFrames,
+            FullTourVideoPolicy.MaximumFrames);
+        Assert.All(submission.Frames, frame => Assert.True(frame.Frame.Content.CanRead));
+        if (submissionFailures.TryDequeue(out var failure))
+        {
+            return Task.FromException<string>(failure);
+        }
+
+        var requestId = $"fake-{Guid.NewGuid():N}";
+        fullTourRequests[requestId] = submission;
+        return Task.FromResult(requestId);
+    }
+
     public Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,
         CancellationToken cancellationToken = default)
     {
+        if (fullTourRequests.ContainsKey(providerRequestId))
+        {
+            return Task.FromResult(new WalkthroughVideoPollResult(
+                WalkthroughVideoState.Completed,
+                new MemoryStream(ClipBytes),
+                "fake-higgsfield",
+                "fake-kling4",
+                null));
+        }
+
         var transitionKey = providerRequestId["fake-".Length..][..32];
         var state = polls.TryGetValue(transitionKey, out var queue) && queue.TryDequeue(out var next)
             ? next

@@ -186,6 +186,76 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
     }
 
     [Fact]
+    public async Task FullTourUploadsOrderedTourMapFramesAndUsesKling4ThirtySecond1080pRequest()
+    {
+        var uploaded = 0;
+        var handler = new RoutingHandler(request => request.RequestUri!.AbsoluteUri switch
+        {
+            "https://api.higgsfield.test/files/generate-upload-url" => Json(new
+            {
+                upload_url = $"https://uploads.storage.test/{++uploaded}",
+                public_url = $"https://cdn.storage.test/frame-{uploaded}.jpg",
+            }),
+            "https://api.higgsfield.test/kling-video/v4.0/image-to-video" => Json(new
+            {
+                status = "queued",
+                request_id = "req_full_tour",
+            }),
+            _ when request.RequestUri!.Host == "uploads.storage.test" => new HttpResponseMessage(HttpStatusCode.OK),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var client = new HttpClient(handler);
+        await using var exterior = new MemoryStream([1]);
+        await using var entry = new MemoryStream([2]);
+        await using var kitchen = new MemoryStream([3]);
+        var provider = CreateProvider(client);
+
+        var requestId = await provider.SubmitFullTourAsync(new FullTourVideoSubmission(
+        [
+            new(new WalkthroughVideoFrame(exterior, "image/jpeg"), "Exterior front", WalkthroughDirection.Ahead),
+            new(new WalkthroughVideoFrame(entry, "image/jpeg"), "Entry foyer", WalkthroughDirection.Left),
+            new(new WalkthroughVideoFrame(kitchen, "image/jpeg"), "Kitchen"),
+        ], "campaign-1"));
+
+        Assert.Equal("req_full_tour", requestId);
+        using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
+        var root = generation.RootElement;
+        Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("image_url").GetString());
+        Assert.Equal("https://cdn.storage.test/frame-2.jpg", root.GetProperty("image_urls")[0].GetString());
+        Assert.Equal("https://cdn.storage.test/frame-3.jpg", root.GetProperty("end_image_url").GetString());
+        Assert.Equal(30, root.GetProperty("duration").GetInt32());
+        Assert.Equal("1080p", root.GetProperty("resolution").GetString());
+        var prompt = root.GetProperty("prompt").GetString()!;
+        Assert.Contains("exact order", prompt, StringComparison.Ordinal);
+        Assert.Contains("Exterior front; next, straight ahead", prompt, StringComparison.Ordinal);
+        Assert.Contains("Entry foyer; next, turn left", prompt, StringComparison.Ordinal);
+        Assert.Contains("Keyframe 3: arrive in Kitchen", prompt, StringComparison.Ordinal);
+        Assert.Equal(30_000, provider.FullTourDurationMs);
+        Assert.Contains("full-tour", provider.FullTourGenerationVersion, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FullTourRejectsMoreThanTenFramesBeforeUploading()
+    {
+        var handler = new RoutingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(handler);
+        var frames = Enumerable.Range(0, FullTourVideoPolicy.MaximumFrames + 1)
+            .Select(index => new FullTourVideoFrame(
+                new WalkthroughVideoFrame(new MemoryStream([checked((byte)index)]), "image/jpeg"),
+                $"Stop {index}"))
+            .ToArray();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CreateProvider(client).SubmitFullTourAsync(
+            new FullTourVideoSubmission(frames, "too-many")));
+
+        Assert.Empty(handler.Requests);
+        foreach (var frame in frames)
+        {
+            await frame.Frame.Content.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task PollDownloadsTheFinishedClipWithoutSendingTheKeyToTheVideoHost()
     {
         var handler = new RoutingHandler(request => request.RequestUri!.Host switch

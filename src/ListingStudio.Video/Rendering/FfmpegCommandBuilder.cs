@@ -72,7 +72,10 @@ public static class FfmpegCommandBuilder
 
         ValidateOutput(request.Specification);
         ValidateTimeline(request.Specification);
-        var walkthroughs = PlanWalkthroughs(scenes, request.WalkthroughTransitions);
+        var fullTour = ValidateFullTour(request);
+        var walkthroughs = fullTour is null
+            ? PlanWalkthroughs(scenes, request.WalkthroughTransitions)
+            : [];
         if (walkthroughs.Count > 0)
         {
             // A walk-through ends on the next photo, so the next scene cuts in instead of blending.
@@ -82,7 +85,9 @@ public static class FfmpegCommandBuilder
             request = request with { Specification = request.Specification with { Scenes = scenes } };
         }
 
-        var aerialIntro = PlanAerialIntro(scenes, request.AerialIntro, walkthroughs);
+        var aerialIntro = fullTour is null
+            ? PlanAerialIntro(scenes, request.AerialIntro, walkthroughs)
+            : null;
         var sceneAssets = scenes.Select((scene, index) => ResolveAsset(
             scene,
             media,
@@ -207,6 +212,13 @@ public static class FfmpegCommandBuilder
             ]);
         }
 
+        int? fullTourInput = null;
+        if (fullTour is not null)
+        {
+            fullTourInput = nextInput++;
+            arguments.AddRange(["-stream_loop", "-1", "-i", fullTour.FilePath]);
+        }
+
         var inputs = new RenderInputIndexes(
             narrationInput,
             musicInput,
@@ -216,7 +228,8 @@ public static class FfmpegCommandBuilder
             walkthroughs,
             walkthroughInputs,
             aerialIntro,
-            aerialIntroInput);
+            aerialIntroInput,
+            fullTourInput);
         var hasAgentPresenter = agentPresenter is not null;
         var ffmpegThreadCount = hasAgentPresenter ? "2" : "1";
         var videoPreset = hasAgentPresenter ? "veryfast" : "faster";
@@ -262,77 +275,90 @@ public static class FfmpegCommandBuilder
     {
         var specification = request.Specification;
         var filters = new List<string>();
-        for (var index = 0; index < specification.Scenes.Count; index++)
-        {
-            var scene = specification.Scenes[index];
-            var extensionMs = index + 1 < specification.Scenes.Count
-                ? specification.Scenes[index + 1].TransitionIn.DurationMs
-                : 0;
-            var intro = index == 0 ? inputs.AerialIntro : null;
-            var hold = intro is not null
-                || inputs.Walkthroughs.ContainsKey(index)
-                || inputs.Walkthroughs.ContainsKey(index - 1);
-            var sceneFilter = BuildSceneFilter(index, scene, assets[index], specification.Output, extensionMs, hold);
-            var hasWalkthrough = inputs.Walkthroughs.TryGetValue(index, out var walkthrough);
-            if (intro is null && !hasWalkthrough)
-            {
-                filters.Add(sceneFilter);
-                continue;
-            }
-
-            filters.Add(sceneFilter[..^$"[scene{index}]".Length] + $"[scene{index}still]");
-            var introMs = intro?.PlayMs ?? 0;
-            var body = intro is null ? $"scene{index}" : $"scene{index}body";
-            if (hasWalkthrough)
-            {
-                filters.Add(BuildWalkthroughFilter(
-                    index,
-                    walkthrough!,
-                    inputs.WalkthroughInputs[index],
-                    specification.Output,
-                    introMs,
-                    body));
-            }
-            else
-            {
-                filters.Add($"[scene{index}still]trim=duration={Seconds(scene.DurationMs + extensionMs - introMs)},"
-                    + $"setpts=PTS-STARTPTS[{body}]");
-            }
-
-            if (intro is not null)
-            {
-                filters.Add(BuildAerialIntroFilter(index, intro, inputs.AerialIntroInput!.Value, specification.Output));
-                filters.Add($"[scene{index}intro][{body}]concat=n=2:v=1:a=0[scene{index}]");
-            }
-        }
-
-        var current = "scene0";
-        for (var index = 1; index < specification.Scenes.Count; index++)
-        {
-            var transition = specification.Scenes[index].TransitionIn;
-            var next = $"timeline{index}";
-            if (transition.Type == TransitionKind.Cut)
-            {
-                filters.Add($"[{current}][scene{index}]concat=n=2:v=1:a=0[{next}]");
-            }
-            else
-            {
-                var name = transition.Type switch
-                {
-                    TransitionKind.Crossfade => "fade",
-                    TransitionKind.DipToBlack => "fadeblack",
-                    _ => throw new ArgumentOutOfRangeException(nameof(request), "Unsupported transition type."),
-                };
-                filters.Add(
-                    $"[{current}][scene{index}]xfade=transition={name}:duration={Seconds(transition.DurationMs)}"
-                    + $":offset={Seconds(specification.Scenes[index].StartMs)}[{next}]");
-            }
-
-            current = next;
-        }
-
         var programMs = (int)specification.RequestedDuration * 1_000;
-        filters.Add($"[{current}]trim=duration={Seconds(programMs)},setpts=PTS-STARTPTS[videoTimeline]");
+        string current;
+        if (inputs.FullTourInput is { } fullTourInput)
+        {
+            filters.Add($"[{fullTourInput}:v]{FillTransform(specification.Output)},"
+                + $"fps={specification.Output.FrameRate},format=yuv420p,settb=AVTB,"
+                + $"tpad=stop_mode=clone:stop_duration={Seconds(programMs)},"
+                + $"trim=duration={Seconds(programMs)},setpts=PTS-STARTPTS[videoTimeline]");
+            current = "videoTimeline";
+        }
+        else
+        {
+            for (var index = 0; index < specification.Scenes.Count; index++)
+            {
+                var scene = specification.Scenes[index];
+                var extensionMs = index + 1 < specification.Scenes.Count
+                    ? specification.Scenes[index + 1].TransitionIn.DurationMs
+                    : 0;
+                var intro = index == 0 ? inputs.AerialIntro : null;
+                var hold = intro is not null
+                    || inputs.Walkthroughs.ContainsKey(index)
+                    || inputs.Walkthroughs.ContainsKey(index - 1);
+                var sceneFilter = BuildSceneFilter(index, scene, assets[index], specification.Output, extensionMs, hold);
+                var hasWalkthrough = inputs.Walkthroughs.TryGetValue(index, out var walkthrough);
+                if (intro is null && !hasWalkthrough)
+                {
+                    filters.Add(sceneFilter);
+                    continue;
+                }
+
+                filters.Add(sceneFilter[..^$"[scene{index}]".Length] + $"[scene{index}still]");
+                var introMs = intro?.PlayMs ?? 0;
+                var body = intro is null ? $"scene{index}" : $"scene{index}body";
+                if (hasWalkthrough)
+                {
+                    filters.Add(BuildWalkthroughFilter(
+                        index,
+                        walkthrough!,
+                        inputs.WalkthroughInputs[index],
+                        specification.Output,
+                        introMs,
+                        body));
+                }
+                else
+                {
+                    filters.Add($"[scene{index}still]trim=duration={Seconds(scene.DurationMs + extensionMs - introMs)},"
+                        + $"setpts=PTS-STARTPTS[{body}]");
+                }
+
+                if (intro is not null)
+                {
+                    filters.Add(BuildAerialIntroFilter(index, intro, inputs.AerialIntroInput!.Value, specification.Output));
+                    filters.Add($"[scene{index}intro][{body}]concat=n=2:v=1:a=0[scene{index}]");
+                }
+            }
+
+            current = "scene0";
+            for (var index = 1; index < specification.Scenes.Count; index++)
+            {
+                var transition = specification.Scenes[index].TransitionIn;
+                var next = $"timeline{index}";
+                if (transition.Type == TransitionKind.Cut)
+                {
+                    filters.Add($"[{current}][scene{index}]concat=n=2:v=1:a=0[{next}]");
+                }
+                else
+                {
+                    var name = transition.Type switch
+                    {
+                        TransitionKind.Crossfade => "fade",
+                        TransitionKind.DipToBlack => "fadeblack",
+                        _ => throw new ArgumentOutOfRangeException(nameof(request), "Unsupported transition type."),
+                    };
+                    filters.Add(
+                        $"[{current}][scene{index}]xfade=transition={name}:duration={Seconds(transition.DurationMs)}"
+                        + $":offset={Seconds(specification.Scenes[index].StartMs)}[{next}]");
+                }
+
+                current = next;
+            }
+
+            filters.Add($"[{current}]trim=duration={Seconds(programMs)},setpts=PTS-STARTPTS[videoTimeline]");
+            current = "videoTimeline";
+        }
         current = BuildNeighborhoodFilters(
             specification,
             filters,
@@ -438,6 +464,26 @@ public static class FfmpegCommandBuilder
             + $"fps={output.FrameRate},format=yuv420p,settb=AVTB,"
             + $"tpad=stop_mode=clone:stop_duration={Seconds(intro.PlayMs)},"
             + $"trim=duration={Seconds(intro.PlayMs)},setpts=PTS-STARTPTS[scene{index}intro]";
+    }
+
+    private static VideoRenderFullTourAsset? ValidateFullTour(VideoRenderRequest request)
+    {
+        var asset = request.FullTour;
+        if (asset is null)
+        {
+            return null;
+        }
+
+        var programMs = (int)request.Specification.RequestedDuration * 1_000;
+        if (request.Specification.RequestedDuration != RequestedDuration.Feature30
+            || asset.DurationMs < programMs - 1_000
+            || asset.DurationMs > programMs + 5_000
+            || !File.Exists(asset.FilePath))
+        {
+            throw new ArgumentException("A Kling full-tour asset must be an existing approximately 30-second clip.");
+        }
+
+        return asset;
     }
 
     /// <summary>
@@ -1577,7 +1623,8 @@ public static class FfmpegCommandBuilder
         IReadOnlyDictionary<int, SceneWalkthrough> Walkthroughs,
         IReadOnlyDictionary<int, int> WalkthroughInputs,
         SceneAerialIntro? AerialIntro,
-        int? AerialIntroInput);
+        int? AerialIntroInput,
+        int? FullTourInput);
 
     private sealed record SceneAerialIntro(
         VideoRenderAerialIntroAsset Asset,

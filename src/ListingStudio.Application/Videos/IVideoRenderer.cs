@@ -81,6 +81,14 @@ public sealed record VideoRenderAerialIntroAsset(
     decimal PlaybackRate = AerialIntroClip.BriskPlaybackRate);
 
 /// <summary>
+/// An experimental continuous 30-second Tour Map master. It replaces only the base scene timeline; narration,
+/// captions, branding, music and the agent's opening/closing presenter remain in the established renderer.
+/// </summary>
+public sealed record VideoRenderFullTourAsset(
+    string FilePath,
+    int DurationMs);
+
+/// <summary>
 /// A lip-synced agent presenter whose first and optional second source sections align with the campaign narration.
 /// The renderer ignores the clip's audio and keeps the campaign's original narration mix.
 /// </summary>
@@ -114,7 +122,8 @@ public sealed record VideoRenderRequest(
     IReadOnlyList<VideoRenderWalkthroughTransitionAsset>? WalkthroughTransitions = null,
     VideoRenderAgentPresenterAsset? AgentPresenter = null,
     VideoRenderAerialIntroAsset? AerialIntro = null,
-    ListingStudio.Domain.Campaigns.CampaignCaptionStyle? CaptionStyle = null);
+    ListingStudio.Domain.Campaigns.CampaignCaptionStyle? CaptionStyle = null,
+    VideoRenderFullTourAsset? FullTour = null);
 
 public sealed record VideoRenderResult(
     string OutputFilePath,
