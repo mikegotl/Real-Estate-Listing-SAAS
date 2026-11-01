@@ -1,0 +1,308 @@
+@* The recommendation-led vertical workflow: goal, then the videos this listing can support. Shown only while
+   VerticalVideoLibraryV1 is on for the workspace; the Campaign tab shows the legacy controls otherwise. *@
+
+<section class="vertical-planner" aria-labelledby="vertical-goal-heading" data-testid="vertical-planner">
+    <MudPaper Outlined="true" Class="pa-4 mb-4" id="vertical-goal">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3" id="vertical-goal-heading">1. What is this campaign for?</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Your goal sets the campaign message. It doesn't decide which videos are made; the listing's photos, footage
+            and confirmed facts do.
+        </MudText>
+        <MudRadioGroup T="VerticalCampaignGoal?" Value="Goal" ValueChanged="ChooseGoalAsync" Disabled="Disabled"
+                       aria-label="Campaign goal" data-testid="vertical-goal-options">
+            <div class="vertical-goal-grid">
+                @foreach (var goal in Enum.GetValues<VerticalCampaignGoal>())
+                {
+                    <MudPaper Outlined="true" Class="@($"pa-3 vertical-goal {(Goal == goal ? "is-selected" : string.Empty)}")">
+                        <MudRadio T="VerticalCampaignGoal?" Value="@((VerticalCampaignGoal?)goal)" Color="Color.Primary"
+                                  data-testid="@($"goal-{goal}")">
+                            @VerticalFormatNames.Goal(goal)
+                        </MudRadio>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@VerticalFormatNames.GoalDescription(goal)</MudText>
+                    </MudPaper>
+                }
+            </div>
+        </MudRadioGroup>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-4 mb-4" id="vertical-formats">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3">2. Videos this listing can support</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Each video has its own hook and is built only from your verified facts, photos and footage. Every 9:16 file
+            can be posted to TikTok, Instagram Reels or YouTube Shorts.
+            <ArticleGuideLink Placement="@ArticleLinks.Placements.Recommendations" Text="How these recommendations are made" Inline="true" />
+        </MudText>
+
+        @if (Plan is null || Picker is null)
+        {
+            <MudText Typo="Typo.body2" data-testid="vertical-plan-loading">Checking what this listing can support…</MudText>
+        }
+        else
+        {
+            var eligibleCount = Picker.Eligible.Count;
+            @if (eligibleCount == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3" data-testid="vertical-none-eligible">
+                    This listing can't support a recommended video yet. The campaign will make one shared vertical video
+                    instead. Add what's missing below to unlock more.
+                </MudAlert>
+            }
+            else
+            {
+                <MudStack Row="true" Spacing="2" Class="mb-3" Style="flex-wrap: wrap;">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(Disabled || Picker.Recommended.Count == 0)"
+                               OnClick="UseRecommendedAsync" data-testid="use-recommended">
+                        Use the recommended @(Picker.Recommended.Count == 1 ? "video" : $"{Picker.Recommended.Count} videos")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Disabled="@(Disabled || eligibleCount < 2)"
+                               OnClick="UseAllEligibleAsync" data-testid="use-all-eligible">
+                        Make every eligible video (@eligibleCount)
+                    </MudButton>
+                </MudStack>
+                @if (Picker.Recommended.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3" data-testid="vertical-none-recommended">
+                        None of the videos scored high enough to recommend. You can still pick one that's ready.
+                    </MudText>
+                }
+            }
+
+            <ul class="vertical-format-list" aria-label="Vertical video formats">
+                @foreach (var item in Plan.Recommendation.Formats.OrderByDescending(format => format.IsEligible).ThenBy(format => format.Rank))
+                {
+                    var recipe = Plan.Recipes.FirstOrDefault(candidate => candidate.Format == item.Format);
+                    var chosen = Picker.IsChosen(item.Format);
+                    var headingId = $"format-{item.Format}";
+                    <li class="@($"vertical-format {(chosen ? "is-chosen" : string.Empty)} {(item.IsEligible ? string.Empty : "is-ineligible")}")"
+                        aria-labelledby="@headingId" data-testid="@($"format-card-{item.Format}")">
+                        <MudPaper Outlined="true" Class="pa-3 h-100">
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Spacing="2">
+                                <div>
+                                    <MudText Typo="Typo.subtitle2" HtmlTag="h4" id="@headingId">@VerticalFormatNames.Name(item.Format)</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                        @VerticalFormatNames.Purpose(item.Purpose)
+                                        @if (recipe is not null)
+                                        {
+                                            <span> · @recipe.DurationSeconds seconds@(recipe.Loops ? ", loops" : string.Empty)</span>
+                                        }
+                                    </MudText>
+                                </div>
+                                <div class="vertical-format-score" aria-label="@($"Score {item.Score} out of 100, {VerticalFormatNames.Strength(item.Strength)}")">
+                                    @if (item.IsRecommended)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">Recommended</MudChip>
+                                    }
+                                    <MudChip T="string" Size="Size.Small" Color="@StrengthColor(item.Strength)" Variant="Variant.Outlined">
+                                        @VerticalFormatNames.Strength(item.Strength) · @item.Score/100
+                                    </MudChip>
+                                </div>
+                            </MudStack>
+                            <MudText Typo="Typo.body2" Class="mt-1">@VerticalFormatNames.Description(item.Format)</MudText>
+
+                            @if (recipe is not null)
+                            {
+                                <div class="vertical-format-preview mt-2">
+                                    @if (recipe.PrimaryPropertyMediaId is { } mediaId)
+                                    {
+                                        <img src="@($"/property-media/{mediaId}")" alt="@PrimaryMediaAlt(mediaId)" loading="lazy" />
+                                    }
+                                    else if (recipe.PrimaryPropertyVideoId is not null)
+                                    {
+                                        <span class="vertical-format-footage" aria-hidden="true">
+                                            <MudIcon Icon="@Icons.Material.Filled.Videocam" />
+                                        </span>
+                                    }
+                                    <div>
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Example hook</MudText>
+                                        <MudText Typo="Typo.body2" data-testid="@($"hook-{item.Format}")">“@recipe.Hook.Text”</MudText>
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">
+                                            Opens on: @PrimaryMediaLabel(recipe)
+                                        </MudText>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (item.Reasons.Count > 0)
+                            {
+                                <MudText Typo="Typo.caption" Class="d-block mt-2"><strong>Why</strong></MudText>
+                                <ul class="vertical-format-reasons">
+                                    @foreach (var reason in item.Reasons)
+                                    {
+                                        <li>@reason</li>
+                                    }
+                                </ul>
+                            }
+                            @if (item.MissingInputs.Count > 0)
+                            {
+                                <MudText Typo="Typo.caption" Class="d-block mt-2"><strong>@(item.IsEligible ? "Would score higher with" : "Needs")</strong></MudText>
+                                <ul class="vertical-format-missing" data-testid="@($"missing-{item.Format}")">
+                                    @foreach (var missing in item.MissingInputs)
+                                    {
+                                        <li>@missing</li>
+                                    }
+                                </ul>
+                            }
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2" Style="flex-wrap: wrap;">
+                                <MudCheckBox T="bool"
+                                             Value="chosen"
+                                             ValueChanged="@(value => SetAsync(item.Format, value))"
+                                             Disabled="@(Disabled || !item.IsEligible)"
+                                             Color="Color.Primary"
+                                             Label="@(item.IsEligible ? "Make this video" : "Not ready yet")"
+                                             aria-describedby="@headingId"
+                                             data-testid="@($"choose-{item.Format}")" />
+                                @if (chosen && SwapOptions(item.Format) is { Count: > 0 } swaps)
+                                {
+                                    <MudMenu Label="Swap for…" Variant="Variant.Text" Size="Size.Small" Disabled="Disabled"
+                                             AriaLabel="@($"Swap {VerticalFormatNames.Name(item.Format)} for another video")"
+                                             data-testid="@($"swap-{item.Format}")">
+                                        @foreach (var swap in swaps)
+                                        {
+                                            <MudMenuItem OnClick="@(() => SubstituteAsync(item.Format, swap))">@VerticalFormatNames.Name(swap)</MudMenuItem>
+                                        }
+                                    </MudMenu>
+                                }
+                            </MudStack>
+                        </MudPaper>
+                    </li>
+                }
+            </ul>
+        }
+
+        @ChildContent
+    </MudPaper>
+
+    @if (Picker is not null)
+    {
+        <MudAlert Severity="@(NothingPicked ? Severity.Warning : Severity.Normal)" Dense="true" Class="mb-4"
+                  aria-live="polite" data-testid="vertical-estimate">
+            @if (NothingPicked)
+            {
+                <span>Pick at least one video, or use the recommended set.</span>
+            }
+            else
+            {
+                <span>@EstimateText</span>
+            }
+            <span class="d-block mt-1">
+                This counts as one campaign against your monthly allowance, however many videos it makes.
+                Each video is checked before it is saved; if one can't be made, you still get the others.
+            </span>
+        </MudAlert>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public VerticalCreativePlan? Plan { get; set; }
+
+    [Parameter, EditorRequired]
+    public VerticalVideoPicker? Picker { get; set; }
+
+    [Parameter]
+    public VerticalCampaignGoal? Goal { get; set; }
+
+    [Parameter]
+    public EventCallback<VerticalCampaignGoal> GoalChanged { get; set; }
+
+    /// <summary>Raised after the agent changes which videos are picked.</summary>
+    [Parameter]
+    public EventCallback SelectionChanged { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>Landscape videos and still posts selected alongside the vertical videos.</summary>
+    [Parameter]
+    public int OtherOutputCount { get; set; }
+
+    /// <summary>Inputs that unlock more formats (confirmed story, access line, host footage).</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The agent has eligible formats to pick from but picked none.</summary>
+    public bool NothingPicked => Picker is { Chosen.Count: 0, Eligible.Count: > 0 };
+
+    private string EstimateText
+    {
+        get
+        {
+            var vertical = Picker!.Chosen.Count;
+            var verticalText = vertical == 0
+                ? "1 shared vertical video"
+                : vertical == 1 ? "1 vertical video" : $"{vertical} vertical videos";
+            var others = OtherOutputCount switch
+            {
+                0 => string.Empty,
+                1 => " and 1 other file",
+                _ => $" and {OtherOutputCount} other files",
+            };
+            return $"You'll get {verticalText}{others}.";
+        }
+    }
+
+    private async Task ChooseGoalAsync(VerticalCampaignGoal? goal)
+    {
+        if (goal is { } chosen)
+        {
+            await GoalChanged.InvokeAsync(chosen);
+        }
+    }
+
+    private async Task UseRecommendedAsync()
+    {
+        Picker!.UseRecommended();
+        await SelectionChanged.InvokeAsync();
+    }
+
+    private async Task UseAllEligibleAsync()
+    {
+        Picker!.UseAllEligible();
+        await SelectionChanged.InvokeAsync();
+    }
+
+    private async Task SetAsync(VerticalCreativeFormat format, bool include)
+    {
+        if (Picker!.Set(format, include))
+        {
+            await SelectionChanged.InvokeAsync();
+        }
+    }
+
+    private async Task SubstituteAsync(VerticalCreativeFormat remove, VerticalCreativeFormat add)
+    {
+        if (Picker!.Substitute(remove, add))
+        {
+            await SelectionChanged.InvokeAsync();
+        }
+    }
+
+    private List<VerticalCreativeFormat> SwapOptions(VerticalCreativeFormat format) =>
+        Picker!.Eligible.Where(candidate => candidate != format && !Picker.IsChosen(candidate)).ToList();
+
+    private string PrimaryMediaLabel(VerticalCreativeRecipe recipe)
+    {
+        if (recipe.PrimaryPropertyMediaId is { } mediaId)
+        {
+            var stop = Plan!.Input.Photos.FirstOrDefault(photo => photo.MediaId == mediaId)?.Stop;
+            return string.IsNullOrWhiteSpace(stop) ? "a storyboard photo" : stop;
+        }
+
+        return recipe.PrimaryPropertyVideoId is not null ? "your property video" : "the first storyboard photo";
+    }
+
+    private string PrimaryMediaAlt(Guid mediaId)
+    {
+        var stop = Plan!.Input.Photos.FirstOrDefault(photo => photo.MediaId == mediaId)?.Stop;
+        return string.IsNullOrWhiteSpace(stop) ? "Opening photo" : $"Opening photo: {stop}";
+    }
+
+    private static Color StrengthColor(VerticalRecommendationStrength strength) => strength switch
+    {
+        VerticalRecommendationStrength.Strong => Color.Success,
+        VerticalRecommendationStrength.Good => Color.Info,
+        VerticalRecommendationStrength.Weak => Color.Warning,
+        _ => Color.Default,
+    };
+}

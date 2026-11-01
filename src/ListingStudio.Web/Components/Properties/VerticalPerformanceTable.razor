@@ -1,0 +1,103 @@
+@* Compares the videos of one group (a campaign's library or one creative test). Reach and engagement are shown apart
+   from business results, and both leaders are marked, so a video with fewer likes but more leads stays visible. *@
+
+<div class="performance-table-wrap">
+    <table class="performance-table" data-testid="performance-table">
+        <caption class="visually-hidden">@Caption</caption>
+        <thead>
+            <tr>
+                <th scope="col" rowspan="2">Video</th>
+                <th scope="colgroup" colspan="5" class="group-awareness">Reach and engagement</th>
+                <th scope="colgroup" colspan="4" class="group-business">Business results</th>
+            </tr>
+            <tr>
+                <th scope="col" class="group-awareness">Views</th>
+                <th scope="col" class="group-awareness">Like rate</th>
+                <th scope="col" class="group-awareness">Shares</th>
+                <th scope="col" class="group-awareness">Saves</th>
+                <th scope="col" class="group-awareness">Watched to end</th>
+                <th scope="col" class="group-business">Click rate</th>
+                <th scope="col" class="group-business">Leads</th>
+                <th scope="col" class="group-business">Lead rate</th>
+                <th scope="col" class="group-business">Showings</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var video in View.Videos)
+            {
+                <tr data-testid="@($"performance-row-{video.Format}-{video.HookVariant}")">
+                    <th scope="row">
+                        <span class="performance-name">@VerticalFormatNames.Name(video.Format)@(video.HookVariant == "b" ? " · hook B" : string.Empty)</span>
+                        <span class="performance-meta">@PostsText(video)</span>
+                        @if (video.IsAwarenessLeader)
+                        {
+                            <span class="performance-badge awareness" data-testid="awareness-leader">Most reach</span>
+                        }
+                        @if (video.IsBusinessLeader)
+                        {
+                            <span class="performance-badge business" data-testid="business-leader">Most leads</span>
+                        }
+                    </th>
+                    @if (!video.HasMetrics)
+                    {
+                        <td colspan="9" class="performance-empty">No numbers yet</td>
+                    }
+                    else
+                    {
+                        <td class="group-awareness">@video.Totals.Views.ToString("N0", Culture)@Uplift(video.Uplift.Views)</td>
+                        <td class="group-awareness">@Percent(video.Rates.LikeRate)@Uplift(video.Uplift.LikeRate)</td>
+                        <td class="group-awareness">@video.Totals.Shares.ToString("N0", Culture)</td>
+                        <td class="group-awareness">@video.Totals.Saves.ToString("N0", Culture)</td>
+                        <td class="group-awareness">@Percent(video.Rates.CompletionRate)</td>
+                        <td class="group-business">@Percent(video.Rates.ClickThroughRate)@Uplift(video.Uplift.ClickThroughRate)</td>
+                        <td class="group-business">@video.Totals.Leads.ToString("N0", Culture)@Uplift(video.Uplift.Leads)</td>
+                        <td class="group-business">@Percent(video.Rates.LeadConversion)</td>
+                        <td class="group-business">@video.Totals.BookedShowings.ToString("N0", Culture)</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<p class="performance-footnote">
+    Latest numbers per post, added up per video. Arrows compare each video with the average of the others here.
+    Calculation @View.CalculationVersion.
+</p>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+
+    [Parameter, EditorRequired]
+    public VerticalPerformanceView View { get; set; } = null!;
+
+    [Parameter]
+    public string Caption { get; set; } = "Video performance";
+
+    private static string Percent(decimal? rate) => rate is { } value ? value.ToString("0.#%", Culture) : "–";
+
+    private static RenderFragment Uplift(decimal? uplift) => builder =>
+    {
+        if (uplift is not { } value || value == 0)
+        {
+            return;
+        }
+
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", value > 0 ? "uplift up" : "uplift down");
+        builder.AddContent(2, $" {(value > 0 ? "▲" : "▼")} {Math.Abs(value).ToString("0%", Culture)}");
+        builder.CloseElement();
+    };
+
+    private static string PostsText(VerticalPerformanceVideo video)
+    {
+        var platforms = video.Posts.Select(post => post.Platform switch
+        {
+            DistributionPlatform.InstagramReels => "Instagram",
+            DistributionPlatform.YouTubeShorts => "YouTube",
+            _ => "TikTok",
+        }).Distinct().ToArray();
+        return video.Posts.Count == 0
+            ? "Not posted yet"
+            : $"{video.Posts.Count} {(video.Posts.Count == 1 ? "post" : "posts")} · {string.Join(", ", platforms)}";
+    }
+}

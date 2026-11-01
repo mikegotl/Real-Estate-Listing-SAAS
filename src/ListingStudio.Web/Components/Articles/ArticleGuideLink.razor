@@ -1,0 +1,30 @@
+@* A contextual link to the vertical video library guide. Callers render it only while VerticalVideoLibraryV1 is on for
+   the workspace; the tracked redirect checks again and counts the click by placement only. *@
+
+@if (Inline)
+{
+    <a class="article-guide-link inline" href="@Href" data-testid="@($"guide-link-{Placement}")">@Text</a>
+}
+else
+{
+    <p class="@($"article-guide-link {Class}")">
+        <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Size="Size.Small" aria-hidden="true" />
+        <a href="@Href" data-testid="@($"guide-link-{Placement}")">@Text</a>
+    </p>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string Placement { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Text { get; set; } = "One Listing Four TikToks: how the recommended videos work";
+
+    [Parameter]
+    public bool Inline { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    private string Href => ArticleLinks.Track(ArticleLibrary.VerticalLibraryGuide.Summary.Slug, Placement);
+}

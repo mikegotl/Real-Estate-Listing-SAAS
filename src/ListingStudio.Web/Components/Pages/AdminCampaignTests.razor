@@ -9,30 +9,62 @@
 @inject IJSRuntime JSRuntime
 @inject ILogger<AdminCampaignTests> Logger
 
-<PageTitle>TikTok campaign review</PageTitle>
+<PageTitle>@(creativeEnabled ? "TikTok Creative Testing Studio" : "TikTok campaign review")</PageTitle>
 <PropertyPageProviders />
 
 <div class="section-row admin-page-heading">
     <div>
         <span class="eyebrow">CAMPAIGN QUALITY</span>
-        <MudText Typo="Typo.h3" HtmlTag="h1">TikTok review studio</MudText>
-        <MudText Typo="Typo.body1">Watch your workspace's vertical campaigns, record approval, and work through requested changes.</MudText>
+        @if (creativeEnabled)
+        {
+            <MudText Typo="Typo.h3" HtmlTag="h1">TikTok Creative Testing Studio</MudText>
+            <MudText Typo="Typo.body1">Test which creative formats suit a listing, review each video, and keep the vertical render regression checks running.</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.h3" HtmlTag="h1">TikTok review studio</MudText>
+            <MudText Typo="Typo.body1">Watch your workspace's vertical campaigns, record approval, and work through requested changes.</MudText>
+        }
     </div>
     <div class="admin-heading-actions">
-        @if (HasActiveWork())
+        @if (ShowRegression && HasActiveWork())
         {
             <span class="review-auto-refresh" role="status">
                 <MudIcon Icon="@Icons.Material.Filled.Sync" Size="Size.Small" aria-hidden="true" />
                 Updates automatically every 5 seconds
             </span>
         }
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="LoadAsync"
-                   StartIcon="@Icons.Material.Filled.Refresh">@(busy ? "Refreshing…" : "Refresh gallery")</MudButton>
+        @if (ShowRegression)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="LoadAsync"
+                       StartIcon="@Icons.Material.Filled.Refresh">@(busy ? "Refreshing…" : "Refresh gallery")</MudButton>
+        }
         <MudButton Href="/properties" Variant="Variant.Outlined" Color="Color.Primary">Open properties</MudButton>
         <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
     </div>
 </div>
 
+@if (creativeEnabled)
+{
+    <div class="studio-tabs" role="tablist" aria-label="Testing studio sections">
+        <button type="button" role="tab" id="tab-creative" aria-selected="@(ShowRegression ? "false" : "true")"
+                aria-controls="panel-creative" class="@(ShowRegression ? null : "active")" @onclick="@(() => SelectTab("creative"))"
+                data-testid="tab-creative">Creative format testing</button>
+        <button type="button" role="tab" id="tab-regression" aria-selected="@(ShowRegression ? "true" : "false")"
+                aria-controls="panel-regression" class="@(ShowRegression ? "active" : null)" @onclick="@(() => SelectTab("regression"))"
+                data-testid="tab-regression">Vertical render regression testing</button>
+    </div>
+    @if (!ShowRegression)
+    {
+        <div role="tabpanel" id="panel-creative" aria-labelledby="tab-creative">
+            <AdminCreativeTestingTab />
+        </div>
+    }
+}
+
+@if (ShowRegression)
+{
+<div role="@(creativeEnabled ? "tabpanel" : null)" id="panel-regression" aria-labelledby="@(creativeEnabled ? "tab-regression" : null)">
 <div class="review-guidance">
     <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" aria-hidden="true" />
     <p>
@@ -182,8 +214,8 @@ else
                         <div class="review-grid">
             @foreach (var item in group.Items)
             {
-                var draft = DraftFor(item.JobId, item.Version);
-                <article id="@($"campaign-{item.JobId}")" class="review-card" @key="item.JobId">
+                var draft = DraftFor(item.DeliverableId, item.Version);
+                <article id="@($"campaign-{item.JobId}")" class="review-card" @key="@(item.DeliverableId == Guid.Empty ? item.JobId : item.DeliverableId)">
                     <header class="review-card-heading">
                         <div>
                             <span class="review-kicker">TikTok · 9:16</span>
@@ -197,7 +229,7 @@ else
                     @if (CanReview(item))
                     {
                         <div class="review-player">
-                            <video @key="@($"{item.JobId}-{item.Version}")" controls preload="metadata" playsinline
+                            <video @key="@($"{item.DeliverableId}-{item.Version}")" controls preload="metadata" playsinline
                                    aria-label="@($"TikTok video for {item.Address}, version {item.Version}")">
                                 <source src="@VideoUrl(item)" type="video/mp4" />
                                 Your browser does not support MP4 playback.
@@ -272,8 +304,9 @@ else
                                     </MudButton>
                                 </div>
                             </div>
-                            <CampaignVideoChatPanel @key="@($"chat-{item.JobId}-{item.Version}")"
+                            <CampaignVideoChatPanel @key="@($"chat-{item.DeliverableId}-{item.Version}")"
                                                     JobId="item.JobId" Kind="CampaignOutputKind.TikTok"
+                                                    DeliverableId="@(item.DeliverableId == Guid.Empty ? null : item.DeliverableId)"
                                                     VideoName="TikTok video" VersionChanged="LoadAsync" />
                         }
 
@@ -308,10 +341,14 @@ else
     }
 }
 
+</div>
+}
+
 @code {
     private readonly CancellationTokenSource disposal = new();
     private Task? pollingTask;
-    private readonly Dictionary<(Guid JobId, int Version), ReviewDraft> drafts = [];
+    // Drafts belong to one exact video version, so a replacement render starts a fresh review.
+    private readonly Dictionary<(Guid DeliverableId, int Version), ReviewDraft> drafts = [];
     private static readonly string[] TestCaseNames = ["Short voiceover · 30s", "Music and text · 30s", "Full voiceover · 60s"];
     private IReadOnlyList<CampaignReviewItem>? items;
     private IReadOnlyList<TikTokTestPropertyChoice> propertyChoices = [];
@@ -324,7 +361,33 @@ else
     private string? error;
     private string? notice;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
+    // The creative tab exists only while VerticalVideoLibraryV1 is on for this workspace; otherwise the page is the
+    // render regression gallery exactly as before, and ?tab=creative falls back to it.
+    private bool creativeEnabled;
+    private string? selectedTab;
+
+    private bool ShowRegression => !creativeEnabled || (selectedTab ?? Tab) == "regression";
+
+    private void SelectTab(string tab) => selectedTab = tab;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            creativeEnabled = await ScopedServices.GetRequiredService<IVerticalCreativeTestService>().IsEnabledAsync(userId, disposal.Token);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Logger.LogWarning(exception, "Checking whether creative testing is on failed");
+            creativeEnabled = false;
+        }
+
+        await LoadAsync();
+    }
 
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
@@ -463,9 +526,9 @@ else
         try
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-            await Service.DecideAsync(userId, item.JobId, item.Version, decision, DraftFor(item.JobId, item.Version).Feedback, disposal.Token);
+            await Service.DecideDeliverableAsync(userId, item.DeliverableId, item.Version, decision, DraftFor(item.DeliverableId, item.Version).Feedback, disposal.Token);
             await LoadDataAsync(userId);
-            DraftFor(item.JobId, item.Version).Feedback = null;
+            DraftFor(item.DeliverableId, item.Version).Feedback = null;
             notice = decision == CampaignVideoReviewDecision.Approved
                 ? $"Version {item.Version} approved. Future renders will need a new review."
                 : $"Changes requested for version {item.Version}. Use the video chat to propose and render the update.";
@@ -492,12 +555,12 @@ else
         }
     }
 
-    private ReviewDraft DraftFor(Guid jobId, int version)
+    private ReviewDraft DraftFor(Guid deliverableId, int version)
     {
-        if (!drafts.TryGetValue((jobId, version), out var draft))
+        if (!drafts.TryGetValue((deliverableId, version), out var draft))
         {
             draft = new ReviewDraft();
-            drafts.Add((jobId, version), draft);
+            drafts.Add((deliverableId, version), draft);
         }
 
         return draft;
@@ -549,7 +612,7 @@ else
         {
             while (await timer.WaitForNextTickAsync(disposal.Token))
             {
-                if (busy || !HasActiveWork())
+                if (busy || !ShowRegression || !HasActiveWork())
                 {
                     continue;
                 }
@@ -614,7 +677,9 @@ else
     private static bool CanReview(CampaignReviewItem item) => item.CampaignStatus == CampaignGenerationStatus.Completed
         && item.DeliverableStatus == CampaignDeliverableStatus.Rendered;
 
-    private static string VideoUrl(CampaignReviewItem item) => $"/campaigns/{item.JobId}/deliverables/TikTok?v={item.Version}";
+    private static string VideoUrl(CampaignReviewItem item) => item.DeliverableId == Guid.Empty
+        ? $"/campaigns/{item.JobId}/deliverables/TikTok?v={item.Version}"
+        : $"/campaigns/videos/{item.DeliverableId}?v={item.Version}";
 
     private static string DecisionText(CampaignReviewItem item) => item.Decision switch
     {
@@ -651,6 +716,10 @@ else
         CampaignGenerationStage.RenderHero or CampaignGenerationStage.RenderFeature
             or CampaignGenerationStage.RenderTeaser or CampaignGenerationStage.RenderLongForm => "rendering the video",
         CampaignGenerationStage.GenerateSocialCopy => "writing social posts",
+        CampaignGenerationStage.PlanVerticalLibrary => "choosing the vertical videos",
+        CampaignGenerationStage.GenerateVariantNarration => "recording the vertical voiceovers",
+        CampaignGenerationStage.RenderVariants => "rendering the vertical videos",
+        CampaignGenerationStage.GenerateVariantCopy => "writing the vertical captions",
         _ => "finishing up",
     };
 

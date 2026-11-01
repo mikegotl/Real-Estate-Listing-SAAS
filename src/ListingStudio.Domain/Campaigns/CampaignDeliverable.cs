@@ -132,7 +132,24 @@ public sealed class CampaignDeliverable
     /// <summary>Which version of the video this is: 1 as the campaign rendered it, higher after chat revisions.</summary>
     public int Version { get; private set; } = 1;
 
+    /// <summary>
+    /// The vertical video library entry this render belongs to, or null for a campaign output made outside the
+    /// library (every landscape output, and legacy vertical outputs not yet linked).
+    /// </summary>
+    public Guid? CampaignVideoVariantId { get; private set; }
+
+    /// <summary>
+    /// A campaign-level output (one per kind): not linked to a library video, or linked to the legacy video the
+    /// AddVerticalVideoLibrary backfill made for it, which reuses this deliverable's id as the video id. Recommended
+    /// library videos always have their own ids. Queries spell this out as
+    /// <c>CampaignVideoVariantId == null || CampaignVideoVariantId == Id</c>.
+    /// </summary>
+    public bool IsCampaignLevel => CampaignVideoVariantId is null || CampaignVideoVariantId == Id;
+
     public CampaignGenerationJob CampaignGenerationJob { get; private set; } = null!;
+
+    /// <summary>The library video this render belongs to; null for campaign-level outputs.</summary>
+    public CampaignVideoVariant? CampaignVideoVariant { get; private set; }
 
     public VideoNarration VideoNarration { get; private set; } = null!;
 
@@ -209,6 +226,22 @@ public sealed class CampaignDeliverable
         FileSize = fileSize;
         Version = version;
         RenderedAtUtc = now;
+    }
+
+    /// <summary>Links this render to the library video it was made for. A render belongs to one video for good.</summary>
+    public void AttachToVariant(Guid variantId)
+    {
+        if (variantId == Guid.Empty)
+        {
+            throw new ArgumentException("A library video is required.", nameof(variantId));
+        }
+
+        if (CampaignVideoVariantId is { } current && current != variantId)
+        {
+            throw new InvalidOperationException("This render already belongs to another library video.");
+        }
+
+        CampaignVideoVariantId = variantId;
     }
 
     public void UpdateSpecification(string specificationJson)

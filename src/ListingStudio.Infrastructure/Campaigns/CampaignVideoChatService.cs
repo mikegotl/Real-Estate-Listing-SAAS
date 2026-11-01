@@ -20,22 +20,94 @@ public sealed partial class CampaignVideoChatService(
     /// <summary>Each message costs an AI call, so one video's chat stops after this many of the user's messages.</summary>
     public const int MaximumUserMessagesPerVideo = 60;
 
-    public async Task<CampaignVideoChat?> GetAsync(
+    public Task<CampaignVideoChat?> GetAsync(
         string userId,
         Guid jobId,
         CampaignOutputKind kind,
-        CancellationToken cancellationToken = default)
-    {
-        var deliverable = await FindAsync(userId, jobId, kind, cancellationToken);
-        return deliverable is null ? null : await ToChatAsync(deliverable, cancellationToken);
-    }
+        CancellationToken cancellationToken = default) =>
+        GetCoreAsync(tracked => FindAsync(userId, jobId, kind, tracked, cancellationToken), cancellationToken);
 
-    public async Task<CampaignVideoChat?> SendAsync(
+    public Task<CampaignVideoChat?> GetForVideoAsync(
+        string userId,
+        Guid deliverableId,
+        CancellationToken cancellationToken = default) =>
+        GetCoreAsync(tracked => FindByIdAsync(userId, deliverableId, tracked, cancellationToken), cancellationToken);
+
+    public Task<CampaignVideoChat?> SendAsync(
         string userId,
         Guid jobId,
         CampaignOutputKind kind,
         string text,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SendCoreAsync(tracked => FindAsync(userId, jobId, kind, tracked, cancellationToken), userId, text, cancellationToken);
+
+    public Task<CampaignVideoChat?> SendForVideoAsync(
+        string userId,
+        Guid deliverableId,
+        string text,
+        CancellationToken cancellationToken = default) =>
+        SendCoreAsync(tracked => FindByIdAsync(userId, deliverableId, tracked, cancellationToken), userId, text, cancellationToken);
+
+    public Task<CampaignVideoChat?> RenderAsync(
+        string userId,
+        Guid jobId,
+        CampaignOutputKind kind,
+        Guid messageId,
+        CancellationToken cancellationToken = default) =>
+        RenderCoreAsync(tracked => FindAsync(userId, jobId, kind, tracked, cancellationToken), userId, messageId, cancellationToken);
+
+    public Task<CampaignVideoChat?> RenderForVideoAsync(
+        string userId,
+        Guid deliverableId,
+        Guid messageId,
+        CancellationToken cancellationToken = default) =>
+        RenderCoreAsync(tracked => FindByIdAsync(userId, deliverableId, tracked, cancellationToken), userId, messageId, cancellationToken);
+
+    public Task<CampaignVideoChat?> ConfirmFixAsync(
+        string userId,
+        Guid jobId,
+        CampaignOutputKind kind,
+        Guid messageId,
+        bool worked,
+        string? feedback,
+        CancellationToken cancellationToken = default) =>
+        ConfirmFixCoreAsync(tracked => FindAsync(userId, jobId, kind, tracked, cancellationToken), messageId, worked, feedback, cancellationToken);
+
+    public Task<CampaignVideoChat?> ConfirmFixForVideoAsync(
+        string userId,
+        Guid deliverableId,
+        Guid messageId,
+        bool worked,
+        string? feedback,
+        CancellationToken cancellationToken = default) =>
+        ConfirmFixCoreAsync(tracked => FindByIdAsync(userId, deliverableId, tracked, cancellationToken), messageId, worked, feedback, cancellationToken);
+
+    public Task<CampaignVideoChat?> UndoAsync(
+        string userId,
+        Guid jobId,
+        CampaignOutputKind kind,
+        CancellationToken cancellationToken = default) =>
+        UndoCoreAsync(tracked => FindAsync(userId, jobId, kind, tracked, cancellationToken), cancellationToken);
+
+    public Task<CampaignVideoChat?> UndoForVideoAsync(
+        string userId,
+        Guid deliverableId,
+        CancellationToken cancellationToken = default) =>
+        UndoCoreAsync(tracked => FindByIdAsync(userId, deliverableId, tracked, cancellationToken), cancellationToken);
+
+    private async Task<CampaignVideoChat?> GetCoreAsync(
+        Func<bool, Task<CampaignDeliverable?>> find,
+        CancellationToken cancellationToken)
+    {
+        var deliverable = await find(false);
+        return deliverable is null ? null : await ToChatAsync(deliverable, cancellationToken);
+    }
+
+    private async Task<CampaignVideoChat?> SendCoreAsync(
+        Func<bool, Task<CampaignDeliverable?>> find,
+        string userId,
+        string text,
+        CancellationToken cancellationToken)
     {
         var normalized = text?.Trim() ?? string.Empty;
         if (normalized.Length == 0)
@@ -48,12 +120,13 @@ public sealed partial class CampaignVideoChatService(
             throw new InvalidOperationException($"Keep the message under {ICampaignVideoChatService.MaximumMessageLength} characters.");
         }
 
-        var deliverable = await FindAsync(userId, jobId, kind, cancellationToken);
+        var deliverable = await find(false);
         if (deliverable is null)
         {
             return null;
         }
 
+        var kind = deliverable.Kind;
         var history = await dbContext.CampaignVideoChatMessages.AsNoTracking()
             .Where(message => message.OrganizationId == deliverable.OrganizationId
                 && message.CampaignDeliverableId == deliverable.Id)
@@ -81,7 +154,7 @@ public sealed partial class CampaignVideoChatService(
         var hasVoiceover = specification.Audio.NarrationSegments.Count > 0;
         CampaignVoiceAccent? currentVoice = hasVoiceover ? CampaignVideoEditing.CurrentVoice(job, revisions) : null;
         var request = new CampaignVideoChatRequest(
-            OutputName(kind),
+            await VideoNameAsync(deliverable, cancellationToken),
             (int)specification.RequestedDuration,
             specification.AspectRatio == VideoAspectRatio.Landscape16By9 ? "16:9" : "9:16",
             CampaignVideoEditor.Describe(specification, context.Photos),
@@ -146,14 +219,13 @@ public sealed partial class CampaignVideoChatService(
         return await ToChatAsync(deliverable, cancellationToken);
     }
 
-    public async Task<CampaignVideoChat?> RenderAsync(
+    private async Task<CampaignVideoChat?> RenderCoreAsync(
+        Func<bool, Task<CampaignDeliverable?>> find,
         string userId,
-        Guid jobId,
-        CampaignOutputKind kind,
         Guid messageId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
-        var deliverable = await FindAsync(userId, jobId, kind, cancellationToken);
+        var deliverable = await find(false);
         if (deliverable is null)
         {
             return null;
@@ -203,16 +275,14 @@ public sealed partial class CampaignVideoChatService(
         return await ToChatAsync(deliverable, cancellationToken);
     }
 
-    public async Task<CampaignVideoChat?> ConfirmFixAsync(
-        string userId,
-        Guid jobId,
-        CampaignOutputKind kind,
+    private async Task<CampaignVideoChat?> ConfirmFixCoreAsync(
+        Func<bool, Task<CampaignDeliverable?>> find,
         Guid messageId,
         bool worked,
         string? feedback,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
-        var deliverable = await FindAsync(userId, jobId, kind, cancellationToken);
+        var deliverable = await find(false);
         if (deliverable is null)
         {
             return null;
@@ -232,23 +302,17 @@ public sealed partial class CampaignVideoChatService(
         return await ToChatAsync(deliverable, cancellationToken);
     }
 
-    public async Task<CampaignVideoChat?> UndoAsync(
-        string userId,
-        Guid jobId,
-        CampaignOutputKind kind,
-        CancellationToken cancellationToken = default)
+    private async Task<CampaignVideoChat?> UndoCoreAsync(
+        Func<bool, Task<CampaignDeliverable?>> find,
+        CancellationToken cancellationToken)
     {
-        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
-        var deliverable = await dbContext.CampaignDeliverables
-            .SingleOrDefaultAsync(candidate => candidate.CampaignGenerationJobId == jobId
-                && candidate.OrganizationId == organizationId
-                && candidate.Kind == kind
-                && candidate.Status == CampaignDeliverableStatus.Rendered,
-                cancellationToken);
+        var deliverable = await find(true);
         if (deliverable is null)
         {
             return null;
         }
+
+        var organizationId = deliverable.OrganizationId;
 
         var revisions = await dbContext.CampaignVideoRevisions
             .Where(revision => revision.OrganizationId == organizationId && revision.CampaignDeliverableId == deliverable.Id)
@@ -266,19 +330,55 @@ public sealed partial class CampaignVideoChatService(
         return await ToChatAsync(deliverable, cancellationToken);
     }
 
+    // The legacy address: one campaign-level video per campaign and output kind.
     private async Task<CampaignDeliverable?> FindAsync(
         string userId,
         Guid jobId,
         CampaignOutputKind kind,
+        bool tracked,
         CancellationToken cancellationToken)
     {
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
-        return await dbContext.CampaignDeliverables.AsNoTracking()
+        var query = tracked ? dbContext.CampaignDeliverables : dbContext.CampaignDeliverables.AsNoTracking();
+        return await query
             .SingleOrDefaultAsync(candidate => candidate.CampaignGenerationJobId == jobId
                 && candidate.OrganizationId == organizationId
                 && candidate.Kind == kind
+                && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id)
                 && candidate.Status == CampaignDeliverableStatus.Rendered,
                 cancellationToken);
+    }
+
+    // Any rendered video in the workspace, library videos included, by its own id.
+    private async Task<CampaignDeliverable?> FindByIdAsync(
+        string userId,
+        Guid deliverableId,
+        bool tracked,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        var query = tracked ? dbContext.CampaignDeliverables : dbContext.CampaignDeliverables.AsNoTracking();
+        return await query.SingleOrDefaultAsync(candidate => candidate.Id == deliverableId
+                && candidate.OrganizationId == organizationId
+                && candidate.Status == CampaignDeliverableStatus.Rendered,
+            cancellationToken);
+    }
+
+    // A library video is named by its format, so the assistant talks about "the Price first video".
+    private async Task<string> VideoNameAsync(CampaignDeliverable deliverable, CancellationToken cancellationToken)
+    {
+        if (deliverable.IsCampaignLevel)
+        {
+            return OutputName(deliverable.Kind);
+        }
+
+        var format = await dbContext.CampaignVideoVariants.AsNoTracking()
+            .Where(variant => variant.Id == deliverable.CampaignVideoVariantId && variant.OrganizationId == deliverable.OrganizationId)
+            .Select(variant => (VerticalCreativeFormat?)variant.Format)
+            .SingleOrDefaultAsync(cancellationToken);
+        return format is { } value
+            ? $"{VerticalFormatNames.Name(value)} vertical video (TikTok, Reels, Shorts)"
+            : OutputName(deliverable.Kind);
     }
 
     private Task<List<CampaignVideoRevision>> RevisionsAsync(
@@ -344,7 +444,8 @@ public sealed partial class CampaignVideoChatService(
                     message.CreatedAtUtc,
                     rendered?.FixConfirmed,
                     rendered?.FixFeedback);
-            }).ToArray());
+            }).ToArray(),
+            current.Id);
     }
 
     private static bool IsActive(CampaignVideoRevision revision) =>

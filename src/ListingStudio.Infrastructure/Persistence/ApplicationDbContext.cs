@@ -57,6 +57,16 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<TikTokTestSuite> TikTokTestSuites => Set<TikTokTestSuite>();
 
+    public DbSet<VerticalCreativeTestSuite> VerticalCreativeTestSuites => Set<VerticalCreativeTestSuite>();
+
+    public DbSet<VerticalCreativeTestCase> VerticalCreativeTestCases => Set<VerticalCreativeTestCase>();
+
+    public DbSet<CampaignDistributionRecord> CampaignDistributionRecords => Set<CampaignDistributionRecord>();
+
+    public DbSet<CampaignMetricSnapshot> CampaignMetricSnapshots => Set<CampaignMetricSnapshot>();
+
+    public DbSet<VerticalRuleEvaluationReport> VerticalRuleEvaluationReports => Set<VerticalRuleEvaluationReport>();
+
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
 
     public DbSet<CampaignStillPost> CampaignStillPosts => Set<CampaignStillPost>();
@@ -100,6 +110,18 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<HelpChatMessage> HelpChatMessages => Set<HelpChatMessage>();
 
     public DbSet<AdminUserEmail> AdminUserEmails => Set<AdminUserEmail>();
+
+    public DbSet<FeatureFlag> FeatureFlags => Set<FeatureFlag>();
+
+    public DbSet<FeatureFlagOrganization> FeatureFlagOrganizations => Set<FeatureFlagOrganization>();
+
+    public DbSet<CampaignVideoLibrary> CampaignVideoLibraries => Set<CampaignVideoLibrary>();
+
+    public DbSet<CampaignVideoVariant> CampaignVideoVariants => Set<CampaignVideoVariant>();
+
+    public DbSet<PropertyMediaRoleAssignment> PropertyMediaRoleAssignments => Set<PropertyMediaRoleAssignment>();
+
+    public DbSet<ListingCreativeClaim> ListingCreativeClaims => Set<ListingCreativeClaim>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

@@ -6,6 +6,8 @@
 @inject TimeProvider TimeProvider
 @inject NavigationManager Navigation
 @inject Microsoft.Extensions.Options.IOptions<SiteOptions> Site
+@inject ArticleVisibility Visibility
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 @if (entry is not null)
 {
@@ -103,9 +105,15 @@
         }
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         entry = ArticleLibrary.Find(Slug);
+        // A feature article whose feature is off for this visitor is not found, and none of its metadata is emitted.
+        if (entry is not null && !await Visibility.CanSeeAsync(entry, (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User))
+        {
+            entry = null;
+        }
+
         if (entry is null)
         {
             Navigation.NotFound();

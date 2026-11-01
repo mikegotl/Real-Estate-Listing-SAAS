@@ -7,6 +7,7 @@ using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
@@ -32,6 +33,7 @@ public sealed partial class CampaignGenerationProcessor(
     IGeneratedVideoClipService generatedVideoClipService,
     IAgentAvatarVideoService agentAvatarVideoService,
     IVideoRenderer videoRenderer,
+    IRenderedVideoValidator renderedVideoValidator,
     ICampaignSoundtrackService campaignSoundtrackService,
     IWalkthroughVideoProvider walkthroughVideoProvider,
     IPhotoImageCodec photoImageCodec,
@@ -40,6 +42,8 @@ public sealed partial class CampaignGenerationProcessor(
     ICampaignAssetStorage campaignAssetStorage,
     ICampaignBillingGate campaignBillingGate,
     IPlanFeatureGate planFeatureGate,
+    IFeatureStateService featureStateService,
+    IVerticalCreativePlanningService verticalPlanningService,
     IOptions<CampaignGenerationOptions> options,
     TimeProvider timeProvider,
     ILogger<CampaignGenerationProcessor> logger) : ICampaignGenerationProcessor
@@ -73,6 +77,7 @@ public sealed partial class CampaignGenerationProcessor(
             if (job.CancellationRequested)
             {
                 job.Cancel(now);
+                await CancelLibraryAsync(job, now, cancellationToken);
             }
             else if (!completed)
             {
@@ -89,7 +94,7 @@ public sealed partial class CampaignGenerationProcessor(
             }
             else
             {
-                job.CompleteStage(Next(stage), now);
+                job.CompleteStage(Next(stage, job.UsesVerticalLibrary), now);
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -118,6 +123,7 @@ public sealed partial class CampaignGenerationProcessor(
             if (job.CancellationRequested)
             {
                 job.Cancel(now);
+                await CancelLibraryAsync(job, now, CancellationToken.None);
             }
             else if (willRetry)
             {
@@ -166,6 +172,7 @@ public sealed partial class CampaignGenerationProcessor(
         if (job.CancellationRequested)
         {
             job.Cancel(now);
+            await CancelLibraryAsync(job, now, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return null;
@@ -245,6 +252,11 @@ public sealed partial class CampaignGenerationProcessor(
             CampaignGenerationStage.RenderLongForm => RenderLongFormAsync(jobId, cancellationToken),
             CampaignGenerationStage.GenerateSocialCopy => GenerateSocialCopyAsync(jobId, cancellationToken),
             CampaignGenerationStage.FinalizeCampaign => FinalizeAsync(jobId, cancellationToken),
+            CampaignGenerationStage.PlanVerticalLibrary => PlanVerticalLibraryAsync(jobId, cancellationToken),
+            CampaignGenerationStage.GenerateVariantNarration => GenerateVariantNarrationAsync(jobId, cancellationToken),
+            CampaignGenerationStage.RenderVariants => RenderVariantsAsync(jobId, cancellationToken),
+            CampaignGenerationStage.GenerateVariantCopy => GenerateVariantCopyAsync(jobId, cancellationToken),
+            CampaignGenerationStage.FinalizeVerticalLibrary => FinalizeVerticalLibraryAsync(jobId, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(stage)),
         };
 
@@ -358,8 +370,10 @@ public sealed partial class CampaignGenerationProcessor(
     private async Task<bool> GenerateDerivativePlansAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var job = await GetJobAsync(jobId, cancellationToken);
+        // The stage saves every planned deliverable in one transaction, so any campaign-level deliverable means it
+        // already ran. Library videos are planned later, one by one, and never count here.
         if (await dbContext.CampaignDeliverables.AnyAsync(
-            candidate => candidate.CampaignGenerationJobId == jobId,
+            candidate => candidate.CampaignGenerationJobId == jobId && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id),
             cancellationToken))
         {
             return true;
@@ -458,6 +472,7 @@ public sealed partial class CampaignGenerationProcessor(
 
         ShortFormDeliverable? shortForm = null;
         if (job.RequestedOutputs != CampaignOutputSelection.LegacyStandard
+            && !job.UsesVerticalLibrary
             && ShortFormOutputs.Any(output => job.RequestedOutputs.HasFlag(output.Selection)))
         {
             shortForm = await CreateShortFormAsync(
@@ -615,6 +630,7 @@ public sealed partial class CampaignGenerationProcessor(
                 candidate.SourceVideoId,
                 candidate.SourceVideoTimestampMs))
             .ToArrayAsync(cancellationToken);
+        var captionGrounding = CaptionSceneGrounding.From(master, await RoomsByMediaAsync(job, cancellationToken));
         IReadOnlyList<ShortFormVideoClip> videoClips = [];
         IReadOnlyList<ShortFormWalkthroughClip> walkthroughClips = [];
         if (options.Elements.HasFlag(CampaignVideoElement.WalkthroughMotion))
@@ -657,7 +673,8 @@ public sealed partial class CampaignGenerationProcessor(
             // voiceover the edit has no narration segments and the master audio is never mixed in.
             return new ShortFormDeliverable(
                 masterNarrationId,
-                CampaignCreativeDirector.Apply(edit, options, yearBuilt, masterCaptionText, masterTiming));
+                Grounded(CampaignCreativeDirector.Apply(
+                    edit, options, yearBuilt, masterCaptionText, masterTiming, captionGrounding), captionGrounding));
         }
 
         var localized = await GetOrCreateShortFormLocalizationAsync(job, edit, cancellationToken);
@@ -692,7 +709,9 @@ public sealed partial class CampaignGenerationProcessor(
             edit = Edit(ShortFormVoiceoverDetail.HighlightRich, silentOptions);
             return new ShortFormDeliverable(
                 masterNarrationId,
-                CampaignCreativeDirector.Apply(edit, silentOptions, yearBuilt, masterCaptionText, masterTiming));
+                Grounded(CampaignCreativeDirector.Apply(
+                    edit, silentOptions, yearBuilt, masterCaptionText, masterTiming, captionGrounding),
+                    captionGrounding));
         }
 
         var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
@@ -707,12 +726,47 @@ public sealed partial class CampaignGenerationProcessor(
         };
         return new ShortFormDeliverable(
             narration.Id,
-            CampaignCreativeDirector.Apply(
+            Grounded(CampaignCreativeDirector.Apply(
                 edit,
                 options,
                 yearBuilt,
                 localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text),
-                narration.Timing));
+                narration.Timing,
+                captionGrounding), captionGrounding));
+    }
+
+    /// <summary>
+    /// The room each storyboard photo shows (its storyboard stop, or the room the media analysis recognised), so a
+    /// caption about one room is never burned in over another.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string?>> RoomsByMediaAsync(
+        CampaignGenerationJob job,
+        CancellationToken cancellationToken)
+    {
+        var rooms = await dbContext.PropertyMedia.AsNoTracking()
+            .Where(candidate => candidate.PropertyId == job.PropertyId && candidate.OrganizationId == job.OrganizationId)
+            .Select(candidate => new { candidate.Id, candidate.WalkthroughStop, candidate.RoomType })
+            .ToArrayAsync(cancellationToken);
+        return rooms.ToDictionary(
+            room => room.Id,
+            room => CaptionSceneGrounding.CanonicalRoom(room.WalkthroughStop) is not null
+                ? room.WalkthroughStop
+                : room.RoomType);
+    }
+
+    /// <summary>A last check that no room caption landed over another room; placement already prevents it.</summary>
+    private static VideoProductionSpecification Grounded(
+        VideoProductionSpecification specification,
+        CaptionSceneGrounding grounding)
+    {
+        var mismatches = CaptionSceneGrounding.FindMismatches(specification, grounding);
+        if (mismatches.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"A caption would appear over the wrong room. {string.Join(" ", mismatches.Take(3))}");
+        }
+
+        return specification;
     }
 
     private static bool NarrationRunsPastVideo(InvalidDataException exception) =>
@@ -804,12 +858,13 @@ public sealed partial class CampaignGenerationProcessor(
         CampaignGenerationJob job,
         VideoProductionSpecification edit,
         CampaignLocalizedCopy localized,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string generatorVersion = ShortFormEditor.EditorVersion)
     {
         var json = JsonSerializer.Serialize(edit, SerializerOptions);
         var fingerprint = Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
-                $"{ShortFormEditor.EditorVersion}\n{json}"))).ToLowerInvariant();
+                $"{generatorVersion}\n{json}"))).ToLowerInvariant();
         var planId = await dbContext.VideoProductionPlans.AsNoTracking()
             .Where(candidate => candidate.OrganizationId == job.OrganizationId
                 && candidate.PropertyId == job.PropertyId
@@ -833,7 +888,7 @@ public sealed partial class CampaignGenerationProcessor(
                 edit.RequestedDuration,
                 edit.AspectRatio,
                 edit.SchemaVersion,
-                ShortFormEditor.EditorVersion,
+                generatorVersion,
                 fingerprint,
                 json);
             dbContext.VideoProductionPlans.Add(plan);
@@ -1055,6 +1110,7 @@ public sealed partial class CampaignGenerationProcessor(
     {
         var selected = await dbContext.CampaignDeliverables.AsNoTracking()
             .Where(deliverable => deliverable.CampaignGenerationJobId == jobId
+                && (deliverable.CampaignVideoVariantId == null || deliverable.CampaignVideoVariantId == deliverable.Id)
                 && kinds.Contains(deliverable.Kind))
             .OrderBy(deliverable => deliverable.Kind)
             .Select(deliverable => deliverable.Kind)
@@ -1074,7 +1130,7 @@ public sealed partial class CampaignGenerationProcessor(
     {
         var job = await GetJobAsync(jobId, cancellationToken);
         var deliverable = await dbContext.CampaignDeliverables.SingleAsync(candidate =>
-            candidate.CampaignGenerationJobId == jobId && candidate.Kind == kind,
+            candidate.CampaignGenerationJobId == jobId && candidate.Kind == kind && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id),
             cancellationToken);
         if (deliverable.Status == CampaignDeliverableStatus.Rendered)
         {
@@ -1083,6 +1139,7 @@ public sealed partial class CampaignGenerationProcessor(
 
         var reusable = await dbContext.CampaignDeliverables.AsNoTracking()
             .Where(candidate => candidate.CampaignGenerationJobId == jobId
+                && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id)
                 && candidate.Id != deliverable.Id
                 && candidate.VideoNarrationId == deliverable.VideoNarrationId
                 && candidate.SpecificationJson == deliverable.SpecificationJson
@@ -1144,7 +1201,8 @@ public sealed partial class CampaignGenerationProcessor(
             {
                 dbContext.ChangeTracker.Clear();
                 var tracked = await dbContext.CampaignDeliverables.SingleAsync(candidate =>
-                    candidate.CampaignGenerationJobId == jobId && candidate.Kind == kind,
+                    candidate.CampaignGenerationJobId == jobId && candidate.Kind == kind
+                    && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id),
                     cancellationToken);
                 tracked.MarkRendered(renderPath, "video/mp4", fileSize, timeProvider.GetUtcNow());
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -1224,21 +1282,31 @@ public sealed partial class CampaignGenerationProcessor(
                 walkthroughTransitions,
                 agentPresenter,
                 aerialIntro);
+            var expectations = Mp4Expectations.For(specification);
             try
             {
                 await videoRenderer.RenderAsync(renderRequest, cancellationToken);
+                await ValidateRenderedVideoAsync(job.Id, label, outputPath, expectations, cancellationToken);
             }
-            catch (VideoRenderException exception) when (walkthroughTransitions.Length > 0 || aerialIntro is not null)
+            catch (Exception exception) when (
+                exception is VideoRenderException or RenderedVideoValidationException
+                && (walkthroughTransitions.Length > 0 || aerialIntro is not null))
             {
                 // Provider-generated walk-throughs and the drone intro are optional polish. If FFmpeg cannot decode
-                // or compose one of those clips, preserve the approved tour-map photos and narration instead of
-                // failing the entire campaign. The retry is deterministic and never admits media outside the
-                // campaign allowlist.
+                // or compose one of those clips, or the result does not play cleanly, preserve the approved tour-map
+                // photos and narration instead of failing the entire campaign. The retry is deterministic and never
+                // admits media outside the campaign allowlist.
                 LogWalkthroughRenderFallback(
                     exception, job.Id, label, walkthroughTransitions.Length + (aerialIntro is null ? 0 : 1));
+                if (File.Exists(outputPath))
+                {
+                    File.Delete(outputPath);
+                }
+
                 await videoRenderer.RenderAsync(
                     renderRequest with { WalkthroughTransitions = [], AerialIntro = null },
                     cancellationToken);
+                await ValidateRenderedVideoAsync(job.Id, label, outputPath, expectations, cancellationToken);
             }
             var stored = false;
             try
@@ -1276,6 +1344,27 @@ public sealed partial class CampaignGenerationProcessor(
                 Directory.Delete(directory, recursive: true);
             }
         }
+    }
+
+    /// <summary>
+    /// Refuses to store a render that does not play cleanly from start to finish at the expected size, codecs and
+    /// length. The deliverable stays unrendered, so the job's normal retry renders it again.
+    /// </summary>
+    private async Task ValidateRenderedVideoAsync(
+        Guid jobId,
+        string label,
+        string outputPath,
+        Mp4Expectations expectations,
+        CancellationToken cancellationToken)
+    {
+        var validation = await renderedVideoValidator.ValidateAsync(outputPath, expectations, cancellationToken);
+        if (!validation.IsValid)
+        {
+            LogTechnicalValidationFailed(jobId, label, validation.Summary);
+            throw new RenderedVideoValidationException(validation);
+        }
+
+        LogTechnicalValidationPassed(jobId, label, validation.Summary);
     }
 
     private Task<bool> RenderLongFormAsync(Guid jobId, CancellationToken cancellationToken) =>
@@ -1983,14 +2072,39 @@ public sealed partial class CampaignGenerationProcessor(
             .Include(candidate => candidate.StillPosts)
             .SingleAsync(candidate => candidate.Id == jobId, cancellationToken);
         var requiredKinds = RequiredKinds(job.RequestedOutputs);
+        // Library videos are checked against their library; campaign-level outputs keep the one-per-kind rule.
+        var deliverables = job.Deliverables.Where(candidate => candidate.IsCampaignLevel).ToArray();
+        if (job.UsesVerticalLibrary)
+        {
+            requiredKinds.ExceptWith(ShortFormOutputs.Select(output => output.Kind));
+            var library = await dbContext.CampaignVideoLibraries.AsNoTracking()
+                .Include(candidate => candidate.Variants)
+                .SingleOrDefaultAsync(
+                    candidate => candidate.CampaignGenerationJobId == jobId && candidate.OrganizationId == job.OrganizationId,
+                    cancellationToken);
+            var renderedVariants = library?.Variants
+                .Where(variant => variant.Status == CampaignVideoVariantStatus.Rendered)
+                .Select(variant => variant.Id)
+                .ToHashSet() ?? [];
+            if (library is null
+                || !CampaignVideoLibrary.IsTerminal(library.Status)
+                || renderedVariants.Count == 0
+                || job.Deliverables.Count(candidate => candidate.CampaignVideoVariantId is { } id
+                    && renderedVariants.Contains(id)
+                    && candidate.Status == CampaignDeliverableStatus.Rendered) != renderedVariants.Count)
+            {
+                throw new InvalidOperationException("The campaign's vertical videos are not finished.");
+            }
+        }
+
         var deliverableCountIsValid = job.RequestedOutputs == CampaignOutputSelection.LegacyStandard
-            ? job.Deliverables.Count == requiredKinds.Count
-                || (job.Deliverables.Count == requiredKinds.Count + 1
-                    && job.Deliverables.Any(candidate => candidate.Kind == CampaignOutputKind.LongForm))
-            : job.Deliverables.Count == requiredKinds.Count;
+            ? deliverables.Length == requiredKinds.Count
+                || (deliverables.Length == requiredKinds.Count + 1
+                    && deliverables.Any(candidate => candidate.Kind == CampaignOutputKind.LongForm))
+            : deliverables.Length == requiredKinds.Count;
         if (!deliverableCountIsValid
-            || requiredKinds.Any(kind => job.Deliverables.All(candidate => candidate.Kind != kind))
-            || job.Deliverables.Any(candidate => candidate.Status != CampaignDeliverableStatus.Rendered)
+            || requiredKinds.Any(kind => deliverables.All(candidate => candidate.Kind != kind))
+            || deliverables.Any(candidate => candidate.Status != CampaignDeliverableStatus.Rendered)
             || string.IsNullOrWhiteSpace(job.SocialCaptionLong)
             || string.IsNullOrWhiteSpace(job.SocialCaptionShort)
             || (job.RequestedOutputs.HasFlag(CampaignOutputSelection.FacebookStillPost)
@@ -2057,19 +2171,32 @@ public sealed partial class CampaignGenerationProcessor(
             candidate => candidate.Id == jobId,
             cancellationToken);
 
-    private static CampaignGenerationStage Next(CampaignGenerationStage stage) => stage switch
+    /// <summary>
+    /// The stage after this one. A library campaign plans its formats right after the narration and makes its videos
+    /// after the landscape renders; every other campaign runs exactly the stages it always did.
+    /// </summary>
+    internal static CampaignGenerationStage Next(CampaignGenerationStage stage, bool usesVerticalLibrary) => stage switch
     {
         CampaignGenerationStage.ValidateProperty => CampaignGenerationStage.AnalyzeMedia,
         CampaignGenerationStage.AnalyzeMedia => CampaignGenerationStage.GenerateStory,
         CampaignGenerationStage.GenerateStory => CampaignGenerationStage.GenerateMasterVideoPlan,
         CampaignGenerationStage.GenerateMasterVideoPlan => CampaignGenerationStage.GenerateNarration,
-        CampaignGenerationStage.GenerateNarration => CampaignGenerationStage.GenerateDerivativePlans,
+        CampaignGenerationStage.GenerateNarration => usesVerticalLibrary
+            ? CampaignGenerationStage.PlanVerticalLibrary
+            : CampaignGenerationStage.GenerateDerivativePlans,
+        CampaignGenerationStage.PlanVerticalLibrary => CampaignGenerationStage.GenerateDerivativePlans,
         CampaignGenerationStage.GenerateDerivativePlans => CampaignGenerationStage.GenerateRequiredAiVideo,
         CampaignGenerationStage.GenerateRequiredAiVideo => CampaignGenerationStage.RenderHero,
         CampaignGenerationStage.RenderHero => CampaignGenerationStage.RenderFeature,
         CampaignGenerationStage.RenderFeature => CampaignGenerationStage.RenderTeaser,
         CampaignGenerationStage.RenderTeaser => CampaignGenerationStage.RenderLongForm,
-        CampaignGenerationStage.RenderLongForm => CampaignGenerationStage.GenerateSocialCopy,
+        CampaignGenerationStage.RenderLongForm => usesVerticalLibrary
+            ? CampaignGenerationStage.GenerateVariantNarration
+            : CampaignGenerationStage.GenerateSocialCopy,
+        CampaignGenerationStage.GenerateVariantNarration => CampaignGenerationStage.RenderVariants,
+        CampaignGenerationStage.RenderVariants => CampaignGenerationStage.GenerateVariantCopy,
+        CampaignGenerationStage.GenerateVariantCopy => CampaignGenerationStage.FinalizeVerticalLibrary,
+        CampaignGenerationStage.FinalizeVerticalLibrary => CampaignGenerationStage.GenerateSocialCopy,
         CampaignGenerationStage.GenerateSocialCopy => CampaignGenerationStage.FinalizeCampaign,
         _ => throw new ArgumentOutOfRangeException(nameof(stage)),
     };
@@ -2112,6 +2239,7 @@ public sealed partial class CampaignGenerationProcessor(
         || exception is HttpRequestException
             or TimeoutException
             or VideoRenderException
+            or RenderedVideoValidationException
             or IOException;
 
     [LoggerMessage(
@@ -2132,6 +2260,16 @@ public sealed partial class CampaignGenerationProcessor(
         Guid jobId,
         string label,
         int transitionCount);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} deliverable {Label} failed its technical check: {Summary}")]
+    private partial void LogTechnicalValidationFailed(Guid jobId, string label, string summary);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Campaign {JobId} deliverable {Label} passed its technical check: {Summary}")]
+    private partial void LogTechnicalValidationPassed(Guid jobId, string label, string summary);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

@@ -1,6 +1,10 @@
 namespace ListingStudio.Application.Articles;
 
-/// <summary>What the Articles pages show about an article: everything except its body.</summary>
+/// <summary>
+/// What the Articles pages show about an article: everything except its body. An article with a
+/// <see cref="FeatureKey"/> exists only while that feature is on: publicly when it is on for everyone, and for signed-in
+/// members of a pilot workspace. Otherwise its page is not found and it is left out of lists, the sitemap and links.
+/// </summary>
 public sealed record ArticleSummary(
     string Slug,
     string Title,
@@ -10,7 +14,8 @@ public sealed record ArticleSummary(
     string Author,
     int ReadMinutes,
     IReadOnlyList<string> Topics,
-    bool IsArchived = false);
+    bool IsArchived = false,
+    string? FeatureKey = null);
 
 public sealed record ArticleShelves(
     IReadOnlyList<ArticleSummary> RecentlyReleased,

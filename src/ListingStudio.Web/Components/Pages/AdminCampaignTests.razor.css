@@ -99,3 +99,9 @@
 .review-session-body > .review-case-list { border-bottom:1px solid var(--ls-line); padding-bottom:12px; margin:0 0 20px; }
 .review-player video { max-width:400px; }
 @media (max-width:600px) { .review-session-body { padding:12px; } .review-session-header { padding:12px; } .review-case-list li { flex-wrap:wrap; } }
+
+/* Creative / regression tabs (only while VerticalVideoLibraryV1 is on). */
+.studio-tabs { border-bottom: 1px solid var(--ls-line); display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 24px; }
+.studio-tabs button { background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ls-muted); cursor: pointer; font: inherit; font-size: .92rem; font-weight: 650; margin-bottom: -1px; padding: 10px 14px; }
+.studio-tabs button.active { border-bottom-color: var(--ls-primary); color: var(--ls-primary); }
+.studio-tabs button:focus-visible { outline: 2px solid var(--ls-primary); outline-offset: 2px; }

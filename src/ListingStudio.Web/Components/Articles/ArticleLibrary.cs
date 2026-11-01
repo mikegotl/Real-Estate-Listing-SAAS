@@ -28,7 +28,22 @@ public static class ArticleLibrary
                 ReadMinutes: 8,
                 Topics: ["Social media", "Listing video", "Marketing costs"]),
             typeof(SocialCampaignsForAgents)),
+        new(
+            new ArticleSummary(
+                Slug: OneListingFourTikToks.Slug,
+                Title: "One Listing Four TikToks",
+                Description: "Learn how Listing Studio analyzes verified property facts and media to recommend purpose-built vertical videos for reach engagement and buyer interest.",
+                PublishedOn: new DateOnly(2026, 11, 1),
+                UpdatedOn: null,
+                Author: "Creative Listing Studio team",
+                ReadMinutes: 6,
+                Topics: ["Vertical video", "TikTok", "Listing video"],
+                FeatureKey: ListingStudio.Domain.Administration.FeatureFlagKeys.VerticalVideoLibraryV1),
+            typeof(OneListingFourTikToks)),
     ];
+
+    /// <summary>The vertical video library guide: shown only while VerticalVideoLibraryV1 is on (see <see cref="ArticleVisibility"/>).</summary>
+    public static ArticleEntry VerticalLibraryGuide => Find(OneListingFourTikToks.Slug)!;
 
     public static ArticleEntry? Find(string? slug) =>
         All.FirstOrDefault(entry => string.Equals(entry.Summary.Slug, slug, StringComparison.OrdinalIgnoreCase));

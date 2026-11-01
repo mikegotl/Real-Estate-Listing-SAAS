@@ -1,0 +1,309 @@
+@* The finished videos of one vertical video library: one card per video, each reviewed, revised and downloaded on
+   its own. Every link and decision is tied to the video's deliverable id and current version. *@
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IServiceScopeFactory ScopeFactory
+@inject IJSRuntime JSRuntime
+@inject ILogger<CampaignVideoLibraryResults> Logger
+
+@if (library is not null)
+{
+    <section class="video-library mb-4" aria-labelledby="video-library-heading" data-testid="video-library">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2" Style="flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+                <MudText Typo="Typo.h6" HtmlTag="h3" id="video-library-heading">Vertical video library</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    @SummaryText · each 9:16 file can be posted to TikTok, Instagram Reels or YouTube Shorts.
+                </MudText>
+                @if (ShowGuideLink)
+                {
+                    <ArticleGuideLink Placement="@ArticleLinks.Placements.ReviewGallery" Text="What to check before posting each video" />
+                }
+            </div>
+            @if (library.CanDownloadArchive)
+            {
+                <MudButton Href="@($"/campaigns/{library.JobId}/library.zip")" Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.FolderZip" data-testid="download-library">
+                    Download complete library (ZIP)
+                </MudButton>
+            }
+        </MudStack>
+        @if (message is not null)
+        {
+            <MudAlert Severity="@(messageIsError ? Severity.Error : Severity.Info)" Dense="true" Class="mb-3" aria-live="polite">@message</MudAlert>
+        }
+
+        <ul class="video-library-list" aria-label="Library videos">
+            @foreach (var video in library.Videos)
+            {
+                var headingId = $"library-video-{video.VariantId:N}";
+                <li aria-labelledby="@headingId" data-testid="@($"library-card-{video.Format}")">
+                    <MudPaper Outlined="true" Class="pa-4 h-100">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Spacing="2">
+                            <div>
+                                <MudText Typo="Typo.subtitle1" HtmlTag="h4" id="@headingId">@VerticalFormatNames.Name(video.Format)</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                    @VerticalFormatNames.Purpose(video.Purpose) · @video.DurationSeconds seconds · @video.RecipeVersion
+                                    @if (video.Version > 1)
+                                    {
+                                        <span> · version @video.Version</span>
+                                    }
+                                </MudText>
+                            </div>
+                            <div class="video-library-chips">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@TechnicalColor(video.TechnicalStatus)"
+                                         data-testid="@($"technical-{video.Format}")">
+                                    @TechnicalText(video.TechnicalStatus)
+                                </MudChip>
+                                @if (video.IsRendered)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@DecisionColor(video.Review.CurrentDecision)"
+                                             data-testid="@($"decision-{video.Format}")">
+                                        @DecisionText(video.Review.CurrentDecision)
+                                    </MudChip>
+                                }
+                            </div>
+                        </MudStack>
+
+                        @if (video.Hook is not null)
+                        {
+                            <MudText Typo="Typo.body2" Class="mt-2">Hook: “@video.Hook”</MudText>
+                        }
+                        @if (video.Score is { } score)
+                        {
+                            <details class="mt-1">
+                                <summary class="mud-typography-caption">
+                                    Score @score/100@(video.Strength is { } strength ? $" · {VerticalFormatNames.Strength(strength)}" : string.Empty) · why this video
+                                </summary>
+                                <ul class="video-library-reasons">
+                                    @foreach (var reason in video.Reasons)
+                                    {
+                                        <li>@reason</li>
+                                    }
+                                </ul>
+                            </details>
+                        }
+
+                        @if (video.IsRendered)
+                        {
+                            <video @key="@($"{video.DeliverableId}-{video.Version}")" controls preload="metadata" playsinline
+                                   class="video-library-player" aria-label="@($"Preview the {VerticalFormatNames.Name(video.Format)} video")">
+                                <source src="@VideoUrl(video)" type="video/mp4" />
+                                Your browser does not support MP4 video playback.
+                            </video>
+                            @if (video.Captions is { } captions)
+                            {
+                                <MudText Typo="Typo.overline" Class="mud-text-secondary d-block mt-2">Post caption</MudText>
+                                <MudText Typo="Typo.body2" data-testid="@($"caption-{video.Format}")">@captions.ShortCaption</MudText>
+                            }
+                            <MudStack Row="true" Spacing="2" Class="mt-3" Style="flex-wrap: wrap;">
+                                <MudButton Href="@($"{VideoUrl(video)}&download=true")" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">
+                                    Download MP4
+                                </MudButton>
+                                @if (video.Captions is not null)
+                                {
+                                    <MudButton Href="@($"/campaigns/videos/{video.DeliverableId}/caption")" Variant="Variant.Outlined" Size="Size.Small">
+                                        Download caption
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="@(() => CopyCaptionAsync(video.Captions!))">
+                                        Copy caption
+                                    </MudButton>
+                                }
+                            </MudStack>
+
+                            @if (!IsReadOnly)
+                            {
+                                <MudDivider Class="my-3" />
+                                <MudText Typo="Typo.subtitle2" HtmlTag="h5">Your review of this version</MudText>
+                                <MudTextField T="string" Label="What should change? (needed to request changes)" Lines="2"
+                                              Variant="Variant.Outlined" MaxLength="1000" Class="mb-2"
+                                              Value="@DraftFor(video)" ValueChanged="@(value => SetDraft(video, value))"
+                                              Disabled="busy" />
+                                <MudStack Row="true" Spacing="2" Style="flex-wrap: wrap;">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" Disabled="busy"
+                                               OnClick="@(() => DecideAsync(video, CampaignVideoReviewDecision.Approved))"
+                                               data-testid="@($"approve-{video.Format}")">
+                                        Approve
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
+                                               Disabled="@(busy || string.IsNullOrWhiteSpace(DraftFor(video)))"
+                                               OnClick="@(() => DecideAsync(video, CampaignVideoReviewDecision.ChangesRequested))">
+                                        Request changes
+                                    </MudButton>
+                                </MudStack>
+                                @if (video.Review.History.Count > 0)
+                                {
+                                    <details class="mt-2">
+                                        <summary class="mud-typography-caption">Review history (@video.Review.History.Count)</summary>
+                                        <ol class="video-library-reasons">
+                                            @foreach (var entry in video.Review.History)
+                                            {
+                                                <li>Version @entry.Version: @DecisionText(entry.Decision)@(entry.Feedback is null ? string.Empty : $" · “{entry.Feedback}”")</li>
+                                            }
+                                        </ol>
+                                    </details>
+                                }
+                                <CampaignVideoChatPanel @key="@($"library-chat-{video.DeliverableId}")"
+                                                        JobId="library.JobId"
+                                                        Kind="CampaignOutputKind.TikTok"
+                                                        DeliverableId="video.DeliverableId"
+                                                        VideoName="@($"{VerticalFormatNames.Name(video.Format)} video")"
+                                                        VersionChanged="ReloadAsync" />
+                            }
+                        }
+                        else if (video.TechnicalStatus == CampaignVideoTechnicalStatus.Waiting)
+                        {
+                            <MudProgressLinear Indeterminate="true" Class="mt-3" aria-label="Making this video" />
+                        }
+                        else if (video.Problem is not null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mt-2">@video.Problem</MudText>
+                        }
+                    </MudPaper>
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid JobId { get; set; }
+
+    /// <summary>Changes whenever the campaign changes, so the cards follow the campaign's progress.</summary>
+    [Parameter]
+    public DateTimeOffset Stamp { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    /// <summary>Shows the guide link; the Campaign tab passes whether VerticalVideoLibraryV1 is on now.</summary>
+    [Parameter]
+    public bool ShowGuideLink { get; set; }
+
+    private CampaignVideoLibraryView? library;
+    private readonly Dictionary<(Guid DeliverableId, int Version), string?> drafts = [];
+    private (Guid JobId, DateTimeOffset Stamp)? loaded;
+    private bool busy;
+    private string? message;
+    private bool messageIsError;
+
+    private string SummaryText
+    {
+        get
+        {
+            var rendered = library!.Videos.Count(video => video.IsRendered);
+            var made = library.Videos.Count(video => video.Status != CampaignVideoVariantStatus.Skipped);
+            return rendered == made
+                ? $"{rendered} {(rendered == 1 ? "video" : "videos")} ready"
+                : $"{rendered} of {made} videos ready";
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loaded != (JobId, Stamp))
+        {
+            loaded = (JobId, Stamp);
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            library = await scope.ServiceProvider.GetRequiredService<ICampaignVideoLibraryService>().GetAsync(userId, JobId);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Logger.LogWarning(exception, "Loading the video library for campaign {JobId} failed", JobId);
+            message = "The video library could not be refreshed. Try again in a moment.";
+            messageIsError = true;
+        }
+    }
+
+    private async Task DecideAsync(CampaignLibraryVideoView video, CampaignVideoReviewDecision decision)
+    {
+        busy = true;
+        message = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using (var scope = ScopeFactory.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ICampaignVideoLibraryService>().DecideAsync(
+                    userId, video.DeliverableId!.Value, video.Version, decision, DraftFor(video));
+            }
+
+            drafts.Remove((video.DeliverableId!.Value, video.Version));
+            messageIsError = false;
+            message = decision == CampaignVideoReviewDecision.Approved
+                ? $"{VerticalFormatNames.Name(video.Format)} approved."
+                : $"Changes requested for {VerticalFormatNames.Name(video.Format)}. Use the chat below to make them.";
+            await ReloadAsync();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            messageIsError = true;
+            message = exception.Message.Split(" (Parameter", 2)[0];
+            await ReloadAsync();
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private string? DraftFor(CampaignLibraryVideoView video) =>
+        video.DeliverableId is { } id && drafts.TryGetValue((id, video.Version), out var draft) ? draft : null;
+
+    private void SetDraft(CampaignLibraryVideoView video, string? value)
+    {
+        if (video.DeliverableId is { } id)
+        {
+            drafts[(id, video.Version)] = value;
+        }
+    }
+
+    private async Task CopyCaptionAsync(VerticalVariantCaptions captions)
+    {
+        var copied = await JSRuntime.InvokeAsync<bool>("listingStudioCampaign.copyText", captions.LongCaption);
+        messageIsError = false;
+        message = copied ? "Caption copied." : "Copy is unavailable in this browser. Download the caption instead.";
+    }
+
+    // The version keeps the browser from playing or saving a cached copy of an earlier cut.
+    private static string VideoUrl(CampaignLibraryVideoView video) => $"/campaigns/videos/{video.DeliverableId}?v={video.Version}";
+
+    private static string TechnicalText(CampaignVideoTechnicalStatus status) => status switch
+    {
+        CampaignVideoTechnicalStatus.Passed => "Technical check passed",
+        CampaignVideoTechnicalStatus.Failed => "Couldn't be made",
+        CampaignVideoTechnicalStatus.Skipped => "Skipped",
+        CampaignVideoTechnicalStatus.Cancelled => "Cancelled",
+        _ => "Making…",
+    };
+
+    private static Color TechnicalColor(CampaignVideoTechnicalStatus status) => status switch
+    {
+        CampaignVideoTechnicalStatus.Passed => Color.Success,
+        CampaignVideoTechnicalStatus.Failed => Color.Error,
+        _ => Color.Default,
+    };
+
+    private static string DecisionText(CampaignVideoReviewDecision? decision) => decision switch
+    {
+        CampaignVideoReviewDecision.Approved => "Approved",
+        CampaignVideoReviewDecision.ChangesRequested => "Changes requested",
+        _ => "Not reviewed",
+    };
+
+    private static Color DecisionColor(CampaignVideoReviewDecision? decision) => decision switch
+    {
+        CampaignVideoReviewDecision.Approved => Color.Success,
+        CampaignVideoReviewDecision.ChangesRequested => Color.Warning,
+        _ => Color.Default,
+    };
+}

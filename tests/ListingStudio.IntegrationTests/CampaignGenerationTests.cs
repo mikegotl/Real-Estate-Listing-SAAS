@@ -945,6 +945,34 @@ public sealed partial class CampaignGenerationTests(PostgreSqlWebApplicationFixt
     }
 
     [Fact]
+    public async Task RenderThatFailsItsTechnicalCheckIsNotStoredAndIsRenderedAgain()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-technical-check");
+        await UploadAsync(owner);
+        var renderCallsBefore = fixture.Factory.VideoRenderer.CallCount;
+        var validationsBefore = fixture.Factory.RenderedVideoValidator.CallCount;
+        QueueSuccessfulProviders();
+        fixture.Factory.RenderedVideoValidator.EnqueueFailure("The file did not decode cleanly from start to finish.");
+
+        var queued = await EnqueueAsync(owner);
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        Assert.Equal(CampaignGenerationStatus.Completed, completed.Status);
+        var renders = fixture.Factory.VideoRenderer.CallCount - renderCallsBefore;
+        var validations = fixture.Factory.RenderedVideoValidator.CallCount - validationsBefore;
+        // Every render is checked, and the rejected one was rendered once more.
+        Assert.Equal(renders, validations);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deliverables = await dbContext.CampaignDeliverables.AsNoTracking()
+            .Where(deliverable => deliverable.CampaignGenerationJobId == queued.Id)
+            .ToListAsync();
+        Assert.NotEmpty(deliverables);
+        Assert.All(deliverables, deliverable => Assert.Equal(CampaignDeliverableStatus.Rendered, deliverable.Status));
+        Assert.True(renders >= 2);
+    }
+
+    [Fact]
     public async Task RetryReloadsCampaignChangedByWorkerAfterServiceTrackedEarlierState()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-stale-retry");

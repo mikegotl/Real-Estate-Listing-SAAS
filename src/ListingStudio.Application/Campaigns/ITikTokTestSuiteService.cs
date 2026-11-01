@@ -21,6 +21,14 @@ public interface ICampaignTestGenerationService
 {
     Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
         CampaignCreativeOptions options, Guid caseRequestId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One creative format test case: a private TikTok campaign that makes exactly one vertical library video in the
+    /// given format, with hook "a" or "b". Needs VerticalVideoLibraryV1 on for the workspace; null when the property
+    /// is unavailable or another campaign holds the property's active slot (try again later).
+    /// </summary>
+    Task<CampaignGenerationResult?> EnqueueCreativeTestAsync(string userId, Guid propertyId,
+        VerticalCreativeFormat format, string hookVariant, Guid caseRequestId, CancellationToken cancellationToken = default);
 }
 
 public sealed record TikTokTestPropertyChoice(Guid Id, string Address);

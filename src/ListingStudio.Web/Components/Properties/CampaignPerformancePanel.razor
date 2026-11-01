@@ -1,0 +1,287 @@
+@* Performance of one campaign's vertical library: the agent records where each video was posted and copies the numbers
+   from the platform's own analytics, by hand or as a CSV. Nothing here signs in to, reads from or posts to a platform.
+   Shown only while VerticalVideoLibraryV1 is on; turning it off hides the panel and keeps every recorded number. *@
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IServiceScopeFactory ScopeFactory
+@inject TimeProvider TimeProvider
+@inject ILogger<CampaignPerformancePanel> Logger
+
+@if (view is not null && view.Videos.Count > 0)
+{
+    <section class="performance-panel mb-4" aria-labelledby="performance-heading" data-testid="performance-panel">
+        <MudText Typo="Typo.h6" HtmlTag="h3" id="performance-heading">How these videos are doing</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Add each post's link, then copy the numbers from TikTok, Instagram or YouTube analytics. Leads and showings are the
+            ones you count yourself. We never sign in to or post on those sites.
+        </MudText>
+        @if (message is not null)
+        {
+            <MudAlert Severity="@(messageIsError ? Severity.Error : Severity.Success)" Dense="true" Class="mb-3" aria-live="polite"
+                      data-testid="performance-message">
+                @message
+                @if (importErrors.Count > 0)
+                {
+                    <ul class="performance-errors" data-testid="performance-import-errors">
+                        @foreach (var line in importErrors.Take(20))
+                        {
+                            <li>@line</li>
+                        }
+                    </ul>
+                }
+            </MudAlert>
+        }
+
+        <VerticalPerformanceTable View="view" Caption="Performance of this campaign's videos" />
+
+        @if (!IsReadOnly)
+        {
+            <div class="performance-forms">
+                <form class="performance-form" @onsubmit="AddPostAsync" @onsubmit:preventDefault aria-labelledby="add-post-heading">
+                    <h4 id="add-post-heading">Add a post</h4>
+                    <label for="post-video">Video</label>
+                    <select id="post-video" @bind="postDeliverableId" data-testid="post-video">
+                        <option value="">Choose a video</option>
+                        @foreach (var video in view.Videos)
+                        {
+                            <option value="@video.DeliverableId">@VerticalFormatNames.Name(video.Format)@(video.HookVariant == "b" ? " · hook B" : string.Empty)</option>
+                        }
+                    </select>
+                    <label for="post-platform">Where</label>
+                    <select id="post-platform" @bind="postPlatform" data-testid="post-platform">
+                        <option value="@DistributionPlatform.TikTok">TikTok</option>
+                        <option value="@DistributionPlatform.InstagramReels">Instagram Reels</option>
+                        <option value="@DistributionPlatform.YouTubeShorts">YouTube Shorts</option>
+                    </select>
+                    <label for="post-url">Post link</label>
+                    <input id="post-url" type="url" @bind="postUrl" placeholder="https://www.tiktok.com/@@you/video/…" maxlength="500" data-testid="post-url" />
+                    <label for="post-published">Posted on (UTC)</label>
+                    <input id="post-published" type="datetime-local" @bind="postPublished" data-testid="post-published" />
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Primary" Disabled="busy" Class="mt-2"
+                               data-testid="add-post">Add post</MudButton>
+                </form>
+
+                @if (Posts.Count > 0)
+                {
+                    <form class="performance-form" @onsubmit="AddNumbersAsync" @onsubmit:preventDefault aria-labelledby="add-numbers-heading">
+                        <h4 id="add-numbers-heading">Add numbers</h4>
+                        <label for="numbers-post">Post</label>
+                        <select id="numbers-post" @bind="numbersPostId" data-testid="numbers-post">
+                            <option value="">Choose a post</option>
+                            @foreach (var (video, post) in Posts)
+                            {
+                                <option value="@post.Id">@VerticalFormatNames.Name(video.Format) · @PlatformName(post.Platform) · @post.PublishedAtUtc.ToString("MMM d", Culture)</option>
+                            }
+                        </select>
+                        <label for="numbers-captured">Numbers as of (UTC)</label>
+                        <input id="numbers-captured" type="datetime-local" @bind="numbersCaptured" data-testid="numbers-captured" />
+                        <div class="performance-number-grid">
+                            @NumberField("views", "Views", () => views, value => views = value)
+                            @NumberField("likes", "Likes", () => likes, value => likes = value)
+                            @NumberField("comments", "Comments", () => comments, value => comments = value)
+                            @NumberField("shares", "Shares", () => shares, value => shares = value)
+                            @NumberField("saves", "Saves", () => saves, value => saves = value)
+                            @NumberField("clicks", "Link clicks", () => clicks, value => clicks = value)
+                            @NumberField("leads", "Leads", () => leads, value => leads = value)
+                            @NumberField("showings", "Booked showings", () => showings, value => showings = value)
+                            <div>
+                                <label for="numbers-watch">Avg. watch (sec)</label>
+                                <input id="numbers-watch" type="number" min="0" step="0.1" @bind="watchSeconds" data-testid="numbers-watch" />
+                            </div>
+                            <div>
+                                <label for="numbers-completion">Watched to end (%)</label>
+                                <input id="numbers-completion" type="number" min="0" max="100" step="0.1" @bind="completionPercent" data-testid="numbers-completion" />
+                            </div>
+                        </div>
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Primary" Disabled="busy" Class="mt-2"
+                                   data-testid="add-numbers">Save numbers</MudButton>
+                    </form>
+
+                    <div class="performance-form" aria-labelledby="import-heading">
+                        <h4 id="import-heading">Import a CSV</h4>
+                        <p class="performance-help">
+                            Columns: platform, post_url, captured_at, views, likes, comments, shares, saves, average_watch_seconds,
+                            completion_rate, clicks, leads, booked_showings. Each post must be added first. If any row has a problem,
+                            nothing is imported and every problem is listed.
+                        </p>
+                        <InputFile OnChange="ImportAsync" accept=".csv,text/csv" disabled="@busy" data-testid="import-csv" />
+                    </div>
+                }
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private const long MaximumCsvBytes = 1_000_000;
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+
+    [Parameter, EditorRequired]
+    public Guid JobId { get; set; }
+
+    [Parameter]
+    public DateTimeOffset Stamp { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    private VerticalPerformanceView? view;
+    private (Guid JobId, DateTimeOffset Stamp)? loaded;
+    private bool busy;
+    private string? message;
+    private bool messageIsError;
+    private List<string> importErrors = [];
+
+    private Guid? postDeliverableId;
+    private DistributionPlatform postPlatform = DistributionPlatform.TikTok;
+    private string? postUrl;
+    private DateTime? postPublished;
+
+    private Guid? numbersPostId;
+    private DateTime? numbersCaptured;
+    private long? views, likes, comments, shares, saves, clicks, leads, showings;
+    private decimal? watchSeconds, completionPercent;
+
+    private IReadOnlyList<(VerticalPerformanceVideo Video, VerticalPerformancePost Post)> Posts =>
+        view?.Videos.SelectMany(video => video.Posts.Select(post => (video, post))).ToArray() ?? [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loaded != (JobId, Stamp))
+        {
+            loaded = (JobId, Stamp);
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<IVerticalPerformanceService>();
+            view = await service.IsEnabledAsync(userId) ? await service.GetCampaignAsync(userId, JobId) : null;
+        }
+        catch (PerformanceTrackingDisabledException)
+        {
+            view = null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Logger.LogWarning(exception, "Loading performance for campaign {JobId} failed", JobId);
+            view = null;
+        }
+    }
+
+    private Task AddPostAsync() => RunAsync(async (service, userId) =>
+    {
+        if (postDeliverableId is not { } deliverableId)
+        {
+            throw new ArgumentException("Choose the video you posted.");
+        }
+
+        var published = postPublished is { } value ? new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)) : TimeProvider.GetUtcNow();
+        await service.AddDistributionAsync(userId, deliverableId, postPlatform, postUrl ?? string.Empty, published);
+        postUrl = null;
+        postPublished = null;
+        return "Post added. Add its numbers once it has been live for a while.";
+    });
+
+    private Task AddNumbersAsync() => RunAsync(async (service, userId) =>
+    {
+        if (numbersPostId is not { } postId)
+        {
+            throw new ArgumentException("Choose the post these numbers are for.");
+        }
+
+        var captured = numbersCaptured is { } value ? new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)) : TimeProvider.GetUtcNow();
+        var values = new CampaignMetricValues(views ?? 0, likes ?? 0, comments ?? 0, shares ?? 0, saves ?? 0, watchSeconds,
+            completionPercent is { } percent ? percent / 100 : null, clicks ?? 0, (int)Math.Min(leads ?? 0, int.MaxValue),
+            (int)Math.Min(showings ?? 0, int.MaxValue));
+        await service.AddSnapshotAsync(userId, postId, values, captured);
+        views = likes = comments = shares = saves = clicks = leads = showings = null;
+        watchSeconds = completionPercent = null;
+        numbersCaptured = null;
+        return "Numbers saved. Earlier numbers are kept; the table uses the latest ones.";
+    });
+
+    private Task ImportAsync(InputFileChangeEventArgs eventArgs) => RunAsync(async (service, userId) =>
+    {
+        if (eventArgs.File.Size > MaximumCsvBytes)
+        {
+            throw new ArgumentException("The file is larger than 1 MB. Split it and import each part.");
+        }
+
+        await using var buffer = new MemoryStream();
+        await using (var stream = eventArgs.File.OpenReadStream(MaximumCsvBytes))
+        {
+            await stream.CopyToAsync(buffer);
+        }
+
+        buffer.Position = 0;
+        var result = await service.ImportCsvAsync(userId, buffer);
+        if (!result.Succeeded)
+        {
+            importErrors = result.Errors.ToList();
+            throw new ArgumentException($"Nothing was imported. Fix {(result.Errors.Count == 1 ? "this problem" : $"these {result.Errors.Count} problems")} and try again:");
+        }
+
+        return $"Imported {result.Imported} {(result.Imported == 1 ? "row" : "rows")}.";
+    });
+
+    private async Task RunAsync(Func<IVerticalPerformanceService, string, Task<string>> action)
+    {
+        busy = true;
+        message = null;
+        importErrors = [];
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await using (var scope = ScopeFactory.CreateAsyncScope())
+            {
+                message = await action(scope.ServiceProvider.GetRequiredService<IVerticalPerformanceService>(), userId);
+            }
+
+            messageIsError = false;
+            await ReloadAsync();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            messageIsError = true;
+            message = exception is PerformanceTrackingDisabledException
+                ? "Performance tracking is switched off for this workspace. Numbers already recorded are kept."
+                : exception.Message.Split(" (Parameter", 2)[0];
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static string PlatformName(DistributionPlatform platform) => platform switch
+    {
+        DistributionPlatform.InstagramReels => "Instagram",
+        DistributionPlatform.YouTubeShorts => "YouTube",
+        _ => "TikTok",
+    };
+
+    private RenderFragment NumberField(string id, string label, Func<long?> get, Action<long?> set) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.OpenElement(1, "label");
+        builder.AddAttribute(2, "for", $"numbers-{id}");
+        builder.AddContent(3, label);
+        builder.CloseElement();
+        builder.OpenElement(4, "input");
+        builder.AddAttribute(5, "id", $"numbers-{id}");
+        builder.AddAttribute(6, "type", "number");
+        builder.AddAttribute(7, "min", "0");
+        builder.AddAttribute(8, "step", "1");
+        builder.AddAttribute(9, "data-testid", $"numbers-{id}");
+        builder.AddAttribute(10, "value", get()?.ToString(Culture));
+        builder.AddAttribute(11, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, change =>
+            set(long.TryParse(change.Value?.ToString(), System.Globalization.NumberStyles.Integer, Culture, out var parsed) ? parsed : null)));
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+}

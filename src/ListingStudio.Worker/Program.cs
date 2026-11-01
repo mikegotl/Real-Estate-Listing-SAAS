@@ -1,6 +1,7 @@
 using ListingStudio.AI.Configuration;
 using ListingStudio.AI.DependencyInjection;
 using ListingStudio.Application.DependencyInjection;
+using ListingStudio.Infrastructure.Campaigns;
 using ListingStudio.Infrastructure.DependencyInjection;
 using ListingStudio.Video.DependencyInjection;
 using ListingStudio.Worker;
@@ -29,7 +30,9 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNEC
         {
             ManagedIdentityClientId = managedIdentityClientId,
         });
-    builder.Services.AddOpenTelemetry().UseAzureMonitor(options => options.Credential = credential);
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor(options => options.Credential = credential)
+        .WithMetrics(metrics => metrics.AddMeter(VerticalVideoMetrics.MeterName));
 }
 
 var mediaAnalysisEnabled = builder.Configuration.GetValue<bool>($"{MediaAnalysisWorkerOptions.SectionName}:Enabled");
@@ -88,6 +91,7 @@ builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
 builder.Services.AddHostedService<PropertyVideoFrameExtractionWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHostedService<TikTokTestSuiteWorker>();
+builder.Services.AddHostedService<VerticalCreativeTestWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
 builder.Services.AddHostedService<AerialIntroWorker>();
 builder.Services.AddHostedService<PhotoFixWorker>();

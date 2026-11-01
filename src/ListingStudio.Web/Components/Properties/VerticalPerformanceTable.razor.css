@@ -1,0 +1,112 @@
+.performance-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+}
+
+.performance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.performance-table th,
+.performance-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: right;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+    white-space: nowrap;
+}
+
+.performance-table thead th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--mud-palette-text-secondary);
+}
+
+.performance-table th[scope="row"],
+.performance-table thead th:first-child {
+    text-align: left;
+    white-space: normal;
+    min-width: 11rem;
+}
+
+.performance-table tbody tr:last-child > * {
+    border-bottom: none;
+}
+
+.performance-table .group-business {
+    background: rgba(176, 141, 87, 0.08);
+}
+
+.performance-name {
+    display: block;
+    font-weight: 600;
+}
+
+.performance-meta {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--mud-palette-text-secondary);
+}
+
+.performance-badge {
+    display: inline-block;
+    margin: 0.25rem 0.25rem 0 0;
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+.performance-badge.awareness {
+    background: var(--mud-palette-primary);
+    color: var(--mud-palette-primary-text);
+}
+
+.performance-badge.business {
+    background: #8a6a33;
+    color: #fff;
+}
+
+.performance-empty {
+    text-align: left !important;
+    color: var(--mud-palette-text-secondary);
+}
+
+.uplift {
+    display: block;
+    font-size: 0.6875rem;
+}
+
+.uplift.up {
+    color: #2e7d32;
+}
+
+.uplift.down {
+    color: #b3261e;
+}
+
+.performance-footnote {
+    margin: 0.4rem 0 0;
+    font-size: 0.75rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+/* The video name stays in view while the numbers scroll sideways on narrow screens. */
+.performance-table th[scope="row"],
+.performance-table thead tr:first-child th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--mud-palette-surface);
+}
+
+@media (max-width: 600px) {
+    .performance-table th[scope="row"],
+    .performance-table thead th:first-child {
+        min-width: 8.5rem;
+    }
+}

@@ -2,10 +2,12 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Audio;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Billing;
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Persistence;
 using ListingStudio.Infrastructure.Properties;
@@ -19,7 +21,9 @@ public sealed class CampaignGenerationService(
     TimeProvider timeProvider,
     ICampaignBillingGate campaignBillingGate,
     IPlanFeatureGate planFeatureGate,
-    IWalkthroughTransitionService walkthroughTransitionService) : ICampaignGenerationService, ICampaignTestGenerationService
+    IWalkthroughTransitionService walkthroughTransitionService,
+    IFeatureStateService featureStateService,
+    IVerticalCreativePlanningService verticalPlanningService) : ICampaignGenerationService, ICampaignTestGenerationService
 {
     private const string WorkflowVersion = "campaign-localization-v9";
 
@@ -65,6 +69,46 @@ public sealed class CampaignGenerationService(
         CancellationToken cancellationToken = default) =>
         EnqueueCoreAsync(userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken);
 
+    public Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        VerticalVideoSelection verticalSelection,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(verticalSelection))
+        {
+            throw new ArgumentOutOfRangeException(nameof(verticalSelection));
+        }
+
+        return EnqueueCoreAsync(
+            userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken,
+            new VerticalLibraryRequest(verticalSelection));
+    }
+
+    public Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        VerticalLibraryRequest verticalRequest,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(verticalRequest);
+        verticalRequest.Validate();
+        return EnqueueCoreAsync(
+            userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken, verticalRequest);
+    }
+
+    public async Task<bool> IsVerticalLibraryEnabledAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken);
+    }
+
     public Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
         CampaignCreativeOptions options, Guid caseRequestId, CancellationToken cancellationToken = default)
     {
@@ -73,11 +117,31 @@ public sealed class CampaignGenerationService(
             CampaignNarrationPreferences.Default, caseRequestId.ToString("N"), cancellationToken);
     }
 
+    public Task<CampaignGenerationResult?> EnqueueCreativeTestAsync(string userId, Guid propertyId,
+        VerticalCreativeFormat format, string hookVariant, Guid caseRequestId, CancellationToken cancellationToken = default)
+    {
+        if (caseRequestId == Guid.Empty) throw new ArgumentException("A test case key is required.", nameof(caseRequestId));
+        if (hookVariant is not ("a" or "b")) throw new ArgumentException("The hook is A or B.", nameof(hookVariant));
+        var request = new VerticalLibraryRequest(VerticalVideoSelection.AgentChosen, null, [format]);
+        request.Validate();
+        return EnqueueCoreAsync(userId, propertyId, CampaignOutputSelection.TikTok, CreativeTestOptions,
+            CampaignNarrationPreferences.Default, $"creative:{caseRequestId:N}", cancellationToken, request, hookVariant,
+            requireLibrary: true);
+    }
+
+    /// <summary>Creative test campaigns: the social defaults without paid AI walk-through clips.</summary>
+    public static CampaignCreativeOptions CreativeTestOptions { get; } = CampaignCreativeOptions.SocialDefault with
+    {
+        Elements = CampaignCreativeOptions.SocialDefault.Elements & ~CampaignVideoElement.WalkthroughMotion,
+    };
+
     private async Task<CampaignGenerationResult?> EnqueueCoreAsync(
         string userId, Guid propertyId, CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions, CampaignNarrationPreferences narrationPreferences,
-        string? testCaseKey, CancellationToken cancellationToken)
+        string? testCaseKey, CancellationToken cancellationToken,
+        VerticalLibraryRequest? verticalRequest = null, string? hookVariant = null, bool requireLibrary = false)
     {
+        var verticalSelection = verticalRequest?.Selection ?? VerticalVideoSelection.LegacySingle;
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
         ArgumentNullException.ThrowIfNull(creativeOptions);
         creativeOptions.Validate();
@@ -91,6 +155,25 @@ public sealed class CampaignGenerationService(
         }
 
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        // The library is decided here, before anything is queued: with the switch off (globally, or for this
+        // workspace) the request is the legacy campaign, with the same fingerprint it always had.
+        // Render regression test cases (a test key with no library request) always make the legacy vertical edit.
+        var usesLibrary = verticalSelection != VerticalVideoSelection.LegacySingle
+            && (testCaseKey is null || requireLibrary)
+            && (requestedOutputs.HasFlag(CampaignOutputSelection.TikTok)
+                || requestedOutputs.HasFlag(CampaignOutputSelection.InstagramReel)
+                || requestedOutputs.HasFlag(CampaignOutputSelection.YouTubeShort))
+            && await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken);
+        if (requireLibrary && !usesLibrary)
+        {
+            throw new InvalidOperationException("Creative format tests are switched off.");
+        }
+
+        if (usesLibrary && verticalSelection == VerticalVideoSelection.AgentChosen)
+        {
+            await EnsureChosenFormatsEligibleAsync(organizationId, propertyId, creativeOptions, verticalRequest!.Formats!, cancellationToken);
+        }
+
         var planAccess = await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken);
         if (creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) && !planAccess.IncludesPremiumAi)
         {
@@ -251,6 +334,12 @@ public sealed class CampaignGenerationService(
             creativeOptions,
             narrationPreferences,
             portraitUpdatedAtUtc);
+        if (usesLibrary)
+        {
+            fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                VerticalFingerprintSuffix(fingerprint, verticalRequest!)))).ToLowerInvariant();
+        }
+
         if (testCaseKey is not null)
         {
             fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
@@ -282,6 +371,15 @@ public sealed class CampaignGenerationService(
             timeProvider.GetUtcNow(),
             creativeOptions,
             narrationPreferences);
+        if (usesLibrary)
+        {
+            job.RequestVerticalLibrary(
+                verticalSelection,
+                verticalRequest!.Goal,
+                verticalSelection == VerticalVideoSelection.AgentChosen ? verticalRequest.Formats : null,
+                hookVariant);
+        }
+
         dbContext.CampaignGenerationJobs.Add(job);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -349,7 +447,27 @@ public sealed class CampaignGenerationService(
             return false;
         }
 
-        job.Retry(timeProvider.GetUtcNow());
+        var now = timeProvider.GetUtcNow();
+        job.Retry(now);
+        // Resume only failed library videos, and only while the feature is still on; with it off the worker stops
+        // the library at its next stage and keeps the videos that already rendered.
+        if (job.UsesVerticalLibrary
+            && await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken))
+        {
+            var library = await dbContext.CampaignVideoLibraries
+                .Include(candidate => candidate.Variants)
+                .SingleOrDefaultAsync(
+                    candidate => candidate.CampaignGenerationJobId == job.Id && candidate.OrganizationId == organizationId,
+                    cancellationToken);
+            if (library is not null && !CampaignVideoLibrary.IsTerminal(library.Status))
+            {
+                foreach (var variant in library.Variants.Where(variant => variant.Status == CampaignVideoVariantStatus.Failed))
+                {
+                    variant.Retry(now);
+                }
+            }
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -386,6 +504,7 @@ public sealed class CampaignGenerationService(
             .SingleOrDefaultAsync(candidate => candidate.CampaignGenerationJobId == jobId
                 && candidate.OrganizationId == organizationId
                 && candidate.Kind == kind
+                && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id)
                 && candidate.Status == CampaignDeliverableStatus.Rendered,
                 cancellationToken);
         if (deliverable?.AssetPath is null || deliverable.ContentType is null)
@@ -475,18 +594,21 @@ public sealed class CampaignGenerationService(
 
     private static CampaignGenerationResult ToResult(CampaignGenerationJob job)
     {
-        var currentIndex = (int)job.CurrentStage;
-        var stageCount = Enum.GetValues<CampaignGenerationStage>().Length;
+        var shownStages = CampaignGenerationStageOrder.For(job.UsesVerticalLibrary, job.CurrentStage);
+        var currentIndex = Math.Max(0, shownStages.ToList().IndexOf(job.CurrentStage));
+        var stageCount = shownStages.Count;
         var progress = job.Status == CampaignGenerationStatus.Completed
             ? 100
             : currentIndex * 100 / stageCount;
-        var stages = Enum.GetValues<CampaignGenerationStage>()
+        var stages = shownStages
             .Select(stage => new CampaignStageResult(
                 stage,
                 StageStatus(job, stage),
                 stage == job.CurrentStage ? job.StageAttemptCount : 0))
             .ToArray();
+        // Library videos are listed by the library views; this summary keeps the one-per-kind legacy shape.
         var deliverables = job.Deliverables
+            .Where(item => item.IsCampaignLevel)
             .OrderBy(item => item.Kind)
             .Select(item => new CampaignDeliverableResult(
                 item.Kind,
@@ -531,19 +653,72 @@ public sealed class CampaignGenerationService(
             job.SocialCaptionShort,
             stages,
             deliverables,
-            stillPosts);
+            stillPosts,
+            job.VerticalSelection is { } selection
+                ? new CampaignVerticalRequestResult(selection, job.VerticalGoal, job.VerticalFormats)
+                : null);
+    }
+
+    // The goal and an agent's format list are part of what was asked for, so a different choice is a new campaign.
+    // A request with neither keeps the Prompt 6 fingerprint.
+    private static string VerticalFingerprintSuffix(string fingerprint, VerticalLibraryRequest request)
+    {
+        var suffix = $"{fingerprint}:vertical-library:{request.Selection}";
+        if (request.Goal is { } goal)
+        {
+            suffix += $":goal:{goal}";
+        }
+
+        if (request.Selection == VerticalVideoSelection.AgentChosen)
+        {
+            suffix += $":formats:{CampaignGenerationJob.FormatVerticalFormats(request.Formats)}";
+        }
+
+        return suffix;
+    }
+
+    private async Task EnsureChosenFormatsEligibleAsync(
+        Guid organizationId,
+        Guid propertyId,
+        CampaignCreativeOptions creativeOptions,
+        IReadOnlyList<VerticalCreativeFormat> formats,
+        CancellationToken cancellationToken)
+    {
+        var plan = await verticalPlanningService.PlanForOrganizationAsync(
+            organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
+        if (plan is null)
+        {
+            return;
+        }
+
+        // While photo analysis is still running, the photo-led formats may not have scored yet; they are checked
+        // again when the library is planned, and dropped there if they still can't be made. Formats that need the
+        // agent's own confirmation (a story, an access line, hosted footage) never wait on analysis.
+        var analysisPending = plan.Input.Photos.Any(photo => !photo.AnalysisCompleted);
+        var ineligible = formats
+            .Where(format => !plan.Recommendation.Formats.Any(item => item.Format == format && item.IsEligible))
+            .Where(format => !(analysisPending && format is VerticalCreativeFormat.WowFeature or VerticalCreativeFormat.PriceFirst))
+            .ToArray();
+        if (ineligible.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"{string.Join(", ", ineligible.Select(VerticalFormatNames.Name))} can't be made for this listing yet. "
+                + "Add what it's missing or choose another video.");
+        }
     }
 
     private static CampaignStageStatus StageStatus(
         CampaignGenerationJob job,
         CampaignGenerationStage stage)
     {
-        if (stage < job.CurrentStage)
+        var rank = CampaignGenerationStageOrder.Rank(stage);
+        var currentRank = CampaignGenerationStageOrder.Rank(job.CurrentStage);
+        if (rank < currentRank)
         {
             return CampaignStageStatus.Completed;
         }
 
-        if (stage > job.CurrentStage)
+        if (rank > currentRank)
         {
             return CampaignStageStatus.Pending;
         }

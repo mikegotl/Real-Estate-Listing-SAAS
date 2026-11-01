@@ -1,0 +1,652 @@
+@* Creative Format Testing: pick a property, see the recommendation engine's grounded scores, start a test, then review
+   each case's own video. Shown only while VerticalVideoLibraryV1 is on; the service refuses every call otherwise. *@
+@inherits OwningComponentBase<IVerticalCreativeTestService>
+@using Microsoft.Extensions.DependencyInjection
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
+@inject ILogger<AdminCreativeTestingTab> Logger
+
+<section class="creative-tab" aria-labelledby="creative-heading" data-testid="creative-tab">
+    <h2 class="visually-hidden" id="creative-heading">Creative format testing</h2>
+    @if (error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4" aria-live="polite">@error</MudAlert>
+    }
+    @if (notice is not null)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4" aria-live="polite">@notice</MudAlert>
+    }
+
+    <dl class="workspace-metrics" aria-label="Creative test summary" data-testid="creative-summary">
+        <div class="@(summary.AwaitingReview > 0 ? "attention" : null)"><dt>Awaiting creative review</dt><dd>@summary.AwaitingReview</dd></div>
+        <div class="@(summary.TechnicalFailures > 0 ? "attention" : null)"><dt>Technical failures</dt><dd>@summary.TechnicalFailures</dd></div>
+        <div><dt>Changes requested</dt><dd>@summary.ChangesRequested</dd></div>
+        <div><dt>Published tests with metrics</dt><dd>@summary.PublishedWithMetrics</dd></div>
+    </dl>
+
+    <section class="creative-panel" aria-labelledby="creative-start-heading">
+        <span class="eyebrow">STEP 1</span>
+        <MudText Typo="Typo.h5" HtmlTag="h3" id="creative-start-heading">Analyze a test property</MudText>
+        <p class="creative-help">The recommendation engine scores every format from the property's verified facts, analyzed photos and confirmed inputs. Nothing is generated until you start a test.
+            <ArticleGuideLink Placement="@ArticleLinks.Placements.AdminStudio" Text="Read the agent guide" Inline="true" /></p>
+        <div class="creative-start-row">
+            <div class="creative-field">
+                <label for="creative-property">Test property</label>
+                <select id="creative-property" value="@selectedPropertyId" @onchange="PropertyChangedAsync" disabled="@busy" data-testid="creative-property">
+                    <option value="">Choose a property</option>
+                    @foreach (var property in propertyChoices)
+                    {
+                        <option value="@property.Id">@property.Address</option>
+                    }
+                </select>
+            </div>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(busy || !Guid.TryParse(selectedPropertyId, out _))"
+                       OnClick="AnalyzeAsync" StartIcon="@Icons.Material.Filled.Insights" data-testid="creative-analyze">Run the recommendation engine</MudButton>
+        </div>
+
+        @if (preview is not null)
+        {
+            <p class="creative-help mt-4">Rule version @preview.RuleVersion@(preview.PhotoAnalysisPending ? " · photo analysis is still running, so photo-led scores may rise" : null).</p>
+            <ul class="creative-format-list" aria-label="Format scores" data-testid="creative-preview">
+                @foreach (var option in preview.Formats)
+                {
+                    var id = $"creative-format-{option.Format}";
+                    <li aria-labelledby="@id" class="@(option.IsEligible ? null : "ineligible")" data-testid="@($"creative-option-{option.Format}")">
+                        <div class="creative-format-head">
+                            <strong id="@id">@VerticalFormatNames.Name(option.Format)</strong>
+                            <span class="creative-chip @(option.IsRecommended ? "recommended" : option.IsEligible ? null : "muted")"
+                                  aria-label="@($"Score {option.Score} out of 100, {VerticalFormatNames.Strength(option.Strength)}")">
+                                @option.Score/100 · @(option.IsRecommended ? "Recommended" : VerticalFormatNames.Strength(option.Strength))
+                            </span>
+                        </div>
+                        <p class="creative-meta">@VerticalFormatNames.Purpose(option.Purpose) · @option.DurationSeconds s · @option.RecipeVersion</p>
+                        @if (option.Reasons.Count > 0)
+                        {
+                            <ul class="creative-reasons">
+                                @foreach (var reason in option.Reasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                        }
+                        @if (!option.IsEligible && option.MissingInputs.Count > 0)
+                        {
+                            <p class="creative-missing">Missing: @string.Join("; ", option.MissingInputs)</p>
+                        }
+                        @if (option.Hook is not null)
+                        {
+                            <p class="creative-hook"><span>Hook A</span> @option.Hook</p>
+                        }
+                        @if (option.HookB is not null)
+                        {
+                            <p class="creative-hook"><span>Hook B</span> @option.HookB</p>
+                        }
+                    </li>
+                }
+            </ul>
+
+            <fieldset class="creative-modes" disabled="@busy">
+                <legend>Step 2: choose what to generate</legend>
+                @foreach (var choice in Modes)
+                {
+                    <label>
+                        <input type="radio" name="creative-mode" value="@choice" checked="@(mode == choice)"
+                               @onchange="() => mode = choice" data-testid="@($"creative-mode-{choice}")" />
+                        @ModeText(choice)
+                    </label>
+                }
+                @if (NeedsFormat)
+                {
+                    <div class="creative-field mt-2">
+                        <label for="creative-format">Format</label>
+                        <select id="creative-format" @bind="selectedFormat" data-testid="creative-format">
+                            <option value="">Choose a format</option>
+                            @foreach (var option in preview.Eligible)
+                            {
+                                <option value="@option.Format">@VerticalFormatNames.Name(option.Format)</option>
+                            }
+                        </select>
+                    </div>
+                }
+            </fieldset>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="my-3" aria-live="polite" data-testid="creative-estimate">
+                @EstimateText
+            </MudAlert>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || !CanStart)"
+                       OnClick="StartAsync" StartIcon="@Icons.Material.Filled.PlayArrow" data-testid="creative-start">Start creative test</MudButton>
+        }
+    </section>
+
+    <div class="section-row creative-gallery-heading">
+        <MudText Typo="Typo.h5" HtmlTag="h3">Creative test results</MudText>
+        <span>Grouped by test and property · newest first · your workspace only</span>
+    </div>
+
+    @if (suites.Count == 0)
+    {
+        <p class="creative-empty">No creative tests yet. Analyze a property above to start one.</p>
+    }
+    @foreach (var suite in suites)
+    {
+        <section class="creative-suite" @key="suite.Id" aria-label="@($"{ModeText(suite.Mode)} for {suite.Address}")" data-testid="@($"creative-suite-{suite.Id}")">
+            <header class="creative-suite-head">
+                <div>
+                    <strong>@ModeText(suite.Mode)@(suite.Format is { } format ? $" · {VerticalFormatNames.Name(format)}" : null)</strong>
+                    <span>@suite.Address · @suite.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy · h:mm tt") · rules @suite.RuleVersion</span>
+                </div>
+                <span class="creative-chip @SuiteClass(suite.Status)">@suite.Status</span>
+                @if (suite.IsActive)
+                {
+                    <MudButton Size="Size.Small" Color="Color.Warning" Disabled="busy" OnClick="() => CancelAsync(suite.Id)">Cancel test</MudButton>
+                }
+                <a href="@($"/properties/{suite.PropertyId}?tab=campaign")">Open property campaign →</a>
+            </header>
+            @if (!string.IsNullOrWhiteSpace(suite.Error))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">@suite.Error</MudAlert>
+            }
+            <div class="creative-grid">
+                @foreach (var item in suite.Cases)
+                {
+                    var draft = DraftFor(item);
+                    var headingId = $"creative-case-{item.Id:N}";
+                    <article class="creative-card" @key="@(item.DeliverableId ?? item.Id)" aria-labelledby="@headingId"
+                             data-testid="@($"creative-case-{item.Format}-{item.HookVariant}")">
+                        <header class="creative-card-head">
+                            <div>
+                                <span class="review-kicker">Case @(item.Index + 1) · hook @item.HookVariant.ToUpperInvariant()</span>
+                                <h4 id="@headingId">@VerticalFormatNames.Name(item.Format)</h4>
+                                <p>@VerticalFormatNames.Purpose(item.Purpose) · score @item.Score/100 · @item.ExpectedDurationSeconds s · @item.RecipeVersion</p>
+                            </div>
+                            <div class="creative-card-chips">
+                                <span class="creative-chip @CaseClass(item.Status)" data-testid="@($"case-status-{item.Format}-{item.HookVariant}")">@CaseText(item.Status)</span>
+                                @if (item.CanReview)
+                                {
+                                    <span class="creative-chip @DecisionClass(item.Decision)">@DecisionText(item)</span>
+                                }
+                            </div>
+                        </header>
+                        @if (item.Hook is not null)
+                        {
+                            <p class="creative-hook"><span>Hook</span> @item.Hook</p>
+                        }
+                        @if (item.Reasons.Count > 0)
+                        {
+                            <ul class="creative-reasons">
+                                @foreach (var reason in item.Reasons)
+                                {
+                                    <li>@reason</li>
+                                }
+                            </ul>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.Error))
+                        {
+                            <p class="creative-finding @(item.Status == VerticalCreativeTestCaseStatus.Failed ? "failed" : null)">
+                                <strong>@(item.Status == VerticalCreativeTestCaseStatus.Failed ? "Technical findings:" : "Note:")</strong> @item.Error
+                            </p>
+                        }
+                        @if (item.CanReview)
+                        {
+                            <video class="creative-player" @key="@($"{item.DeliverableId}-{item.Version}")" controls preload="metadata" playsinline
+                                   aria-label="@($"{VerticalFormatNames.Name(item.Format)} hook {item.HookVariant.ToUpperInvariant()}, version {item.Version}")">
+                                <source src="@($"/campaigns/videos/{item.DeliverableId}?v={item.Version}")" type="video/mp4" />
+                            </video>
+                            <div class="creative-review">
+                                <MudTextField T="string" @bind-Value="draft.Feedback" Label="@($"Review notes for version {item.Version}")"
+                                              Variant="Variant.Outlined" Lines="2" MaxLength="1000" Disabled="busy" />
+                                <div class="creative-review-actions">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" Disabled="busy"
+                                               OnClick="() => DecideAsync(item, CampaignVideoReviewDecision.Approved)"
+                                               data-testid="@($"creative-approve-{item.Format}-{item.HookVariant}")">Approve version @item.Version</MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
+                                               Disabled="@(busy || string.IsNullOrWhiteSpace(draft.Feedback))"
+                                               OnClick="() => DecideAsync(item, CampaignVideoReviewDecision.ChangesRequested)">Request changes</MudButton>
+                                    <a href="@($"/campaigns/videos/{item.DeliverableId}?v={item.Version}&download=true")">Download MP4</a>
+                                </div>
+                            </div>
+                            <CampaignVideoChatPanel @key="@($"creative-chat-{item.DeliverableId}-{item.Version}")"
+                                                    JobId="item.JobId!.Value" Kind="CampaignOutputKind.TikTok" DeliverableId="item.DeliverableId"
+                                                    VideoName="@($"{VerticalFormatNames.Name(item.Format)} test video")" VersionChanged="LoadAsync" />
+                        }
+                        @if (item.History.Count > 0)
+                        {
+                            <details class="creative-history">
+                                <summary>Review history (@item.History.Count)</summary>
+                                <ol>
+                                    @foreach (var entry in item.History)
+                                    {
+                                        <li>Version @entry.Version · @(entry.Decision == CampaignVideoReviewDecision.Approved ? "Approved" : "Changes requested")
+                                            @if (!string.IsNullOrWhiteSpace(entry.Feedback))
+                                            {
+                                                <span> · @entry.Feedback</span>
+                                            }
+                                        </li>
+                                    }
+                                </ol>
+                            </details>
+                        }
+                    </article>
+                }
+            </div>
+        </section>
+    }
+    <div class="section-row creative-gallery-heading creative-performance-heading">
+        <MudText Typo="Typo.h5" HtmlTag="h3">Published test performance</MudText>
+        <span>Numbers agents and admins entered from the platforms · each test compares only its own videos</span>
+    </div>
+    @if (performance.Count == 0)
+    {
+        <p class="creative-empty" data-testid="creative-performance-empty">No creative test has numbers yet. Add posts and numbers from the property's Campaign tab.</p>
+    }
+    @foreach (var group in performance)
+    {
+        <section class="creative-suite" @key="@($"perf-{group.SuiteId}")" aria-label="@group.GroupLabel" data-testid="@($"creative-performance-{group.SuiteId}")">
+            <header class="creative-suite-head"><div><strong>@group.GroupLabel</strong></div></header>
+            <VerticalPerformanceTable View="group" Caption="@group.GroupLabel" />
+        </section>
+    }
+
+    <section class="creative-panel creative-rules" aria-labelledby="creative-rules-heading" data-testid="creative-rules">
+        <span class="eyebrow">RULE EVALUATION</span>
+        <MudText Typo="Typo.h5" HtmlTag="h3" id="creative-rules-heading">Check the recommendation rules against results</MudText>
+        <p class="creative-help">
+            A draft report groups every measured library video in this workspace by format, property type, price band, photos and video
+            available, and agent. Render regression tests are left out. A report never changes the rules. Active rules: <strong data-testid="active-rule-version">@activeRuleVersion</strong>.
+        </p>
+        <p class="creative-help">
+            Minimum sample before a rule version can be promoted: at least @VerticalPerformanceCalculator.MinimumReportVideos measured videos in the report,
+            and at least @VerticalPerformanceCalculator.MinimumVideosPerSegment videos and @VerticalPerformanceCalculator.MinimumViewsPerSegment.ToString("N0") views for every format in it.
+        </p>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="busy" OnClick="CreateDraftAsync" data-testid="create-rule-draft">Create draft report</MudButton>
+        @foreach (var report in reports)
+        {
+            <article class="creative-report" @key="report.Id" data-testid="@($"rule-report-{report.Id}")">
+                <header>
+                    <strong>@report.CreatedAtUtc.ToString("MMM d, yyyy · HH:mm") UTC · @report.VideoCount measured videos · @report.TotalViews.ToString("N0") views</strong>
+                    <span>Based on @report.BaseRuleVersion · @report.CalculationVersion ·
+                        @if (report.Status == VerticalRuleReportStatus.Promoted)
+                        {
+                            <span>promoted @report.PromotedRuleVersion</span>
+                        }
+                        else if (report.MeetsMinimumSample)
+                        {
+                            <span>meets the minimum sample</span>
+                        }
+                        else
+                        {
+                            <span data-testid="below-minimum">below the minimum sample, so it can't be promoted</span>
+                        }
+                    </span>
+                </header>
+                <div class="performance-table-wrap">
+                    <table class="creative-segments">
+                        <caption class="visually-hidden">Results by format</caption>
+                        <thead><tr><th scope="col">Group</th><th scope="col">Format</th><th scope="col">Videos</th><th scope="col">Views</th><th scope="col">Like rate</th><th scope="col">Click rate</th><th scope="col">Leads</th><th scope="col">Avg. rule score</th></tr></thead>
+                        <tbody>
+                            @foreach (var segment in report.Segments)
+                            {
+                                <tr class="@(segment.MeetsMinimumSample ? null : "thin")">
+                                    <th scope="row">@segment.Dimension: @segment.Value</th>
+                                    <td>@VerticalFormatNames.Name(segment.Format)</td>
+                                    <td>@segment.Videos</td>
+                                    <td>@segment.Views.ToString("N0")</td>
+                                    <td>@Rate(segment.LikeRate)</td>
+                                    <td>@Rate(segment.ClickThroughRate)</td>
+                                    <td>@segment.Leads</td>
+                                    <td>@segment.AverageRuleScore</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (report.Status == VerticalRuleReportStatus.Draft && report.MeetsMinimumSample)
+                {
+                    <div class="creative-start-row">
+                        <div class="creative-field">
+                            <label for="@($"promote-{report.Id}")">Rule version to make active</label>
+                            <select id="@($"promote-{report.Id}")" @bind="promoteVersion" data-testid="promote-version">
+                                @foreach (var version in VerticalPerformanceCalculator.ImplementedRuleVersions.Order())
+                                {
+                                    <option value="@version">@version</option>
+                                }
+                            </select>
+                        </div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="@(() => PromoteAsync(report.Id))"
+                                   data-testid="@($"promote-{report.Id}")">Promote</MudButton>
+                    </div>
+                }
+            </article>
+        }
+    </section>
+</section>
+
+@code {
+    private static readonly VerticalCreativeTestMode[] Modes =
+        [VerticalCreativeTestMode.RecommendedThree, VerticalCreativeTestMode.AllEligible, VerticalCreativeTestMode.SingleFormat, VerticalCreativeTestMode.HookAb];
+
+    private readonly CancellationTokenSource disposal = new();
+    private readonly Dictionary<(Guid DeliverableId, int Version), ReviewDraft> drafts = [];
+    private Task? pollingTask;
+    private IReadOnlyList<TikTokTestPropertyChoice> propertyChoices = [];
+    private IReadOnlyList<VerticalCreativeTestSuiteView> suites = [];
+    private VerticalCreativeTestSummary summary = new(0, 0, 0, 0);
+    private VerticalCreativeTestPreview? preview;
+    private string? selectedPropertyId;
+    private string? selectedFormat;
+    private VerticalCreativeTestMode mode = VerticalCreativeTestMode.RecommendedThree;
+    private bool busy;
+    private string? error;
+    private string? notice;
+    private IReadOnlyList<VerticalPerformanceView> performance = [];
+    private IReadOnlyList<VerticalRuleEvaluationView> reports = [];
+    private string activeRuleVersion = VerticalFormatRules.Version;
+    private string promoteVersion = VerticalFormatRules.Version;
+
+    private bool NeedsFormat => mode is VerticalCreativeTestMode.SingleFormat or VerticalCreativeTestMode.HookAb;
+
+    private VerticalCreativeFormat? ChosenFormat => NeedsFormat && Enum.TryParse<VerticalCreativeFormat>(selectedFormat, out var format)
+        ? format : null;
+
+    private IReadOnlyList<VerticalCreativeTestCasePlan>? PlannedCases
+    {
+        get
+        {
+            if (preview is null || (NeedsFormat && ChosenFormat is null))
+            {
+                return null;
+            }
+
+            try
+            {
+                return VerticalCreativeTestPlanner.Plan(preview, mode, ChosenFormat);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private bool CanStart => PlannedCases is { } cases && VerticalCreativeTestPlanner.GeneratedCount(cases) > 0
+        && !suites.Any(suite => suite.IsActive);
+
+    private string EstimateText
+    {
+        get
+        {
+            if (suites.Any(suite => suite.IsActive))
+            {
+                return "A creative test is already running in this workspace. Wait for it to finish or cancel it first.";
+            }
+
+            if (PlannedCases is not { } cases)
+            {
+                return NeedsFormat ? "Choose a format to see the estimate." : "This property has no format strong enough to recommend yet.";
+            }
+
+            var generated = VerticalCreativeTestPlanner.GeneratedCount(cases);
+            var skipped = cases.Count - generated;
+            return $"This starts {generated} test campaign{(generated == 1 ? string.Empty : "s")}, one at a time in the background"
+                + (skipped > 0 ? $" ({skipped} skipped because the listing can't support {(skipped == 1 ? "it" : "them")})" : string.Empty)
+                + ". Each one uses generation credits like a normal campaign (voiceover, rendering and any AI steps) and counts toward the campaign allowance.";
+        }
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && RendererInfo.IsInteractive)
+        {
+            pollingTask = PollAsync();
+        }
+
+        return base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task LoadAsync()
+    {
+        await RunAsync(async userId =>
+        {
+            propertyChoices = await ScopedServices.GetRequiredService<ITikTokTestSuiteService>().PropertyChoicesAsync(userId, disposal.Token);
+            await LoadSuitesAsync(userId);
+            await LoadMeasurementAsync(userId);
+        }, clearNotice: false);
+    }
+
+    private async Task LoadMeasurementAsync(string userId)
+    {
+        var evaluation = ScopedServices.GetRequiredService<IVerticalRuleEvaluationService>();
+        performance = await evaluation.GetSuitePerformanceAsync(userId, disposal.Token);
+        reports = await evaluation.ListAsync(userId, disposal.Token);
+        activeRuleVersion = await evaluation.GetActiveRuleVersionAsync(userId, disposal.Token);
+        summary = VerticalCreativeTestSummary.From(suites, PublishedWithMetrics);
+    }
+
+    private int PublishedWithMetrics => performance.Sum(group => group.Videos.Count(video => video.HasMetrics));
+
+    private Task CreateDraftAsync() => RunAsync(async userId =>
+    {
+        var report = await ScopedServices.GetRequiredService<IVerticalRuleEvaluationService>().CreateDraftAsync(userId, disposal.Token);
+        await LoadMeasurementAsync(userId);
+        notice = report.MeetsMinimumSample
+            ? "Draft report created. It meets the minimum sample; promoting a rule version is a separate step."
+            : "Draft report created. It's below the minimum sample, so it's for reading only.";
+    });
+
+    private Task PromoteAsync(Guid reportId) => RunAsync(async userId =>
+    {
+        await ScopedServices.GetRequiredService<IVerticalRuleEvaluationService>().PromoteAsync(userId, reportId, promoteVersion, disposal.Token);
+        await LoadMeasurementAsync(userId);
+        notice = $"Rule version {promoteVersion} is now active for this workspace.";
+    });
+
+    private static string Rate(decimal? rate) => rate is { } value ? value.ToString("0.#%", System.Globalization.CultureInfo.GetCultureInfo("en-US")) : "–";
+
+    private async Task LoadSuitesAsync(string userId)
+    {
+        suites = await Service.ListAsync(userId, disposal.Token);
+        summary = VerticalCreativeTestSummary.From(suites, PublishedWithMetrics);
+    }
+
+    private Task PropertyChangedAsync(ChangeEventArgs args)
+    {
+        selectedPropertyId = args.Value?.ToString();
+        preview = null;
+        selectedFormat = null;
+        return Task.CompletedTask;
+    }
+
+    private Task AnalyzeAsync() => Guid.TryParse(selectedPropertyId, out var propertyId)
+        ? RunAsync(async userId =>
+        {
+            preview = await Service.PreviewAsync(userId, propertyId, disposal.Token);
+            if (preview is null)
+            {
+                error = "This property is unavailable or has no photos to analyze.";
+            }
+        })
+        : Task.CompletedTask;
+
+    private Task StartAsync() => preview is null
+        ? Task.CompletedTask
+        : RunAsync(async userId =>
+        {
+            await Service.StartAsync(userId, preview.PropertyId, mode, ChosenFormat, disposal.Token);
+            await LoadSuitesAsync(userId);
+            notice = "The creative test is queued. Cases run one at a time in the background; you can leave this page.";
+        });
+
+    private Task CancelAsync(Guid suiteId) => RunAsync(async userId =>
+    {
+        await Service.CancelAsync(userId, suiteId, disposal.Token);
+        await LoadSuitesAsync(userId);
+        notice = "Test cancelled. Finished cases and their videos are kept.";
+    });
+
+    private Task DecideAsync(VerticalCreativeTestCaseView item, CampaignVideoReviewDecision decision) =>
+        item.DeliverableId is not { } deliverableId
+            ? Task.CompletedTask
+            : RunAsync(async userId =>
+            {
+                await ScopedServices.GetRequiredService<ICampaignReviewService>().DecideDeliverableAsync(
+                    userId, deliverableId, item.Version, decision, DraftFor(item).Feedback, disposal.Token);
+                DraftFor(item).Feedback = null;
+                await LoadSuitesAsync(userId);
+                notice = decision == CampaignVideoReviewDecision.Approved
+                    ? $"{VerticalFormatNames.Name(item.Format)} hook {item.HookVariant.ToUpperInvariant()} version {item.Version} approved."
+                    : $"Changes requested for {VerticalFormatNames.Name(item.Format)} version {item.Version}. Use its video chat to render the update.";
+            });
+
+    private async Task RunAsync(Func<string, Task> action, bool clearNotice = true)
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        if (clearNotice)
+        {
+            notice = null;
+        }
+
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            await action(userId);
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        catch (CreativeTestingDisabledException exception)
+        {
+            error = exception.Message;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or KeyNotFoundException)
+        {
+            error = exception.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Creative testing requires platform administrator access to your current workspace.";
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "A creative test action failed");
+            error = "That didn't work. Refresh the page and try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(disposal.Token))
+            {
+                if (busy || !suites.Any(suite => suite.IsActive)
+                    || !await JSRuntime.InvokeAsync<bool>("listingStudioPage.isVisible", disposal.Token))
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    await RunAsync(LoadSuitesAsync, clearNotice: false);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private ReviewDraft DraftFor(VerticalCreativeTestCaseView item)
+    {
+        var key = (item.DeliverableId ?? item.Id, item.Version);
+        if (!drafts.TryGetValue(key, out var draft))
+        {
+            draft = new ReviewDraft();
+            drafts.Add(key, draft);
+        }
+
+        return draft;
+    }
+
+    private static string ModeText(VerticalCreativeTestMode value) => value switch
+    {
+        VerticalCreativeTestMode.RecommendedThree => "The recommended three",
+        VerticalCreativeTestMode.AllEligible => "All eligible formats",
+        VerticalCreativeTestMode.SingleFormat => "One selected format",
+        VerticalCreativeTestMode.HookAb => "Hooks A and B for one format",
+        _ => value.ToString(),
+    };
+
+    private static string CaseText(VerticalCreativeTestCaseStatus status) => status switch
+    {
+        VerticalCreativeTestCaseStatus.Pending => "Waiting",
+        VerticalCreativeTestCaseStatus.Running => "Generating",
+        VerticalCreativeTestCaseStatus.Passed => "Technical check passed",
+        VerticalCreativeTestCaseStatus.Failed => "Technical failure",
+        VerticalCreativeTestCaseStatus.Skipped => "Skipped",
+        VerticalCreativeTestCaseStatus.Cancelled => "Cancelled",
+        _ => status.ToString(),
+    };
+
+    private static string CaseClass(VerticalCreativeTestCaseStatus status) => status switch
+    {
+        VerticalCreativeTestCaseStatus.Passed => "approved",
+        VerticalCreativeTestCaseStatus.Failed => "failed",
+        VerticalCreativeTestCaseStatus.Skipped or VerticalCreativeTestCaseStatus.Cancelled => "muted",
+        _ => "running",
+    };
+
+    private static string SuiteClass(VerticalCreativeTestSuiteStatus status) => status switch
+    {
+        VerticalCreativeTestSuiteStatus.Completed => "approved",
+        VerticalCreativeTestSuiteStatus.Cancelled => "muted",
+        _ => "running",
+    };
+
+    private static string DecisionText(VerticalCreativeTestCaseView item) => item.Decision switch
+    {
+        CampaignVideoReviewDecision.Approved => $"Approved · v{item.Version}",
+        CampaignVideoReviewDecision.ChangesRequested => "Changes requested",
+        _ => "Awaiting review",
+    };
+
+    private static string DecisionClass(CampaignVideoReviewDecision? decision) => decision switch
+    {
+        CampaignVideoReviewDecision.Approved => "approved",
+        CampaignVideoReviewDecision.ChangesRequested => "changes",
+        _ => "running",
+    };
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await disposal.CancelAsync();
+        if (pollingTask is not null)
+        {
+            await pollingTask;
+        }
+
+        disposal.Dispose();
+        await base.DisposeAsyncCore();
+    }
+
+    private sealed class ReviewDraft
+    {
+        public string? Feedback { get; set; }
+    }
+}

@@ -19,7 +19,8 @@ public sealed record CampaignPresetSettings(
     CampaignLanguage SpokenLanguage,
     CampaignLanguage CaptionLanguage,
     CampaignVoiceAccent VoiceAccent,
-    bool LocalizeAgentCard)
+    bool LocalizeAgentCard,
+    VerticalVideoSelection VerticalSelection = VerticalVideoSelection.LegacySingle)
 {
     public const int CurrentSchemaVersion = 1;
 
@@ -59,7 +60,12 @@ public sealed record CampaignPresetSettings(
         var elements = CampaignCreativeOptions.WithSoundtrack(
             Elements & ~CampaignVideoElement.KitchenIslandOrbit,
             Soundtrack);
-        return this with { Outputs = outputs, Elements = elements };
+        // Settings saved before the vertical video library, or without a vertical output, ask for the one shared
+        // vertical video.
+        var vertical = outputs.HasFlag(CampaignOutputSelection.TikTok) && Enum.IsDefined(VerticalSelection)
+            ? VerticalSelection
+            : VerticalVideoSelection.LegacySingle;
+        return this with { Outputs = outputs, Elements = elements, VerticalSelection = vertical };
     }
 
     public void Validate()
@@ -74,7 +80,8 @@ public sealed record CampaignPresetSettings(
             || !Enum.IsDefined(NarrationRegion)
             || !Enum.IsDefined(SpokenLanguage)
             || !Enum.IsDefined(CaptionLanguage)
-            || !Enum.IsDefined(VoiceAccent))
+            || !Enum.IsDefined(VoiceAccent)
+            || !Enum.IsDefined(VerticalSelection))
         {
             throw new ArgumentOutOfRangeException(nameof(Outputs), "The saved settings contain an unsupported choice.");
         }
@@ -99,6 +106,13 @@ public sealed record CampaignPresetSettings(
             ["voiceAccent"] = VoiceAccent.ToString(),
             ["localizeAgentCard"] = LocalizeAgentCard,
         };
+        // Written only when it differs from the one shared vertical video, so a set saved with the library off is
+        // byte-for-byte what the app wrote before the library existed.
+        if (VerticalSelection != VerticalVideoSelection.LegacySingle)
+        {
+            json["verticalSelection"] = VerticalSelection.ToString();
+        }
+
         return json.ToJsonString();
     }
 
@@ -137,7 +151,8 @@ public sealed record CampaignPresetSettings(
             ReadEnum(root, "voiceAccent", defaults.VoiceAccent, skipped),
             root["localizeAgentCard"] is JsonValue localize && localize.TryGetValue<bool>(out var value)
                 ? value
-                : defaults.LocalizeAgentCard);
+                : defaults.LocalizeAgentCard,
+            ReadEnum(root, "verticalSelection", VerticalVideoSelection.LegacySingle, skipped));
         return new CampaignPresetSettingsRead(settings.Normalize(), skipped);
     }
 

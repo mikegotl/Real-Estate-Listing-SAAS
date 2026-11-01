@@ -36,8 +36,12 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         // RequestedOutputs is stored through a string converter; SQL bitwise operators cannot inspect it.
         // Stream only this workspace's ordered jobs and stop after 100 matching vertical campaigns.
         var jobs = new List<CampaignGenerationJob>();
+        // Creative format test campaigns belong to the Creative Format Testing tab, never to the render regression gallery.
+        var creativeTestJobs = dbContext.VerticalCreativeTestCases
+            .Where(item => item.OrganizationId == organizationId && item.CampaignGenerationJobId != null)
+            .Select(item => item.CampaignGenerationJobId!.Value);
         var query = dbContext.CampaignGenerationJobs.AsNoTracking().Include(job => job.Property)
-            .Where(job => job.OrganizationId == organizationId);
+            .Where(job => job.OrganizationId == organizationId && !creativeTestJobs.Contains(job.Id));
         if (sessionJobIds is not null) query = query.Where(job => sessionJobIds.Contains(job.Id));
         await foreach (var job in query.OrderByDescending(job => job.CreatedAtUtc).ThenByDescending(job => job.Id)
             .AsAsyncEnumerable().WithCancellation(cancellationToken))
@@ -55,7 +59,7 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         var jobIds = jobs.Select(job => job.Id).ToArray();
         var videos = await dbContext.CampaignDeliverables.AsNoTracking()
             .Where(video => video.OrganizationId == organizationId && jobIds.Contains(video.CampaignGenerationJobId)
-                && video.Kind == CampaignOutputKind.TikTok).ToListAsync(cancellationToken);
+                && video.Kind == CampaignOutputKind.TikTok && (video.CampaignVideoVariantId == null || video.CampaignVideoVariantId == video.Id)).ToListAsync(cancellationToken);
         var videoIds = videos.Select(video => video.Id).ToArray();
         var reviews = await dbContext.CampaignVideoReviews.AsNoTracking()
             .Where(review => review.OrganizationId == organizationId && videoIds.Contains(review.CampaignDeliverableId))
@@ -80,24 +84,32 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         CampaignVideoReviewDecision decision, string? feedback, CancellationToken cancellationToken = default)
     {
         var organizationId = await AuthorizeAsync(userId, cancellationToken);
+        var deliverableId = await dbContext.CampaignDeliverables.AsNoTracking()
+            .Where(candidate => candidate.OrganizationId == organizationId
+                && candidate.CampaignGenerationJobId == jobId && candidate.Kind == CampaignOutputKind.TikTok
+                && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id))
+            .Select(candidate => (Guid?)candidate.Id)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KeyNotFoundException("This campaign video is unavailable in your workspace.");
+        await DecideCoreAsync(userId, organizationId, deliverableId, expectedVersion, decision, feedback, cancellationToken);
+    }
+
+    public async Task DecideDeliverableAsync(string userId, Guid deliverableId, int expectedVersion,
+        CampaignVideoReviewDecision decision, string? feedback, CancellationToken cancellationToken = default)
+    {
+        var organizationId = await AuthorizeAsync(userId, cancellationToken);
+        await DecideCoreAsync(userId, organizationId, deliverableId, expectedVersion, decision, feedback, cancellationToken);
+    }
+
+    private async Task DecideCoreAsync(string userId, Guid organizationId, Guid deliverableId, int expectedVersion,
+        CampaignVideoReviewDecision decision, string? feedback, CancellationToken cancellationToken)
+    {
         var video = await dbContext.CampaignDeliverables.AsNoTracking()
             .Include(candidate => candidate.CampaignGenerationJob)
-            .SingleOrDefaultAsync(candidate => candidate.OrganizationId == organizationId
-                && candidate.CampaignGenerationJobId == jobId && candidate.Kind == CampaignOutputKind.TikTok,
-                cancellationToken);
-        if (video is null)
-        {
-            throw new KeyNotFoundException("This campaign video is unavailable in your workspace.");
-        }
-        if (video.Version != expectedVersion)
-        {
-            throw new InvalidOperationException("The video changed. Refresh and watch the current version before reviewing it.");
-        }
-        if (video.Status != CampaignDeliverableStatus.Rendered
-            || video.CampaignGenerationJob.Status != CampaignGenerationStatus.Completed)
-        {
-            throw new InvalidOperationException("Wait for the campaign to complete before reviewing its video.");
-        }
+            .SingleOrDefaultAsync(candidate => candidate.OrganizationId == organizationId && candidate.Id == deliverableId,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("This campaign video is unavailable in your workspace.");
+        CampaignVideoReviewRules.EnsureReviewable(video, expectedVersion);
         dbContext.CampaignVideoReviews.Add(CampaignVideoReview.Create(organizationId, video.Id,
             expectedVersion, decision, userId, feedback, timeProvider.GetUtcNow()));
         await dbContext.SaveChangesAsync(cancellationToken);

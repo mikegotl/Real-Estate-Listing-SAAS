@@ -1,0 +1,37 @@
+.video-library-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    gap: 0.75rem;
+}
+
+.video-library-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.25rem;
+}
+
+.video-library-player {
+    display: block;
+    width: 100%;
+    max-width: 18rem;
+    aspect-ratio: 9 / 16;
+    margin: 0.75rem auto 0;
+    border-radius: 6px;
+    background: #000;
+}
+
+.video-library-reasons {
+    margin: 0.25rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.8125rem;
+}
+
+@media (max-width: 600px) {
+    .video-library-list {
+        grid-template-columns: 1fr;
+    }
+}
