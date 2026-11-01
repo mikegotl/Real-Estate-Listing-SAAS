@@ -89,7 +89,12 @@ public sealed partial class CampaignGenerationProcessor
             now);
         for (var index = 0; index < recipes.Length; index++)
         {
-            created.AddVariant(recipes[index].ToVariantPlan(index + 1), now);
+            // Hook B (admin creative A/B tests) rewords the one chosen format's hook; without a safe hook B the video
+            // keeps hook A and says so in its hook variant, so the test case sees the mismatch.
+            var hookB = job.VerticalHookVariant == VerticalHookVariants.B ? VerticalHookVariants.ApplyB(recipes[index]) : null;
+            created.AddVariant(hookB is null
+                ? recipes[index].ToVariantPlan(index + 1)
+                : hookB.ToVariantPlan(index + 1, VerticalHookVariants.B), now);
         }
 
         dbContext.CampaignVideoLibraries.Add(created);

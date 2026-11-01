@@ -191,6 +191,12 @@ public sealed class CampaignGenerationJob
     /// <summary>The most formats one campaign can ask for: every library format once.</summary>
     public const int MaximumVerticalFormats = 5;
 
+    /// <summary>
+    /// "b" asks for the alternate hook wording of the one chosen format (admin creative A/B tests only); null means the
+    /// format's own hook. Only with an agent-chosen list of exactly one format.
+    /// </summary>
+    public string? VerticalHookVariant { get; private set; }
+
     public CampaignNarrationRegion NarrationRegion { get; private set; }
 
     public CampaignLanguage SpokenLanguage { get; private set; }
@@ -423,8 +429,15 @@ public sealed class CampaignGenerationJob
     public void RequestVerticalLibrary(
         VerticalVideoSelection selection,
         VerticalCampaignGoal? goal = null,
-        IReadOnlyList<VerticalCreativeFormat>? formats = null)
+        IReadOnlyList<VerticalCreativeFormat>? formats = null,
+        string? hookVariant = null)
     {
+        if (hookVariant is not (null or "a" or "b")
+            || (hookVariant == "b" && (selection != VerticalVideoSelection.AgentChosen || formats is not { Count: 1 })))
+        {
+            throw new ArgumentException("Hook B is only for one chosen format.", nameof(hookVariant));
+        }
+
         if (selection is not (VerticalVideoSelection.RecommendedThree or VerticalVideoSelection.AllEligible
             or VerticalVideoSelection.AgentChosen))
         {
@@ -457,6 +470,7 @@ public sealed class CampaignGenerationJob
         VerticalSelection = selection;
         VerticalGoal = goal;
         VerticalFormatsValue = value;
+        VerticalHookVariant = hookVariant == "b" ? hookVariant : null;
     }
 
     /// <summary>The stored form of an agent's format list: distinct, in order, library formats only.</summary>
@@ -501,6 +515,7 @@ public sealed class CampaignGenerationJob
     {
         VerticalSelection = null;
         VerticalFormatsValue = null;
+        VerticalHookVariant = null;
     }
 
     public void SetShortFormLocalizedCopy(string localizedCopyJson)

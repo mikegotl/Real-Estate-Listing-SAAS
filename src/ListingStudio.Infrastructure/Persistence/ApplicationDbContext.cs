@@ -57,6 +57,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<TikTokTestSuite> TikTokTestSuites => Set<TikTokTestSuite>();
 
+    public DbSet<VerticalCreativeTestSuite> VerticalCreativeTestSuites => Set<VerticalCreativeTestSuite>();
+
+    public DbSet<VerticalCreativeTestCase> VerticalCreativeTestCases => Set<VerticalCreativeTestCase>();
+
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
 
     public DbSet<CampaignStillPost> CampaignStillPosts => Set<CampaignStillPost>();

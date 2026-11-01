@@ -1,0 +1,56 @@
+/* Creative Format Testing tab of the admin TikTok studio. Colors come from the --ls-* tokens in app.css. */
+.visually-hidden { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; width: 1px; }
+.creative-panel, .creative-suite { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 16px; margin-bottom: 28px; padding: 24px; }
+.creative-help { color: var(--ls-muted); font-size: .9rem; line-height: 1.6; margin: 6px 0 0; max-width: 52rem; }
+.creative-start-row { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.creative-field { display: grid; flex: 1; gap: 6px; max-width: 32rem; min-width: min(100%, 20rem); }
+.creative-field label { color: var(--ls-ink); font-size: .8rem; font-weight: 650; }
+.creative-field select { background: var(--ls-surface); border: 1px solid var(--ls-line-strong); border-radius: 10px; color: var(--ls-ink); font: inherit; font-size: .9rem; padding: 9px 12px; width: 100%; }
+.creative-field select:focus { border-color: var(--ls-primary); box-shadow: 0 0 0 3px rgba(var(--ls-primary-rgb), .12); outline: none; }
+
+.creative-format-list { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); list-style: none; margin: 14px 0 0; padding: 0; }
+.creative-format-list > li { background: var(--ls-surface-muted); border: 1px solid var(--ls-line); border-radius: 14px; padding: 14px 16px; }
+.creative-format-list > li.ineligible { opacity: .72; }
+.creative-format-head { align-items: flex-start; display: flex; gap: 8px; justify-content: space-between; }
+.creative-meta { color: var(--ls-subtle); font-size: .78rem; margin: 4px 0 0; }
+.creative-reasons { color: var(--ls-muted); font-size: .82rem; line-height: 1.5; margin: 8px 0 0; padding-left: 1.1rem; }
+.creative-missing { color: var(--ls-accent-strong); font-size: .82rem; margin: 8px 0 0; }
+.creative-hook { font-size: .86rem; margin: 8px 0 0; }
+.creative-hook span { color: var(--ls-accent-strong); font-size: .68rem; font-weight: 800; letter-spacing: .1em; margin-right: 6px; text-transform: uppercase; }
+
+.creative-modes { border: 1px solid var(--ls-line); border-radius: 14px; display: grid; gap: 8px; margin: 20px 0 0; padding: 14px 18px; }
+.creative-modes legend { font-size: .9rem; font-weight: 650; padding: 0 6px; }
+.creative-modes label { align-items: center; display: flex; font-size: .9rem; gap: 8px; }
+
+.creative-chip { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 999px; color: var(--ls-muted); flex-shrink: 0; font-size: .72rem; font-weight: 700; padding: 3px 10px; white-space: nowrap; }
+.creative-chip.recommended, .creative-chip.approved { background: var(--ls-success-soft); border-color: transparent; color: var(--ls-success); }
+.creative-chip.running { background: var(--ls-primary-soft); border-color: transparent; color: var(--ls-primary); }
+.creative-chip.failed { background: var(--ls-error-soft); border-color: transparent; color: var(--ls-error); }
+.creative-chip.changes { background: var(--ls-accent-soft); border-color: transparent; color: var(--ls-accent-strong); }
+.creative-chip.muted { color: var(--ls-subtle); }
+
+.creative-gallery-heading { align-items: baseline; flex-wrap: wrap; gap: 4px 16px; }
+.creative-gallery-heading span, .creative-empty { color: var(--ls-muted); font-size: .85rem; }
+.creative-suite-head { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 16px; }
+.creative-suite-head > div { display: grid; flex: 1 1 18rem; gap: 2px; min-width: 0; }
+.creative-suite-head > div span { color: var(--ls-subtle); font-size: .78rem; overflow-wrap: anywhere; }
+.creative-suite-head a { font-size: .82rem; white-space: nowrap; }
+.creative-grid { align-items: start; display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.creative-card { border: 1px solid var(--ls-line); border-radius: 14px; min-width: 0; padding: 16px; }
+.creative-card-head { align-items: flex-start; display: flex; gap: 10px; justify-content: space-between; }
+.creative-card-head h4 { font-family: var(--ls-font-display); font-size: 1.1rem; font-weight: 600; margin: 4px 0; }
+.creative-card-head p { color: var(--ls-subtle); font-size: .78rem; margin: 0; }
+.creative-card-chips { display: grid; gap: 4px; justify-items: end; }
+.review-kicker { color: var(--ls-accent-strong); display: block; font-size: .66rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.creative-finding { background: var(--ls-surface-muted); border-radius: 10px; font-size: .82rem; line-height: 1.5; margin: 10px 0 0; padding: 8px 10px; }
+.creative-finding.failed { background: var(--ls-error-soft); color: var(--ls-error); }
+.creative-player { aspect-ratio: 9 / 16; background: #000; border-radius: 8px; display: block; margin: 12px auto 0; max-height: 460px; max-width: 100%; }
+.creative-review { margin-top: 12px; }
+.creative-review-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.creative-review-actions a { font-size: .82rem; }
+.creative-history { font-size: .8rem; margin-top: 10px; }
+
+@media (max-width: 600px) {
+    .creative-panel, .creative-suite { padding: 16px; }
+    .creative-grid, .creative-format-list { grid-template-columns: 1fr; }
+}

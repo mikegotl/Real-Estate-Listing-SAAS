@@ -1,4 +1,5 @@
 using System.Net;
+using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -90,5 +91,29 @@ public sealed class AdminCampaignReviewPageTests(PostgreSqlWebApplicationFixture
         Assert.Contains($"session-body-{older.Id}", restoredPage, StringComparison.Ordinal);
         newest.Stop(true, "Test cleanup", now);
         await db.SaveChangesAsync();
+
+        // With VerticalVideoLibraryV1 on, the page becomes the Creative Testing Studio with two tabs; the creative tab
+        // is first and the regression gallery is one tab away. Off again, it is the regression page exactly as before.
+        var features = scope.ServiceProvider.GetRequiredService<IFeatureStateService>();
+        await features.ConfigureAsync(registered.UserId!, FeatureFlagKeys.VerticalVideoLibraryV1, true, true, []);
+        factory.TimeProvider.Advance(TimeSpan.FromSeconds(20));
+        var studio = await client.GetStringAsync("/admin/campaign-tests");
+        Assert.Contains("TikTok Creative Testing Studio", studio, StringComparison.Ordinal);
+        Assert.Contains("data-testid=\"tab-creative\"", studio, StringComparison.Ordinal);
+        Assert.Contains("data-testid=\"tab-regression\"", studio, StringComparison.Ordinal);
+        Assert.Contains("data-testid=\"creative-tab\"", studio, StringComparison.Ordinal);
+        Assert.Contains("Awaiting creative review", studio, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start three TikTok tests", studio, StringComparison.Ordinal);
+        var regressionTab = await client.GetStringAsync("/admin/campaign-tests?tab=regression");
+        Assert.Contains("Start three TikTok tests", regressionTab, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-testid=\"creative-tab\"", regressionTab, StringComparison.Ordinal);
+
+        await features.ConfigureAsync(registered.UserId!, FeatureFlagKeys.VerticalVideoLibraryV1, false, false, []);
+        factory.TimeProvider.Advance(TimeSpan.FromSeconds(20));
+        var switchedOff = await client.GetStringAsync("/admin/campaign-tests?tab=creative");
+        Assert.Contains("TikTok review studio", switchedOff, StringComparison.Ordinal);
+        Assert.Contains("Start three TikTok tests", switchedOff, StringComparison.Ordinal);
+        Assert.DoesNotContain("Creative format testing", switchedOff, StringComparison.Ordinal);
+        Assert.DoesNotContain("creative-tab", switchedOff, StringComparison.Ordinal);
     }
 }

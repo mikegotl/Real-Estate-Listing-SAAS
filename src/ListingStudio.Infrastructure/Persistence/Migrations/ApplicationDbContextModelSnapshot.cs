@@ -732,6 +732,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("VerticalHookVariant")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
                     b.Property<string>("VerticalSelection")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -1325,6 +1329,158 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.HasIndex("Status", "UpdatedAtUtc");
 
                     b.ToTable("TikTokTestSuites", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.VerticalCreativeTestCase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CampaignDeliverableId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CampaignGenerationJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CampaignVideoVariantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CaseKey")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("ExpectedDurationSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("HookVariant")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<int>("Index")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReasonsJson")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<string>("RecipeVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("SuiteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseKey")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "CampaignDeliverableId");
+
+                    b.HasIndex("OrganizationId", "CampaignGenerationJobId");
+
+                    b.HasIndex("SuiteId", "Index")
+                        .IsUnique();
+
+                    b.ToTable("VerticalCreativeTestCases", (string)null);
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.VerticalCreativeTestSuite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("RuleVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_VerticalCreativeTestSuites_OrganizationId_Active")
+                        .HasFilter("\"Status\" IN ('Queued', 'Running')");
+
+                    b.HasIndex("OrganizationId", "CreatedAtUtc");
+
+                    b.HasIndex("Status", "UpdatedAtUtc");
+
+                    b.ToTable("VerticalCreativeTestSuites", (string)null);
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Feedback.FeatureSuggestion", b =>
@@ -3515,7 +3671,7 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignDeliverable", b =>
                 {
-                    b.HasOne("ListingStudio.Domain.Campaigns.CampaignVideoVariant", null)
+                    b.HasOne("ListingStudio.Domain.Campaigns.CampaignVideoVariant", "CampaignVideoVariant")
                         .WithOne("Deliverable")
                         .HasForeignKey("ListingStudio.Domain.Campaigns.CampaignDeliverable", "CampaignVideoVariantId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -3535,6 +3691,8 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("CampaignGenerationJob");
+
+                    b.Navigation("CampaignVideoVariant");
 
                     b.Navigation("VideoNarration");
                 });
@@ -3650,6 +3808,17 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Library");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.VerticalCreativeTestCase", b =>
+                {
+                    b.HasOne("ListingStudio.Domain.Campaigns.VerticalCreativeTestSuite", "Suite")
+                        .WithMany("Cases")
+                        .HasForeignKey("SuiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Suite");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Feedback.FeatureSuggestion", b =>
@@ -4201,6 +4370,11 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ListingStudio.Domain.Campaigns.CampaignVideoVariant", b =>
                 {
                     b.Navigation("Deliverable");
+                });
+
+            modelBuilder.Entity("ListingStudio.Domain.Campaigns.VerticalCreativeTestSuite", b =>
+                {
+                    b.Navigation("Cases");
                 });
 
             modelBuilder.Entity("ListingStudio.Domain.Leads.PropertyLead", b =>

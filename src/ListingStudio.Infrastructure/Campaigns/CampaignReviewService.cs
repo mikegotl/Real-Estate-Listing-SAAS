@@ -36,8 +36,12 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         // RequestedOutputs is stored through a string converter; SQL bitwise operators cannot inspect it.
         // Stream only this workspace's ordered jobs and stop after 100 matching vertical campaigns.
         var jobs = new List<CampaignGenerationJob>();
+        // Creative format test campaigns belong to the Creative Format Testing tab, never to the render regression gallery.
+        var creativeTestJobs = dbContext.VerticalCreativeTestCases
+            .Where(item => item.OrganizationId == organizationId && item.CampaignGenerationJobId != null)
+            .Select(item => item.CampaignGenerationJobId!.Value);
         var query = dbContext.CampaignGenerationJobs.AsNoTracking().Include(job => job.Property)
-            .Where(job => job.OrganizationId == organizationId);
+            .Where(job => job.OrganizationId == organizationId && !creativeTestJobs.Contains(job.Id));
         if (sessionJobIds is not null) query = query.Where(job => sessionJobIds.Contains(job.Id));
         await foreach (var job in query.OrderByDescending(job => job.CreatedAtUtc).ThenByDescending(job => job.Id)
             .AsAsyncEnumerable().WithCancellation(cancellationToken))

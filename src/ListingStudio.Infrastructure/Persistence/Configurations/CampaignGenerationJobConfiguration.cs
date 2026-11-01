@@ -69,6 +69,7 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
         builder.Property(job => job.VerticalSelection).HasConversion<string>().HasMaxLength(32);
         builder.Property(job => job.VerticalGoal).HasConversion<string>().HasMaxLength(32);
         builder.Property(job => job.VerticalFormatsValue).HasColumnName("VerticalFormats").HasMaxLength(128);
+        builder.Property(job => job.VerticalHookVariant).HasMaxLength(8);
         builder.Ignore(job => job.VerticalFormats);
         builder.Property(job => job.NarrationRegion)
             .HasConversion<string>()

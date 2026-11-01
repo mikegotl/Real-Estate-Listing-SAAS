@@ -159,7 +159,7 @@ public sealed record VerticalCreativeRecipe(
         }
     }
 
-    public CampaignVideoVariantPlan ToVariantPlan(int sequence) => new(
+    public CampaignVideoVariantPlan ToVariantPlan(int sequence, string hookVariant = CampaignVideoVariant.DefaultHookVariant) => new(
         Format,
         Purpose,
         sequence,
@@ -175,7 +175,8 @@ public sealed record VerticalCreativeRecipe(
         },
         CallToAction.Text,
         ToJson(),
-        RecipeVersion);
+        RecipeVersion,
+        HookVariant: hookVariant);
 
     /// <summary>Problems with the recipe; empty when it is complete, contiguous and fully grounded.</summary>
     public IReadOnlyList<string> Validate()

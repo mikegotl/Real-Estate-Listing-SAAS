@@ -242,6 +242,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<TikTokTestSuiteService>();
         services.AddScoped<ITikTokTestSuiteService>(provider => provider.GetRequiredService<TikTokTestSuiteService>());
         services.AddScoped<ITikTokTestSuiteProcessor>(provider => provider.GetRequiredService<TikTokTestSuiteService>());
+        services.AddScoped<VerticalCreativeTestService>();
+        services.AddScoped<IVerticalCreativeTestService>(provider => provider.GetRequiredService<VerticalCreativeTestService>());
+        services.AddScoped<IVerticalCreativeTestProcessor>(provider => provider.GetRequiredService<VerticalCreativeTestService>());
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
         services.AddScoped<ICampaignVideoChatService, CampaignVideoChatService>();
         services.AddScoped<ICampaignReviewService, CampaignReviewService>();

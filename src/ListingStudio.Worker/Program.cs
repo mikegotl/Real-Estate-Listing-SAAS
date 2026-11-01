@@ -91,6 +91,7 @@ builder.Services.AddHostedService<PropertyVideoProcessingWorker>();
 builder.Services.AddHostedService<PropertyVideoFrameExtractionWorker>();
 builder.Services.AddHostedService<CampaignGenerationWorker>();
 builder.Services.AddHostedService<TikTokTestSuiteWorker>();
+builder.Services.AddHostedService<VerticalCreativeTestWorker>();
 builder.Services.AddHostedService<WalkthroughTransitionWorker>();
 builder.Services.AddHostedService<AerialIntroWorker>();
 builder.Services.AddHostedService<PhotoFixWorker>();

@@ -117,11 +117,29 @@ public sealed class CampaignGenerationService(
             CampaignNarrationPreferences.Default, caseRequestId.ToString("N"), cancellationToken);
     }
 
+    public Task<CampaignGenerationResult?> EnqueueCreativeTestAsync(string userId, Guid propertyId,
+        VerticalCreativeFormat format, string hookVariant, Guid caseRequestId, CancellationToken cancellationToken = default)
+    {
+        if (caseRequestId == Guid.Empty) throw new ArgumentException("A test case key is required.", nameof(caseRequestId));
+        if (hookVariant is not ("a" or "b")) throw new ArgumentException("The hook is A or B.", nameof(hookVariant));
+        var request = new VerticalLibraryRequest(VerticalVideoSelection.AgentChosen, null, [format]);
+        request.Validate();
+        return EnqueueCoreAsync(userId, propertyId, CampaignOutputSelection.TikTok, CreativeTestOptions,
+            CampaignNarrationPreferences.Default, $"creative:{caseRequestId:N}", cancellationToken, request, hookVariant,
+            requireLibrary: true);
+    }
+
+    /// <summary>Creative test campaigns: the social defaults without paid AI walk-through clips.</summary>
+    public static CampaignCreativeOptions CreativeTestOptions { get; } = CampaignCreativeOptions.SocialDefault with
+    {
+        Elements = CampaignCreativeOptions.SocialDefault.Elements & ~CampaignVideoElement.WalkthroughMotion,
+    };
+
     private async Task<CampaignGenerationResult?> EnqueueCoreAsync(
         string userId, Guid propertyId, CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions, CampaignNarrationPreferences narrationPreferences,
         string? testCaseKey, CancellationToken cancellationToken,
-        VerticalLibraryRequest? verticalRequest = null)
+        VerticalLibraryRequest? verticalRequest = null, string? hookVariant = null, bool requireLibrary = false)
     {
         var verticalSelection = verticalRequest?.Selection ?? VerticalVideoSelection.LegacySingle;
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
@@ -139,12 +157,18 @@ public sealed class CampaignGenerationService(
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         // The library is decided here, before anything is queued: with the switch off (globally, or for this
         // workspace) the request is the legacy campaign, with the same fingerprint it always had.
+        // Render regression test cases (a test key with no library request) always make the legacy vertical edit.
         var usesLibrary = verticalSelection != VerticalVideoSelection.LegacySingle
-            && testCaseKey is null
+            && (testCaseKey is null || requireLibrary)
             && (requestedOutputs.HasFlag(CampaignOutputSelection.TikTok)
                 || requestedOutputs.HasFlag(CampaignOutputSelection.InstagramReel)
                 || requestedOutputs.HasFlag(CampaignOutputSelection.YouTubeShort))
             && await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken);
+        if (requireLibrary && !usesLibrary)
+        {
+            throw new InvalidOperationException("Creative format tests are switched off.");
+        }
+
         if (usesLibrary && verticalSelection == VerticalVideoSelection.AgentChosen)
         {
             await EnsureChosenFormatsEligibleAsync(organizationId, propertyId, creativeOptions, verticalRequest!.Formats!, cancellationToken);
@@ -352,7 +376,8 @@ public sealed class CampaignGenerationService(
             job.RequestVerticalLibrary(
                 verticalSelection,
                 verticalRequest!.Goal,
-                verticalSelection == VerticalVideoSelection.AgentChosen ? verticalRequest.Formats : null);
+                verticalSelection == VerticalVideoSelection.AgentChosen ? verticalRequest.Formats : null,
+                hookVariant);
         }
 
         dbContext.CampaignGenerationJobs.Add(job);
