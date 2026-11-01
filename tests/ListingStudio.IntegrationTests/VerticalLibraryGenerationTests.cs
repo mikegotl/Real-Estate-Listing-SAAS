@@ -91,7 +91,10 @@ public sealed partial class CampaignGenerationTests
             Assert.NotEqual(job.VideoNarrationId, price.VideoNarrationId);
             var spoken = Specification(price).Audio.NarrationSegments;
             Assert.NotEmpty(spoken);
-            Assert.All(spoken, segment => Assert.Equal(segment.Text.ToUpperInvariant(), segment.Text));
+            // English voiceovers are rewritten for speech after localization ("NC" is spoken as "North Carolina").
+            Assert.All(spoken, segment => Assert.Equal(
+                SpeechText.ForSpeech(segment.Text.ToUpperInvariant()).ToUpperInvariant(), segment.Text.ToUpperInvariant()));
+            Assert.Contains(spoken, segment => segment.Text.Contains("RALEIGH, North Carolina", StringComparison.Ordinal));
             Assert.NotNull(library.Variants.Single(variant => variant.Format == VerticalCreativeFormat.PriceFirst)
                 .NarrationLocalizationJson);
             Assert.Equal(voiceCalls + 2, fixture.Factory.VoiceProvider.CallCount);

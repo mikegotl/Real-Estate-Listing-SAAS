@@ -356,6 +356,17 @@ public sealed partial class CampaignGenerationProcessor
         if (specification.Audio.NarrationSegments.Count > 0)
         {
             var localized = await GetOrCreateVariantLocalizationAsync(job, variantId, specification, cancellationToken);
+            if (NarrationPreferences(job).SpokenLanguage == CampaignLanguage.English)
+            {
+                // Fact cards are written for the eye ("Wildwood, FL", "2,000 sq ft"); the voice says them in words.
+                localized = localized with
+                {
+                    SpokenSegments = localized.SpokenSegments
+                        .Select(segment => segment with { Text = SpeechText.ForSpeech(segment.Text) })
+                        .ToArray(),
+                };
+            }
+
             VideoNarrationResult narration;
             try
             {
@@ -381,6 +392,7 @@ public sealed partial class CampaignGenerationProcessor
             narrationId = narration.Id;
             timing = narration.Timing;
             captionText = localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+            await GenerateVariantPresenterAsync(job, options, narrationId, cancellationToken);
         }
 
         var final = Grounded(
@@ -452,6 +464,48 @@ public sealed partial class CampaignGenerationProcessor
     /// The library made nothing (switched off before any video rendered, or every video failed): make the one shared
     /// vertical video instead, exactly as a legacy campaign would, so the agent still gets a vertical video.
     /// </summary>
+    /// <summary>
+    /// Lip-syncs the agent's consented portrait to this video's own voiceover, from the first line to the last, so the
+    /// agent guides the viewer through the home. Library videos have their own voiceovers, made after the campaign's
+    /// presenter step, so without this the presenter never appeared in them. A provider failure keeps the video
+    /// without the presenter rather than failing it.
+    /// </summary>
+    private async Task GenerateVariantPresenterAsync(
+        CampaignGenerationJob job,
+        CampaignCreativeOptions options,
+        Guid narrationId,
+        CancellationToken cancellationToken)
+    {
+        if (!options.Elements.HasFlag(CampaignVideoElement.AgentAvatar)
+            || !job.AgentAvatarConsentConfirmed
+            || job.AgentPortraitId is not { } portraitId
+            || !agentAvatarVideoService.IsEnabled
+            || !await IncludesPremiumAiAsync(job, cancellationToken))
+        {
+            return;
+        }
+
+        try
+        {
+            await agentAvatarVideoService.GetOrCreateAsync(
+                job.OrganizationId,
+                job.PropertyId,
+                job.RequestedByUserId,
+                portraitId,
+                narrationId,
+                guideWholeVideo: true,
+                cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LogAgentPresenterFallback(exception, job.Id, narrationId);
+        }
+    }
+
     private async Task FallBackToLegacyVerticalAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var job = await GetJobAsync(jobId, cancellationToken);

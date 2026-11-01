@@ -10,6 +10,7 @@ public interface IAgentAvatarVideoService
         string userId,
         Guid portraitId,
         Guid narrationId,
+        bool guideWholeVideo = false,
         CancellationToken cancellationToken = default);
 }
 

@@ -80,7 +80,7 @@ public sealed class VideoBrandingTemplateOptions
     /// <summary>The small price and bed/bath line kept at the top of every short-form shot.</summary>
     public TextOverlayTemplateOptions SpecLine { get; set; } = new()
     {
-        FontSize = 46,
+        FontSize = 60,
         TextColor = BrandColorToken.Secondary,
         BoxColor = BrandColorToken.Primary,
         BoxOpacity = 0.62m,

@@ -45,7 +45,7 @@ public sealed partial class CampaignGenerationTests
             {
                 Assert.True(item.Status == VerticalCreativeTestCaseStatus.Passed, $"{item.HookVariant}: {item.Status} {item.Error}");
                 Assert.NotNull(item.DeliverableId);
-                Assert.Equal("price-first-v1", item.RecipeVersion);
+                Assert.Equal("price-first-v2", item.RecipeVersion);
                 Assert.Equal(1, item.Version);
                 Assert.Null(item.Decision);
             });

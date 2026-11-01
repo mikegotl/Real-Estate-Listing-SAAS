@@ -73,7 +73,7 @@ public sealed class VerticalCreativeTestingTests
         Assert.Equal(basic.Eligible.Count, VerticalCreativeTestPlanner.GeneratedCount(all));
 
         var single = Assert.Single(VerticalCreativeTestPlanner.Plan(basic, VerticalCreativeTestMode.SingleFormat, VerticalCreativeFormat.PriceFirst));
-        Assert.Equal(("a", "price-first-v1", 30), (single.HookVariant, single.RecipeVersion, single.ExpectedDurationSeconds));
+        Assert.Equal(("a", "price-first-v2", 30), (single.HookVariant, single.RecipeVersion, single.ExpectedDurationSeconds));
         Assert.Contains("listing price", single.ReasonsJson, StringComparison.OrdinalIgnoreCase);
         Assert.Throws<ArgumentException>(() => VerticalCreativeTestPlanner.Plan(basic, VerticalCreativeTestMode.SingleFormat, null));
     }

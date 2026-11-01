@@ -120,6 +120,7 @@ public static class VerticalVariantSpecificationBuilder
         VerticalCopySource.AgentStoryboard => FactSource.AgentVerifiedCampaignInput,
         VerticalCopySource.MediaAnalysis => FactSource.PropertyStory,
         VerticalCopySource.ApprovedTemplate => FactSource.BrandKit,
+        VerticalCopySource.PropertyStory => FactSource.PropertyStory,
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -140,9 +141,16 @@ public static class VerticalVariantSpecificationBuilder
             elements &= ~CampaignVideoElement.AgentAvatar;
         }
 
+        // A format without the presenter must not keep the presenter's consent or a portrait nothing shows,
+        // or the options fail validation and that video is never made.
+        var keepsPortrait = elements.HasFlag(CampaignVideoElement.AgentPortrait)
+            || elements.HasFlag(CampaignVideoElement.AgentAvatar);
         return campaign with
         {
             Elements = elements,
+            AgentPortraitId = keepsPortrait ? campaign.AgentPortraitId : null,
+            AgentAvatarConsentConfirmed = elements.HasFlag(CampaignVideoElement.AgentAvatar)
+                && campaign.AgentAvatarConsentConfirmed,
             Voiceover = recipe.Narration == VerticalNarrationStructure.MusicOnly
                 ? CampaignVoiceoverMode.None
                 : CampaignVoiceoverMode.ShortHook,
@@ -219,10 +227,12 @@ public static class VerticalVariantSpecificationBuilder
                     OverlayAnchor.TopCenter, new NormalizedRect(0.08m, 0.16m, 0.84m, 0.12m), TextOverlayStyle.HookTitle),
             VerticalBeatKind.EssentialFacts or VerticalBeatKind.PriceRecap or VerticalBeatKind.ValueMessage => new TextOverlay(
                 id, line.Text, line.GroundingKey, 0, beat.DurationMs,
-                OverlayAnchor.TopCenter, new NormalizedRect(0.08m, 0.30m, 0.84m, 0.07m), TextOverlayStyle.HookFact),
+                OverlayAnchor.TopCenter, new NormalizedRect(0.08m, 0.30m, 0.84m, 0.08m), TextOverlayStyle.HookFact),
+            // Room labels sit below TikTok's Following / For You tabs (the top ~12% of the screen) and are big enough
+            // to read at a glance.
             _ => new TextOverlay(
                 id, line.Text, line.GroundingKey, 0, beat.DurationMs,
-                OverlayAnchor.TopCenter, new NormalizedRect(0.08m, 0.06m, 0.84m, 0.05m), TextOverlayStyle.SpecLine),
+                OverlayAnchor.TopCenter, new NormalizedRect(0.08m, 0.14m, 0.84m, 0.065m), TextOverlayStyle.SpecLine),
         };
     }
 

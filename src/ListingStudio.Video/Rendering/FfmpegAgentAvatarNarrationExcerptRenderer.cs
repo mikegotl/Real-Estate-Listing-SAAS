@@ -17,9 +17,11 @@ public sealed class FfmpegAgentAvatarNarrationExcerptRenderer(IOptions<FfmpegOpt
     {
         ArgumentNullException.ThrowIfNull(narration);
         ArgumentNullException.ThrowIfNull(parts);
-        if (!narration.CanRead || parts.Count is < 1 or > 2
-            || parts.Any(part => part.StartMs < 0 || part.DurationMs <= 0)
-            || parts.Sum(part => part.DurationMs) > 15_000)
+        // Two parts (opening and closing) for the usual presenter; up to one part per spoken line, with the quiet
+        // between lines kept, when the presenter guides a whole video.
+        if (!narration.CanRead || parts.Count is < 1 or > 40
+            || parts.Any(part => part.StartMs < 0 || part.DurationMs <= 0 || part.SilenceBeforeMs < 0)
+            || parts.Sum(part => part.DurationMs + part.SilenceBeforeMs) > 120_000)
         {
             throw new ArgumentException("The presenter narration excerpt is invalid.", nameof(parts));
         }
@@ -37,7 +39,9 @@ public sealed class FfmpegAgentAvatarNarrationExcerptRenderer(IOptions<FfmpegOpt
 
             var filters = parts.Select((part, index) =>
                 $"[0:a]atrim=start={Seconds(part.StartMs)}:end={Seconds(part.StartMs + part.DurationMs)},"
-                + $"asetpts=PTS-STARTPTS[p{index}]").ToList();
+                + $"asetpts=PTS-STARTPTS"
+                + (part.SilenceBeforeMs > 0 ? $",adelay=delays={part.SilenceBeforeMs}:all=1" : string.Empty)
+                + $"[p{index}]").ToList();
             var inputs = string.Concat(Enumerable.Range(0, parts.Count).Select(index => $"[p{index}]"));
             filters.Add($"{inputs}concat=n={parts.Count}:v=0:a=1[out]");
             await FfmpegProcess.RunAsync(
@@ -53,7 +57,7 @@ public sealed class FfmpegAgentAvatarNarrationExcerptRenderer(IOptions<FfmpegOpt
                 cancellationToken);
             var audio = await File.ReadAllBytesAsync(outputPath, cancellationToken);
             return audio.Length > 0
-                ? new AgentAvatarNarrationExcerpt(audio, "audio/mpeg", ".mp3", parts.Sum(part => part.DurationMs))
+                ? new AgentAvatarNarrationExcerpt(audio, "audio/mpeg", ".mp3", parts.Sum(part => part.DurationMs + part.SilenceBeforeMs))
                 : throw new InvalidDataException("The presenter narration excerpt is empty.");
         }
         finally

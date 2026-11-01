@@ -515,6 +515,8 @@ h1:focus { outline: none; }
 .room-photos-status { align-items: center; color: var(--ls-muted); display: flex; font-size: .8rem; gap: 6px; margin-top: 8px; }
 .room-photos-status.ready { color: var(--ls-primary); }
 .room-photos-status.error { color: var(--ls-error); }
+.video-shooting-tip { align-items: flex-start; background: var(--ls-accent-soft); border-radius: 6px; color: var(--ls-ink); display: flex; font-size: .8rem; gap: 6px; margin-top: 8px; padding: 6px 8px; }
+.video-shooting-tip .mud-icon-root { color: var(--ls-accent-strong); flex: none; }
 .storyboard-stop:focus { outline: none; }
 .storyboard-stop:focus-visible .stop-marker { outline: 2px solid var(--ls-accent); outline-offset: 2px; }
 

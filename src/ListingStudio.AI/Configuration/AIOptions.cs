@@ -37,16 +37,22 @@ public sealed class VoiceOptions
         ["Australian"] = "IKne3meq5aSn9XLyUdCD",
     };
 
-    /// <summary>Lower is more expressive, higher is steadier. 0 to 1.</summary>
-    public decimal Stability { get; init; } = 0.45m;
+    /// <summary>
+    /// Lower is more expressive, higher is steadier. 0 to 1. 0.35 keeps a social-video read lively without the voice
+    /// wandering; 0.45 and above sounded like a calm audiobook narrator.
+    /// </summary>
+    public decimal Stability { get; init; } = 0.35m;
 
     public decimal SimilarityBoost { get; init; } = 0.8m;
 
-    /// <summary>ElevenLabs recommends 0; raising it exaggerates the voice's style and adds latency.</summary>
-    public decimal Style { get; init; }
+    /// <summary>
+    /// Style exaggeration, 0 to 1. A little (0.25) gives the conversational lift a listing video needs; much more
+    /// starts to sound acted, and any value above 0 adds some latency.
+    /// </summary>
+    public decimal Style { get; init; } = 0.25m;
 
-    /// <summary>Speaking rate, 0.7 to 1.2.</summary>
-    public decimal Speed { get; init; } = 1.0m;
+    /// <summary>Speaking rate, 0.7 to 1.2. Slightly brisk (1.05) suits short social videos.</summary>
+    public decimal Speed { get; init; } = 1.05m;
 
     public bool UseSpeakerBoost { get; init; } = true;
 

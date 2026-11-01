@@ -52,7 +52,7 @@ public sealed class AdminCreativeTestingTabTests : IAsyncDisposable
         var price = cut.Find("[data-testid=creative-option-PriceFirst]");
         Assert.Contains("Hook A", price.TextContent, StringComparison.Ordinal);
         Assert.Contains("What $450,000 gets you in Raleigh, NC", price.TextContent, StringComparison.Ordinal);
-        Assert.Contains("price-first-v1", price.TextContent, StringComparison.Ordinal);
+        Assert.Contains("price-first-v2", price.TextContent, StringComparison.Ordinal);
         Assert.Contains("This starts 3 test campaigns", cut.Find("[data-testid=creative-estimate]").TextContent, StringComparison.Ordinal);
         Assert.Contains("generation credits", cut.Find("[data-testid=creative-estimate]").TextContent, StringComparison.Ordinal);
 
