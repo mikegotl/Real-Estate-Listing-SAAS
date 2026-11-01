@@ -214,6 +214,10 @@
     [Parameter, EditorRequired]
     public CampaignOutputKind Kind { get; set; }
 
+    /// <summary>Addresses one video by its own id (every library video has its own chat); otherwise job and kind.</summary>
+    [Parameter]
+    public Guid? DeliverableId { get; set; }
+
     [Parameter]
     public string VideoName { get; set; } = "video";
 
@@ -253,7 +257,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Embedded && (chat is null || chat.JobId != JobId || chat.Kind != Kind))
+        if (Embedded && (chat is null || chat.JobId != JobId || chat.Kind != Kind || DeliverableId is { } id && chat.DeliverableId != id))
         {
             open = true;
             chat = null;
@@ -279,7 +283,9 @@
         try
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-            await SetChatAsync(await Service.GetAsync(userId, JobId, Kind, disposal.Token));
+            await SetChatAsync(DeliverableId is { } video
+                ? await Service.GetForVideoAsync(userId, video, disposal.Token)
+                : await Service.GetAsync(userId, JobId, Kind, disposal.Token));
         }
         catch (OperationCanceledException) when (disposal.IsCancellationRequested)
         {
@@ -314,7 +320,9 @@
         try
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-            await SetChatAsync(await Service.SendAsync(userId, JobId, Kind, text, disposal.Token));
+            await SetChatAsync(DeliverableId is { } video
+                ? await Service.SendForVideoAsync(userId, video, text, disposal.Token)
+                : await Service.SendAsync(userId, JobId, Kind, text, disposal.Token));
         }
         catch (InvalidOperationException exception)
         {
@@ -327,12 +335,16 @@
         }
     }
 
-    private Task RenderAsync(Guid messageId) => MutateAsync(userId => Service.RenderAsync(userId, JobId, Kind, messageId, disposal.Token));
+    private Task RenderAsync(Guid messageId) => MutateAsync(userId => DeliverableId is { } video
+        ? Service.RenderForVideoAsync(userId, video, messageId, disposal.Token)
+        : Service.RenderAsync(userId, JobId, Kind, messageId, disposal.Token));
 
     private async Task ConfirmAsync(Guid messageId, bool worked)
     {
         var note = confirmNotes.GetValueOrDefault(messageId);
-        await MutateAsync(userId => Service.ConfirmFixAsync(userId, JobId, Kind, messageId, worked, note, disposal.Token));
+        await MutateAsync(userId => DeliverableId is { } video
+            ? Service.ConfirmFixForVideoAsync(userId, video, messageId, worked, note, disposal.Token)
+            : Service.ConfirmFixAsync(userId, JobId, Kind, messageId, worked, note, disposal.Token));
         if (error is null)
         {
             editingConfirmations.Remove(messageId);
@@ -346,7 +358,9 @@
         confirmNotes[message.Id] = message.FixFeedback;
     }
 
-    private Task UndoAsync() => MutateAsync(userId => Service.UndoAsync(userId, JobId, Kind, disposal.Token));
+    private Task UndoAsync() => MutateAsync(userId => DeliverableId is { } video
+        ? Service.UndoForVideoAsync(userId, video, disposal.Token)
+        : Service.UndoAsync(userId, JobId, Kind, disposal.Token));
 
     private async Task MutateAsync(Func<string, Task<CampaignVideoChat?>> action)
     {

@@ -65,7 +65,7 @@ public sealed class CampaignVideoVariantConfiguration : IEntityTypeConfiguration
         builder.HasIndex(variant => new { variant.OrganizationId, variant.CampaignVideoLibraryId });
         builder.HasIndex(variant => new { variant.OrganizationId, variant.Format, variant.Status });
         builder.HasOne(variant => variant.Deliverable)
-            .WithOne()
+            .WithOne(deliverable => deliverable.CampaignVideoVariant)
             .HasForeignKey<CampaignDeliverable>(deliverable => deliverable.CampaignVideoVariantId)
             .OnDelete(DeleteBehavior.SetNull);
     }

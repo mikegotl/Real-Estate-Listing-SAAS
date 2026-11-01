@@ -547,6 +547,68 @@ app.MapGet("/campaigns/{jobId:guid}/deliverables/{kind}", async (
             enableRangeProcessing: true);
 }).RequireAuthorization();
 
+// Any campaign video by its own id: every library video, and the campaign-level ones. A version that is no longer
+// current is not found, so an old link never plays or saves the wrong cut.
+app.MapGet("/campaigns/videos/{deliverableId:guid}", async (
+    Guid deliverableId,
+    int? v,
+    bool? download,
+    HttpContext context,
+    ICampaignVideoLibraryService libraryService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var video = await libraryService.OpenVideoAsync(userId, deliverableId, v, cancellationToken);
+    if (video is null)
+    {
+        return Results.NotFound();
+    }
+
+    return download is true
+        ? Results.Stream(video.Content, video.ContentType, video.FileName, enableRangeProcessing: true)
+        : Results.Stream(video.Content, video.ContentType, enableRangeProcessing: true);
+}).RequireAuthorization();
+
+app.MapGet("/campaigns/videos/{deliverableId:guid}/caption", async (
+    Guid deliverableId,
+    HttpContext context,
+    ICampaignVideoLibraryService libraryService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var caption = await libraryService.OpenCaptionAsync(userId, deliverableId, cancellationToken);
+    return caption is null ? Results.NotFound() : Results.Stream(caption.Content, caption.ContentType, caption.FileName);
+}).RequireAuthorization();
+
+// Every rendered library video, its caption and a manifest, streamed as one ZIP.
+app.MapGet("/campaigns/{jobId:guid}/library.zip", async (
+    Guid jobId,
+    HttpContext context,
+    ICampaignVideoLibraryService libraryService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var archive = await libraryService.OpenArchiveAsync(userId, jobId, cancellationToken);
+    return archive is null
+        ? Results.NotFound()
+        : Results.Stream(stream => archive.WriteAsync(stream, context.RequestAborted), "application/zip", archive.FileName);
+}).RequireAuthorization();
+
 app.MapGet("/campaigns/{jobId:guid}/still-posts/{kind}", async (
     Guid jobId,
     CampaignStillPostKind kind,

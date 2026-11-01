@@ -156,7 +156,7 @@ public sealed partial class CampaignGenerationProcessor
             (edited, narrationId) = await RevoiceAsync(job, revision, deliverable, edited, accent, cancellationToken);
         }
 
-        var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{deliverable.Kind.ToString().ToLowerInvariant()}-{revision.Id:N}.mp4";
+        var assetPath = await RevisionAssetPathAsync(job, deliverable, revision, cancellationToken);
         var json = JsonSerializer.Serialize(edited, SerializerOptions);
         await RenderAndStoreAsync(
             job,
@@ -252,12 +252,60 @@ public sealed partial class CampaignGenerationProcessor
             specification = CampaignCreativeDirector.ReplaceCaptions(
                 specification,
                 style.Value,
-                CaptionText(job, deliverable.Kind),
+                await CaptionTextAsync(job, deliverable, cancellationToken),
                 narration.Timing,
                 CaptionSceneGrounding.FromRooms(await RoomsByMediaAsync(job, cancellationToken)));
         }
 
         return (specification, narration.Id);
+    }
+
+    /// <summary>
+    /// A library video's replacement goes under its own video folder with the next version number; every other
+    /// video keeps the per-revision name it always had.
+    /// </summary>
+    private async Task<string> RevisionAssetPathAsync(
+        CampaignGenerationJob job,
+        CampaignDeliverable deliverable,
+        CampaignVideoRevision revision,
+        CancellationToken cancellationToken)
+    {
+        if (!deliverable.IsCampaignLevel)
+        {
+            var variant = await dbContext.CampaignVideoVariants.AsNoTracking()
+                .SingleAsync(candidate => candidate.Id == deliverable.CampaignVideoVariantId
+                    && candidate.OrganizationId == job.OrganizationId, cancellationToken);
+            var highest = await dbContext.CampaignVideoRevisions.AsNoTracking()
+                .Where(candidate => candidate.CampaignDeliverableId == deliverable.Id)
+                .MaxAsync(candidate => candidate.ResultVersion, cancellationToken) ?? 1;
+            return VariantAssetPath(job.OrganizationId, job.PropertyId, job.Id, variant.CampaignVideoLibraryId,
+                variant.Id, variant.Format, Math.Max(highest, deliverable.Version) + 1);
+        }
+
+        return $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/{deliverable.Kind.ToString().ToLowerInvariant()}-{revision.Id:N}.mp4";
+    }
+
+    /// <summary>A library video's captions come from its own translated voiceover.</summary>
+    private async Task<Dictionary<string, string>> CaptionTextAsync(
+        CampaignGenerationJob job,
+        CampaignDeliverable deliverable,
+        CancellationToken cancellationToken)
+    {
+        if (deliverable.IsCampaignLevel)
+        {
+            return CaptionText(job, deliverable.Kind);
+        }
+
+        var stored = await dbContext.CampaignVideoVariants.AsNoTracking()
+            .Where(candidate => candidate.Id == deliverable.CampaignVideoVariantId && candidate.OrganizationId == job.OrganizationId)
+            .Select(candidate => candidate.NarrationLocalizationJson)
+            .SingleAsync(cancellationToken);
+        var copy = string.IsNullOrWhiteSpace(stored)
+            ? null
+            : JsonSerializer.Deserialize<CampaignLocalizedCopy>(stored, AudioSerializerOptions);
+        return (copy?.CaptionSegments ?? [])
+            .GroupBy(segment => segment.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Text, StringComparer.Ordinal);
     }
 
     /// <summary>The caption wording for each voiceover line, which may be in another language than the voice.</summary>

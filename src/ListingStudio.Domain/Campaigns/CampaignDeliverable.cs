@@ -148,6 +148,9 @@ public sealed class CampaignDeliverable
 
     public CampaignGenerationJob CampaignGenerationJob { get; private set; } = null!;
 
+    /// <summary>The library video this render belongs to; null for campaign-level outputs.</summary>
+    public CampaignVideoVariant? CampaignVideoVariant { get; private set; }
+
     public VideoNarration VideoNarration { get; private set; } = null!;
 
     public static CampaignDeliverable Create(

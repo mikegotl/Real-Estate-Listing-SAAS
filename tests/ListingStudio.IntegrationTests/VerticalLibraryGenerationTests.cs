@@ -175,6 +175,19 @@ public sealed partial class CampaignGenerationTests
             Assert.Equal(CampaignDeliverableStatus.Rendered, deliverables.Single(item => item.CampaignVideoVariantId == rendered.Id).Status);
             Assert.Equal(CampaignGenerationStatus.Completed, completed.Status);
             Assert.Equal(1, await db.CampaignUsageRecords.CountAsync(item => item.CampaignGenerationJobId == queued.Id));
+
+            // Prompt 8: the partial library shows the failed video as failed and downloads only the one that rendered.
+            var libraryService = scope.ServiceProvider.GetRequiredService<ICampaignVideoLibraryService>();
+            var view = (await libraryService.GetAsync(owner.UserId, queued.Id))!;
+            Assert.Equal(CampaignVideoTechnicalStatus.Failed, view.Videos.Single(item => item.VariantId == failed.Id).TechnicalStatus);
+            Assert.False(string.IsNullOrWhiteSpace(view.Videos.Single(item => item.VariantId == failed.Id).Problem));
+            Assert.Equal(CampaignVideoTechnicalStatus.Passed, view.Videos.Single(item => item.VariantId == rendered.Id).TechnicalStatus);
+            var archive = (await libraryService.OpenArchiveAsync(owner.UserId, queued.Id))!;
+            using var zipped = new MemoryStream();
+            await archive.WriteAsync(zipped, CancellationToken.None);
+            zipped.Position = 0;
+            using var zip = new System.IO.Compression.ZipArchive(zipped);
+            Assert.Single(zip.Entries, entry => entry.Name.EndsWith(".mp4", StringComparison.Ordinal));
         }
         finally
         {

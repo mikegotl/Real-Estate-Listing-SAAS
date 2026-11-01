@@ -182,7 +182,7 @@ else
                         <div class="review-grid">
             @foreach (var item in group.Items)
             {
-                var draft = DraftFor(item.JobId, item.Version);
+                var draft = DraftFor(item.DeliverableId, item.Version);
                 <article id="@($"campaign-{item.JobId}")" class="review-card" @key="item.JobId">
                     <header class="review-card-heading">
                         <div>
@@ -311,7 +311,8 @@ else
 @code {
     private readonly CancellationTokenSource disposal = new();
     private Task? pollingTask;
-    private readonly Dictionary<(Guid JobId, int Version), ReviewDraft> drafts = [];
+    // Drafts belong to one exact video version, so a replacement render starts a fresh review.
+    private readonly Dictionary<(Guid DeliverableId, int Version), ReviewDraft> drafts = [];
     private static readonly string[] TestCaseNames = ["Short voiceover · 30s", "Music and text · 30s", "Full voiceover · 60s"];
     private IReadOnlyList<CampaignReviewItem>? items;
     private IReadOnlyList<TikTokTestPropertyChoice> propertyChoices = [];
@@ -463,9 +464,9 @@ else
         try
         {
             var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
-            await Service.DecideAsync(userId, item.JobId, item.Version, decision, DraftFor(item.JobId, item.Version).Feedback, disposal.Token);
+            await Service.DecideDeliverableAsync(userId, item.DeliverableId, item.Version, decision, DraftFor(item.DeliverableId, item.Version).Feedback, disposal.Token);
             await LoadDataAsync(userId);
-            DraftFor(item.JobId, item.Version).Feedback = null;
+            DraftFor(item.DeliverableId, item.Version).Feedback = null;
             notice = decision == CampaignVideoReviewDecision.Approved
                 ? $"Version {item.Version} approved. Future renders will need a new review."
                 : $"Changes requested for version {item.Version}. Use the video chat to propose and render the update.";
@@ -492,12 +493,12 @@ else
         }
     }
 
-    private ReviewDraft DraftFor(Guid jobId, int version)
+    private ReviewDraft DraftFor(Guid deliverableId, int version)
     {
-        if (!drafts.TryGetValue((jobId, version), out var draft))
+        if (!drafts.TryGetValue((deliverableId, version), out var draft))
         {
             draft = new ReviewDraft();
-            drafts.Add((jobId, version), draft);
+            drafts.Add((deliverableId, version), draft);
         }
 
         return draft;
@@ -614,7 +615,9 @@ else
     private static bool CanReview(CampaignReviewItem item) => item.CampaignStatus == CampaignGenerationStatus.Completed
         && item.DeliverableStatus == CampaignDeliverableStatus.Rendered;
 
-    private static string VideoUrl(CampaignReviewItem item) => $"/campaigns/{item.JobId}/deliverables/TikTok?v={item.Version}";
+    private static string VideoUrl(CampaignReviewItem item) => item.DeliverableId == Guid.Empty
+        ? $"/campaigns/{item.JobId}/deliverables/TikTok?v={item.Version}"
+        : $"/campaigns/videos/{item.DeliverableId}?v={item.Version}";
 
     private static string DecisionText(CampaignReviewItem item) => item.Decision switch
     {

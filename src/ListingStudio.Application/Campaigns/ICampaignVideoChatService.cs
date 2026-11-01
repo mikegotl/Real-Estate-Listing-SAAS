@@ -4,7 +4,7 @@ using ListingStudio.Domain.Campaigns;
 namespace ListingStudio.Application.Campaigns;
 
 /// <summary>The chat beside each finished campaign video, where the user asks for changes to just that video.</summary>
-public interface ICampaignVideoChatService
+public interface ICampaignVideoChatService : ICampaignVideoChatByVideo
 {
     public const int MaximumMessageLength = 1_000;
 
@@ -48,6 +48,24 @@ public interface ICampaignVideoChatService
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// The same chat addressed by a video's own deliverable id, which also reaches every library video. Each library
+/// video has its own chat, free updates and undo; changing one never touches another.
+/// </summary>
+public interface ICampaignVideoChatByVideo
+{
+    Task<CampaignVideoChat?> GetForVideoAsync(string userId, Guid deliverableId, CancellationToken cancellationToken = default);
+
+    Task<CampaignVideoChat?> SendForVideoAsync(string userId, Guid deliverableId, string text, CancellationToken cancellationToken = default);
+
+    Task<CampaignVideoChat?> RenderForVideoAsync(string userId, Guid deliverableId, Guid messageId, CancellationToken cancellationToken = default);
+
+    Task<CampaignVideoChat?> ConfirmFixForVideoAsync(
+        string userId, Guid deliverableId, Guid messageId, bool worked, string? feedback, CancellationToken cancellationToken = default);
+
+    Task<CampaignVideoChat?> UndoForVideoAsync(string userId, Guid deliverableId, CancellationToken cancellationToken = default);
+}
+
 public sealed record CampaignVideoChat(
     Guid JobId,
     CampaignOutputKind Kind,
@@ -56,7 +74,8 @@ public sealed record CampaignVideoChat(
     bool CanUndo,
     CampaignVideoRevisionStatus? ActiveRevisionStatus,
     string? LastRevisionError,
-    IReadOnlyList<CampaignVideoChatEntry> Messages);
+    IReadOnlyList<CampaignVideoChatEntry> Messages,
+    Guid DeliverableId = default);
 
 public sealed record CampaignVideoChatEntry(
     Guid Id,
