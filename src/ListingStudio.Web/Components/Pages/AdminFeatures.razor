@@ -1,0 +1,185 @@
+@page "/admin/features"
+@attribute [Authorize(Policy = PlatformAdministration.Policy)]
+@rendermode InteractiveServer
+@using ListingStudio.Domain.Administration
+@inject IFeatureRolloutService Rollout
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<AdminFeatures> Logger
+
+<PageTitle>Release switches</PageTitle>
+
+<div class="section-row admin-page-heading">
+    <div>
+        <span class="eyebrow">CONTROLLED RELEASE</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Release switches</MudText>
+        <MudText Typo="Typo.body1">Turn a feature on for pilot workspaces first, then for everyone. The global switch is the kill switch: off always wins over the pilot list. Changes reach the Web and Worker within 15 seconds, with no deployment.</MudText>
+    </div>
+    <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">System overview</MudButton>
+</div>
+
+@if (error is not null)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4" aria-live="polite" data-testid="features-error">@error</MudAlert>
+}
+@if (notice is not null)
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4" aria-live="polite" data-testid="features-notice">@notice</MudAlert>
+}
+
+@if (view is not null)
+{
+    <MudPaper Elevation="0" Class="admin-panel feature-switch" data-testid="feature-VerticalVideoLibraryV1">
+        <header class="feature-switch-head">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h2">Vertical video library</MudText>
+                <code>@FeatureFlagKeys.VerticalVideoLibraryV1</code>
+            </div>
+            <span class="@($"feature-state {(view.State.IsGloballyEnabled ? "on" : "off")}")" data-testid="feature-summary">@view.Summary</span>
+        </header>
+        <p class="feature-help">
+            Recommended multi-format vertical videos, the Creative format testing tab, performance tracking and the "One Listing Four TikToks"
+            article. Off gives every workspace the single shared vertical video and the previous copy. Turning it off never deletes libraries,
+            tests or recorded numbers; unfinished library campaigns fall back to the shared video and queued creative tests wait.
+        </p>
+
+        <div class="feature-toggles">
+            <MudSwitch T="bool" @bind-Value="global" Color="Color.Primary" Label="Global switch (kill switch)" Disabled="busy" data-testid="feature-global" />
+            <MudSwitch T="bool" @bind-Value="everyone" Color="Color.Primary" Label="Every workspace (leave off for a pilot)" Disabled="busy" data-testid="feature-everyone" />
+        </div>
+
+        <section aria-labelledby="pilot-heading" class="feature-pilots">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h3" id="pilot-heading">Pilot workspaces (@pilots.Count)</MudText>
+            @if (pilots.Count == 0)
+            {
+                <p class="feature-help">No pilot workspaces yet.</p>
+            }
+            else
+            {
+                <ul class="feature-workspaces" data-testid="feature-pilots">
+                    @foreach (var workspace in pilots.Values.OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        <li @key="workspace.Id">
+                            <span><strong>@workspace.Name</strong> · @workspace.Members @(workspace.Members == 1 ? "member" : "members")@(workspace.Reason is null ? null : $" · {workspace.Reason}")</span>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Disabled="busy" OnClick="@(() => pilots.Remove(workspace.Id))"
+                                       aria-label="@($"Remove {workspace.Name} from the pilot")">Remove</MudButton>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (Suggested.Count > 0)
+            {
+                <div class="feature-suggested">
+                    <p class="feature-help">
+                        Start with testers and platform admins: @Suggested.Count @(Suggested.Count == 1 ? "workspace has" : "workspaces have") a Tester or platform admin and @(Suggested.Count == 1 ? "isn't" : "aren't") in the pilot.
+                    </p>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="busy" OnClick="AddSuggested" data-testid="feature-add-suggested">
+                        Add tester and admin workspaces (@Suggested.Count)
+                    </MudButton>
+                </div>
+            }
+
+            <div class="feature-search">
+                <label for="feature-search">Add a workspace by name</label>
+                <div>
+                    <input id="feature-search" type="search" @bind="query" @bind:event="oninput" placeholder="At least 2 letters" data-testid="feature-search" />
+                    <MudButton Variant="Variant.Text" Disabled="@(busy || (query?.Trim().Length ?? 0) < 2)" OnClick="SearchAsync" data-testid="feature-search-go">Search</MudButton>
+                </div>
+                @if (results.Count > 0)
+                {
+                    <ul class="feature-workspaces">
+                        @foreach (var workspace in results.Where(item => !pilots.ContainsKey(item.Id)))
+                        {
+                            <li @key="workspace.Id">
+                                <span><strong>@workspace.Name</strong> · @workspace.Members @(workspace.Members == 1 ? "member" : "members")</span>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => pilots[workspace.Id] = workspace)">Add</MudButton>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </section>
+
+        <footer class="feature-save">
+            <p class="feature-help" data-testid="feature-pending">After saving: @FeatureRolloutText.Summary(global, everyone, pilots.Count)</p>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || !Changed)" OnClick="SaveAsync" data-testid="feature-save">Save</MudButton>
+        </footer>
+        @if (view.State.UpdatedAtUtc is { } updated)
+        {
+            <p class="feature-help">Last changed @updated.ToString("MMM d, yyyy · HH:mm") UTC. Every change is written to the audit log.</p>
+        }
+    </MudPaper>
+}
+
+@code {
+    private FeatureRolloutView? view;
+    private bool global;
+    private bool everyone;
+    private Dictionary<Guid, FeatureWorkspaceChoice> pilots = [];
+    private IReadOnlyList<FeatureWorkspaceChoice> results = [];
+    private string? query;
+    private bool busy;
+    private string? error;
+    private string? notice;
+
+    private IReadOnlyList<FeatureWorkspaceChoice> Suggested =>
+        view?.SuggestedPilots.Where(item => !pilots.ContainsKey(item.Id)).ToArray() ?? [];
+
+    private bool Changed => view is not null && (global != view.State.IsGloballyEnabled || everyone != view.State.IsEnabledForAllOrganizations
+        || !pilots.Keys.ToHashSet().SetEquals(view.State.PilotOrganizationIds));
+
+    protected override Task OnInitializedAsync() => RunAsync(async userId =>
+        Apply(await Rollout.GetAsync(userId, FeatureFlagKeys.VerticalVideoLibraryV1)));
+
+    private void Apply(FeatureRolloutView loaded)
+    {
+        view = loaded;
+        global = loaded.State.IsGloballyEnabled;
+        everyone = loaded.State.IsEnabledForAllOrganizations;
+        pilots = loaded.Pilots.ToDictionary(item => item.Id);
+    }
+
+    private void AddSuggested()
+    {
+        foreach (var workspace in Suggested)
+        {
+            pilots[workspace.Id] = workspace;
+        }
+    }
+
+    private Task SearchAsync() => RunAsync(async userId => results = await Rollout.SearchWorkspacesAsync(userId, query ?? string.Empty));
+
+    private Task SaveAsync() => RunAsync(async userId =>
+    {
+        Apply(await Rollout.SaveAsync(userId, FeatureFlagKeys.VerticalVideoLibraryV1, global, everyone, pilots.Keys.ToArray()));
+        notice = $"Saved. {view!.Summary} It takes effect within 15 seconds.";
+    });
+
+    private async Task RunAsync(Func<string, Task> action)
+    {
+        busy = true;
+        error = null;
+        notice = null;
+        try
+        {
+            await action(await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Platform administration access is required.";
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.Message.Split(" (Parameter", 2)[0];
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Logger.LogWarning(exception, "Changing a release switch failed");
+            error = "That didn't work. Refresh the page and try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

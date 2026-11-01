@@ -232,6 +232,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPropertyPhotoFixProcessor, PropertyPhotoFixProcessor>();
         services.AddSingleton<FeatureStateCache>();
         services.AddScoped<IFeatureStateService, FeatureStateService>();
+        services.AddScoped<IFeatureRolloutService, FeatureRolloutService>();
         services.AddScoped<VerticalFormatRecommendationService>();
         services.AddScoped<IVerticalFormatRecommendationService>(provider => provider.GetRequiredService<VerticalFormatRecommendationService>());
         services.AddScoped<IVerticalCreativePlanningService>(provider => provider.GetRequiredService<VerticalFormatRecommendationService>());

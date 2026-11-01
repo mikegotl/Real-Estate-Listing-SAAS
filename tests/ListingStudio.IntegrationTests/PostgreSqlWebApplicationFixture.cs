@@ -38,6 +38,9 @@ public sealed class PostgreSqlWebApplicationFixture : IAsyncLifetime
 
     public ListingStudioWebApplicationFactory Factory { get; private set; } = null!;
 
+    /// <summary>The test container's connection string, for tests that need a database of their own in it.</summary>
+    public string ConnectionString => postgreSql.GetConnectionString();
+
     public ListingStudioWebApplicationFactory CreateFactory(
         Action<IServiceCollection> configureServices) =>
         new(postgreSql.GetConnectionString(), mediaRootPath, configureServices);
