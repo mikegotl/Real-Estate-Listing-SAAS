@@ -118,13 +118,15 @@ public sealed class CampaignGenerationService(
     }
 
     public Task<CampaignGenerationResult?> EnqueueCreativeTestAsync(string userId, Guid propertyId,
-        VerticalCreativeFormat format, string hookVariant, Guid caseRequestId, CancellationToken cancellationToken = default)
+        VerticalCreativeFormat format, string hookVariant, Guid caseRequestId,
+        CampaignCaptionStyle captionStyle = CampaignCaptionStyles.Default, CancellationToken cancellationToken = default)
     {
+        if (!Enum.IsDefined(captionStyle)) throw new ArgumentOutOfRangeException(nameof(captionStyle));
         if (caseRequestId == Guid.Empty) throw new ArgumentException("A test case key is required.", nameof(caseRequestId));
         if (hookVariant is not ("a" or "b")) throw new ArgumentException("The hook is A or B.", nameof(hookVariant));
         var request = new VerticalLibraryRequest(VerticalVideoSelection.AgentChosen, null, [format]);
         request.Validate();
-        return EnqueueCoreAsync(userId, propertyId, CampaignOutputSelection.TikTok, CreativeTestOptions,
+        return EnqueueCoreAsync(userId, propertyId, CampaignOutputSelection.TikTok, CreativeTestOptions with { CaptionStyle = captionStyle },
             CampaignNarrationPreferences.Default, $"creative:{caseRequestId:N}", cancellationToken, request, hookVariant,
             requireLibrary: true);
     }

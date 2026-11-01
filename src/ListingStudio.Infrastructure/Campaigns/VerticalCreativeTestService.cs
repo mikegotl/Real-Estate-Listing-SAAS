@@ -53,9 +53,15 @@ public sealed partial class VerticalCreativeTestService(
     }
 
     public async Task<VerticalCreativeTestSuiteView> StartAsync(string userId, Guid propertyId, VerticalCreativeTestMode mode,
-        VerticalCreativeFormat? format, CancellationToken cancellationToken = default)
+        VerticalCreativeFormat? format, CampaignCaptionStyle captionStyle = CampaignCaptionStyles.Default,
+        CancellationToken cancellationToken = default)
     {
         var organizationId = await AuthorizeAsync(userId, cancellationToken);
+        if (!Enum.IsDefined(captionStyle))
+        {
+            throw new ArgumentOutOfRangeException(nameof(captionStyle));
+        }
+
         if (!Enum.IsDefined(mode))
         {
             throw new ArgumentOutOfRangeException(nameof(mode));
@@ -81,7 +87,7 @@ public sealed partial class VerticalCreativeTestService(
 
             var suite = VerticalCreativeTestSuite.Create(organizationId, propertyId, userId, mode,
                 mode is VerticalCreativeTestMode.SingleFormat or VerticalCreativeTestMode.HookAb ? format : null,
-                preview.RuleVersion, cases, timeProvider.GetUtcNow());
+                preview.RuleVersion, cases, timeProvider.GetUtcNow(), captionStyle);
             dbContext.VerticalCreativeTestSuites.Add(suite);
             await dbContext.SaveChangesAsync(cancellationToken);
             var generated = VerticalCreativeTestPlanner.GeneratedCount(cases);
@@ -230,7 +236,7 @@ public sealed partial class VerticalCreativeTestService(
         try
         {
             var queued = await campaigns.EnqueueCreativeTestAsync(suite.RequestedByUserId, suite.PropertyId, item.Format,
-                item.HookVariant, item.CaseKey, cancellationToken);
+                item.HookVariant, item.CaseKey, suite.CaptionStyle, cancellationToken);
             if (queued is not null)
             {
                 item.Start(queued.Id, timeProvider.GetUtcNow());
@@ -450,7 +456,7 @@ public sealed partial class VerticalCreativeTestService(
                     item.Status, item.Error, item.CampaignGenerationJobId, item.CampaignVideoVariantId, item.CampaignDeliverableId,
                     variant?.HookText, version, history.FirstOrDefault(entry => entry.Version == version)?.Decision, history,
                     item.StartedAtUtc, item.FinishedAtUtc);
-            }).ToArray())).ToArray();
+            }).ToArray(), suite.CaptionStyle)).ToArray();
     }
 
     private async Task<Guid> AuthorizeAsync(string userId, CancellationToken cancellationToken)

@@ -1,0 +1,105 @@
+.caption-picker {
+    border: 1px solid var(--ls-line);
+    border-radius: 12px;
+    padding: 12px 14px;
+    background: var(--ls-surface);
+    margin-bottom: 16px;
+}
+
+.caption-picker-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.caption-picker-mini {
+    width: 45px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex: none;
+}
+
+.caption-picker-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.caption-picker-heading {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ls-accent-strong);
+}
+
+.caption-picker-detail {
+    font-size: 0.85rem;
+    color: var(--ls-muted);
+}
+
+.caption-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.caption-picker-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: var(--ls-surface-muted);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+}
+
+.caption-picker-card:hover:not(:disabled),
+.caption-picker-card:focus-visible {
+    border-color: var(--ls-accent);
+    outline: none;
+}
+
+.caption-picker-card.selected {
+    border-color: var(--ls-primary);
+    background: var(--ls-surface);
+    box-shadow: 0 0 0 3px rgba(var(--ls-primary-rgb), 0.14);
+}
+
+.caption-picker-card:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.caption-picker-card img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 9 / 16;
+    object-fit: cover;
+    border-radius: 8px;
+    display: block;
+}
+
+.caption-picker-label {
+    font-family: var(--ls-font-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--ls-primary);
+}
+
+.caption-picker-letter {
+    margin-right: 4px;
+}
+
+@media (max-width: 720px) {
+    .caption-picker-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

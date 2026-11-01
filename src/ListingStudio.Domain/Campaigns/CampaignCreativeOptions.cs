@@ -29,10 +29,43 @@ public enum CampaignSoundtrack
     AddInApp,
 }
 
+/// <summary>
+/// The look of on-screen text in campaign videos. Stored by name; append only. Pop is the original social look
+/// (picker option A); the named looks after it each pair a bundled font with their own colors (options B to H).
+/// </summary>
 public enum CampaignCaptionStyle
 {
     Classic,
     Pop,
+    BoldOutline,
+    CandyPop,
+    SunsetPills,
+    Comic,
+    NeonNight,
+    Marker,
+    BrandBold,
+}
+
+public static class CampaignCaptionStyles
+{
+    /// <summary>The look new social campaigns start with.</summary>
+    public const CampaignCaptionStyle Default = CampaignCaptionStyle.NeonNight;
+
+    /// <summary>The looks the Campaign tab offers, in picker order A to H.</summary>
+    public static IReadOnlyList<CampaignCaptionStyle> Picker { get; } =
+    [
+        CampaignCaptionStyle.Pop,
+        CampaignCaptionStyle.BoldOutline,
+        CampaignCaptionStyle.CandyPop,
+        CampaignCaptionStyle.SunsetPills,
+        CampaignCaptionStyle.Comic,
+        CampaignCaptionStyle.NeonNight,
+        CampaignCaptionStyle.Marker,
+        CampaignCaptionStyle.BrandBold,
+    ];
+
+    /// <summary>True for the looks that show captions large and bold (everything except Classic).</summary>
+    public static bool IsBold(CampaignCaptionStyle style) => style != CampaignCaptionStyle.Classic;
 }
 
 public enum CampaignMarketingTemplate
@@ -101,7 +134,7 @@ public sealed record CampaignCreativeOptions(
         | CampaignVideoElement.BackgroundMusic
         | CampaignVideoElement.AgentContact,
         CampaignSoundtrack.AutoByHomeEra,
-        CampaignCaptionStyle.Pop,
+        CampaignCaptionStyles.Default,
         MarketingTemplate: CampaignMarketingTemplate.BalancedShowcase);
 
     /// <summary>
@@ -242,29 +275,29 @@ public sealed record CampaignCreativeOptions(
             CampaignMarketingTemplate.PriceDrop => new CampaignCreativeOptions(
                 common | CampaignVideoElement.PropertyFacts,
                 CampaignSoundtrack.UpbeatLifestyle,
-                CampaignCaptionStyle.Pop,
+                CampaignCaptionStyles.Default,
                 MarketingTemplate: template,
                 PriceReductionAmount: priceReductionAmount,
                 PriceReductionVerified: priceReductionVerified),
             CampaignMarketingTemplate.QuickTour => new CampaignCreativeOptions(
                 common,
                 CampaignSoundtrack.UpbeatLifestyle,
-                CampaignCaptionStyle.Pop,
+                CampaignCaptionStyles.Default,
                 MarketingTemplate: template),
             CampaignMarketingTemplate.FeatureSpotlight => new CampaignCreativeOptions(
                 common | CampaignVideoElement.PropertyFacts | CampaignVideoElement.NeighborhoodHighlights,
                 CampaignSoundtrack.AutoByHomeEra,
-                CampaignCaptionStyle.Pop,
+                CampaignCaptionStyles.Default,
                 MarketingTemplate: template),
             CampaignMarketingTemplate.JustListed => new CampaignCreativeOptions(
                 common | CampaignVideoElement.PropertyFacts,
                 CampaignSoundtrack.UpbeatLifestyle,
-                CampaignCaptionStyle.Pop,
+                CampaignCaptionStyles.Default,
                 MarketingTemplate: template),
             CampaignMarketingTemplate.OpenHouse => new CampaignCreativeOptions(
                 common | CampaignVideoElement.PropertyFacts,
                 CampaignSoundtrack.UpbeatLifestyle,
-                CampaignCaptionStyle.Pop,
+                CampaignCaptionStyles.Default,
                 MarketingTemplate: template,
                 OpenHouseText: openHouseText,
                 OpenHouseVerified: openHouseVerified),

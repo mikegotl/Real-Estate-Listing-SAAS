@@ -17,7 +17,8 @@ public interface IVerticalCreativeTestService
     Task<VerticalCreativeTestPreview?> PreviewAsync(string userId, Guid propertyId, CancellationToken cancellationToken = default);
 
     Task<VerticalCreativeTestSuiteView> StartAsync(string userId, Guid propertyId, VerticalCreativeTestMode mode,
-        VerticalCreativeFormat? format, CancellationToken cancellationToken = default);
+        VerticalCreativeFormat? format, CampaignCaptionStyle captionStyle = CampaignCaptionStyles.Default,
+        CancellationToken cancellationToken = default);
 
     Task CancelAsync(string userId, Guid suiteId, CancellationToken cancellationToken = default);
 
@@ -73,7 +74,8 @@ public sealed record VerticalCreativeTestSuiteView(
     string? Error,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset? CompletedAtUtc,
-    IReadOnlyList<VerticalCreativeTestCaseView> Cases)
+    IReadOnlyList<VerticalCreativeTestCaseView> Cases,
+    CampaignCaptionStyle CaptionStyle = CampaignCaptionStyles.Default)
 {
     public bool IsActive => Status is VerticalCreativeTestSuiteStatus.Queued or VerticalCreativeTestSuiteStatus.Running;
 }

@@ -61,9 +61,13 @@ public sealed class AdminCreativeTestingTabTests : IAsyncDisposable
         Assert.True(cut.Find("[data-testid=creative-start]").HasAttribute("disabled"));
         cut.Find("[data-testid=creative-format]").Change(nameof(VerticalCreativeFormat.PriceFirst));
         Assert.Contains("This starts 2 test campaigns", cut.Find("[data-testid=creative-estimate]").TextContent, StringComparison.Ordinal);
+        Assert.Equal("F · Neon night", cut.Find("[data-testid=caption-picker-current]").TextContent.Trim());
+        cut.Find("[data-testid=caption-picker-toggle]").Click();
+        cut.Find("[data-testid=caption-style-E]").Click();
         cut.Find("[data-testid=creative-start]").Click();
 
         Assert.Equal((PropertyId, VerticalCreativeTestMode.HookAb, (VerticalCreativeFormat?)VerticalCreativeFormat.PriceFirst), creative.Started.Single());
+        Assert.Equal(CampaignCaptionStyle.Comic, creative.StartedCaptionStyles.Single());
         Assert.Contains("The creative test is queued", cut.Markup, StringComparison.Ordinal);
     }
 
@@ -198,11 +202,15 @@ public sealed class AdminCreativeTestingTabTests : IAsyncDisposable
                 VerticalCreativePlan.Create(RecipeFixture.Rich())));
 
         public Task<VerticalCreativeTestSuiteView> StartAsync(string userId, Guid propertyId, VerticalCreativeTestMode mode,
-            VerticalCreativeFormat? format, CancellationToken cancellationToken = default)
+            VerticalCreativeFormat? format, CampaignCaptionStyle captionStyle = CampaignCaptionStyles.Default,
+            CancellationToken cancellationToken = default)
         {
             Started.Add((propertyId, mode, format));
+            StartedCaptionStyles.Add(captionStyle);
             return Task.FromResult(Suite());
         }
+
+        public List<CampaignCaptionStyle> StartedCaptionStyles { get; } = [];
 
         public Task CancelAsync(string userId, Guid suiteId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 

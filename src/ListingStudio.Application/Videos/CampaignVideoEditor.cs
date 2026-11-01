@@ -316,11 +316,11 @@ public static class CampaignVideoEditor
                         break;
                     }
 
-                    var token = style == CampaignCaptionStyle.Pop ? TextOverlayStyle.PopCaption : TextOverlayStyle.LowerThird;
+                    var token = CampaignCaptionStyles.IsBold(style) ? TextOverlayStyle.PopCaption : TextOverlayStyle.LowerThird;
                     specification = MapOverlays(specification, overlays => overlays.Select(overlay => IsCaption(overlay)
                         ? overlay with { StyleToken = token }
                         : overlay));
-                    Accept(edit, style == CampaignCaptionStyle.Pop ? "Use bold pop-up captions." : "Use classic captions.");
+                    Accept(edit, CampaignCaptionStyles.IsBold(style) ? "Use bold pop-up captions." : "Use classic captions.");
                     break;
                 case CampaignVideoEditKind.ChangeVoice:
                     if (specification.Audio.NarrationSegments.Count == 0)

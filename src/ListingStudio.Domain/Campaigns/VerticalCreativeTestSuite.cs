@@ -59,6 +59,9 @@ public sealed class VerticalCreativeTestSuite
 
     public VerticalCreativeTestSuiteStatus Status { get; private set; }
 
+    /// <summary>The caption look every test video uses. Stored by name.</summary>
+    public CampaignCaptionStyle CaptionStyle { get; private set; } = CampaignCaptionStyles.Default;
+
     public string? Error { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
@@ -77,8 +80,14 @@ public sealed class VerticalCreativeTestSuite
         VerticalCreativeFormat? format,
         string ruleVersion,
         IReadOnlyList<VerticalCreativeTestCasePlan> cases,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        CampaignCaptionStyle captionStyle = CampaignCaptionStyles.Default)
     {
+        if (!Enum.IsDefined(captionStyle))
+        {
+            throw new ArgumentOutOfRangeException(nameof(captionStyle));
+        }
+
         if (organizationId == Guid.Empty || propertyId == Guid.Empty)
         {
             throw new ArgumentException("A workspace and property are required.");
@@ -112,6 +121,7 @@ public sealed class VerticalCreativeTestSuite
             Format = format,
             RuleVersion = ruleVersion.Trim(),
             Status = VerticalCreativeTestSuiteStatus.Queued,
+            CaptionStyle = captionStyle,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         };

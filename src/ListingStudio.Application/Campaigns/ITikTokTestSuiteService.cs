@@ -28,7 +28,8 @@ public interface ICampaignTestGenerationService
     /// is unavailable or another campaign holds the property's active slot (try again later).
     /// </summary>
     Task<CampaignGenerationResult?> EnqueueCreativeTestAsync(string userId, Guid propertyId,
-        VerticalCreativeFormat format, string hookVariant, Guid caseRequestId, CancellationToken cancellationToken = default);
+        VerticalCreativeFormat format, string hookVariant, Guid caseRequestId,
+        CampaignCaptionStyle captionStyle = CampaignCaptionStyles.Default, CancellationToken cancellationToken = default);
 }
 
 public sealed record TikTokTestPropertyChoice(Guid Id, string Address);

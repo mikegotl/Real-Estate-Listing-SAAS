@@ -106,7 +106,8 @@ public sealed record VideoRenderRequest(
     IReadOnlyList<VideoRenderPropertyVideoAsset>? PropertyVideos = null,
     IReadOnlyList<VideoRenderWalkthroughTransitionAsset>? WalkthroughTransitions = null,
     VideoRenderAgentPresenterAsset? AgentPresenter = null,
-    VideoRenderAerialIntroAsset? AerialIntro = null);
+    VideoRenderAerialIntroAsset? AerialIntro = null,
+    ListingStudio.Domain.Campaigns.CampaignCaptionStyle? CaptionStyle = null);
 
 public sealed record VideoRenderResult(
     string OutputFilePath,
