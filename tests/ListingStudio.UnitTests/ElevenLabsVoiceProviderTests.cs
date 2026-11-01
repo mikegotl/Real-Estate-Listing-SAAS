@@ -44,9 +44,10 @@ public sealed class ElevenLabsVoiceProviderTests
         Assert.Equal(script, body.RootElement.GetProperty("text").GetString());
         Assert.Equal("test-model", body.RootElement.GetProperty("model_id").GetString());
         var settings = body.RootElement.GetProperty("voice_settings");
-        Assert.Equal(0.45m, settings.GetProperty("stability").GetDecimal());
+        Assert.Equal(0.35m, settings.GetProperty("stability").GetDecimal());
+        Assert.Equal(0.25m, settings.GetProperty("style").GetDecimal());
         Assert.Equal(0.8m, settings.GetProperty("similarity_boost").GetDecimal());
-        Assert.Equal(1.0m, settings.GetProperty("speed").GetDecimal());
+        Assert.Equal(1.05m, settings.GetProperty("speed").GetDecimal());
         Assert.False(body.RootElement.TryGetProperty("language_code", out _));
         Assert.False(body.RootElement.TryGetProperty("previous_text", out _));
     }

@@ -31,6 +31,7 @@ public sealed class AgentAvatarVideoService(
         string userId,
         Guid portraitId,
         Guid narrationId,
+        bool guideWholeVideo = false,
         CancellationToken cancellationToken = default)
     {
         if (!IsEnabled)
@@ -86,7 +87,8 @@ public sealed class AgentAvatarVideoService(
             narration.TimingJson,
             AudioJsonOptions)
             ?? throw new InvalidDataException("The presenter narration timing is invalid.");
-        var selection = SelectExcerpts(specification, timing);
+        var selection = (guideWholeVideo ? SelectWholeVoiceover(specification, timing) : null)
+            ?? SelectExcerpts(specification, timing);
         if (selection is null)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -258,6 +260,48 @@ public sealed class AgentAvatarVideoService(
             outroTimelineStart,
             outroDuration,
             parts);
+    }
+
+    /// <summary>
+    /// The whole voiceover as one clip, so the agent talks the viewer through the video from the first line to the
+    /// last: each line's audio where the video places it, with the pauses between lines kept so the lips stay in
+    /// sync. Null when it would run past the provider's limit; the presenter then opens and closes the video only.
+    /// </summary>
+    private ExcerptSelection? SelectWholeVoiceover(
+        VideoProductionSpecification specification,
+        ListingStudio.Application.Audio.VoiceTimingMetadata timing)
+    {
+        var segments = specification.Audio.NarrationSegments.OrderBy(segment => segment.StartMs).ToArray();
+        var timingById = timing.Segments.ToDictionary(segment => segment.SegmentId, StringComparer.Ordinal);
+        if (segments.Length == 0 || provider.MaximumGuideDurationMs <= 0
+            || segments.Any(segment => !timingById.TryGetValue(segment.Id, out var measured)
+                || measured.StartMs < 0 || measured.EndMs <= measured.StartMs))
+        {
+            return null;
+        }
+
+        var parts = new List<AgentAvatarNarrationExcerptPart>(segments.Length);
+        var firstStart = -1;
+        var previousEnd = 0;
+        foreach (var segment in segments)
+        {
+            var measured = timingById[segment.Id];
+            var duration = measured.EndMs - measured.StartMs;
+            var start = Math.Max(segment.StartMs, previousEnd);
+            if (firstStart < 0)
+            {
+                firstStart = start;
+                previousEnd = start;
+            }
+
+            parts.Add(new AgentAvatarNarrationExcerptPart(measured.StartMs, duration, start - previousEnd));
+            previousEnd = start + duration;
+        }
+
+        var total = previousEnd - firstStart;
+        return total < 500 || total > provider.MaximumGuideDurationMs
+            ? null
+            : new ExcerptSelection(firstStart, total, 0, 0, parts);
     }
 
     private static void ValidateResult(AgentAvatarVideoProviderResult result, int requestedDurationMs)

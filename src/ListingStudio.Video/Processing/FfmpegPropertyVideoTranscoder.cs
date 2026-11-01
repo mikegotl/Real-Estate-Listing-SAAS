@@ -197,6 +197,12 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
             var frameRate = ParseFrameRate(frameRateText);
             var width = video.GetProperty("width").GetInt32();
             var height = video.GetProperty("height").GetInt32();
+            if (IsQuarterTurn(video))
+            {
+                // Phones store upright clips as sideways frames plus a rotation flag; report what viewers see.
+                (width, height) = (height, width);
+            }
+
             var colorTransfer = video.TryGetProperty("color_transfer", out var transfer) ? transfer.GetString() : null;
             var hasAudio = streams.Any(stream =>
                 stream.TryGetProperty("codec_type", out var type)
@@ -214,6 +220,33 @@ public sealed class FfmpegPropertyVideoTranscoder(IOptions<FfmpegOptions> option
         {
             throw new InvalidDataException("FFprobe returned invalid video metadata.", exception);
         }
+    }
+
+    /// <summary>True when FFprobe reports the stream is shown turned 90 degrees (an upright phone clip).</summary>
+    public static bool IsQuarterTurn(JsonElement video)
+    {
+        double? rotation = null;
+        if (video.TryGetProperty("side_data_list", out var sideData) && sideData.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in sideData.EnumerateArray())
+            {
+                if (item.TryGetProperty("rotation", out var value) && value.TryGetDouble(out var degrees))
+                {
+                    rotation = degrees;
+                    break;
+                }
+            }
+        }
+
+        if (rotation is null
+            && video.TryGetProperty("tags", out var tags)
+            && tags.TryGetProperty("rotate", out var rotate)
+            && double.TryParse(rotate.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var tagged))
+        {
+            rotation = tagged;
+        }
+
+        return rotation is { } turn && Math.Abs(Math.Round(turn) % 180) == 90;
     }
 
     private static decimal ParseFrameRate(string? value)

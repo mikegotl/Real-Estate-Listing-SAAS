@@ -88,6 +88,13 @@
                                 @video.Width × @video.Height · @FormatDuration(video.DurationMs) · @video.FrameRate.ToString("0.###") fps
                                 · @FormatSize(video.OriginalFileSize) · Audio: @(video.HasAudio ? "Yes" : "No")
                             </MudText>
+                            @if (ShootingTip(video) is { } tip)
+                            {
+                                <div class="video-shooting-tip" role="note">
+                                    <MudIcon Icon="@Icons.Material.Filled.StayCurrentPortrait" Size="Size.Small" />
+                                    <span>@tip</span>
+                                </div>
+                            }
                             <MudSelect T="PropertyMediaCategory?"
                                        Label="Walkthrough stop"
                                        Value="video.TourStop"
@@ -520,6 +527,15 @@
         var duration when duration.TotalHours >= 1 => duration.ToString(@"h\:mm\:ss"),
         var duration => duration.ToString(@"m\:ss"),
     };
+
+    /// <summary>
+    /// Social videos are 9:16, so a sideways clip keeps only a narrow strip of its middle, enlarged to fill the
+    /// frame. The tip says how to film the next one.
+    /// </summary>
+    public static string? ShootingTip(PropertyVideoItem video) => video.Width > video.Height
+        ? "Filmed sideways: TikTok, Reels and Shorts keep only the middle third of this clip, enlarged. "
+            + "For social videos, hold the phone upright and film in 4K at 30 fps."
+        : null;
 
     private static string FormatSize(long bytes) => bytes >= 1024 * 1024
         ? $"{bytes / 1024d / 1024d:0.##} MB"

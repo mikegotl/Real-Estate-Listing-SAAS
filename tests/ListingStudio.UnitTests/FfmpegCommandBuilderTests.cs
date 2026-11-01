@@ -444,6 +444,63 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildShowsAGuidePresenterLargeThenAsABubbleThenLargeAgain()
+    {
+        var request = CreateBrandedRequest();
+        var portraitId = "agent-portrait:11111111111111111111111111111111";
+        var presenterPath = CreateFile("guide-presenter.mp4");
+        request = request with
+        {
+            Specification = request.Specification with
+            {
+                Brand = request.Specification.Brand with { SecondaryLogo = portraitId },
+                Scenes = request.Specification.Scenes.Select(scene => scene with { LogoOverlays = [] }).ToArray(),
+            },
+            BrandAssets = [.. request.BrandAssets, new VideoRenderBrandAsset(portraitId, CreateFile("agent.jpg"), 800, 1_000)],
+            AgentPresenter = new VideoRenderAgentPresenterAsset(portraitId, presenterPath, 720, 720, 500, 12_000, 0, 0),
+        };
+        Assert.True(request.AgentPresenter!.GuidesWholeVideo);
+
+        var command = FfmpegCommandBuilder.Build(request);
+
+        var graph = command.Arguments[command.Arguments.ToList().IndexOf("-filter_complex") + 1];
+        Assert.Contains("split=3[agentPresenterSource0][agentPresenterSource1][agentPresenterSource2]", graph, StringComparison.Ordinal);
+        Assert.Contains("trim=start=0:end=3.5,setpts=PTS-STARTPTS+0.5/TB", graph, StringComparison.Ordinal);
+        Assert.Contains("trim=start=3.5:end=8.5,setpts=PTS-STARTPTS+4/TB", graph, StringComparison.Ordinal);
+        Assert.Contains("trim=start=8.5:end=12,setpts=PTS-STARTPTS+9/TB", graph, StringComparison.Ordinal);
+        Assert.Contains("between(t,9,12.5)", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMastersVerticalSocialVideosToTikTokLoudness()
+    {
+        var landscape = CreateRequest();
+
+        // The 320x180 test photo framed as a centred 9:16 window.
+        var window = new NormalizedRect(0.341796875m, 0, 0.31640625m, 1);
+        var vertical = landscape with
+        {
+            Specification = landscape.Specification with
+            {
+                AspectRatio = VideoAspectRatio.Vertical9By16,
+                Output = new VideoOutputProfile(1_080, 1_920, 30, "h264", "aac", "yuv420p", 48_000, 2),
+                Scenes = landscape.Specification.Scenes
+                    .Select(scene => scene with { Motion = new MotionPlan(MotionKind.None, window, window, MotionEasing.Linear) })
+                    .ToArray(),
+            },
+        };
+
+        string Graph(VideoRenderRequest request)
+        {
+            var command = FfmpegCommandBuilder.Build(request);
+            return command.Arguments[command.Arguments.ToList().IndexOf("-filter_complex") + 1];
+        }
+
+        Assert.Contains("loudnorm=I=-14:TP=-1.5:LRA=11", Graph(vertical), StringComparison.Ordinal);
+        Assert.DoesNotContain("loudnorm", Graph(landscape), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildRejectsPresenterOutsideProgramTimeline()
     {
         var request = CreateBrandedRequest();

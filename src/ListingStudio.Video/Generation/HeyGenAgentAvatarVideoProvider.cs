@@ -23,6 +23,8 @@ public sealed class HeyGenAgentAvatarVideoProvider(
 
     public int MaximumOutroDurationMs => checked(options.Value.OutroMaximumSeconds * 1_000);
 
+    public int MaximumGuideDurationMs => checked(options.Value.GuideMaximumSeconds * 1_000);
+
     public string GenerationVersion
     {
         get
@@ -42,7 +44,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
         ArgumentNullException.ThrowIfNull(request);
         var configuration = options.Value;
         Validate(configuration);
-        Validate(request);
+        Validate(request, Math.Max(15_000, MaximumGuideDurationMs));
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(configuration.RequestTimeoutSeconds));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
@@ -301,6 +303,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
         if (configuration.IntroMaximumSeconds is < 1 or > 10
             || configuration.OutroMaximumSeconds is < 0 or > 10
             || configuration.IntroMaximumSeconds + configuration.OutroMaximumSeconds > 15
+            || configuration.GuideMaximumSeconds is < 0 or > 120
             || configuration.PollIntervalSeconds is < 1 or > 60
             || configuration.RequestTimeoutSeconds is < 60 or > 3_600
             || configuration.MaxOutputMegabytes is < 1 or > 500
@@ -310,12 +313,12 @@ public sealed class HeyGenAgentAvatarVideoProvider(
         }
     }
 
-    private static void Validate(AgentAvatarVideoProviderRequest request)
+    private static void Validate(AgentAvatarVideoProviderRequest request, int maximumDurationMs)
     {
         if (!request.Portrait.CanRead || !request.Audio.CanRead
             || request.PortraitContentType is not ("image/jpeg" or "image/png" or "image/webp")
             || request.AudioContentType is not ("audio/mpeg" or "audio/wav" or "audio/x-wav")
-            || request.DurationMs is < 500 or > 15_000
+            || request.DurationMs < 500 || request.DurationMs > maximumDurationMs
             || request.IdempotencyKey.Length != 64
             || request.IdempotencyKey.Any(character => !Uri.IsHexDigit(character)))
         {

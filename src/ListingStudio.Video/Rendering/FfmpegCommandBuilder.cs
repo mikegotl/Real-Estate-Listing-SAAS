@@ -778,15 +778,18 @@ public static class FfmpegCommandBuilder
 
         var output = request.Specification.Output;
         var vertical = request.Specification.AspectRatio == VideoAspectRatio.Vertical9By16;
-        var segments = new List<(int SourceStartMs, int TimelineStartMs, int DurationMs, PixelBox Box)>
+        var segments = presenter.GuidesWholeVideo
+            ? GuideSegments(presenter, output, vertical)
+            : new List<(int SourceStartMs, int TimelineStartMs, int DurationMs, PixelBox Box)>
         {
             (
                 0,
                 presenter.IntroTimelineStartMs,
                 presenter.IntroDurationMs,
                 ToPixelBox(
+                    // Left side in vertical: TikTok's like, comment and share buttons cover the right edge.
                     vertical
-                        ? new NormalizedRect(0.56m, 0.43m, 0.36m, 0.42m)
+                        ? new NormalizedRect(0.06m, 0.43m, 0.38m, 0.38m)
                         : new NormalizedRect(0.72m, 0.50m, 0.22m, 0.38m),
                     output)),
         };
@@ -798,7 +801,7 @@ public static class FfmpegCommandBuilder
                 presenter.OutroDurationMs,
                 ToPixelBox(
                     vertical
-                        ? new NormalizedRect(0.68m, 0.66m, 0.24m, 0.24m)
+                        ? new NormalizedRect(0.06m, 0.58m, 0.26m, 0.22m)
                         : new NormalizedRect(0.78m, 0.60m, 0.16m, 0.28m),
                     output)));
         }
@@ -839,6 +842,40 @@ public static class FfmpegCommandBuilder
         return current;
     }
 
+    /// <summary>
+    /// The agent guiding a whole video: large while they say the hook, a bubble on the left (between the room label at
+    /// the top and the captions) while the rooms play behind them, then large again for the call to action. Every box
+    /// stays clear of TikTok's right-hand button rail and its description text at the bottom.
+    /// </summary>
+    private static List<(int SourceStartMs, int TimelineStartMs, int DurationMs, PixelBox Box)> GuideSegments(
+        VideoRenderAgentPresenterAsset presenter,
+        VideoOutputProfile output,
+        bool vertical)
+    {
+        var large = ToPixelBox(
+            vertical ? new NormalizedRect(0.18m, 0.42m, 0.56m, 0.32m) : new NormalizedRect(0.62m, 0.36m, 0.32m, 0.56m),
+            output);
+        var bubble = ToPixelBox(
+            vertical ? new NormalizedRect(0.05m, 0.40m, 0.30m, 0.15m) : new NormalizedRect(0.78m, 0.60m, 0.16m, 0.28m),
+            output);
+        var total = presenter.IntroDurationMs;
+        var opening = Math.Min(3_500, total / 3);
+        var closing = Math.Min(3_500, (total - opening) / 2);
+        var middle = total - opening - closing;
+        var start = presenter.IntroTimelineStartMs;
+        var segments = new List<(int SourceStartMs, int TimelineStartMs, int DurationMs, PixelBox Box)>
+        {
+            (0, start, opening, large),
+        };
+        if (middle > 0)
+        {
+            segments.Add((opening, start + opening, middle, bubble));
+        }
+
+        segments.Add((opening + middle, start + opening + middle, closing, large));
+        return segments;
+    }
+
     private static void BuildAudioFilters(
         VideoRenderRequest request,
         List<string> filters,
@@ -874,8 +911,13 @@ public static class FfmpegCommandBuilder
             mixed = "audioMixed";
         }
 
+        // Vertical social videos are mastered to about -14 LUFS, the level TikTok, Reels and Shorts play at, so they
+        // do not sound quieter than the videos around them; the landscape tour keeps its broadcast-style mix.
+        var master = request.Specification.AspectRatio == VideoAspectRatio.Vertical9By16
+            ? "loudnorm=I=-14:TP=-1.5:LRA=11,"
+            : string.Empty;
         filters.Add(
-            $"[{mixed}]apad,atrim=duration={Seconds(programMs)},"
+            $"[{mixed}]apad,atrim=duration={Seconds(programMs)},{master}"
             + $"aresample={request.Specification.Output.SampleRateHz},aformat=channel_layouts=stereo[aout]");
     }
 
@@ -1143,7 +1185,7 @@ public static class FfmpegCommandBuilder
             || presenter.OutroTimelineStartMs < 0
             || presenter.OutroDurationMs < 0
             || presenter.OutroTimelineStartMs + presenter.OutroDurationMs > programMs
-            || presenter.IntroDurationMs + presenter.OutroDurationMs > 15_000)
+            || (!presenter.GuidesWholeVideo && presenter.IntroDurationMs + presenter.OutroDurationMs > 15_000))
         {
             throw new ArgumentException("The agent presenter asset or timing is invalid.", nameof(request));
         }

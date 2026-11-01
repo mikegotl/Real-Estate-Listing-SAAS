@@ -1400,7 +1400,7 @@ public sealed partial class CampaignGenerationProcessor(
                         job.RequestedByUserId,
                         portraitId,
                         narrationId,
-                        cancellationToken);
+                        cancellationToken: cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {

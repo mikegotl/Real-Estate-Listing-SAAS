@@ -12,6 +12,9 @@ public sealed class HeyGenOptions
     public string Resolution { get; init; } = "720p";
     public int IntroMaximumSeconds { get; init; } = 6;
     public int OutroMaximumSeconds { get; init; } = 4;
+
+    /// <summary>Longest lip-synced clip when the agent guides a whole library video (about $2.31 a minute).</summary>
+    public int GuideMaximumSeconds { get; init; } = 60;
     public int PollIntervalSeconds { get; init; } = 5;
     public int RequestTimeoutSeconds { get; init; } = 900;
     public int MaxOutputMegabytes { get; init; } = 100;

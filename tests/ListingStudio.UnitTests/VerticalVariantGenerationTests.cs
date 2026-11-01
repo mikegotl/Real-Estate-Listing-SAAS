@@ -80,16 +80,16 @@ public sealed class VerticalVariantGenerationTests
         var plan = Recipes()[VerticalCreativeFormat.WowFeature].ToVariantPlan(1);
         var variant = library.AddVariant(plan, Now);
 
-        Assert.Equal("11111111222233334444555555555555:WowFeature:1:wow-feature-v1:a", variant.IdempotencyKey);
+        Assert.Equal("11111111222233334444555555555555:WowFeature:1:wow-feature-v2:a", variant.IdempotencyKey);
         Assert.Equal(variant.IdempotencyKey,
-            CampaignVideoVariant.CreateIdempotencyKey(jobId, VerticalCreativeFormat.WowFeature, 1, "wow-feature-v1", null));
+            CampaignVideoVariant.CreateIdempotencyKey(jobId, VerticalCreativeFormat.WowFeature, 1, "wow-feature-v2", null));
         Assert.Throws<InvalidOperationException>(() => library.AddVariant(plan, Now));
         Assert.Throws<ArgumentException>(() =>
             CampaignVideoVariant.CreateIdempotencyKey(jobId, VerticalCreativeFormat.WowFeature, 1, "v1", "no spaces"));
 
         // A second hook variant of the same format is a different video.
         var hookB = library.AddVariant(plan with { Sequence = 2, HookVariant = "B" }, Now);
-        Assert.EndsWith(":2:wow-feature-v1:b", hookB.IdempotencyKey, StringComparison.Ordinal);
+        Assert.EndsWith(":2:wow-feature-v2:b", hookB.IdempotencyKey, StringComparison.Ordinal);
     }
 
     [Fact]

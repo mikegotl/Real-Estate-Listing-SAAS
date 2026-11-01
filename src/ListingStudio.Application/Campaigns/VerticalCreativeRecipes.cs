@@ -89,6 +89,9 @@ public enum VerticalCopySource
 
     /// <summary>Fixed, claim-free copy from the format itself, such as a call to action.</summary>
     ApprovedTemplate,
+
+    /// <summary>A sentence of the generated property story, which already passed the story's grounding rules.</summary>
+    PropertyStory,
 }
 
 public sealed record VerticalRecipeFact(string Key, string Value, VerticalCopySource Source, string Reference);
@@ -442,6 +445,86 @@ internal sealed class RecipeBuilder(VerticalCreativeFormat format, string versio
 
     private static string Capitalize(string text) => char.ToUpperInvariant(text[0]) + text[1..];
 
+    /// <summary>A photo of the outside of the home or its grounds, by the analysis.</summary>
+    public static bool IsOutside(VerticalPlanningPhoto photo) =>
+        photo.IsExterior == true || photo.Category is PropertyMediaCategory.FrontExterior or PropertyMediaCategory.RearExterior
+            or PropertyMediaCategory.Aerial or PropertyMediaCategory.Patio or PropertyMediaCategory.Backyard
+            or PropertyMediaCategory.Pool or PropertyMediaCategory.Community or PropertyMediaCategory.Garage;
+
+    /// <summary>A spoken line as a grounded recipe line: the agent's narration, or a sentence of the generated story.</summary>
+    public VerticalRecipeLine Spoken(VerticalNarrationLine line) => line.FromAgent
+        ? Line(line.GroundingKey, line.Text, VerticalCopySource.AgentNarration, "Approved narration")
+        : Line(line.GroundingKey, line.Text, VerticalCopySource.PropertyStory, "Story voiceover");
+
+    /// <summary>About how long a line takes to say at a relaxed social pace (2.5 words a second), plus a breath.</summary>
+    public static int SpeakingMs(string text) =>
+        (text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length * 400) + 250;
+
+    /// <summary>
+    /// Room-by-room shots with the voice running through them: each line starts on the next shot after the previous
+    /// line has finished, waits for the shot of its own storyboard stop when the agent's narration names one, and is
+    /// left out when it would still be talking at <paramref name="mustEndByMs"/>. Shots are at most
+    /// <paramref name="maximumShotMs"/> long so nothing lingers.
+    /// </summary>
+    private const int LongestShotMs = 4_000;
+
+    public void NarratedWalk(
+        VerticalBeatKind kind,
+        int totalMs,
+        IReadOnlyList<VerticalPlanningPhoto> photos,
+        IReadOnlyList<VerticalNarrationLine> lines,
+        int mustEndByMs,
+        Func<VerticalPlanningPhoto, VerticalRecipeLine?>? overlay = null,
+        int maximumShotMs = 2_800)
+    {
+        if (photos.Count == 0 || totalMs <= 0)
+        {
+            return;
+        }
+
+        var count = Math.Clamp((totalMs + maximumShotMs - 1) / maximumShotMs, 1, photos.Count);
+        var shots = photos.Take(count).ToArray();
+        if (totalMs / count > LongestShotMs)
+        {
+            // Far fewer photos than the span needs: cycle through them again rather than hold one for five seconds.
+            count = (totalMs + maximumShotMs - 1) / maximumShotMs;
+            shots = Enumerable.Range(0, count).Select(index => photos[index % photos.Count]).ToArray();
+        }
+
+        var spans = Split(totalMs, shots.Length);
+        var queue = new Queue<VerticalNarrationLine>(lines);
+        var freeAtMs = cursor;
+        for (var index = 0; index < shots.Length; index++)
+        {
+            var startMs = cursor;
+            VerticalRecipeLine? spoken = null;
+            while (queue.Count > 0 && startMs >= freeAtMs)
+            {
+                var next = queue.Peek();
+                var endsAt = startMs + SpeakingMs(next.Text);
+                if (endsAt > mustEndByMs)
+                {
+                    queue.Dequeue();
+                    continue;
+                }
+
+                var waitsForStop = next.Stop is { } stop
+                    && !string.Equals(shots[index].Stop?.Trim(), stop.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && shots.Skip(index + 1).Any(shot => string.Equals(shot.Stop?.Trim(), stop.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (waitsForStop)
+                {
+                    break;
+                }
+
+                spoken = Spoken(queue.Dequeue());
+                freeAtMs = endsAt;
+                break;
+            }
+
+            Beat(kind, spans[index], shots[index], overlay: overlay?.Invoke(shots[index]), narration: spoken);
+        }
+    }
+
     /// <summary>Photos with a role, the agent's choices first, then in walking order.</summary>
     public static IEnumerable<VerticalPlanningPhoto> WithRole(IEnumerable<VerticalPlanningPhoto> photos, VerticalMediaRole role) =>
         photos.Where(photo => photo.Has(role))
@@ -464,7 +547,7 @@ public sealed class WowFeaturePlanner : IVerticalFormatPlanner
 {
     public VerticalCreativeFormat Format => VerticalCreativeFormat.WowFeature;
 
-    public string RecipeVersion => "wow-feature-v1";
+    public string RecipeVersion => "wow-feature-v2";
 
     public VerticalCreativeRecipe? Plan(VerticalPlanningInput input)
     {
@@ -490,13 +573,19 @@ public sealed class WowFeaturePlanner : IVerticalFormatPlanner
             : builder.Line($"media.{primary.MediaId:N}.feature", $"Look at this {room}.",
                 primary.Category is null ? VerticalCopySource.AgentStoryboard : VerticalCopySource.MediaAnalysis,
                 "Hero feature room");
-        var details = RecipeBuilder.WithRole(usable.Where(photo => photo != primary), VerticalMediaRole.FeatureDetail)
+        // The hook promised a room, so the details stay indoors when that room is indoors: cutting from "Look at this
+        // living room" to the side of the house breaks the promise in the first two seconds.
+        var indoorHook = !RecipeBuilder.IsOutside(primary);
+        var details = RecipeBuilder.WithRole(
+                usable.Where(photo => photo != primary && !(indoorHook && RecipeBuilder.IsOutside(photo))),
+                VerticalMediaRole.FeatureDetail)
             .OrderByDescending(photo => photo.Category == primary.Category && primary.Category is not null)
             .Take(3)
             .ToList();
         if (details.Count < 3)
         {
-            var extra = RecipeBuilder.ByStrength(usable.Where(photo => photo != primary && !details.Contains(photo)))
+            var extra = RecipeBuilder.ByStrength(usable.Where(photo => photo != primary && !details.Contains(photo)
+                    && !(indoorHook && RecipeBuilder.IsOutside(photo))))
                 .Take(3 - details.Count)
                 .ToArray();
             if (extra.Length > 0)
@@ -546,7 +635,7 @@ public sealed class PriceFirstPlanner : IVerticalFormatPlanner
 {
     public VerticalCreativeFormat Format => VerticalCreativeFormat.PriceFirst;
 
-    public string RecipeVersion => "price-first-v1";
+    public string RecipeVersion => "price-first-v2";
 
     public VerticalCreativeRecipe? Plan(VerticalPlanningInput input)
     {
@@ -561,7 +650,8 @@ public sealed class PriceFirstPlanner : IVerticalFormatPlanner
 
         var primary = usable
             .Where(photo => photo.Has(VerticalMediaRole.Exterior))
-            .OrderByDescending(photo => photo.Category == PropertyMediaCategory.FrontExterior)
+            .OrderByDescending(photo => photo.Category == PropertyMediaCategory.FrontExterior
+                || photo.Stop?.Contains("front", StringComparison.OrdinalIgnoreCase) == true)
             .ThenByDescending(photo => photo.HasFromAgent(VerticalMediaRole.Exterior))
             .ThenByDescending(photo => photo.HeroScore ?? 0)
             .ThenBy(photo => photo.DisplayOrder)
@@ -578,7 +668,14 @@ public sealed class PriceFirstPlanner : IVerticalFormatPlanner
         var priceChange = builder.PriceChange(input.VerifiedPriceChange);
         var callToAction = builder.Template("cta.details", "Ask for the full listing details");
         var recap = builder.Price(input.Facts)!;
-        var closing = RecipeBuilder.WithRole(usable, VerticalMediaRole.ClosingView).FirstOrDefault() ?? primary;
+
+        // End inside, on the home's best room, rather than back on the house the video opened on; the agent's own
+        // closing shot still wins.
+        var closing = RecipeBuilder.WithRole(usable, VerticalMediaRole.ClosingView)
+                .FirstOrDefault(photo => photo != primary && photo.HasFromAgent(VerticalMediaRole.ClosingView))
+            ?? RecipeBuilder.ByStrength(usable.Where(photo => photo != primary && !RecipeBuilder.IsOutside(photo)
+                && (photo.HeroScore ?? 0) >= 60)).FirstOrDefault()
+            ?? primary;
 
         builder.Beat(VerticalBeatKind.PriceReveal, 3_500, primary, overlay: hook, narration: hook);
         builder.Beat(VerticalBeatKind.EssentialFacts, 3_500, factsPhoto, overlay: essentials, narration: essentials);
@@ -593,23 +690,22 @@ public sealed class PriceFirstPlanner : IVerticalFormatPlanner
             builder.Beat(VerticalBeatKind.ValueMessage, 3_000, valuePhoto, overlay: priceChange, narration: priceChange);
         }
 
-        var tourMs = 30_000 - builder.Elapsed - 4_000;
-        var stops = tour.Take(Math.Max(1, tourMs / 2_500)).ToList();
-        if (stops.Count == 0)
+        const int RecapMs = 4_000;
+        var tourMs = 30_000 - builder.Elapsed - RecapMs;
+        tour.Remove(closing);
+        if (tour.Count == 0)
         {
             builder.Fallback("Few photos, so the facts photo repeats in the room tour.");
-            stops.Add(factsPhoto);
+            tour.Add(factsPhoto);
         }
 
-        var spans = RecipeBuilder.Split(tourMs, stops.Count);
-        for (var index = 0; index < stops.Count; index++)
-        {
-            builder.Beat(VerticalBeatKind.RoomTour, spans[index], stops[index], overlay: builder.Room(stops[index]));
-        }
-
-        builder.Beat(VerticalBeatKind.PriceRecap, 4_000, closing, overlay: recap, narration: callToAction);
+        // The voice keeps going through the room tour, one line per room, instead of leaving it to the music.
+        builder.NarratedWalk(VerticalBeatKind.RoomTour, tourMs, tour, input.SpokenLines, 30_000 - RecapMs - 200,
+            builder.Room);
+        builder.Beat(VerticalBeatKind.PriceRecap, RecapMs, closing, overlay: recap, narration: callToAction);
+        // With a consented presenter, the agent talks the viewer through the price and the rooms.
         return builder.Build(30, false, hook, VerticalNarrationStructure.FactsReadout, VerticalCaptionDensity.FactCards, 8,
-            callToAction, primary.MediaId, null, false);
+            callToAction, primary.MediaId, null, input.Presenter.IsConsented);
     }
 }
 
@@ -624,22 +720,24 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
 
     public VerticalCreativeFormat Format => VerticalCreativeFormat.HostedPov;
 
-    public string RecipeVersion => "hosted-pov-v1";
+    public string RecipeVersion => "hosted-pov-v2";
 
     public VerticalCreativeRecipe? Plan(VerticalPlanningInput input)
     {
         var builder = new RecipeBuilder(Format, RecipeVersion);
         var usable = input.CurrentPhotos;
-        var host = input.Footage.Where(video => video.IsHostFootage).OrderBy(video => video.TourOrder).ThenBy(video => video.VideoId).ToArray();
-        var intro = host.Where(video => video.Has(VerticalMediaRole.AgentIntro))
-            .OrderByDescending(video => video.HasFromAgent(VerticalMediaRole.AgentIntro))
-            .FirstOrDefault();
+
+        // Only footage the agent tagged: a suggested tag just means a long video with sound, which is true of any
+        // phone walk-through, and planning that as "the agent talking" gave a silent tour of a garage door.
+        var host = input.Footage.Where(video => video.IsConfirmedHostFootage)
+            .OrderBy(video => video.TourOrder).ThenBy(video => video.VideoId).ToArray();
+        var intro = host.Where(video => video.HasFromAgent(VerticalMediaRole.AgentIntro)).FirstOrDefault();
         var walks = host.Where(video => video != intro
-            && (video.Has(VerticalMediaRole.HostedWalkthrough) || video.Has(VerticalMediaRole.LiveReplay))).ToArray();
+            && (video.HasFromAgent(VerticalMediaRole.HostedWalkthrough) || video.HasFromAgent(VerticalMediaRole.LiveReplay))).ToArray();
         var hasWalkFootage = walks.Sum(video => (long)video.DurationMs) >= 15_000;
         var presenter = input.Presenter.IsConsented;
-        var lines = input.Narration;
-        if (!hasWalkFootage && intro is null && lines.Count == 0 && !presenter)
+        var lines = input.SpokenLines;
+        if (!hasWalkFootage && intro is null && input.Narration.Count == 0 && !presenter)
         {
             return null;
         }
@@ -651,16 +749,16 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
 
         var hook = FirstPersonHook(builder, lines);
         var callToAction = builder.Template("cta.showing", "Message me to see it in person");
-        var narrationQueue = new Queue<VerticalNarrationLine>(lines);
         var hookUsesLine = lines.Count > 0 && hook.GroundingKey == lines[0].GroundingKey;
-        if (hookUsesLine)
-        {
-            narrationQueue.Dequeue();
-        }
+        var walkLines = hookUsesLine ? lines.Skip(1).ToArray() : lines.ToArray();
 
-        // Opening: the host on camera, the presenter, or the walk itself.
+        // The presenter beats show a photo underneath when the presenter cannot be drawn, so there always is one.
         Guid? primaryVideo = null;
         Guid? primaryMedia = null;
+        var walkPhotos = usable.ToList();
+
+        // Opening: the agent's own intro clip (their voice), the presenter saying the hook, or the hook voiced over
+        // the first room.
         if (intro is not null)
         {
             builder.Beat(VerticalBeatKind.HostIntro, IntroMs, footage: intro, overlay: hook);
@@ -668,8 +766,8 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
         }
         else if (presenter)
         {
-            builder.Beat(VerticalBeatKind.HostIntro, IntroMs, overlay: hook, narration: hookUsesLine ? hook : null,
-                treatment: VerticalVisualTreatment.Presenter);
+            builder.Beat(VerticalBeatKind.HostIntro, IntroMs, usable.Count > 0 ? usable[0] : null, overlay: hook,
+                narration: hook, treatment: VerticalVisualTreatment.Presenter);
         }
         else if (hasWalkFootage)
         {
@@ -680,13 +778,14 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
         else
         {
             builder.Fallback("No host on camera, so the host's voice opens over the first storyboard photo.");
-            builder.Beat(VerticalBeatKind.HostIntro, IntroMs, usable[0], overlay: hook, narration: hookUsesLine ? hook : null);
-            primaryMedia = usable[0].MediaId;
+            builder.Beat(VerticalBeatKind.HostIntro, IntroMs, usable[0], overlay: hook, narration: hook);
+            walkPhotos.RemoveAt(0);
         }
 
         var walkMs = 30_000 - IntroMs - OutroMs;
         if (hasWalkFootage)
         {
+            // The agent's own walk-through keeps its own sound: they are the voice.
             var spans = RecipeBuilder.Split(walkMs, walks.Length);
             var openedOnWalk = intro is null && !presenter;
             for (var index = 0; index < walks.Length; index++)
@@ -699,29 +798,19 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
         }
         else
         {
-            var stops = PairLinesWithPhotos(narrationQueue.ToArray(), usable);
-            if (stops.Count == 0)
+            if (walkPhotos.Count == 0)
             {
-                builder.Fallback("No narration lines are left for the walk, so the photos play under the host's opening.");
-                stops = usable.Take(5).Select(photo => (photo, (VerticalNarrationLine?)null)).ToList();
+                walkPhotos.AddRange(usable);
             }
 
-            var spans = RecipeBuilder.Split(walkMs, stops.Count);
-            for (var index = 0; index < stops.Count; index++)
-            {
-                var (photo, line) = stops[index];
-                var spoken = line is null
-                    ? null
-                    : builder.Line(line.GroundingKey, line.Text, VerticalCopySource.AgentNarration, "Approved narration");
-                builder.Beat(VerticalBeatKind.HostedWalk, spans[index], photo, narration: spoken);
-            }
-
-            primaryMedia ??= stops[0].Photo.MediaId;
+            // The host talks the whole way through, one line per room, a new shot every two to three seconds.
+            builder.NarratedWalk(VerticalBeatKind.HostedWalk, walkMs, walkPhotos, walkLines, 30_000 - OutroMs - 200);
         }
 
         if (presenter)
         {
-            builder.Beat(VerticalBeatKind.HostOutro, OutroMs, overlay: callToAction, treatment: VerticalVisualTreatment.Presenter);
+            builder.Beat(VerticalBeatKind.HostOutro, OutroMs, usable.Count > 0 ? usable[0] : null, overlay: callToAction,
+                narration: callToAction, treatment: VerticalVisualTreatment.Presenter);
         }
         else
         {
@@ -732,8 +821,13 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
             }
             else
             {
-                builder.Beat(VerticalBeatKind.HostOutro, OutroMs, closing, overlay: callToAction);
+                builder.Beat(VerticalBeatKind.HostOutro, OutroMs, closing, overlay: callToAction, narration: callToAction);
             }
+        }
+
+        if ((primaryVideo is null || presenter) && usable.Count > 0)
+        {
+            primaryMedia = usable[0].MediaId;
         }
 
         return builder.Build(30, false, hook, VerticalNarrationStructure.FirstPersonHost, VerticalCaptionDensity.WordTimed, 3,
@@ -743,7 +837,8 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
     /// <summary>The first sentence of the agent's approved narration when it fits as a hook, else a claim-free line.</summary>
     private static VerticalRecipeLine FirstPersonHook(RecipeBuilder builder, IReadOnlyList<VerticalNarrationLine> lines)
     {
-        if (lines.Count > 0)
+        // Only the agent's own words make a first-person hook; a story sentence is a description, not a greeting.
+        if (lines.Count > 0 && lines[0].FromAgent)
         {
             var text = lines[0].Text.Trim();
             var end = text.IndexOfAny(['.', '!', '?']);
@@ -755,30 +850,6 @@ public sealed class HostedPovPlanner : IVerticalFormatPlanner
         }
 
         return builder.Template("hook.hostedPov", "Come walk through this one with me.");
-    }
-
-    /// <summary>Each remaining line on the photo of its own storyboard stop, else the next unused photo in order.</summary>
-    private static List<(VerticalPlanningPhoto Photo, VerticalNarrationLine? Line)> PairLinesWithPhotos(
-        IReadOnlyList<VerticalNarrationLine> lines,
-        IReadOnlyList<VerticalPlanningPhoto> photos)
-    {
-        var used = new HashSet<Guid>();
-        var result = new List<(VerticalPlanningPhoto, VerticalNarrationLine?)>();
-        foreach (var line in lines.Take(6))
-        {
-            var match = photos.FirstOrDefault(photo => !used.Contains(photo.MediaId) && line.Stop is not null
-                && string.Equals(photo.Stop?.Trim(), line.Stop.Trim(), StringComparison.OrdinalIgnoreCase))
-                ?? photos.FirstOrDefault(photo => !used.Contains(photo.MediaId));
-            if (match is null)
-            {
-                break;
-            }
-
-            used.Add(match.MediaId);
-            result.Add((match, line));
-        }
-
-        return result;
     }
 }
 

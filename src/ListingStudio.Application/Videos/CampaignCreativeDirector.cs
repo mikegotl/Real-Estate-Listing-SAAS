@@ -63,7 +63,7 @@ public static class CampaignCreativeDirector
                     Math.Max(0, closing.DurationMs - Math.Min(4_000, closing.DurationMs)),
                     Math.Min(4_000, closing.DurationMs),
                     source.AspectRatio == VideoAspectRatio.Vertical9By16
-                        ? new NormalizedRect(0.68m, 0.66m, 0.24m, 0.24m)
+                        ? new NormalizedRect(0.06m, 0.58m, 0.26m, 0.22m)
                         : new NormalizedRect(0.78m, 0.60m, 0.16m, 0.28m),
                     0.95m)).ToArray(),
             };
@@ -84,7 +84,7 @@ public static class CampaignCreativeDirector
                     0,
                     Math.Min(6_000, first.DurationMs),
                     source.AspectRatio == VideoAspectRatio.Vertical9By16
-                        ? new NormalizedRect(0.56m, 0.43m, 0.36m, 0.42m)
+                        ? new NormalizedRect(0.06m, 0.43m, 0.38m, 0.38m)
                         : new NormalizedRect(0.72m, 0.50m, 0.22m, 0.38m),
                     0.98m)).ToArray(),
             };
@@ -99,7 +99,7 @@ public static class CampaignCreativeDirector
                         Math.Max(0, closing.DurationMs - Math.Min(4_000, closing.DurationMs)),
                         Math.Min(4_000, closing.DurationMs),
                         source.AspectRatio == VideoAspectRatio.Vertical9By16
-                            ? new NormalizedRect(0.68m, 0.66m, 0.24m, 0.24m)
+                            ? new NormalizedRect(0.06m, 0.58m, 0.26m, 0.22m)
                             : new NormalizedRect(0.78m, 0.60m, 0.16m, 0.28m),
                         0.95m)).ToArray(),
                 };

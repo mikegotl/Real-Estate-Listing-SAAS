@@ -92,10 +92,22 @@ public sealed record VerticalPlanningFootage(
     /// <summary>Footage a host can lead with: tagged as an intro, a hosted walk-through or a live replay.</summary>
     public bool IsHostFootage => IsReady
         && (Has(VerticalMediaRole.AgentIntro) || Has(VerticalMediaRole.HostedWalkthrough) || Has(VerticalMediaRole.LiveReplay));
+
+    /// <summary>
+    /// Host footage the agent tagged themselves. A suggested tag only means the video has sound and runs 15 seconds or
+    /// more (an iPhone walk-through with wind noise qualifies), so videos are planned as host footage only once the
+    /// agent confirms it; until then the readiness panel asks them to.
+    /// </summary>
+    public bool IsConfirmedHostFootage => IsReady
+        && (HasFromAgent(VerticalMediaRole.AgentIntro) || HasFromAgent(VerticalMediaRole.HostedWalkthrough)
+            || HasFromAgent(VerticalMediaRole.LiveReplay));
 }
 
-/// <summary>A line of the agent's approved narration, spoken word for word.</summary>
-public sealed record VerticalNarrationLine(string GroundingKey, string Text, string? Stop);
+/// <summary>
+/// A spoken line, voiced word for word: the agent's approved narration, or (when <paramref name="FromAgent"/> is
+/// false) a sentence of the generated property story's voiceover.
+/// </summary>
+public sealed record VerticalNarrationLine(string GroundingKey, string Text, string? Stop, bool FromAgent = true);
 
 /// <summary>An agent-confirmed story claim, in the agent's words.</summary>
 public sealed record VerticalStoryClaimInput(Guid ClaimId, string Problem, string Payoff);
@@ -114,8 +126,16 @@ public sealed record VerticalPlanningInput(
     decimal? VerifiedPriceChange,
     VerticalStoryClaimInput? StoryClaim,
     VerticalAccessClaimInput? AccessClaim,
-    VerticalUnconfirmedMentions Mentions)
+    VerticalUnconfirmedMentions Mentions,
+    IReadOnlyList<VerticalNarrationLine>? StoryNarration = null)
 {
+    /// <summary>
+    /// What a narrated format says between its hook and call to action: the agent's own narration when it is approved,
+    /// else the sentences of the generated story's voiceover, so a spoken format never goes quiet for lack of a script.
+    /// </summary>
+    public IReadOnlyList<VerticalNarrationLine> SpokenLines =>
+        Narration.Count > 0 ? Narration : StoryNarration ?? [];
+
     /// <summary>Usable storyboard photos in walking order.</summary>
     public IReadOnlyList<VerticalPlanningPhoto> UsablePhotos =>
         Photos.Where(photo => photo.IsUsable).OrderBy(photo => photo.DisplayOrder).ThenBy(photo => photo.MediaId).ToArray();
@@ -148,7 +168,7 @@ public sealed record VerticalPlanningInput(
             photo.HasFromAgent(VerticalMediaRole.BeforeRenovation) ? VerticalPhotoStoryRole.Before
             : photo.HasFromAgent(VerticalMediaRole.AfterRenovation) ? VerticalPhotoStoryRole.After
             : VerticalPhotoStoryRole.None)).ToArray(),
-        Footage.Select(video => new VerticalFootageInput(video.VideoId, video.DurationMs, video.IsReady, video.IsHostFootage))
+        Footage.Select(video => new VerticalFootageInput(video.VideoId, video.DurationMs, video.IsReady, video.IsConfirmedHostFootage))
             .ToArray(),
         Narration.Count > 0,
         Presenter,

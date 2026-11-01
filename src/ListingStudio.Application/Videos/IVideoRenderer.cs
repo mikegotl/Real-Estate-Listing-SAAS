@@ -92,7 +92,14 @@ public sealed record VideoRenderAgentPresenterAsset(
     int IntroTimelineStartMs,
     int IntroDurationMs,
     int OutroTimelineStartMs,
-    int OutroDurationMs);
+    int OutroDurationMs)
+{
+    /// <summary>
+    /// One clip covering the whole voiceover (the agent guides the video) rather than a short opening and closing.
+    /// Opening clips are at most 10 seconds, so anything longer with no closing part is a guide clip.
+    /// </summary>
+    public bool GuidesWholeVideo => OutroDurationMs == 0 && IntroDurationMs > 10_000;
+}
 
 public sealed record VideoRenderRequest(
     VideoProductionSpecification Specification,

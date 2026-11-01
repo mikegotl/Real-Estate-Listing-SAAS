@@ -10,6 +10,12 @@ public interface IAgentAvatarVideoProvider
 
     int MaximumOutroDurationMs { get; }
 
+    /// <summary>
+    /// The longest presenter clip for a video the agent guides from start to finish (the whole voiceover lip-synced);
+    /// 0 when the provider only makes short opening and closing clips.
+    /// </summary>
+    int MaximumGuideDurationMs => 0;
+
     Task<AgentAvatarVideoProviderResult> GenerateAsync(
         AgentAvatarVideoProviderRequest request,
         CancellationToken cancellationToken = default);
@@ -46,7 +52,8 @@ public interface IAgentAvatarNarrationExcerptRenderer
         CancellationToken cancellationToken = default);
 }
 
-public sealed record AgentAvatarNarrationExcerptPart(int StartMs, int DurationMs);
+/// <summary>A stretch of the narration audio, after <paramref name="SilenceBeforeMs"/> of quiet.</summary>
+public sealed record AgentAvatarNarrationExcerptPart(int StartMs, int DurationMs, int SilenceBeforeMs = 0);
 
 public sealed record AgentAvatarNarrationExcerpt(
     byte[] AudioData,

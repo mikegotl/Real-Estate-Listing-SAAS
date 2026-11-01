@@ -243,6 +243,7 @@ internal static class VerticalPlanningInputLoader
                 : null,
             accessClaim is { PrimaryText: { } access } ? new VerticalAccessClaimInput(accessClaim.Id, access) : null,
             VerticalUnconfirmedMentions.Find(
-                [property.Description, story?.OpeningHook, story?.PropertyNarrative, story?.VoiceoverScript]));
+                [property.Description, story?.OpeningHook, story?.PropertyNarrative, story?.VoiceoverScript]),
+            VerticalStoryLines.From(story?.VoiceoverScript));
     }
 }
