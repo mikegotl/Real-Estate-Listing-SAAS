@@ -61,6 +61,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<VerticalCreativeTestCase> VerticalCreativeTestCases => Set<VerticalCreativeTestCase>();
 
+    public DbSet<CampaignDistributionRecord> CampaignDistributionRecords => Set<CampaignDistributionRecord>();
+
+    public DbSet<CampaignMetricSnapshot> CampaignMetricSnapshots => Set<CampaignMetricSnapshot>();
+
+    public DbSet<VerticalRuleEvaluationReport> VerticalRuleEvaluationReports => Set<VerticalRuleEvaluationReport>();
+
     public DbSet<CampaignDeliverable> CampaignDeliverables => Set<CampaignDeliverable>();
 
     public DbSet<CampaignStillPost> CampaignStillPosts => Set<CampaignStillPost>();

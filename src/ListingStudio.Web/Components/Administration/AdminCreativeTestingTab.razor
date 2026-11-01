@@ -230,6 +230,94 @@
             </div>
         </section>
     }
+    <div class="section-row creative-gallery-heading creative-performance-heading">
+        <MudText Typo="Typo.h5" HtmlTag="h3">Published test performance</MudText>
+        <span>Numbers agents and admins entered from the platforms · each test compares only its own videos</span>
+    </div>
+    @if (performance.Count == 0)
+    {
+        <p class="creative-empty" data-testid="creative-performance-empty">No creative test has numbers yet. Add posts and numbers from the property's Campaign tab.</p>
+    }
+    @foreach (var group in performance)
+    {
+        <section class="creative-suite" @key="@($"perf-{group.SuiteId}")" aria-label="@group.GroupLabel" data-testid="@($"creative-performance-{group.SuiteId}")">
+            <header class="creative-suite-head"><div><strong>@group.GroupLabel</strong></div></header>
+            <VerticalPerformanceTable View="group" Caption="@group.GroupLabel" />
+        </section>
+    }
+
+    <section class="creative-panel creative-rules" aria-labelledby="creative-rules-heading" data-testid="creative-rules">
+        <span class="eyebrow">RULE EVALUATION</span>
+        <MudText Typo="Typo.h5" HtmlTag="h3" id="creative-rules-heading">Check the recommendation rules against results</MudText>
+        <p class="creative-help">
+            A draft report groups every measured library video in this workspace by format, property type, price band, photos and video
+            available, and agent. Render regression tests are left out. A report never changes the rules. Active rules: <strong data-testid="active-rule-version">@activeRuleVersion</strong>.
+        </p>
+        <p class="creative-help">
+            Minimum sample before a rule version can be promoted: at least @VerticalPerformanceCalculator.MinimumReportVideos measured videos in the report,
+            and at least @VerticalPerformanceCalculator.MinimumVideosPerSegment videos and @VerticalPerformanceCalculator.MinimumViewsPerSegment.ToString("N0") views for every format in it.
+        </p>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="busy" OnClick="CreateDraftAsync" data-testid="create-rule-draft">Create draft report</MudButton>
+        @foreach (var report in reports)
+        {
+            <article class="creative-report" @key="report.Id" data-testid="@($"rule-report-{report.Id}")">
+                <header>
+                    <strong>@report.CreatedAtUtc.ToString("MMM d, yyyy · HH:mm") UTC · @report.VideoCount measured videos · @report.TotalViews.ToString("N0") views</strong>
+                    <span>Based on @report.BaseRuleVersion · @report.CalculationVersion ·
+                        @if (report.Status == VerticalRuleReportStatus.Promoted)
+                        {
+                            <span>promoted @report.PromotedRuleVersion</span>
+                        }
+                        else if (report.MeetsMinimumSample)
+                        {
+                            <span>meets the minimum sample</span>
+                        }
+                        else
+                        {
+                            <span data-testid="below-minimum">below the minimum sample, so it can't be promoted</span>
+                        }
+                    </span>
+                </header>
+                <div class="performance-table-wrap">
+                    <table class="creative-segments">
+                        <caption class="visually-hidden">Results by format</caption>
+                        <thead><tr><th scope="col">Group</th><th scope="col">Format</th><th scope="col">Videos</th><th scope="col">Views</th><th scope="col">Like rate</th><th scope="col">Click rate</th><th scope="col">Leads</th><th scope="col">Avg. rule score</th></tr></thead>
+                        <tbody>
+                            @foreach (var segment in report.Segments)
+                            {
+                                <tr class="@(segment.MeetsMinimumSample ? null : "thin")">
+                                    <th scope="row">@segment.Dimension: @segment.Value</th>
+                                    <td>@VerticalFormatNames.Name(segment.Format)</td>
+                                    <td>@segment.Videos</td>
+                                    <td>@segment.Views.ToString("N0")</td>
+                                    <td>@Rate(segment.LikeRate)</td>
+                                    <td>@Rate(segment.ClickThroughRate)</td>
+                                    <td>@segment.Leads</td>
+                                    <td>@segment.AverageRuleScore</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (report.Status == VerticalRuleReportStatus.Draft && report.MeetsMinimumSample)
+                {
+                    <div class="creative-start-row">
+                        <div class="creative-field">
+                            <label for="@($"promote-{report.Id}")">Rule version to make active</label>
+                            <select id="@($"promote-{report.Id}")" @bind="promoteVersion" data-testid="promote-version">
+                                @foreach (var version in VerticalPerformanceCalculator.ImplementedRuleVersions.Order())
+                                {
+                                    <option value="@version">@version</option>
+                                }
+                            </select>
+                        </div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="@(() => PromoteAsync(report.Id))"
+                                   data-testid="@($"promote-{report.Id}")">Promote</MudButton>
+                    </div>
+                }
+            </article>
+        }
+    </section>
 </section>
 
 @code {
@@ -249,6 +337,10 @@
     private bool busy;
     private string? error;
     private string? notice;
+    private IReadOnlyList<VerticalPerformanceView> performance = [];
+    private IReadOnlyList<VerticalRuleEvaluationView> reports = [];
+    private string activeRuleVersion = VerticalFormatRules.Version;
+    private string promoteVersion = VerticalFormatRules.Version;
 
     private bool NeedsFormat => mode is VerticalCreativeTestMode.SingleFormat or VerticalCreativeTestMode.HookAb;
 
@@ -318,13 +410,43 @@
         {
             propertyChoices = await ScopedServices.GetRequiredService<ITikTokTestSuiteService>().PropertyChoicesAsync(userId, disposal.Token);
             await LoadSuitesAsync(userId);
+            await LoadMeasurementAsync(userId);
         }, clearNotice: false);
     }
+
+    private async Task LoadMeasurementAsync(string userId)
+    {
+        var evaluation = ScopedServices.GetRequiredService<IVerticalRuleEvaluationService>();
+        performance = await evaluation.GetSuitePerformanceAsync(userId, disposal.Token);
+        reports = await evaluation.ListAsync(userId, disposal.Token);
+        activeRuleVersion = await evaluation.GetActiveRuleVersionAsync(userId, disposal.Token);
+        summary = VerticalCreativeTestSummary.From(suites, PublishedWithMetrics);
+    }
+
+    private int PublishedWithMetrics => performance.Sum(group => group.Videos.Count(video => video.HasMetrics));
+
+    private Task CreateDraftAsync() => RunAsync(async userId =>
+    {
+        var report = await ScopedServices.GetRequiredService<IVerticalRuleEvaluationService>().CreateDraftAsync(userId, disposal.Token);
+        await LoadMeasurementAsync(userId);
+        notice = report.MeetsMinimumSample
+            ? "Draft report created. It meets the minimum sample; promoting a rule version is a separate step."
+            : "Draft report created. It's below the minimum sample, so it's for reading only.";
+    });
+
+    private Task PromoteAsync(Guid reportId) => RunAsync(async userId =>
+    {
+        await ScopedServices.GetRequiredService<IVerticalRuleEvaluationService>().PromoteAsync(userId, reportId, promoteVersion, disposal.Token);
+        await LoadMeasurementAsync(userId);
+        notice = $"Rule version {promoteVersion} is now active for this workspace.";
+    });
+
+    private static string Rate(decimal? rate) => rate is { } value ? value.ToString("0.#%", System.Globalization.CultureInfo.GetCultureInfo("en-US")) : "–";
 
     private async Task LoadSuitesAsync(string userId)
     {
         suites = await Service.ListAsync(userId, disposal.Token);
-        summary = VerticalCreativeTestSummary.From(suites);
+        summary = VerticalCreativeTestSummary.From(suites, PublishedWithMetrics);
     }
 
     private Task PropertyChangedAsync(ChangeEventArgs args)

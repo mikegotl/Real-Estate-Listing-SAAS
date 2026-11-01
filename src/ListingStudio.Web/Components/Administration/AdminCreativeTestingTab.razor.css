@@ -54,3 +54,14 @@
     .creative-panel, .creative-suite { padding: 16px; }
     .creative-grid, .creative-format-list { grid-template-columns: 1fr; }
 }
+.creative-rules { margin-top: 28px; }
+.creative-report { border: 1px solid var(--ls-line); border-radius: 14px; margin-top: 16px; padding: 16px; }
+.creative-report header { display: grid; gap: 2px; margin-bottom: 12px; }
+.creative-report header > span { color: var(--ls-subtle); font-size: .78rem; }
+.creative-report .performance-table-wrap { overflow-x: auto; }
+.creative-segments { border-collapse: collapse; font-size: .82rem; font-variant-numeric: tabular-nums; width: 100%; }
+.creative-segments th, .creative-segments td { border-bottom: 1px solid var(--ls-line); padding: 6px 10px; text-align: right; white-space: nowrap; }
+.creative-segments th[scope="row"], .creative-segments thead th:first-child { text-align: left; }
+.creative-segments thead th { color: var(--ls-muted); font-size: .72rem; font-weight: 600; }
+.creative-segments tr.thin { color: var(--ls-subtle); }
+.creative-performance-heading { margin-top: 32px; }

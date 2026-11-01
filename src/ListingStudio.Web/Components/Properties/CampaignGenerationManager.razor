@@ -573,6 +573,7 @@
         @if (job.VerticalRequest is not null)
         {
             <CampaignVideoLibraryResults JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" />
+            <CampaignPerformancePanel JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" />
         }
 
         @if (job.Deliverables.Count > 0)

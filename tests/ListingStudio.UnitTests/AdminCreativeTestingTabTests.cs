@@ -19,6 +19,7 @@ public sealed class AdminCreativeTestingTabTests : IAsyncDisposable
     private readonly BunitContext context = new();
     private readonly FakeCreativeTests creative = new();
     private readonly FakeReviews reviews = new();
+    private readonly FakeEvaluation evaluation = new();
 
     public AdminCreativeTestingTabTests()
     {
@@ -27,6 +28,7 @@ public sealed class AdminCreativeTestingTabTests : IAsyncDisposable
         context.Services.AddSingleton<IVerticalCreativeTestService>(creative);
         context.Services.AddSingleton<ICampaignReviewService>(reviews);
         context.Services.AddSingleton<ITikTokTestSuiteService>(new FakeProperties());
+        context.Services.AddSingleton<IVerticalRuleEvaluationService>(evaluation);
         context.AddAuthorization().SetAuthorized("admin").SetClaims(
             new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "admin-1"));
         context.ComponentFactories.AddStub<CampaignVideoChatPanel>();
@@ -91,6 +93,80 @@ public sealed class AdminCreativeTestingTabTests : IAsyncDisposable
         creative.Disabled = true;
         var cut = context.Render<AdminCreativeTestingTab>();
         Assert.Contains("switched off", cut.Markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PublishedTestsShowTheirComparisonAndTheRuleEvaluationNeedsTheMinimumSample()
+    {
+        var thin = Report(meets: false);
+        var enough = Report(meets: true);
+        evaluation.Reports = [enough, thin];
+        evaluation.Performance =
+        [
+            new VerticalPerformanceView("Creative test started 2026-11-01 10:00 UTC", PropertyId, null, Guid.NewGuid(),
+                VerticalPerformanceCalculator.CalculationVersion, VerticalPerformanceCalculator.Compare(
+                [
+                    (Guid.NewGuid(), DeliverableA, VerticalCreativeFormat.PriceFirst, "a", VerticalCampaignPurpose.Consideration,
+                        [Post(new CampaignMetricValues(4_000, 360, 0, 20, 15, null, null, 40, 1, 0))]),
+                    (Guid.NewGuid(), Guid.NewGuid(), VerticalCreativeFormat.PriceFirst, "b", VerticalCampaignPurpose.Consideration,
+                        [Post(new CampaignMetricValues(2_000, 100, 0, 6, 8, null, 0.25m, 60, 5, 2))]),
+                ])),
+        ];
+        var cut = context.Render<AdminCreativeTestingTab>();
+
+        Assert.Equal("2", cut.Find("[data-testid=creative-summary] div:nth-child(4) dd").TextContent);
+        Assert.Contains("Most leads", cut.Find("[data-testid=performance-row-PriceFirst-b]").TextContent, StringComparison.Ordinal);
+        Assert.Contains("Most reach", cut.Find("[data-testid=performance-row-PriceFirst-a]").TextContent, StringComparison.Ordinal);
+        Assert.Equal(VerticalFormatRules.Version, cut.Find("[data-testid=active-rule-version]").TextContent);
+        Assert.NotNull(cut.Find($"[data-testid=rule-report-{thin.Id}] [data-testid=below-minimum]"));
+        Assert.Empty(cut.FindAll($"[data-testid=promote-{thin.Id}]"));
+
+        cut.Find("[data-testid=create-rule-draft]").Click();
+        Assert.Equal(1, evaluation.Drafts);
+        Assert.Contains("below the minimum sample", cut.Markup, StringComparison.Ordinal);
+
+        cut.Find($"[data-testid=promote-{enough.Id}]").Click();
+        Assert.Equal((enough.Id, VerticalFormatRules.Version), evaluation.Promoted.Single());
+    }
+
+    private static VerticalPerformancePost Post(CampaignMetricValues values) =>
+        new(Guid.NewGuid(), DistributionPlatform.TikTok, "https://www.tiktok.com/@a/video/1", DateTimeOffset.UnixEpoch, 1, DateTimeOffset.UnixEpoch, values);
+
+    private static VerticalRuleEvaluationView Report(bool meets) => new(Guid.NewGuid(), DateTimeOffset.UnixEpoch, VerticalFormatRules.Version,
+        VerticalPerformanceCalculator.CalculationVersion, meets ? 40 : 2, meets ? 90_000 : 6_000, meets, VerticalRuleReportStatus.Draft, null, null,
+        [new VerticalRuleSegment("Format", "All listings", VerticalCreativeFormat.PriceFirst, meets ? 40 : 2, meets ? 90_000 : 6_000, 0.05m, 0.01m,
+            0.02m, 6, 75m, meets)]);
+
+    private sealed class FakeEvaluation : IVerticalRuleEvaluationService
+    {
+        public IReadOnlyList<VerticalPerformanceView> Performance { get; set; } = [];
+
+        public IReadOnlyList<VerticalRuleEvaluationView> Reports { get; set; } = [];
+
+        public int Drafts { get; private set; }
+
+        public List<(Guid, string)> Promoted { get; } = [];
+
+        public Task<IReadOnlyList<VerticalPerformanceView>> GetSuitePerformanceAsync(string userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Performance);
+
+        public Task<VerticalRuleEvaluationView> CreateDraftAsync(string userId, CancellationToken cancellationToken = default)
+        {
+            Drafts++;
+            return Task.FromResult(Report(meets: false));
+        }
+
+        public Task<IReadOnlyList<VerticalRuleEvaluationView>> ListAsync(string userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Reports);
+
+        public Task PromoteAsync(string userId, Guid reportId, string ruleVersion, CancellationToken cancellationToken = default)
+        {
+            Promoted.Add((reportId, ruleVersion));
+            return Task.CompletedTask;
+        }
+
+        public Task<string> GetActiveRuleVersionAsync(string userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(VerticalFormatRules.Version);
     }
 
     private static VerticalCreativeTestSuiteView Suite() => new(Guid.NewGuid(), PropertyId, "1 Main St, Raleigh, NC",

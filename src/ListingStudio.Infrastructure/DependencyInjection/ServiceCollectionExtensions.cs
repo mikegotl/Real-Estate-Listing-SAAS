@@ -245,6 +245,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<VerticalCreativeTestService>();
         services.AddScoped<IVerticalCreativeTestService>(provider => provider.GetRequiredService<VerticalCreativeTestService>());
         services.AddScoped<IVerticalCreativeTestProcessor>(provider => provider.GetRequiredService<VerticalCreativeTestService>());
+        services.AddScoped<VerticalPerformanceService>();
+        services.AddScoped<IVerticalPerformanceService>(provider => provider.GetRequiredService<VerticalPerformanceService>());
+        services.AddScoped<IVerticalRuleEvaluationService>(provider => provider.GetRequiredService<VerticalPerformanceService>());
         services.AddScoped<ICampaignGenerationProcessor, CampaignGenerationProcessor>();
         services.AddScoped<ICampaignVideoChatService, CampaignVideoChatService>();
         services.AddScoped<ICampaignReviewService, CampaignReviewService>();
