@@ -14,6 +14,10 @@
                 <MudText Typo="Typo.body2" Class="mud-text-secondary">
                     @SummaryText · each 9:16 file can be posted to TikTok, Instagram Reels or YouTube Shorts.
                 </MudText>
+                @if (ShowGuideLink)
+                {
+                    <ArticleGuideLink Placement="@ArticleLinks.Placements.ReviewGallery" Text="What to check before posting each video" />
+                }
             </div>
             @if (library.CanDownloadArchive)
             {
@@ -171,6 +175,10 @@
 
     [Parameter]
     public bool IsReadOnly { get; set; }
+
+    /// <summary>Shows the guide link; the Campaign tab passes whether VerticalVideoLibraryV1 is on now.</summary>
+    [Parameter]
+    public bool ShowGuideLink { get; set; }
 
     private CampaignVideoLibraryView? library;
     private readonly Dictionary<(Guid DeliverableId, int Version), string?> drafts = [];

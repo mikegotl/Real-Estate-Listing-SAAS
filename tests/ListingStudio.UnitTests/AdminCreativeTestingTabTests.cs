@@ -43,6 +43,8 @@ public sealed class AdminCreativeTestingTabTests : IAsyncDisposable
     {
         var cut = context.Render<AdminCreativeTestingTab>();
         Assert.Contains("No creative tests yet", cut.Markup, StringComparison.Ordinal);
+        Assert.Equal("/go/article/one-listing-four-tiktoks?from=admin-creative",
+            cut.Find("[data-testid=guide-link-admin-creative]").GetAttribute("href"));
         cut.Find("[data-testid=creative-property]").Change(PropertyId.ToString());
         cut.Find("[data-testid=creative-analyze]").Click();
 

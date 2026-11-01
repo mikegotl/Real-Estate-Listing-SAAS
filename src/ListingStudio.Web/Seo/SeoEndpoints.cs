@@ -49,13 +49,16 @@ public static class SeoEndpoints
             HttpContext context,
             PublicSiteUrls urls,
             ILeadGenerationService leads,
+            ArticleVisibility articles,
             CancellationToken cancellationToken) =>
         {
             var fallback = PublicSiteUrls.RequestBaseUri(context.Request);
             var listings = await leads.ListPublishedListingsAsync(cancellationToken);
+            // Feature articles are listed only while their feature is on for everyone.
+            var publicArticles = await articles.PublicAsync(cancellationToken);
             var entries = PublicPages
                 .Select(path => (Url: urls.Absolute(path, fallback), LastModified: (DateTimeOffset?)null))
-                .Concat(ArticleLibrary.All.Select(article => (
+                .Concat(publicArticles.Select(article => (
                     Url: urls.Absolute($"/articles/{article.Summary.Slug}", fallback),
                     LastModified: (DateTimeOffset?)new DateTimeOffset(
                         (article.Summary.UpdatedOn ?? article.Summary.PublishedOn).ToDateTime(TimeOnly.MinValue),

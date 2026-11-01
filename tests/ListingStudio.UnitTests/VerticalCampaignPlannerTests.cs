@@ -45,6 +45,8 @@ public sealed class VerticalCampaignPlannerTests : IAsyncDisposable
         var picker = new VerticalVideoPicker(plan.Recommendation);
 
         var cut = Render(plan, picker, otherOutputs: 2);
+        Assert.Equal("/go/article/one-listing-four-tiktoks?from=recommendations",
+            cut.Find("[data-testid=guide-link-recommendations]").GetAttribute("href"));
 
         foreach (var item in plan.Recommendation.Formats)
         {

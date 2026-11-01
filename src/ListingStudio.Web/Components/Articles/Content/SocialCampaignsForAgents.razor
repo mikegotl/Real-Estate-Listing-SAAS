@@ -1,5 +1,7 @@
 @using ListingStudio.Web.Components.Articles
 @inject Microsoft.Extensions.Options.IOptions<ListingStudio.Infrastructure.Configuration.StripeOptions> StripeOptions
+@inject ArticleVisibility Visibility
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <p class="article-lede">
     Buyers meet most homes on a screen long before they walk through the door. For agents, that makes every listing a
@@ -46,7 +48,14 @@
 <ul>
     <li><strong>A walkthrough storyboard and tour map.</strong> Put your photos in the order a buyer walks the home, from the front of the house through each room, and mark which way each room sits from the last one.</li>
     <li><strong>A story grounded in your listing.</strong> The voiceover script follows your storyboard and uses the facts you entered, so it does not invent features the home does not have. You can also write your own narration room by room.</li>
-    <li><strong>One vertical video for every feed.</strong> A beat-cut vertical edit with hook text, captions and music works for TikTok, Reels and Shorts, alongside a longer landscape tour.</li>
+    @if (verticalLibrary)
+    {
+        <li data-testid="vertical-library-bullet"><strong>The vertical videos this listing supports best.</strong> Creative Listing Studio recommends purpose-built vertical videos from your verified facts and media, each with its own hook, for TikTok, Reels and Shorts, alongside a longer landscape tour. <a href="@ArticleLinks.Track(OneListingFourTikToks.Slug, ArticleLinks.Placements.ArticleCta)">See how it works</a>.</li>
+    }
+    else
+    {
+        <li><strong>One vertical video for every feed.</strong> A beat-cut vertical edit with hook text, captions and music works for TikTok, Reels and Shorts, alongside a longer landscape tour.</li>
+    }
     <li><strong>Voiceover in the language and accent you choose</strong>, or no voiceover at all when music and captions say enough.</li>
     <li><strong>AI walk-through motion, clearly labeled.</strong> Optional AI clips move the viewer between rooms, and an optional aerial intro carries a burned-in "AI-generated aerial / Not actual footage" label.</li>
     <li><strong>Photo fixes that keep the original.</strong> Brightness and color fixes, and optional clutter removal, always keep your original photo so you can compare side by side and revert.</li>
@@ -181,6 +190,11 @@
 
 @code {
     public const string Slug = "creative-social-media-campaigns-for-real-estate-agents";
+
+    private bool verticalLibrary;
+
+    protected override async Task OnInitializedAsync() =>
+        verticalLibrary = await Visibility.IsVerticalLibraryOnAsync((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User);
 
     private sealed record StackTool(string Name, string UsedFor, decimal MonthlyUsd, string PricingUrl);
 

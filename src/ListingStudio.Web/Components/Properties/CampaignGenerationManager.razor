@@ -82,6 +82,10 @@
                     Choose at least one output before generating the campaign.
                 </MudText>
             }
+            @if (libraryEnabled)
+            {
+                <ArticleGuideLink Placement="@ArticleLinks.Placements.DeliverableSelector" Class="mt-3" />
+            }
         </MudPaper>
         @if (LibraryMode)
         {
@@ -572,7 +576,7 @@
 
         @if (job.VerticalRequest is not null)
         {
-            <CampaignVideoLibraryResults JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" />
+            <CampaignVideoLibraryResults JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" ShowGuideLink="libraryEnabled" />
             <CampaignPerformancePanel JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" />
         }
 

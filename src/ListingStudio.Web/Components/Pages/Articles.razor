@@ -5,6 +5,8 @@
 @inject TimeProvider TimeProvider
 @inject NavigationManager Navigation
 @inject Microsoft.Extensions.Options.IOptions<SiteOptions> Site
+@inject ArticleVisibility Visibility
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Articles for real estate agents | Creative Listing Studio</PageTitle>
 <HeadContent>
@@ -68,9 +70,10 @@
 
     private string CanonicalUrl => Site.Value.AbsoluteUrl("/articles", new Uri(Navigation.BaseUri));
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         var today = DateOnly.FromDateTime(TimeProvider.GetUtcNow().UtcDateTime);
-        shelves = ArticleShelving.Arrange(ArticleLibrary.All.Select(entry => entry.Summary), today);
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        shelves = ArticleShelving.Arrange((await Visibility.VisibleAsync(user)).Select(entry => entry.Summary), today);
     }
 }

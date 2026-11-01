@@ -1,7 +1,10 @@
 @page "/"
 @using ListingStudio.Web.Seo
+@using ListingStudio.Web.Components.Articles
 @inject PublicSiteUrls Urls
 @inject NavigationManager Navigation
+@inject ListingStudio.Web.Components.Articles.ArticleVisibility Visibility
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <SeoHead Title="AI Real Estate Listing Videos for TikTok, Reels and YouTube | Creative Listing Studio" TitleIsComplete="true"
          PreviewTitle="AI real estate listing videos for TikTok, Reels and YouTube"
@@ -12,12 +15,27 @@
     <div class="hero-copy">
         <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small"
                  Icon="@Icons.Material.Filled.AutoAwesome">CREATIVE WORKSPACE FOR REAL ESTATE</MudChip>
-        <MudText Typo="Typo.h1" HtmlTag="h1" Class="hero-title">
-            Every listing deserves a <span>standout story.</span>
-        </MudText>
-        <MudText Typo="Typo.h6" HtmlTag="p" Class="hero-subtitle">
-            Organize property details and media, develop grounded marketing narratives, and prepare campaign assets from one polished workspace.
-        </MudText>
+        @if (verticalLibrary)
+        {
+            @* VerticalVideoLibraryV1 on (for everyone, or for this member's workspace): the recommendation-led promise. *@
+            <MudText Typo="Typo.h1" HtmlTag="h1" Class="hero-title" data-testid="hero-title">
+                Turn one listing into the vertical videos <span>most likely to earn attention.</span>
+            </MudText>
+            <MudText Typo="Typo.h6" HtmlTag="p" Class="hero-subtitle">
+                Creative Listing Studio analyzes your property's strongest visuals, verified facts and approved stories, then recommends ready-to-post creative angles.
+            </MudText>
+            <a class="hero-guide-link" href="@ArticleLinks.Track(ArticleLibrary.VerticalLibraryGuide.Summary.Slug, ArticleLinks.Placements.ArticleCta)"
+               data-testid="hero-guide-link">How it works: One Listing Four TikToks</a>
+        }
+        else
+        {
+            <MudText Typo="Typo.h1" HtmlTag="h1" Class="hero-title" data-testid="hero-title">
+                Every listing deserves a <span>standout story.</span>
+            </MudText>
+            <MudText Typo="Typo.h6" HtmlTag="p" Class="hero-subtitle">
+                Organize property details and media, develop grounded marketing narratives, and prepare campaign assets from one polished workspace.
+            </MudText>
+        }
         <MudStack Row="true" Spacing="2" Class="hero-actions">
             <AuthorizeView>
                 <Authorized>
@@ -88,6 +106,11 @@
 </section>
 
 @code {
+    private bool verticalLibrary;
+
+    protected override async Task OnInitializedAsync() =>
+        verticalLibrary = await Visibility.IsVerticalLibraryOnAsync((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User);
+
     private const string Description = "Turn listing photos and walkthrough clips into branded TikTok, Reels and YouTube videos with AI voiceover, captions and music, plus a property page that captures leads.";
 
     // Free-licensed stock photo; source and license are recorded in wwwroot/images/CREDITS.md.

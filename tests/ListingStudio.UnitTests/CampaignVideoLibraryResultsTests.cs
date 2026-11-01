@@ -87,11 +87,20 @@ public sealed class CampaignVideoLibraryResultsTests : IAsyncDisposable
         Assert.Empty(cut.FindAll("[data-testid=video-library]"));
     }
 
-    private IRenderedComponent<CampaignVideoLibraryResults> Render(bool readOnly = false) =>
+    [Fact]
+    public void TheGuideLinkShowsOnlyWhileTheLibraryIsSwitchedOn()
+    {
+        Assert.Empty(Render().FindAll("[data-testid=guide-link-library-gallery]"));
+        var link = Render(guide: true).Find("[data-testid=guide-link-library-gallery]");
+        Assert.Equal("/go/article/one-listing-four-tiktoks?from=library-gallery", link.GetAttribute("href"));
+    }
+
+    private IRenderedComponent<CampaignVideoLibraryResults> Render(bool readOnly = false, bool guide = false) =>
         context.Render<CampaignVideoLibraryResults>(parameters => parameters
             .Add(component => component.JobId, FakeLibraryService.Job)
             .Add(component => component.Stamp, DateTimeOffset.UnixEpoch)
-            .Add(component => component.IsReadOnly, readOnly));
+            .Add(component => component.IsReadOnly, readOnly)
+            .Add(component => component.ShowGuideLink, guide));
 
     private sealed class FakeLibraryService : ICampaignVideoLibraryService
     {

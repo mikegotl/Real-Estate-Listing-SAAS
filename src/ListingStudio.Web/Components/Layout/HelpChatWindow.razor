@@ -77,6 +77,13 @@
                                     Hi! Ask me how to do anything in Creative Listing Studio, like placing photos on the Tour Map, choosing music or getting a campaign started.
                                 </MudText>
                             </div>
+                            @if (showGuide)
+                            {
+                                <div class="help-chat-guides" data-testid="help-chat-guides">
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Guides</MudText>
+                                    <ArticleGuideLink Placement="@ArticleLinks.Placements.HelpChat" Text="One Listing Four TikToks: which vertical videos to make for a listing" />
+                                </div>
+                            }
                             @if (videos.Count > 0)
                             {
                                 <div class="help-chat-videos">
@@ -176,6 +183,7 @@
 
     private readonly CancellationTokenSource disposal = new();
     private IReadOnlyList<HelpChatVideo> videos = [];
+    private bool showGuide;
     private HelpChat? chat;
     private Guid? propertyId;
     private string topic = GeneralTopic;
@@ -231,6 +239,22 @@
         return path.Length <= HelpChatMessage.MaximumPagePathLength ? path : path[..HelpChatMessage.MaximumPagePathLength];
     }
 
+    /// <summary>The vertical video guide is listed only while VerticalVideoLibraryV1 is on for this member's workspace.</summary>
+    private async Task LoadGuideAsync()
+    {
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            showGuide = await scope.ServiceProvider.GetRequiredService<ArticleVisibility>()
+                .IsVerticalLibraryOnAsync((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User, disposal.Token);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Logger.LogWarning(exception, "Checking the guide links for the help chat failed");
+            showGuide = false;
+        }
+    }
+
     private async Task LoadVideosAsync()
     {
         try
@@ -268,6 +292,7 @@
         error = null;
         notice = null;
         await LoadVideosAsync();
+        await LoadGuideAsync();
         if (chat is null)
         {
             try

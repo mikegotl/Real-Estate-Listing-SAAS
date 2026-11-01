@@ -1,0 +1,19 @@
+.article-guide-link {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+}
+
+.article-guide-link.inline {
+    display: inline;
+    margin: 0 0 0 0.25rem;
+}
+
+.article-guide-link a,
+a.article-guide-link {
+    color: var(--ls-accent-strong, var(--mud-palette-primary));
+    font-weight: 600;
+    text-underline-offset: 3px;
+}

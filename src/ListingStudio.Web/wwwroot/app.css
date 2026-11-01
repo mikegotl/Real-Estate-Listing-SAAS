@@ -185,6 +185,7 @@ h1:focus { outline: none; }
 .hero-title { font-size: clamp(3.25rem, 5.5vw, 5.25rem) !important; font-weight: 600 !important; letter-spacing: -.03em !important; line-height: 1.02 !important; margin: 24px 0 !important; }
 .hero-title span { background: linear-gradient(120deg, var(--ls-primary) 8%, var(--ls-accent) 88%); background-clip: text; -webkit-background-clip: text; color: transparent; }
 .hero-subtitle { color: var(--ls-muted); line-height: 1.7 !important; max-width: 590px; }
+.hero-guide-link { color: var(--ls-accent-strong); display: inline-block; font-weight: 600; margin-top: 4px; text-underline-offset: 3px; }
 .hero-actions { margin-top: 34px; }
 .hero-actions .mud-button-root { border-radius: 12px; min-height: 50px; padding-inline: 24px; }
 .trust-row { color: var(--ls-muted); display: flex; flex-wrap: wrap; font-size: .78rem; font-weight: 600; gap: 24px; margin-top: 28px; }
@@ -786,6 +787,7 @@ a.stage-pill:hover { text-decoration: underline; }
 .help-chat-body .video-chat-messages, .help-chat-messages { max-height: none; min-height: 180px; }
 .help-chat-text .mud-typography { white-space: pre-line; }
 .help-chat-videos { background: var(--ls-accent-soft); border: 1px solid rgba(var(--ls-accent-rgb), .3); border-radius: 10px; display: grid; gap: 8px; padding: 10px 12px; }
+.help-chat-guides { border: 1px solid var(--ls-line); border-radius: 10px; margin: 8px 0; padding: 8px 12px; }
 .help-chat-video-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .help-chat-actions { align-items: center; display: flex; justify-content: space-between; width: 100%; }
 .video-chat-suggestions { display: flex; flex-wrap: wrap; gap: 2px; }
