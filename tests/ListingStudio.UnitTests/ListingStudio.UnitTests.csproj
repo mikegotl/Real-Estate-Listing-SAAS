@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="bunit" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets><IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets></PackageReference>
@@ -12,6 +13,7 @@
     <ProjectReference Include="../../src/ListingStudio.Infrastructure/ListingStudio.Infrastructure.csproj" />
     <ProjectReference Include="../../src/ListingStudio.Video/ListingStudio.Video.csproj" />
     <ProjectReference Include="../../src/ListingStudio.Worker/ListingStudio.Worker.csproj" />
+    <ProjectReference Include="../../src/ListingStudio.Web/ListingStudio.Web.csproj" />
   </ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../docs/samples/video-production-spec-60s.json" LogicalName="CanonicalVideoSample" /></ItemGroup>
   <ItemGroup><Compile Include="../Shared/RecipeFixture.cs" Link="Shared/RecipeFixture.cs" /></ItemGroup>

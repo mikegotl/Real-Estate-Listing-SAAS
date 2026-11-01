@@ -45,6 +45,25 @@ public enum VerticalVideoSelection
 
     /// <summary>Every format the listing can support.</summary>
     AllEligible,
+
+    /// <summary>
+    /// The formats the agent picked from the eligible ones (a recommended video removed or swapped for another).
+    /// The list is kept on the campaign in <c>CampaignGenerationJob.VerticalFormats</c>.
+    /// </summary>
+    AgentChosen,
+}
+
+/// <summary>
+/// What the agent wants the campaign to achieve. Separate from <see cref="VerticalCreativeFormat"/> (how each video
+/// tells the story) and from <see cref="VerticalCampaignPurpose"/> (what one video is for). Stored by name; append new ones.
+/// </summary>
+public enum VerticalCampaignGoal
+{
+    MaximizeReach,
+    BuyerInterest,
+    OpenHouse,
+    NewListing,
+    PriceChange,
 }
 
 public enum CampaignVideoLibraryStatus

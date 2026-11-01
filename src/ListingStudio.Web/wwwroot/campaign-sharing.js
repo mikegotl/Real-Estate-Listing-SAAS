@@ -1,4 +1,12 @@
 window.listingStudioCampaign = {
+    scrollToSection: function (id) {
+        const element = document.getElementById(id);
+        if (element) {
+            element.scrollIntoView({ behavior: "smooth", block: "start" });
+            element.setAttribute("tabindex", "-1");
+            element.focus({ preventScroll: true });
+        }
+    },
     shareStillPost: async function (url, caption, fileName) {
         const response = await fetch(url, { credentials: "same-origin" });
         if (!response.ok) {

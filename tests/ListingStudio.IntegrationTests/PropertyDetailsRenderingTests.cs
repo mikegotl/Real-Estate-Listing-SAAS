@@ -1,3 +1,6 @@
+using ListingStudio.Infrastructure.Administration;
+using ListingStudio.Domain.Administration;
+using ListingStudio.Application.Administration;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -79,6 +82,68 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("Zillow home link", content, StringComparison.Ordinal);
         Assert.Contains("Suggest a future feature", content, StringComparison.Ordinal);
         Assert.Contains("This feature is required in order to continue my campaign", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CampaignTabShowsTheLegacyControlsUntilTheVerticalLibraryIsOnAndDeepLinksFallBack()
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = HeaderAuthenticationHandler.SchemeName;
+                    options.DefaultChallengeScheme = HeaderAuthenticationHandler.SchemeName;
+                })
+                .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
+                    HeaderAuthenticationHandler.SchemeName,
+                    _ => { });
+        });
+        await using var scope = factory.Services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<IAccountRegistrationService>();
+        var adminEmail = $"vertical-admin-{Guid.NewGuid():N}@example.com";
+        var admin = await registration.RegisterAsync(new RegisterAccountCommand(adminEmail, "Password123", $"Admin {Guid.NewGuid():N}"));
+        Assert.True(await scope.ServiceProvider.GetRequiredService<PlatformAdminRoleBootstrapper>().GrantAsync(adminEmail));
+        var registered = await registration.RegisterAsync(new RegisterAccountCommand(
+            $"vertical-owner-{Guid.NewGuid():N}@example.com", "Password123", $"Vertical Realty {Guid.NewGuid():N}"));
+        Assert.True(registered.Succeeded, string.Join(", ", registered.Errors));
+        var propertyId = await scope.ServiceProvider.GetRequiredService<IPropertyService>().CreateAsync(registered.UserId!,
+            new PropertyInput("9 Dock St", null, "Annapolis", "MD", "21401", 610_000m, 3, 2m, 1_700, 0.1m, 1985,
+                PropertyType.SingleFamily, "Vertical workflow regression property.", ListingStatus.Active));
+        var features = scope.ServiceProvider.GetRequiredService<IFeatureStateService>();
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            HeaderAuthenticationHandler.SchemeName, registered.UserId);
+        try
+        {
+            await features.ConfigureAsync(admin.UserId!, FeatureFlagKeys.VerticalVideoLibraryV1, false, false, []);
+            using var legacy = await client.GetAsync($"/properties/{propertyId}?tab=campaign&step=formats");
+            legacy.EnsureSuccessStatusCode();
+            var legacyContent = await legacy.Content.ReadAsStringAsync();
+            Assert.Contains("TikTok, Reels and Shorts", legacyContent, StringComparison.Ordinal);
+            Assert.Contains("One file to post on all three.", legacyContent, StringComparison.Ordinal);
+            Assert.Contains("Generate campaign", legacyContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("vertical-planner", legacyContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("Generate high-potential vertical videos", legacyContent, StringComparison.Ordinal);
+
+            await features.ConfigureAsync(admin.UserId!, FeatureFlagKeys.VerticalVideoLibraryV1, true, true, []);
+            using var library = await client.GetAsync($"/properties/{propertyId}?tab=campaign&step=formats");
+            library.EnsureSuccessStatusCode();
+            var libraryContent = await library.Content.ReadAsStringAsync();
+            Assert.Contains("vertical-planner", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("1. What is this campaign for?", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("Announce a price change", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("2. Videos this listing can support", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("Generate high-potential vertical videos", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("support a recommended video yet", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("Post each file to TikTok, Reels or Shorts", libraryContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("One file to post on all three", libraryContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("Short videos open with the price and location", libraryContent, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await features.ConfigureAsync(admin.UserId!, FeatureFlagKeys.VerticalVideoLibraryV1, false, false, []);
+        }
     }
 
     [Fact]

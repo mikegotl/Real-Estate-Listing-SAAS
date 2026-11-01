@@ -203,6 +203,25 @@ public sealed record VerticalFormatRecommendationSet(
         _ => [],
     };
 
+    /// <summary>
+    /// The formats a campaign makes. An agent-chosen list keeps the agent's order and drops any format that is no
+    /// longer eligible (the listing changed after the request); nothing ineligible is ever made.
+    /// </summary>
+    public IReadOnlyList<VerticalFormatRecommendation> Select(
+        VerticalVideoSelection selection,
+        IReadOnlyList<VerticalCreativeFormat> chosenFormats)
+    {
+        ArgumentNullException.ThrowIfNull(chosenFormats);
+        return selection == VerticalVideoSelection.AgentChosen
+            ? chosenFormats
+                .Distinct()
+                .Select(format => Formats.FirstOrDefault(item => item.Format == format))
+                .OfType<VerticalFormatRecommendation>()
+                .Where(item => item.IsEligible)
+                .ToArray()
+            : Select(selection);
+    }
+
     public VerticalFormatRecommendation For(VerticalCreativeFormat format) =>
         Formats.Single(item => item.Format == format);
 
@@ -340,8 +359,8 @@ public static class VerticalFormatRules
             else if (item.IsEligible && !recommended.ContainsKey(item.Format))
             {
                 reasons.Add(item.Score < RecommendThreshold
-                    ? "Not in the default set because the listing only supports a weak version of it; choose Generate all eligible formats to make it anyway."
-                    : "Not in the default set because three stronger formats were chosen; choose Generate all eligible formats to make it too.");
+                    ? "Not in the default set because the listing only supports a weak version of it; choose Make every eligible video to make it anyway."
+                    : "Not in the default set because three stronger formats were chosen; choose Make every eligible video to make it too.");
             }
 
             return new VerticalFormatRecommendation(

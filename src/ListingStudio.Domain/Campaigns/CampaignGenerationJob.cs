@@ -176,7 +176,20 @@ public sealed class CampaignGenerationJob
     public VerticalVideoSelection? VerticalSelection { get; private set; }
 
     /// <summary>The campaign makes several recommended vertical videos instead of one shared vertical edit.</summary>
-    public bool UsesVerticalLibrary => VerticalSelection is VerticalVideoSelection.RecommendedThree or VerticalVideoSelection.AllEligible;
+    public bool UsesVerticalLibrary => VerticalSelection is VerticalVideoSelection.RecommendedThree
+        or VerticalVideoSelection.AllEligible or VerticalVideoSelection.AgentChosen;
+
+    /// <summary>The agent's goal for a library campaign; null for legacy campaigns and when none was chosen.</summary>
+    public VerticalCampaignGoal? VerticalGoal { get; private set; }
+
+    /// <summary>Comma-separated format names, in the agent's order; only with <see cref="VerticalVideoSelection.AgentChosen"/>.</summary>
+    public string? VerticalFormatsValue { get; private set; }
+
+    /// <summary>The formats the agent picked, in order; empty unless the selection is <see cref="VerticalVideoSelection.AgentChosen"/>.</summary>
+    public IReadOnlyList<VerticalCreativeFormat> VerticalFormats => ParseVerticalFormats(VerticalFormatsValue);
+
+    /// <summary>The most formats one campaign can ask for: every library format once.</summary>
+    public const int MaximumVerticalFormats = 5;
 
     public CampaignNarrationRegion NarrationRegion { get; private set; }
 
@@ -407,12 +420,27 @@ public sealed class CampaignGenerationJob
     }
 
     /// <summary>Asks for the vertical video library. Only before work starts, and only with a vertical output.</summary>
-    public void RequestVerticalLibrary(VerticalVideoSelection selection)
+    public void RequestVerticalLibrary(
+        VerticalVideoSelection selection,
+        VerticalCampaignGoal? goal = null,
+        IReadOnlyList<VerticalCreativeFormat>? formats = null)
     {
-        if (selection is not (VerticalVideoSelection.RecommendedThree or VerticalVideoSelection.AllEligible))
+        if (selection is not (VerticalVideoSelection.RecommendedThree or VerticalVideoSelection.AllEligible
+            or VerticalVideoSelection.AgentChosen))
         {
             throw new ArgumentOutOfRangeException(nameof(selection));
         }
+
+        if (goal is { } chosenGoal && !Enum.IsDefined(chosenGoal))
+        {
+            throw new ArgumentOutOfRangeException(nameof(goal));
+        }
+
+        var value = selection == VerticalVideoSelection.AgentChosen
+            ? FormatVerticalFormats(formats)
+            : formats is { Count: > 0 }
+                ? throw new ArgumentException("Formats are only kept for an agent-chosen selection.", nameof(formats))
+                : null;
 
         if (Status != CampaignGenerationStatus.Queued || CurrentStage != CampaignGenerationStage.ValidateProperty)
         {
@@ -427,10 +455,53 @@ public sealed class CampaignGenerationJob
         }
 
         VerticalSelection = selection;
+        VerticalGoal = goal;
+        VerticalFormatsValue = value;
     }
 
+    /// <summary>The stored form of an agent's format list: distinct, in order, library formats only.</summary>
+    public static string FormatVerticalFormats(IReadOnlyList<VerticalCreativeFormat>? formats)
+    {
+        if (formats is null || formats.Count == 0)
+        {
+            throw new ArgumentException("Choose at least one vertical video.", nameof(formats));
+        }
+
+        if (formats.Count > MaximumVerticalFormats)
+        {
+            throw new ArgumentException($"Choose at most {MaximumVerticalFormats} vertical videos.", nameof(formats));
+        }
+
+        if (formats.Any(format => format == VerticalCreativeFormat.LegacySingle || !Enum.IsDefined(format)))
+        {
+            throw new ArgumentOutOfRangeException(nameof(formats));
+        }
+
+        if (formats.Distinct().Count() != formats.Count)
+        {
+            throw new ArgumentException("Each vertical video format can be chosen once.", nameof(formats));
+        }
+
+        return string.Join(',', formats);
+    }
+
+    private static VerticalCreativeFormat[] ParseVerticalFormats(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                // An unknown name (written by a newer release) is skipped, never guessed.
+                .Select(name => Enum.TryParse<VerticalCreativeFormat>(name, out var format) ? format : (VerticalCreativeFormat?)null)
+                .OfType<VerticalCreativeFormat>()
+                .Where(format => format != VerticalCreativeFormat.LegacySingle)
+                .Distinct()
+                .ToArray();
+
     /// <summary>Falls back to the one shared vertical edit (feature switched off, or no format can be made).</summary>
-    public void UseLegacyVertical() => VerticalSelection = null;
+    public void UseLegacyVertical()
+    {
+        VerticalSelection = null;
+        VerticalFormatsValue = null;
+    }
 
     public void SetShortFormLocalizedCopy(string localizedCopyJson)
     {

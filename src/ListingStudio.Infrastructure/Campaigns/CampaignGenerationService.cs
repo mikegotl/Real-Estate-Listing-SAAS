@@ -22,7 +22,8 @@ public sealed class CampaignGenerationService(
     ICampaignBillingGate campaignBillingGate,
     IPlanFeatureGate planFeatureGate,
     IWalkthroughTransitionService walkthroughTransitionService,
-    IFeatureStateService featureStateService) : ICampaignGenerationService, ICampaignTestGenerationService
+    IFeatureStateService featureStateService,
+    IVerticalCreativePlanningService verticalPlanningService) : ICampaignGenerationService, ICampaignTestGenerationService
 {
     private const string WorkflowVersion = "campaign-localization-v9";
 
@@ -83,7 +84,29 @@ public sealed class CampaignGenerationService(
         }
 
         return EnqueueCoreAsync(
-            userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken, verticalSelection);
+            userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken,
+            new VerticalLibraryRequest(verticalSelection));
+    }
+
+    public Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        VerticalLibraryRequest verticalRequest,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(verticalRequest);
+        verticalRequest.Validate();
+        return EnqueueCoreAsync(
+            userId, propertyId, requestedOutputs, creativeOptions, narrationPreferences, null, cancellationToken, verticalRequest);
+    }
+
+    public async Task<bool> IsVerticalLibraryEnabledAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken);
     }
 
     public Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
@@ -98,8 +121,9 @@ public sealed class CampaignGenerationService(
         string userId, Guid propertyId, CampaignOutputSelection requestedOutputs,
         CampaignCreativeOptions creativeOptions, CampaignNarrationPreferences narrationPreferences,
         string? testCaseKey, CancellationToken cancellationToken,
-        VerticalVideoSelection verticalSelection = VerticalVideoSelection.LegacySingle)
+        VerticalLibraryRequest? verticalRequest = null)
     {
+        var verticalSelection = verticalRequest?.Selection ?? VerticalVideoSelection.LegacySingle;
         CampaignOutputSelectionPolicy.Validate(requestedOutputs);
         ArgumentNullException.ThrowIfNull(creativeOptions);
         creativeOptions.Validate();
@@ -121,6 +145,11 @@ public sealed class CampaignGenerationService(
                 || requestedOutputs.HasFlag(CampaignOutputSelection.InstagramReel)
                 || requestedOutputs.HasFlag(CampaignOutputSelection.YouTubeShort))
             && await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken);
+        if (usesLibrary && verticalSelection == VerticalVideoSelection.AgentChosen)
+        {
+            await EnsureChosenFormatsEligibleAsync(organizationId, propertyId, creativeOptions, verticalRequest!.Formats!, cancellationToken);
+        }
+
         var planAccess = await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken);
         if (creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) && !planAccess.IncludesPremiumAi)
         {
@@ -284,7 +313,7 @@ public sealed class CampaignGenerationService(
         if (usesLibrary)
         {
             fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-                $"{fingerprint}:vertical-library:{verticalSelection}"))).ToLowerInvariant();
+                VerticalFingerprintSuffix(fingerprint, verticalRequest!)))).ToLowerInvariant();
         }
 
         if (testCaseKey is not null)
@@ -320,7 +349,10 @@ public sealed class CampaignGenerationService(
             narrationPreferences);
         if (usesLibrary)
         {
-            job.RequestVerticalLibrary(verticalSelection);
+            job.RequestVerticalLibrary(
+                verticalSelection,
+                verticalRequest!.Goal,
+                verticalSelection == VerticalVideoSelection.AgentChosen ? verticalRequest.Formats : null);
         }
 
         dbContext.CampaignGenerationJobs.Add(job);
@@ -596,7 +628,58 @@ public sealed class CampaignGenerationService(
             job.SocialCaptionShort,
             stages,
             deliverables,
-            stillPosts);
+            stillPosts,
+            job.VerticalSelection is { } selection
+                ? new CampaignVerticalRequestResult(selection, job.VerticalGoal, job.VerticalFormats)
+                : null);
+    }
+
+    // The goal and an agent's format list are part of what was asked for, so a different choice is a new campaign.
+    // A request with neither keeps the Prompt 6 fingerprint.
+    private static string VerticalFingerprintSuffix(string fingerprint, VerticalLibraryRequest request)
+    {
+        var suffix = $"{fingerprint}:vertical-library:{request.Selection}";
+        if (request.Goal is { } goal)
+        {
+            suffix += $":goal:{goal}";
+        }
+
+        if (request.Selection == VerticalVideoSelection.AgentChosen)
+        {
+            suffix += $":formats:{CampaignGenerationJob.FormatVerticalFormats(request.Formats)}";
+        }
+
+        return suffix;
+    }
+
+    private async Task EnsureChosenFormatsEligibleAsync(
+        Guid organizationId,
+        Guid propertyId,
+        CampaignCreativeOptions creativeOptions,
+        IReadOnlyList<VerticalCreativeFormat> formats,
+        CancellationToken cancellationToken)
+    {
+        var plan = await verticalPlanningService.PlanForOrganizationAsync(
+            organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
+        if (plan is null)
+        {
+            return;
+        }
+
+        // While photo analysis is still running, the photo-led formats may not have scored yet; they are checked
+        // again when the library is planned, and dropped there if they still can't be made. Formats that need the
+        // agent's own confirmation (a story, an access line, hosted footage) never wait on analysis.
+        var analysisPending = plan.Input.Photos.Any(photo => !photo.AnalysisCompleted);
+        var ineligible = formats
+            .Where(format => !plan.Recommendation.Formats.Any(item => item.Format == format && item.IsEligible))
+            .Where(format => !(analysisPending && format is VerticalCreativeFormat.WowFeature or VerticalCreativeFormat.PriceFirst))
+            .ToArray();
+        if (ineligible.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"{string.Join(", ", ineligible.Select(VerticalFormatNames.Name))} can't be made for this listing yet. "
+                + "Add what it's missing or choose another video.");
+        }
     }
 
     private static CampaignStageStatus StageStatus(

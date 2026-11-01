@@ -135,7 +135,7 @@ else
             <PropertyNarrationScriptManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
         </MudTabPanel>
         <MudTabPanel Text="Campaign" Icon="@Icons.Material.Filled.MovieCreation">
-            <CampaignGenerationManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" StatusChanged="RefreshSummaryAsync" />
+            <CampaignGenerationManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" StatusChanged="RefreshSummaryAsync" Focus="CampaignStep" />
             <LeadCaptureManager PropertyId="PropertyId" IsReadOnly="property.IsArchived" />
         </MudTabPanel>
     </MudTabs>
@@ -148,6 +148,10 @@ else
     // Lets property cards and the workspace link straight to the tab a next step points at, such as ?tab=media.
     [SupplyParameterFromQuery(Name = "tab")]
     public string? Tab { get; set; }
+
+    // ?tab=campaign&step=formats opens the vertical workflow at that step; ignored while the library is off.
+    [SupplyParameterFromQuery(Name = "step")]
+    public string? CampaignStep { get; set; }
 
     private PropertyDetailsResult? property;
     private bool loaded;

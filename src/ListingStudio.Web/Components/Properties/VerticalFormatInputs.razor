@@ -1,0 +1,223 @@
+@* Agent-confirmed inputs that unlock more vertical formats. Every entry is the agent's own words or choice and is
+   kept as history; nothing here is inferred from the listing text. *@
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IServiceScopeFactory ScopeFactory
+@inject ILogger<VerticalFormatInputs> Logger
+
+<MudExpansionPanels Elevation="0" Outlined="true" Class="mt-3">
+    <MudExpansionPanel Text="Unlock more videos: confirm a story, an access line or your hosted footage"
+                       data-testid="vertical-inputs">
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <MudAlert Severity="@(messageIsError ? Severity.Error : Severity.Success)" Dense="true" Class="mb-3" aria-live="polite">
+                @message
+            </MudAlert>
+        }
+
+        <MudText Typo="Typo.subtitle2" HtmlTag="h4">Story reveal</MudText>
+        @if (story is not null)
+        {
+            <MudText Typo="Typo.body2" Class="mb-1">Problem: “@story.PrimaryText”</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">Result: “@story.SecondaryText”</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small" Disabled="@(busy || Disabled)"
+                       OnClick="@(() => WithdrawAsync(ListingCreativeClaimKind.StoryReveal))">
+                Withdraw this story
+            </MudButton>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                In your own words: what was wrong with the home, and what it's like now. Only confirm work that was done.
+            </MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" Label="The problem" @bind-Value="storyProblem" Variant="Variant.Outlined"
+                                  MaxLength="ListingCreativeClaim.MaximumTextLength" Counter="ListingCreativeClaim.MaximumTextLength"
+                                  Placeholder="Dark 1970s kitchen with no counter space" Disabled="@(busy || Disabled)" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" Label="The result" @bind-Value="storyPayoff" Variant="Variant.Outlined"
+                                  MaxLength="ListingCreativeClaim.MaximumTextLength" Counter="ListingCreativeClaim.MaximumTextLength"
+                                  Placeholder="Open kitchen with a quartz island" Disabled="@(busy || Disabled)" />
+                </MudItem>
+            </MudGrid>
+            <MudCheckBox T="bool" @bind-Value="storyConfirmed" Disabled="@(busy || Disabled)"
+                         Label="I confirm this is accurate and approved for marketing" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="ConfirmStoryAsync"
+                       Disabled="@(busy || Disabled || !storyConfirmed || string.IsNullOrWhiteSpace(storyProblem) || string.IsNullOrWhiteSpace(storyPayoff))">
+                Save story
+            </MudButton>
+        }
+
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" HtmlTag="h4">Exclusive access</MudText>
+        @if (access is not null)
+        {
+            <MudText Typo="Typo.body2" Class="mb-2">
+                “@access.PrimaryText”@(access.ValidUntilUtc is { } until ? $" (until {until.ToLocalTime():MMM d})" : string.Empty)
+            </MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small" Disabled="@(busy || Disabled)"
+                       OnClick="@(() => WithdrawAsync(ListingCreativeClaimKind.ExclusiveAccess))">
+                Withdraw this access line
+            </MudButton>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                Only if it's true: private showings, early access or a deadline. It also needs a property video.
+            </MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="8">
+                    <MudTextField T="string" Label="Access or timing line" @bind-Value="accessText" Variant="Variant.Outlined"
+                                  MaxLength="ListingCreativeClaim.MaximumTextLength" Counter="ListingCreativeClaim.MaximumTextLength"
+                                  Placeholder="Private showings this weekend only" Disabled="@(busy || Disabled)" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker Label="Valid until (optional)" @bind-Date="accessUntil" Variant="Variant.Outlined"
+                                   MinDate="DateTime.Today" Disabled="@(busy || Disabled)" />
+                </MudItem>
+            </MudGrid>
+            <MudCheckBox T="bool" @bind-Value="accessConfirmed" Disabled="@(busy || Disabled)"
+                         Label="I confirm this access is real and approved for marketing" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="ConfirmAccessAsync"
+                       Disabled="@(busy || Disabled || !accessConfirmed || string.IsNullOrWhiteSpace(accessText))">
+                Save access line
+            </MudButton>
+        }
+
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" HtmlTag="h4">Hosted footage</MudText>
+        @if (videos.Count == 0)
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                Upload a video of you walking through the home on the
+                <a href="@($"/properties/{PropertyId}?tab=media")">Media tab</a> to unlock the hosted walk-through.
+            </MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-1">
+                Tick a video only if it shows you, or someone who agreed, hosting the tour.
+            </MudText>
+            @foreach (var video in videos)
+            {
+                var hosted = video.Roles.Any(role => role.Role == VerticalMediaRole.HostedWalkthrough);
+                <MudCheckBox T="bool" Value="hosted" Disabled="@(busy || Disabled)"
+                             ValueChanged="@(value => SetHostedAsync(video.TargetId, value))"
+                             Label="@($"{(string.IsNullOrWhiteSpace(video.Label) ? "Property video" : video.Label)} shows me hosting")" />
+            }
+        }
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid PropertyId { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>Raised after a confirmation, withdrawal or footage tag, so the recommendation can be worked out again.</summary>
+    [Parameter]
+    public EventCallback Changed { get; set; }
+
+    private ListingCreativeClaimState? story;
+    private ListingCreativeClaimState? access;
+    private List<VerticalMediaRoleItem> videos = [];
+    private string? storyProblem;
+    private string? storyPayoff;
+    private bool storyConfirmed;
+    private string? accessText;
+    private DateTime? accessUntil;
+    private bool accessConfirmed;
+    private bool busy;
+    private string? message;
+    private bool messageIsError;
+    private Guid? loadedPropertyId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedPropertyId != PropertyId)
+        {
+            loadedPropertyId = PropertyId;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var claims = await scope.ServiceProvider.GetRequiredService<IListingCreativeClaimService>()
+            .GetActiveAsync(userId, PropertyId) ?? [];
+        story = claims.FirstOrDefault(claim => claim.Kind == ListingCreativeClaimKind.StoryReveal);
+        access = claims.FirstOrDefault(claim => claim.Kind == ListingCreativeClaimKind.ExclusiveAccess);
+        var media = await scope.ServiceProvider.GetRequiredService<IVerticalMediaRoleService>().GetAsync(userId, PropertyId) ?? [];
+        videos = media.Where(item => item.IsVideo).ToList();
+    }
+
+    private Task ConfirmStoryAsync() => ChangeAsync(
+        (userId, scope) => scope.GetRequiredService<IListingCreativeClaimService>()
+            .ConfirmStoryAsync(userId, PropertyId, storyProblem!.Trim(), storyPayoff!.Trim()),
+        "Story saved. Story reveal can now be made when the photos support it.",
+        () => (storyProblem, storyPayoff, storyConfirmed) = (null, null, false));
+
+    private Task ConfirmAccessAsync() => ChangeAsync(
+        (userId, scope) => scope.GetRequiredService<IListingCreativeClaimService>()
+            .ConfirmAccessAsync(userId, PropertyId, accessText!.Trim(),
+                // The whole chosen day counts; stored in UTC.
+                accessUntil is { } until ? new DateTimeOffset(until.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null),
+        "Access line saved.",
+        () => (accessText, accessUntil, accessConfirmed) = (null, null, false));
+
+    private Task WithdrawAsync(ListingCreativeClaimKind kind) => ChangeAsync(
+        (userId, scope) => scope.GetRequiredService<IListingCreativeClaimService>().WithdrawAsync(userId, PropertyId, kind),
+        "Withdrawn. Videos that need it won't be made.",
+        null);
+
+    private Task SetHostedAsync(Guid videoId, bool hosted) => ChangeAsync(
+        (userId, scope) => scope.GetRequiredService<IVerticalMediaRoleService>().SetAsync(
+            userId, PropertyId, videoId, VerticalMediaRole.HostedWalkthrough,
+            hosted ? VerticalMediaRoleDecision.Assigned : VerticalMediaRoleDecision.Removed),
+        hosted ? "Marked as hosted footage." : "No longer marked as hosted footage.",
+        null);
+
+    private async Task ChangeAsync(Func<string, IServiceProvider, Task<bool>> change, string success, Action? reset)
+    {
+        busy = true;
+        message = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            bool changed;
+            await using (var scope = ScopeFactory.CreateAsyncScope())
+            {
+                changed = await change(userId, scope.ServiceProvider);
+            }
+
+            messageIsError = !changed;
+            message = changed ? success : "This listing is not available to your workspace.";
+            if (changed)
+            {
+                reset?.Invoke();
+                await LoadAsync();
+                await Changed.InvokeAsync();
+            }
+        }
+        catch (ArgumentException exception)
+        {
+            messageIsError = true;
+            message = exception.Message.Split(" (Parameter", 2)[0];
+        }
+        catch (InvalidOperationException exception)
+        {
+            Logger.LogInformation(exception, "A vertical format input was rejected for property {PropertyId}", PropertyId);
+            messageIsError = true;
+            message = exception.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

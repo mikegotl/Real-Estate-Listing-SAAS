@@ -66,7 +66,7 @@ public sealed partial class CampaignGenerationProcessor
             cancellationToken);
         var recipes = plan is null
             ? []
-            : plan.Recommendation.Select(job.VerticalSelection!.Value)
+            : plan.Recommendation.Select(job.VerticalSelection!.Value, job.VerticalFormats)
                 .Select(recommendation => plan.Recipes.FirstOrDefault(recipe => recipe.Format == recommendation.Format))
                 .OfType<VerticalCreativeRecipe>()
                 .ToArray();

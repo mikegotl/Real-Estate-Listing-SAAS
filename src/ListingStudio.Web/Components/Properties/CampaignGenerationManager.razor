@@ -26,9 +26,10 @@
         {
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
-                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None || !TemplateReady || NoTourPhotos || NoVideoElements)"
-                       OnClick="GenerateAsync">
-                @(job?.Status == CampaignGenerationStatus.Completed ? "Generate updated campaign" : "Generate campaign")
+                       Disabled="@(busy || IsReadOnly || selectedOutputs == CampaignOutputSelection.None || !TemplateReady || NoTourPhotos || NoVideoElements || LibraryNeedsPick)"
+                       OnClick="GenerateAsync"
+                       data-testid="generate-campaign">
+                @GenerateLabel
             </MudButton>
         }
     </MudStack>
@@ -60,10 +61,10 @@
                                          Value="@IsSelected(option.Selection)"
                                          ValueChanged="@(value => SetSelected(option.Selection, value))"
                                          Disabled="@(busy || IsReadOnly || unavailable)"
-                                         Label="@option.Name"
+                                         Label="@OptionName(option)"
                                          Color="Color.Primary" />
                             <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                @option.Details
+                                @OptionDetails(option)
                             </MudText>
                             @if (unavailable)
                             {
@@ -82,6 +83,21 @@
                 </MudText>
             }
         </MudPaper>
+        @if (LibraryMode)
+        {
+            <VerticalCampaignPlanner Plan="verticalPlan"
+                                     Picker="verticalPicker"
+                                     Goal="selectedGoal"
+                                     GoalChanged="ChooseGoal"
+                                     SelectionChanged="StateHasChanged"
+                                     Disabled="@(busy || IsReadOnly)"
+                                     OtherOutputCount="OtherOutputCount">
+                @if (!IsReadOnly)
+                {
+                    <VerticalFormatInputs PropertyId="PropertyId" Disabled="busy" Changed="ReloadVerticalPlanAsync" />
+                }
+            </VerticalCampaignPlanner>
+        }
         <MudPaper Outlined="true" Class="pa-4 mb-4">
             <MudText Typo="Typo.subtitle1">Creative direction</MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
@@ -232,6 +248,50 @@
                     }
                 </MudItem>
             </MudGrid>
+            @if (LibraryMode)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-2">Vertical videos</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                    Each recommended video has its own hook, voice and caption plan. Your brand, language, voice, caption
+                    look, music and agent card apply to all of them.
+                </MudText>
+                <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudCheckBox T="bool"
+                                 Value="@IsCreativeElementSelected(CampaignVideoElement.AgentContact)"
+                                 ValueChanged="@(value => SetCreativeElement(CampaignVideoElement.AgentContact, value))"
+                                 Disabled="@(busy || IsReadOnly)"
+                                 Label="Show my name and phone on short videos" />
+                </MudItem>
+                </MudGrid>
+                <MudExpansionPanels Elevation="0" Outlined="true" Class="mt-2">
+                    <MudExpansionPanel Text="Customize" data-testid="vertical-customize">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                            The campaign message comes from your goal; change it under Creative direction above. The style
+                            and voiceover below are used only if none of the picked videos can be made and the campaign
+                            falls back to one shared vertical video. Each format's own timing and captions are fixed so
+                            every line stays tied to a verified fact.
+                        </MudText>
+                        <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignPace" Label="Style" @bind-Value="selectedPace" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        <MudSelectItem Value="CampaignPace.Fast">Fast cuts on the beat</MudSelectItem>
+                        <MudSelectItem Value="CampaignPace.Cinematic">Cinematic glide</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="CampaignVoiceoverMode" Label="Voiceover" @bind-Value="selectedVoiceover" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
+                        <MudSelectItem Value="CampaignVoiceoverMode.ShortHook">Short voiceover (30 seconds)</MudSelectItem>
+                        <MudSelectItem Value="CampaignVoiceoverMode.None">Music and text only (30 seconds)</MudSelectItem>
+                        <MudSelectItem Value="CampaignVoiceoverMode.Full">Full tour voiceover (60 seconds)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                        </MudGrid>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
+            else
+            {
             <MudText Typo="Typo.subtitle2" Class="mt-2">TikTok, Reels and Shorts</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
                 Short videos open with the price and location, cut on the music beat, and end on your contact card.
@@ -258,7 +318,15 @@
                                  Label="Show my name and phone on short videos" />
                 </MudItem>
             </MudGrid>
-            @if (SilentVerticalVideo)
+            }
+            @if (SilentLibraryVideo)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="silent-vertical">
+                    The Wow feature video has no voiceover, so with No music it will be silent. Pick a music track, or
+                    choose "None, I'll add a sound in TikTok or Instagram" if you'll add one there.
+                </MudAlert>
+            }
+            @if (SilentVerticalVideo && !LibraryMode)
             {
                 <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="silent-vertical">
                     With no voiceover and no music, the vertical video will be silent. Pick a music track or a voiceover,
@@ -417,6 +485,12 @@
         <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">
             Creating: @SelectedOutputNames(job.RequestedOutputs)
         </MudText>
+        @if (job.VerticalRequest is { } verticalRequest)
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3" data-testid="vertical-request-summary">
+                @VerticalRequestSummary(verticalRequest)
+            </MudText>
+        }
     }
 
     @if (!string.IsNullOrWhiteSpace(error))
@@ -632,6 +706,13 @@
     [Parameter]
     public EventCallback StatusChanged { get; set; }
 
+    /// <summary>
+    /// A deep link into the vertical workflow (<c>goal</c> or <c>formats</c>). Ignored, leaving the legacy campaign
+    /// page as it always was, while the vertical video library is off for the workspace.
+    /// </summary>
+    [Parameter]
+    public string? Focus { get; set; }
+
     private readonly CancellationTokenSource pollingCancellation = new();
     private CampaignGenerationResult? job;
     private bool busy;
@@ -673,6 +754,12 @@
     private CampaignOutputSelection selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
     private bool statusLoaded;
     private CampaignGenerationStatus? reportedStatus;
+    private bool libraryEnabled;
+    private VerticalCreativePlan? verticalPlan;
+    private VerticalVideoPicker? verticalPicker;
+    private VerticalCampaignGoal? selectedGoal;
+    private CampaignVerticalRequestResult? restoreVerticalRequest;
+    private string? appliedFocus;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -688,6 +775,11 @@
             aerialIntro = null;
             statusLoaded = false;
             reportedStatus = null;
+            verticalPlan = null;
+            verticalPicker = null;
+            selectedGoal = null;
+            restoreVerticalRequest = null;
+            appliedFocus = null;
         }
 
         await LoadAsync();
@@ -735,6 +827,8 @@
                     selectedCaptionLanguage = job.NarrationPreferences.CaptionLanguage;
                     selectedVoiceAccent = job.NarrationPreferences.VoiceAccent;
                     selectedLocalizeAgentCard = job.NarrationPreferences.LocalizeAgentCard;
+                    selectedGoal = job.VerticalRequest?.Goal;
+                    restoreVerticalRequest = job.VerticalRequest;
                 }
 
                 if (job?.Status is null or CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
@@ -770,6 +864,16 @@
             mediaCount = media.Length;
             mediaLoaded = true;
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
+            libraryEnabled = await Service.IsVerticalLibraryEnabledAsync(userId, pollingCancellation.Token);
+            if (!libraryEnabled)
+            {
+                verticalPlan = null;
+                verticalPicker = null;
+            }
+            else if (verticalPlan is null && SettingsVisible && !IsReadOnly)
+            {
+                await LoadVerticalPlanAsync(userId, pollingCancellation.Token);
+            }
             error = null;
             refreshError = null;
             await ReportStatusAsync();
@@ -828,11 +932,7 @@
             || elements.HasFlag(CampaignVideoElement.AgentAvatar)
                 ? portrait?.Id
                 : null;
-        job = await Service.EnqueueAsync(
-            userId,
-            PropertyId,
-            selectedOutputs,
-            new CampaignCreativeOptions(
+        var creativeOptions = new CampaignCreativeOptions(
                 elements,
                 selectedSoundtrack,
                 selectedCaptionStyle,
@@ -844,14 +944,87 @@
                 selectedPace,
                 selectedVoiceover,
                 selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText?.Trim() : null,
-                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse && selectedOpenHouseVerified),
-            new CampaignNarrationPreferences(
+                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse && selectedOpenHouseVerified);
+        var narrationPreferences = new CampaignNarrationPreferences(
                 selectedNarrationRegion,
                 selectedSpokenLanguage,
                 selectedCaptionLanguage,
                 selectedVoiceAccent,
-                selectedLocalizeAgentCard));
+                selectedLocalizeAgentCard);
+        // Library videos only when the agent picked some; a listing with nothing eligible keeps the shared video.
+        job = LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker
+            ? await Service.EnqueueAsync(
+                userId, PropertyId, selectedOutputs, creativeOptions, narrationPreferences, picker.ToRequest(selectedGoal))
+            : await Service.EnqueueAsync(userId, PropertyId, selectedOutputs, creativeOptions, narrationPreferences);
     });
+
+    // The plan reads the media service and claims in its own scope, so it never shares the polling DbContext.
+    private async Task LoadVerticalPlanAsync(string userId, CancellationToken cancellationToken)
+    {
+        var portraitId = selectedCreativeElements.HasFlag(CampaignVideoElement.AgentPortrait)
+            || selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
+                ? portrait?.Id
+                : null;
+        var context = new VerticalRecommendationContext(
+            portraitId,
+            selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar) && selectedAgentAvatarConsent,
+            selectedMarketingTemplate == CampaignMarketingTemplate.PriceDrop && selectedPriceReductionVerified
+                ? selectedPriceReductionAmount
+                : null);
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var plan = await scope.ServiceProvider.GetRequiredService<IVerticalCreativePlanningService>()
+            .PlanAsync(userId, PropertyId, context, cancellationToken);
+        var previous = verticalPicker;
+        verticalPlan = plan;
+        verticalPicker = plan is null ? null : new VerticalVideoPicker(plan.Recommendation);
+        if (verticalPicker is null)
+        {
+            return;
+        }
+
+        if (previous is not null)
+        {
+            // Keep the agent's pick across a refresh; anything no longer eligible drops out.
+            verticalPicker.Restore(VerticalVideoSelection.AgentChosen, previous.Chosen);
+        }
+        else if (restoreVerticalRequest is { } request)
+        {
+            verticalPicker.Restore(request.Selection, request.Formats);
+        }
+    }
+
+    private async Task ReloadVerticalPlanAsync()
+    {
+        var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+        await LoadVerticalPlanAsync(userId, pollingCancellation.Token);
+    }
+
+    private async Task ChooseGoal(VerticalCampaignGoal goal)
+    {
+        selectedGoal = goal;
+        ApplyTemplate(VerticalFormatNames.TemplateFor(goal));
+        // A confirmed price change can lift Price first, so the scores are worked out again.
+        await ReloadVerticalPlanAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Focus is null || Focus == appliedFocus || !LibraryMode || verticalPlan is null)
+        {
+            return;
+        }
+
+        appliedFocus = Focus;
+        var target = Focus.Equals("formats", StringComparison.OrdinalIgnoreCase) ? "vertical-formats" : "vertical-goal";
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("listingStudioCampaign.scrollToSection", target);
+        }
+        catch (JSException exception)
+        {
+            Logger.LogDebug(exception, "Scrolling to the vertical workflow was unavailable.");
+        }
+    }
 
     private async Task RetryAsync() => await MutateAsync(async userId =>
     {
@@ -1014,6 +1187,50 @@
     ];
 
     private bool IsSelected(CampaignOutputSelection selection) => selectedOutputs.HasFlag(selection);
+
+    private bool SettingsVisible => job is null || job.Status is CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled;
+
+    /// <summary>The recommendation-led workflow: the library is on for the workspace and a vertical video is selected.</summary>
+    private bool LibraryMode => libraryEnabled && !IsReadOnly && selectedOutputs.HasFlag(CampaignOutputSelection.TikTok);
+
+    /// <summary>Eligible videos exist but the agent unticked them all.</summary>
+    private bool LibraryNeedsPick => LibraryMode && verticalPicker is { Chosen.Count: 0, Eligible.Count: > 0 };
+
+    private string GenerateLabel => LibraryMode
+        ? "Generate high-potential vertical videos"
+        : job?.Status == CampaignGenerationStatus.Completed ? "Generate updated campaign" : "Generate campaign";
+
+    private int OtherOutputCount =>
+        (IsSelected(CampaignOutputSelection.YouTubeTour) ? 1 : 0)
+        + (IsSelected(CampaignOutputSelection.FacebookFeed) ? 1 : 0)
+        + (IsSelected(CampaignOutputSelection.FacebookStillPost) ? 2 : 0)
+        + (IsSelected(CampaignOutputSelection.FullNarratedTour) ? 1 : 0);
+
+    private bool SilentLibraryVideo => LibraryMode
+        && verticalPicker?.IsChosen(VerticalCreativeFormat.WowFeature) == true
+        && selectedSoundtrack == CampaignSoundtrack.None;
+
+    private string OptionName(OutputOption option) => LibraryMode && option.Selection == CampaignOutputSelection.TikTok
+        ? "Vertical videos for TikTok, Reels and Shorts"
+        : option.Name;
+
+    private string OptionDetails(OutputOption option) => libraryEnabled && !IsReadOnly && option.Selection == CampaignOutputSelection.TikTok
+        ? "Vertical 1080 × 1920 · the videos this listing supports best, each with its own hook. Post each file to TikTok, Reels or Shorts."
+        : option.Details;
+
+    private static string VerticalRequestSummary(CampaignVerticalRequestResult request)
+    {
+        var how = request.Selection switch
+        {
+            VerticalVideoSelection.RecommendedThree => "the recommended vertical videos",
+            VerticalVideoSelection.AllEligible => "every eligible vertical video",
+            VerticalVideoSelection.AgentChosen => string.Join(", ", request.Formats.Select(VerticalFormatNames.Name)),
+            _ => "one shared vertical video",
+        };
+        return request.Goal is { } goal
+            ? $"Vertical videos: {how}. Goal: {VerticalFormatNames.Goal(goal)}."
+            : $"Vertical videos: {how}.";
+    }
 
     private void SetSelected(CampaignOutputSelection selection, bool selected)
     {

@@ -44,6 +44,23 @@ public interface ICampaignGenerationService
         VerticalVideoSelection verticalSelection,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Asks for vertical library videos with the agent's goal and, for <see cref="VerticalVideoSelection.AgentChosen"/>,
+    /// the formats the agent picked. Agent-chosen formats must be eligible when the request is made. With the switch
+    /// off the request is the legacy campaign, exactly as before.
+    /// </summary>
+    Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        VerticalLibraryRequest verticalRequest,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Whether VerticalVideoLibraryV1 is on for the signed-in user's workspace (kill switch included).</summary>
+    Task<bool> IsVerticalLibraryEnabledAsync(string userId, CancellationToken cancellationToken = default);
+
     Task<CampaignGenerationResult?> GetLatestAsync(
         string userId,
         Guid propertyId,
@@ -95,7 +112,44 @@ public sealed record CampaignGenerationResult(
     string? SocialCaptionShort,
     IReadOnlyList<CampaignStageResult> Stages,
     IReadOnlyList<CampaignDeliverableResult> Deliverables,
-    IReadOnlyList<CampaignStillPostResult> StillPosts);
+    IReadOnlyList<CampaignStillPostResult> StillPosts,
+    CampaignVerticalRequestResult? VerticalRequest = null);
+
+/// <summary>A campaign's vertical library request: how the videos were chosen, the goal, and any agent-picked formats.</summary>
+public sealed record CampaignVerticalRequestResult(
+    VerticalVideoSelection Selection,
+    VerticalCampaignGoal? Goal,
+    IReadOnlyList<VerticalCreativeFormat> Formats);
+
+/// <summary>What the agent asked for in the recommendation-led vertical workflow.</summary>
+public sealed record VerticalLibraryRequest(
+    VerticalVideoSelection Selection,
+    VerticalCampaignGoal? Goal = null,
+    IReadOnlyList<VerticalCreativeFormat>? Formats = null)
+{
+    /// <summary>Checks the request shape; eligibility is checked against the listing when it is queued.</summary>
+    public void Validate()
+    {
+        if (!Enum.IsDefined(Selection))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Selection));
+        }
+
+        if (Goal is { } goal && !Enum.IsDefined(goal))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Goal));
+        }
+
+        if (Selection == VerticalVideoSelection.AgentChosen)
+        {
+            CampaignGenerationJob.FormatVerticalFormats(Formats);
+        }
+        else if (Formats is { Count: > 0 })
+        {
+            throw new ArgumentException("Pick formats only with an agent-chosen selection.", nameof(Formats));
+        }
+    }
+}
 
 public sealed record CampaignStageResult(
     CampaignGenerationStage Stage,

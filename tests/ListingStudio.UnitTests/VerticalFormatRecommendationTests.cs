@@ -212,7 +212,7 @@ public sealed class VerticalFormatRecommendationTests
         Assert.False(hosted.IsRecommended);
         Assert.Contains(hosted, result.AllEligible);
         Assert.DoesNotContain(hosted, result.Recommended);
-        Assert.Contains(hosted.Reasons, reason => reason.Contains("Generate all eligible formats", StringComparison.Ordinal));
+        Assert.Contains(hosted.Reasons, reason => reason.Contains("Make every eligible video", StringComparison.Ordinal));
     }
 
     [Fact]

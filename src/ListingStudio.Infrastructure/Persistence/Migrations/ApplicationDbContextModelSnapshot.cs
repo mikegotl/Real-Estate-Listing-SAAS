@@ -723,6 +723,15 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("VerticalFormatsValue")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("VerticalFormats");
+
+                    b.Property<string>("VerticalGoal")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("VerticalSelection")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
