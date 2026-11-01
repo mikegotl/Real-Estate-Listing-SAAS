@@ -2,6 +2,12 @@ using ListingStudio.Domain.Properties;
 
 namespace ListingStudio.Application.Videos;
 
+public static class FullTourVideoPolicy
+{
+    public const int MinimumFrames = 2;
+    public const int MaximumFrames = 10;
+}
+
 /// <summary>
 /// Generates a walk-through clip that starts on one listing photo and ends on the next. Generation is asynchronous:
 /// a submission returns a provider request ID that is polled until the clip is ready.
@@ -16,6 +22,12 @@ public interface IWalkthroughVideoProvider
     /// <summary>The clip length requested from the provider.</summary>
     int ClipDurationMs { get; }
 
+    /// <summary>Identifies the Kling 4 ordered-keyframe full-tour model and prompt.</summary>
+    string FullTourGenerationVersion { get; }
+
+    /// <summary>The requested full-tour duration.</summary>
+    int FullTourDurationMs { get; }
+
     Task<string> SubmitAsync(
         WalkthroughVideoSubmission submission,
         CancellationToken cancellationToken = default);
@@ -29,6 +41,14 @@ public interface IWalkthroughVideoProvider
     /// </summary>
     Task<string> SubmitAerialIntroAsync(
         AerialIntroVideoSubmission submission,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generates one continuous tour from two to ten approved Tour Map photos. Frames remain in the user's order and
+    /// each direction describes the move from that frame to the next.
+    /// </summary>
+    Task<string> SubmitFullTourAsync(
+        FullTourVideoSubmission submission,
         CancellationToken cancellationToken = default);
 
     Task<WalkthroughVideoPollResult> PollAsync(
@@ -52,6 +72,15 @@ public sealed record WalkthroughVideoSubmission(
 public sealed record AerialIntroVideoSubmission(
     WalkthroughVideoFrame Frame,
     int HeightFeet,
+    string IdempotencyKey);
+
+public sealed record FullTourVideoFrame(
+    WalkthroughVideoFrame Frame,
+    string StopName,
+    WalkthroughDirection? DirectionToNext = null);
+
+public sealed record FullTourVideoSubmission(
+    IReadOnlyList<FullTourVideoFrame> Frames,
     string IdempotencyKey);
 
 public enum WalkthroughVideoState

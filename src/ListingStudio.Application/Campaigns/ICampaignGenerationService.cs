@@ -58,8 +58,25 @@ public interface ICampaignGenerationService
         VerticalLibraryRequest verticalRequest,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Queues the selected visual strategy. Kling4FullTour only takes effect while its release switch is on for the
+    /// workspace; otherwise the established strategy is used without changing the established campaign path.
+    /// </summary>
+    Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        CampaignVideoStrategy videoStrategy,
+        VerticalLibraryRequest? verticalRequest = null,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Whether VerticalVideoLibraryV1 is on for the signed-in user's workspace (kill switch included).</summary>
     Task<bool> IsVerticalLibraryEnabledAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Whether the Kling 4 full-tour pilot is on for the signed-in user's workspace.</summary>
+    Task<bool> IsKlingFullTourEnabledAsync(string userId, CancellationToken cancellationToken = default);
 
     Task<CampaignGenerationResult?> GetLatestAsync(
         string userId,
@@ -113,7 +130,8 @@ public sealed record CampaignGenerationResult(
     IReadOnlyList<CampaignStageResult> Stages,
     IReadOnlyList<CampaignDeliverableResult> Deliverables,
     IReadOnlyList<CampaignStillPostResult> StillPosts,
-    CampaignVerticalRequestResult? VerticalRequest = null);
+    CampaignVerticalRequestResult? VerticalRequest = null,
+    CampaignVideoStrategy VideoStrategy = CampaignVideoStrategy.Established);
 
 /// <summary>A campaign's vertical library request: how the videos were chosen, the goal, and any agent-picked formats.</summary>
 public sealed record CampaignVerticalRequestResult(

@@ -29,6 +29,7 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
         "20261101012216_AddVerticalCreativeTests",
         "20261101015629_AddVerticalPerformanceMetrics",
         "20261101150821_AddCreativeTestCaptionStyle",
+        "20261101230434_AddKling4FullTourStrategy",
     ];
 
     [Fact]
@@ -84,6 +85,8 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
         Assert.Equal(2, jobs.Count);
         Assert.All(jobs, job => Assert.Null(job.VerticalSelection));
         Assert.All(jobs, job => Assert.Null(job.VerticalHookVariant));
+        Assert.All(jobs, job => Assert.Equal(CampaignVideoStrategy.Established, job.VideoStrategy));
+        Assert.All(jobs, job => Assert.Null(job.FullTourAssetPath));
         var deliverables = await db.CampaignDeliverables.AsNoTracking().Where(item => item.CampaignGenerationJobId == finished).ToListAsync();
         Assert.Equal(2, deliverables.Count);
         Assert.All(deliverables, item => Assert.True(item.IsCampaignLevel));

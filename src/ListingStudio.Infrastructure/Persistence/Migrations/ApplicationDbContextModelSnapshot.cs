@@ -649,6 +649,31 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("FullTourAssetPath")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("FullTourContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("FullTourDurationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<long?>("FullTourFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FullTourGenerationVersion")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("FullTourProviderRequestId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("FullTourSubmittedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
@@ -800,6 +825,13 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("VideoNarrationId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("VideoStrategy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Established");
 
                     b.Property<string>("VoiceAccent")
                         .IsRequired()

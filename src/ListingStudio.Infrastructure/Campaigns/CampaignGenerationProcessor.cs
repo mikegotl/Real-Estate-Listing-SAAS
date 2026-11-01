@@ -1257,6 +1257,7 @@ public sealed partial class CampaignGenerationProcessor(
                 directory,
                 cancellationToken);
             var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, isRevision, cancellationToken);
+            var fullTour = await MaterializeFullTourAsync(job, specification, directory, isRevision, cancellationToken);
             var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
             var agentPresenter = await MaterializeAgentPresenterAsync(
                 job,
@@ -1282,7 +1283,8 @@ public sealed partial class CampaignGenerationProcessor(
                 walkthroughTransitions,
                 agentPresenter,
                 aerialIntro,
-                job.CaptionStyle);
+                job.CaptionStyle,
+                fullTour);
             var expectations = Mp4Expectations.For(specification);
             try
             {
@@ -1291,21 +1293,24 @@ public sealed partial class CampaignGenerationProcessor(
             }
             catch (Exception exception) when (
                 exception is VideoRenderException or RenderedVideoValidationException
-                && (walkthroughTransitions.Length > 0 || aerialIntro is not null))
+                && (walkthroughTransitions.Length > 0 || aerialIntro is not null || fullTour is not null))
             {
                 // Provider-generated walk-throughs and the drone intro are optional polish. If FFmpeg cannot decode
                 // or compose one of those clips, or the result does not play cleanly, preserve the approved tour-map
                 // photos and narration instead of failing the entire campaign. The retry is deterministic and never
                 // admits media outside the campaign allowlist.
                 LogWalkthroughRenderFallback(
-                    exception, job.Id, label, walkthroughTransitions.Length + (aerialIntro is null ? 0 : 1));
+                    exception,
+                    job.Id,
+                    label,
+                    walkthroughTransitions.Length + (aerialIntro is null ? 0 : 1) + (fullTour is null ? 0 : 1));
                 if (File.Exists(outputPath))
                 {
                     File.Delete(outputPath);
                 }
 
                 await videoRenderer.RenderAsync(
-                    renderRequest with { WalkthroughTransitions = [], AerialIntro = null },
+                    renderRequest with { WalkthroughTransitions = [], AerialIntro = null, FullTour = null },
                     cancellationToken);
                 await ValidateRenderedVideoAsync(job.Id, label, outputPath, expectations, cancellationToken);
             }
@@ -1379,6 +1384,13 @@ public sealed partial class CampaignGenerationProcessor(
         CancellationToken cancellationToken)
     {
         var job = await GetJobAsync(jobId, cancellationToken);
+        if (!await GenerateKlingFullTourAsync(job, cancellationToken))
+        {
+            return false;
+        }
+
+        // The strategy may have fallen back after the kill switch or plan check; reload the authoritative job.
+        job = await GetJobAsync(jobId, cancellationToken);
         if (job.CreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
             && job.AgentAvatarConsentConfirmed
             && job.AgentPortraitId is { } portraitId
@@ -1496,6 +1508,196 @@ public sealed partial class CampaignGenerationProcessor(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Submits and polls the optional Kling 4 ordered-keyframe tour. Its release switch and premium access are checked
+    /// again in the Worker, so turning the switch off is a real kill switch even for a queued campaign. Any fallback
+    /// leaves the established renderer and its existing plans untouched.
+    /// </summary>
+    private async Task<bool> GenerateKlingFullTourAsync(
+        CampaignGenerationJob job,
+        CancellationToken cancellationToken)
+    {
+        if (job.VideoStrategy != CampaignVideoStrategy.Kling4FullTour)
+        {
+            return true;
+        }
+
+        var enabled = walkthroughVideoProvider.IsEnabled
+            && await featureStateService.IsEnabledAsync(
+                FeatureFlagKeys.Kling4FullTourV1,
+                job.OrganizationId,
+                cancellationToken)
+            && await IncludesPremiumAiAsync(job, cancellationToken);
+        if (!enabled)
+        {
+            dbContext.ChangeTracker.Clear();
+            var trackedFallback = await dbContext.CampaignGenerationJobs.SingleAsync(
+                candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
+                cancellationToken);
+            trackedFallback.UseEstablishedVideoStrategy();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        // Only 30-second outputs use this 30-second master. Other outputs continue to provide a clean comparison.
+        var hasThirtySecondOutput = await dbContext.CampaignDeliverables.AsNoTracking().AnyAsync(
+            candidate => candidate.CampaignGenerationJobId == job.Id
+                && candidate.OrganizationId == job.OrganizationId
+                && candidate.RequestedDuration == RequestedDuration.Feature30,
+            cancellationToken);
+        if (!hasThirtySecondOutput)
+        {
+            dbContext.ChangeTracker.Clear();
+            var trackedFallback = await dbContext.CampaignGenerationJobs.SingleAsync(
+                candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
+                cancellationToken);
+            trackedFallback.UseEstablishedVideoStrategy();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        if (job.FullTourAssetPath is not null)
+        {
+            return true;
+        }
+
+        if (job.FullTourProviderRequestId is null)
+        {
+            var media = await dbContext.PropertyMedia.AsNoTracking()
+                .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                    && candidate.PropertyId == job.PropertyId
+                    && !candidate.IsInGallery
+                    && candidate.WalkthroughStop != null)
+                .OrderBy(candidate => candidate.DisplayOrder)
+                .ThenBy(candidate => candidate.Id)
+                .Take(FullTourVideoPolicy.MaximumFrames)
+                .Select(candidate => new
+                {
+                    candidate.Id,
+                    candidate.BlobPath,
+                    candidate.MimeType,
+                    StopName = candidate.WalkthroughStop!,
+                })
+                .ToArrayAsync(cancellationToken);
+            if (media.Length < 2)
+            {
+                throw new InvalidOperationException("The Kling 4 full tour needs at least two approved Tour Map photos.");
+            }
+
+            var directions = (await dbContext.WalkthroughStopDirections.AsNoTracking()
+                    .Where(candidate => candidate.OrganizationId == job.OrganizationId
+                        && candidate.PropertyId == job.PropertyId)
+                    .Select(candidate => new { candidate.Stop, candidate.Direction })
+                    .ToArrayAsync(cancellationToken))
+                .GroupBy(candidate => candidate.Stop, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().Direction, StringComparer.OrdinalIgnoreCase);
+            var streams = new List<Stream>(media.Length);
+            try
+            {
+                var frames = new List<FullTourVideoFrame>(media.Length);
+                for (var index = 0; index < media.Length; index++)
+                {
+                    var item = media[index];
+                    var stream = await propertyMediaStorage.OpenReadAsync(item.BlobPath, cancellationToken)
+                        ?? throw new FileNotFoundException("A Tour Map photo could not be opened.");
+                    streams.Add(stream);
+                    var direction = index + 1 < media.Length
+                        ? WalkthroughClipDirection.ForPair(
+                            item.StopName,
+                            media[index + 1].StopName,
+                            directions)
+                        : null;
+                    frames.Add(new FullTourVideoFrame(
+                        new WalkthroughVideoFrame(stream, item.MimeType),
+                        item.StopName,
+                        direction));
+                }
+
+                var requestId = await walkthroughVideoProvider.SubmitFullTourAsync(
+                    new FullTourVideoSubmission(frames, $"campaign-full-tour-{job.Id:N}"),
+                    cancellationToken);
+                dbContext.ChangeTracker.Clear();
+                var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
+                    candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
+                    cancellationToken);
+                tracked.MarkFullTourSubmitted(
+                    requestId,
+                    walkthroughVideoProvider.FullTourGenerationVersion,
+                    timeProvider.GetUtcNow());
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return false;
+            }
+            finally
+            {
+                foreach (var stream in streams)
+                {
+                    await stream.DisposeAsync();
+                }
+            }
+        }
+
+        if (job.FullTourSubmittedAtUtc is null
+            || timeProvider.GetUtcNow() - job.FullTourSubmittedAtUtc > TimeSpan.FromMinutes(30))
+        {
+            throw new TimeoutException("The Kling 4 full tour exceeded its processing time limit.");
+        }
+
+        var result = await walkthroughVideoProvider.PollAsync(job.FullTourProviderRequestId, cancellationToken);
+        if (result.State == WalkthroughVideoState.InProgress)
+        {
+            return false;
+        }
+
+        if (result.State == WalkthroughVideoState.Failed || result.Content is null)
+        {
+            dbContext.ChangeTracker.Clear();
+            var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
+                candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
+                cancellationToken);
+            tracked.ResetFullTourSubmission(timeProvider.GetUtcNow());
+            await dbContext.SaveChangesAsync(cancellationToken);
+            throw new InvalidOperationException(result.FailureReason ?? "Higgsfield could not generate the full tour.");
+        }
+
+        await using var content = result.Content;
+        var assetPath = $"organizations/{job.OrganizationId:N}/properties/{job.PropertyId:N}/campaigns/{job.Id:N}/kling4-full-tour.mp4";
+        long fileSize;
+        if (content.CanSeek)
+        {
+            fileSize = content.Length;
+            await campaignAssetStorage.StoreAsync(assetPath, content, "video/mp4", cancellationToken);
+        }
+        else
+        {
+            await using var buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, cancellationToken);
+            buffer.Position = 0;
+            fileSize = buffer.Length;
+            await campaignAssetStorage.StoreAsync(assetPath, buffer, "video/mp4", cancellationToken);
+        }
+        try
+        {
+            dbContext.ChangeTracker.Clear();
+            var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
+                candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
+                cancellationToken);
+            tracked.MarkFullTourCompleted(
+                assetPath,
+                "video/mp4",
+                fileSize,
+                walkthroughVideoProvider.FullTourDurationMs,
+                timeProvider.GetUtcNow());
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            await campaignAssetStorage.DeleteAsync(assetPath, CancellationToken.None);
+            throw;
+        }
+
         return true;
     }
 
@@ -1860,6 +2062,48 @@ public sealed partial class CampaignGenerationProcessor(
         await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         await source.CopyToAsync(target, cancellationToken);
         return new VideoRenderAerialIntroAsset(openingPhotoId, path, durationMs, clip.PlaybackRate);
+    }
+
+    /// <summary>
+    /// Supplies the Kling master only to 30-second first-pass renders. Revisions deliberately use the established
+    /// scene timeline so a targeted chat edit cannot unexpectedly regenerate or obscure its requested change.
+    /// </summary>
+    private async Task<VideoRenderFullTourAsset?> MaterializeFullTourAsync(
+        CampaignGenerationJob job,
+        VideoProductionSpecification specification,
+        string directory,
+        bool isRevision,
+        CancellationToken cancellationToken)
+    {
+        if (isRevision
+            || job.VideoStrategy != CampaignVideoStrategy.Kling4FullTour
+            || specification.RequestedDuration != RequestedDuration.Feature30
+            || job.FullTourAssetPath is null
+            || job.FullTourContentType != "video/mp4"
+            || job.FullTourDurationMs is not { } durationMs)
+        {
+            return null;
+        }
+
+        // A queued job can outlive the switch; never introduce the experimental asset after the kill switch is off.
+        if (!await featureStateService.IsEnabledAsync(
+                FeatureFlagKeys.Kling4FullTourV1,
+                job.OrganizationId,
+                cancellationToken))
+        {
+            return null;
+        }
+
+        await using var source = await campaignAssetStorage.OpenReadAsync(job.FullTourAssetPath, cancellationToken);
+        if (source is null)
+        {
+            return null;
+        }
+
+        var path = Path.Combine(directory, "kling4-full-tour.mp4");
+        await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(target, cancellationToken);
+        return new VideoRenderFullTourAsset(path, durationMs);
     }
 
     private async Task<VideoRenderPropertyVideoAsset[]> MaterializePropertyVideosAsync(

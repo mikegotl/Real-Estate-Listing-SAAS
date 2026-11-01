@@ -74,14 +74,24 @@ public static class ServiceCollectionExtensions
                 return new AiUsageHttpMessageHandler(
                     provider.GetRequiredService<IAiUsageRecorder>(),
                     "Higgsfield",
-                    video.Model,
-                    "walkthrough-video",
+                    $"{video.Model} / {video.FullTourModel}",
+                    "property-tour-video",
                     video.EstimatedCostPerCallUsd,
                     request => request.Method == HttpMethod.Post
-                        && string.Equals(
+                        && (string.Equals(
+                                request.RequestUri?.AbsolutePath.Trim('/'),
+                                video.Model.Trim('/'),
+                                StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(
+                                request.RequestUri?.AbsolutePath.Trim('/'),
+                                video.FullTourModel.Trim('/'),
+                                StringComparison.OrdinalIgnoreCase)),
+                    (request, _, _) => ValueTask.FromResult(string.Equals(
                             request.RequestUri?.AbsolutePath.Trim('/'),
-                            video.Model.Trim('/'),
-                            StringComparison.OrdinalIgnoreCase));
+                            video.FullTourModel.Trim('/'),
+                            StringComparison.OrdinalIgnoreCase)
+                        ? video.EstimatedFullTourCostPerCallUsd
+                        : video.EstimatedCostPerCallUsd));
             });
         services.AddHttpClient<IAgentAvatarVideoProvider, HeyGenAgentAvatarVideoProvider>(client =>
             client.Timeout = Timeout.InfiniteTimeSpan)

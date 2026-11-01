@@ -157,6 +157,19 @@ public sealed class CampaignVideoLibraryTests
         Assert.Throws<ArgumentException>(() => FeatureFlag.Create("Unknown", Now));
     }
 
+    [Fact]
+    public void KlingFullTourIsAKnownIndependentReleaseSwitch()
+    {
+        var pilot = Guid.NewGuid();
+        var flag = FeatureFlag.Create(FeatureFlagKeys.Kling4FullTourV1, Now);
+        flag.Organizations.Add(FeatureFlagOrganization.Create(flag.Key, pilot, Now));
+        flag.Configure(globallyEnabled: true, enabledForAllOrganizations: false, "admin", Now);
+
+        Assert.True(flag.IsEnabledFor(pilot));
+        Assert.False(flag.IsEnabledFor(Guid.NewGuid()));
+        Assert.Contains(FeatureFlagKeys.Kling4FullTourV1, FeatureFlagKeys.All);
+    }
+
     private static CampaignVideoLibrary Library(
         VerticalVideoSelection selection = VerticalVideoSelection.RecommendedThree,
         string? ruleVersion = "vertical-rules-v1") =>

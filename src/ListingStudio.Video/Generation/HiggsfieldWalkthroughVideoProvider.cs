@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ListingStudio.Application.Videos;
+using ListingStudio.Application.Properties;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Video.Configuration;
 using Microsoft.Extensions.Options;
@@ -86,6 +87,46 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             ? HighAerialIntroDurationSeconds
             : LowAerialIntroDurationSeconds;
 
+    /// <summary>One prompt for the ordered-keyframe tour; the per-stop path is appended by <see cref="FullTourPrompt"/>.</summary>
+    public const string FullTourPromptPreamble = """
+        Create one continuous, photorealistic first-person real-estate tour through the supplied keyframes in their
+        exact order. Treat each image as a required room or exterior checkpoint, not as a loose style reference.
+        Move at a comfortable walking pace and arrive recognizably at every supplied frame. Preserve the real home's
+        architecture, room layout, doors, windows, fixtures, furniture, finishes and landscaping exactly as shown.
+        Never invent connecting rooms, change the floor plan, add amenities, remove objects, or introduce people or
+        text. Use smooth stabilized camera motion with no cuts, teleporting, camera shake, or impossible turns.
+        """;
+
+    public static string FullTourPrompt(IReadOnlyList<FullTourVideoFrame> frames)
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+        if (frames.Count is < FullTourVideoPolicy.MinimumFrames or > FullTourVideoPolicy.MaximumFrames)
+        {
+            throw new ArgumentOutOfRangeException(nameof(frames), "A full tour needs two to ten ordered frames.");
+        }
+
+        static string SafeStop(string value)
+        {
+            var normalized = Regex.Replace(value.Trim(), "[^A-Za-z0-9 .'-]", string.Empty);
+            return string.IsNullOrWhiteSpace(normalized) ? "tour stop" : normalized[..Math.Min(60, normalized.Length)];
+        }
+
+        var path = frames.Select((frame, index) =>
+        {
+            var stop = SafeStop(frame.StopName);
+            if (index == frames.Count - 1)
+            {
+                return $"Keyframe {index + 1}: arrive in {stop}.";
+            }
+
+            var direction = frame.DirectionToNext is { } value
+                ? WalkthroughMap.Describe(value)
+                : "follow the visible architecture naturally";
+            return $"Keyframe {index + 1}: {stop}; next, {direction}.";
+        });
+        return FullTourPromptPreamble + "\nRequired route:\n" + string.Join('\n', path);
+    }
+
     private static string DirectionLine(string movement) =>
         $"\nDirection: the next space is {movement}";
 
@@ -94,6 +135,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     public bool IsEnabled => options.Value.Enabled;
 
     public int ClipDurationMs => options.Value.ClipDurationSeconds * 1_000;
+
+    public int FullTourDurationMs => options.Value.FullTourDurationSeconds * 1_000;
 
     public string GenerationVersion
     {
@@ -116,6 +159,18 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                 + $"{LowAerialIntroDurationSeconds}\n{AerialIntroPrompt(AerialIntroClip.LowHeightFeet)}\n"
                 + $"{HighAerialIntroDurationSeconds}\n{AerialIntroPrompt(AerialIntroClip.HighHeightFeet)}")))[..12].ToLowerInvariant();
             return $"higgsfield/{configuration.GenerationVersion}/aerial-{identity}";
+        }
+    }
+
+    public string FullTourGenerationVersion
+    {
+        get
+        {
+            var configuration = options.Value;
+            var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                $"{configuration.FullTourModel}\n{configuration.FullTourDurationSeconds}\n"
+                + $"{configuration.FullTourResolution}\n{FullTourPromptPreamble}")))[..12].ToLowerInvariant();
+            return $"higgsfield/{configuration.GenerationVersion}/full-tour-{identity}";
         }
     }
 
@@ -161,6 +216,42 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                 "off",
                 null),
             cancellationToken);
+    }
+
+    public async Task<string> SubmitFullTourAsync(
+        FullTourVideoSubmission submission,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        if (submission.Frames is null
+            || submission.Frames.Count is < FullTourVideoPolicy.MinimumFrames or > FullTourVideoPolicy.MaximumFrames)
+        {
+            throw new ArgumentOutOfRangeException(nameof(submission), "A full tour needs two to ten ordered frames.");
+        }
+
+        var configuration = EnsureEnabled();
+        var urls = new List<string>(submission.Frames.Count);
+        foreach (var frame in submission.Frames)
+        {
+            urls.Add(await UploadAsync(configuration, frame.Frame, cancellationToken));
+        }
+
+        using var message = new HttpRequestMessage(HttpMethod.Post, ApiUri(configuration, configuration.FullTourModel.Trim('/')))
+        {
+            Content = JsonContent.Create(
+                new FullTourGenerationRequest(
+                    urls[0],
+                    urls.Count > 2 ? urls.Skip(1).Take(urls.Count - 2).ToArray() : null,
+                    urls[^1],
+                    FullTourPrompt(submission.Frames),
+                    configuration.FullTourDurationSeconds,
+                    configuration.FullTourResolution),
+                options: SerializerOptions),
+        };
+        var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
+        return IsRequestId(queued?.RequestId)
+            ? queued!.RequestId!
+            : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
     }
 
     private async Task<string> QueueAsync(
@@ -360,6 +451,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             || string.IsNullOrWhiteSpace(configuration.Model)
             || !ModelPattern().IsMatch(configuration.Model)
             || configuration.Model.Contains("..", StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(configuration.FullTourModel)
+            || !ModelPattern().IsMatch(configuration.FullTourModel)
+            || configuration.FullTourModel.Contains("..", StringComparison.Ordinal)
             || string.IsNullOrWhiteSpace(configuration.GenerationVersion)
             || configuration.GenerationVersion.Length > 40
             || !Uri.TryCreate(configuration.BaseUrl, UriKind.Absolute, out var baseUrl)
@@ -370,6 +464,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         }
 
         if (configuration.ClipDurationSeconds is < 3 or > 15
+            || configuration.FullTourDurationSeconds is < 3 or > 30
+            || configuration.FullTourResolution is not ("720p" or "1080p")
             || configuration.RequestTimeoutSeconds is < 10 or > 900
             || configuration.MaxOutputMegabytes is < 1 or > 500)
         {
@@ -404,6 +500,14 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         [property: JsonPropertyName("duration")] int Duration,
         [property: JsonPropertyName("sound")] string Sound,
         [property: JsonPropertyName("cfg_scale"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? CfgScale);
+
+    private sealed record FullTourGenerationRequest(
+        [property: JsonPropertyName("image_url")] string ImageUrl,
+        [property: JsonPropertyName("image_urls"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? ImageUrls,
+        [property: JsonPropertyName("end_image_url")] string EndImageUrl,
+        [property: JsonPropertyName("prompt")] string Prompt,
+        [property: JsonPropertyName("duration")] int Duration,
+        [property: JsonPropertyName("resolution")] string Resolution);
 
     private sealed record QueuedResponse([property: JsonPropertyName("request_id")] string? RequestId);
 

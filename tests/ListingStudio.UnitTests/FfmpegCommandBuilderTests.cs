@@ -55,6 +55,34 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildUsesFullTourAsBaseTimelineButKeepsEstablishedOverlayAndAudioPipeline()
+    {
+        var request = CreateRequest();
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[1] = scenes[1] with { DurationMs = 23_000 };
+        var fullTour = CreateFile("kling4-full-tour.mp4");
+        request = request with
+        {
+            Specification = request.Specification with
+            {
+                RequestedDuration = RequestedDuration.Feature30,
+                Scenes = scenes,
+            },
+            FullTour = new VideoRenderFullTourAsset(fullTour, 30_000),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+
+        Assert.Contains(fullTour, arguments);
+        Assert.Contains("trim=duration=30", graph, StringComparison.Ordinal);
+        Assert.Contains("[videoTimeline]", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("perspective=", graph, StringComparison.Ordinal);
+        Assert.Contains("[aout]", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildUsesBothWorkerCoresForLipSyncedPresenterRenders()
     {
         var request = CreateBrandedRequest();

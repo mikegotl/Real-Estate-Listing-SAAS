@@ -13,6 +13,13 @@ public enum CampaignGenerationStatus
     Cancelled,
 }
 
+/// <summary>The visual editing strategy selected before campaign work begins.</summary>
+public enum CampaignVideoStrategy
+{
+    Established = 0,
+    Kling4FullTour = 1,
+}
+
 public enum CampaignGenerationStage
 {
     ValidateProperty,
@@ -142,6 +149,25 @@ public sealed class CampaignGenerationJob
     public string SourceFingerprint { get; private set; } = string.Empty;
 
     public CampaignOutputSelection RequestedOutputs { get; private set; }
+
+    /// <summary>
+    /// Established is the control. Kling4FullTour is only retained while its release switch remains enabled.
+    /// </summary>
+    public CampaignVideoStrategy VideoStrategy { get; private set; }
+
+    public string? FullTourProviderRequestId { get; private set; }
+
+    public string? FullTourGenerationVersion { get; private set; }
+
+    public DateTimeOffset? FullTourSubmittedAtUtc { get; private set; }
+
+    public string? FullTourAssetPath { get; private set; }
+
+    public string? FullTourContentType { get; private set; }
+
+    public long? FullTourFileSize { get; private set; }
+
+    public int? FullTourDurationMs { get; private set; }
 
     public CampaignVideoElement CreativeElements { get; private set; }
 
@@ -281,6 +307,91 @@ public sealed class CampaignGenerationJob
             creativeOptions ?? CampaignCreativeOptions.Legacy,
             narrationPreferences ?? CampaignNarrationPreferences.Default,
             now);
+    }
+
+    /// <summary>Selects the experimental visual strategy before the job has started.</summary>
+    public void RequestVideoStrategy(CampaignVideoStrategy strategy)
+    {
+        if (!Enum.IsDefined(strategy))
+        {
+            throw new ArgumentOutOfRangeException(nameof(strategy));
+        }
+
+        if (Status != CampaignGenerationStatus.Queued || CurrentStage != CampaignGenerationStage.ValidateProperty)
+        {
+            throw new InvalidOperationException("The campaign video strategy can only be chosen before work starts.");
+        }
+
+        VideoStrategy = strategy;
+    }
+
+    /// <summary>The kill-switch fallback. Existing campaign plans and renderer behavior remain the control.</summary>
+    public void UseEstablishedVideoStrategy()
+    {
+        VideoStrategy = CampaignVideoStrategy.Established;
+        FullTourProviderRequestId = null;
+        FullTourGenerationVersion = null;
+        FullTourSubmittedAtUtc = null;
+        FullTourAssetPath = null;
+        FullTourContentType = null;
+        FullTourFileSize = null;
+        FullTourDurationMs = null;
+    }
+
+    public void MarkFullTourSubmitted(string requestId, string generationVersion, DateTimeOffset now)
+    {
+        if (VideoStrategy != CampaignVideoStrategy.Kling4FullTour)
+        {
+            throw new InvalidOperationException("This campaign does not use the Kling full-tour strategy.");
+        }
+
+        FullTourProviderRequestId = Required(requestId, 200, nameof(requestId));
+        FullTourGenerationVersion = Required(generationVersion, 200, nameof(generationVersion));
+        FullTourSubmittedAtUtc = now;
+        FullTourAssetPath = null;
+        FullTourContentType = null;
+        FullTourFileSize = null;
+        FullTourDurationMs = null;
+        UpdatedAtUtc = now;
+    }
+
+    public void MarkFullTourCompleted(
+        string assetPath,
+        string contentType,
+        long fileSize,
+        int durationMs,
+        DateTimeOffset now)
+    {
+        if (VideoStrategy != CampaignVideoStrategy.Kling4FullTour
+            || string.IsNullOrWhiteSpace(FullTourProviderRequestId)
+            || fileSize <= 0
+            || durationMs <= 0)
+        {
+            throw new InvalidOperationException("A submitted Kling full tour is required before completion.");
+        }
+
+        FullTourAssetPath = Required(assetPath, 1_024, nameof(assetPath));
+        FullTourContentType = Required(contentType, 100, nameof(contentType));
+        FullTourFileSize = fileSize;
+        FullTourDurationMs = durationMs;
+        UpdatedAtUtc = now;
+    }
+
+    public void ResetFullTourSubmission(DateTimeOffset now)
+    {
+        if (VideoStrategy != CampaignVideoStrategy.Kling4FullTour)
+        {
+            throw new InvalidOperationException("This campaign does not use the Kling full-tour strategy.");
+        }
+
+        FullTourProviderRequestId = null;
+        FullTourGenerationVersion = null;
+        FullTourSubmittedAtUtc = null;
+        FullTourAssetPath = null;
+        FullTourContentType = null;
+        FullTourFileSize = null;
+        FullTourDurationMs = null;
+        UpdatedAtUtc = now;
     }
 
     public void BeginStage(DateTimeOffset now, TimeSpan leaseDuration)

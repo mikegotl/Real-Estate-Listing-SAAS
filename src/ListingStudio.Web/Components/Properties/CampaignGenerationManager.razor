@@ -87,6 +87,33 @@
                 <ArticleGuideLink Placement="@ArticleLinks.Placements.DeliverableSelector" Class="mt-3" />
             }
         </MudPaper>
+        @if (klingFullTourEnabled)
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="video-strategy-picker">
+                <MudText Typo="Typo.subtitle1">Tour video strategy</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    Compare the established CLS edit with an experimental continuous Kling 4 tour. The experimental
+                    option follows up to ten approved Tour Map photos in order at 1080p for the 30-second campaign edits.
+                    Your campaign goal, selected formats, hook, captions, narration, soundtrack, and social copy still
+                    apply whichever tour strategy you choose.
+                </MudText>
+                <MudRadioGroup T="CampaignVideoStrategy" @bind-Value="selectedVideoStrategy">
+                    <MudRadio Value="CampaignVideoStrategy.Established" Color="Color.Primary">
+                        Established CLS edit (control)
+                    </MudRadio>
+                    <MudRadio Value="CampaignVideoStrategy.Kling4FullTour" Color="Color.Primary">
+                        Kling 4 continuous Tour Map (pilot)
+                    </MudRadio>
+                </MudRadioGroup>
+                @if (selectedVideoStrategy == CampaignVideoStrategy.Kling4FullTour)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                        The agent presenter still appears only for the lip-synced opening and closing. The property keeps
+                        the center of the video, and longer or non-30-second outputs continue to use the established edit.
+                    </MudAlert>
+                }
+            </MudPaper>
+        }
         @if (LibraryMode)
         {
             <VerticalCampaignPlanner Plan="verticalPlan"
@@ -759,6 +786,8 @@
     private bool statusLoaded;
     private CampaignGenerationStatus? reportedStatus;
     private bool libraryEnabled;
+    private bool klingFullTourEnabled;
+    private CampaignVideoStrategy selectedVideoStrategy = CampaignVideoStrategy.Established;
     private VerticalCreativePlan? verticalPlan;
     private VerticalVideoPicker? verticalPicker;
     private VerticalCampaignGoal? selectedGoal;
@@ -783,6 +812,7 @@
             verticalPicker = null;
             selectedGoal = null;
             restoreVerticalRequest = null;
+            selectedVideoStrategy = CampaignVideoStrategy.Established;
             appliedFocus = null;
         }
 
@@ -833,6 +863,7 @@
                     selectedLocalizeAgentCard = job.NarrationPreferences.LocalizeAgentCard;
                     selectedGoal = job.VerticalRequest?.Goal;
                     restoreVerticalRequest = job.VerticalRequest;
+                    selectedVideoStrategy = job.VideoStrategy;
                 }
 
                 if (job?.Status is null or CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
@@ -869,6 +900,11 @@
             mediaLoaded = true;
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             libraryEnabled = await Service.IsVerticalLibraryEnabledAsync(userId, pollingCancellation.Token);
+            klingFullTourEnabled = await Service.IsKlingFullTourEnabledAsync(userId, pollingCancellation.Token);
+            if (!klingFullTourEnabled)
+            {
+                selectedVideoStrategy = CampaignVideoStrategy.Established;
+            }
             if (!libraryEnabled)
             {
                 verticalPlan = null;
@@ -958,8 +994,11 @@
         // Library videos only when the agent picked some; a listing with nothing eligible keeps the shared video.
         job = LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker
             ? await Service.EnqueueAsync(
-                userId, PropertyId, selectedOutputs, creativeOptions, narrationPreferences, picker.ToRequest(selectedGoal))
-            : await Service.EnqueueAsync(userId, PropertyId, selectedOutputs, creativeOptions, narrationPreferences);
+                userId, PropertyId, selectedOutputs, creativeOptions, narrationPreferences,
+                selectedVideoStrategy, picker.ToRequest(selectedGoal))
+            : await Service.EnqueueAsync(
+                userId, PropertyId, selectedOutputs, creativeOptions, narrationPreferences,
+                selectedVideoStrategy);
     });
 
     // The plan reads the media service and claims in its own scope, so it never shares the polling DbContext.
