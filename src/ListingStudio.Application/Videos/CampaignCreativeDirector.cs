@@ -9,6 +9,7 @@ public static class CampaignCreativeDirector
     public const string HeritageWarmAssetId = "listing-studio:heritage-warm:v1";
     public const string ModernAmbientAssetId = "listing-studio:modern-ambient:v1";
     public const string UpbeatLifestyleAssetId = "listing-studio:upbeat-lifestyle:v1";
+    public const string LuxuryCinematicAssetId = "listing-studio:luxury-cinematic:v1";
 
     public static VideoProductionSpecification Apply(
         VideoProductionSpecification source,
@@ -207,14 +208,43 @@ public static class CampaignCreativeDirector
         scenes[0] = first with { TextOverlays = overlays };
     }
 
-    /// <summary>The tempo of a library soundtrack; 120 BPM, the common short-video tempo, when there is none.</summary>
+    /// <summary>
+    /// The tempo of a library soundtrack; 120 BPM, the common short-video tempo, when there is none. These must match
+    /// the bundled recordings (tools/campaign-music/compose.py), which start on beat one.
+    /// </summary>
     public static int BeatsPerMinute(string? soundtrackAssetId) => soundtrackAssetId switch
     {
-        HeritageWarmAssetId => 76,
-        ModernAmbientAssetId => 92,
-        UpbeatLifestyleAssetId => 112,
+        HeritageWarmAssetId => 84,
+        ModernAmbientAssetId => 96,
+        UpbeatLifestyleAssetId => 118,
+        LuxuryCinematicAssetId => 72,
         _ => 120,
     };
+
+    /// <summary>
+    /// The bundled recording for a library soundtrack. The original asset ids are kept so saved campaigns and video
+    /// chat edits still resolve; Heritage warm is now the acoustic track, Modern ambient the chill track and Upbeat
+    /// lifestyle the pop track.
+    /// </summary>
+    public static string? SoundtrackFileName(string? soundtrackAssetId) => soundtrackAssetId switch
+    {
+        HeritageWarmAssetId => "warm-acoustic.mp3",
+        ModernAmbientAssetId => "modern-chill.mp3",
+        UpbeatLifestyleAssetId => "upbeat-pop.mp3",
+        LuxuryCinematicAssetId => "luxury-cinematic.mp3",
+        _ => null,
+    };
+
+    /// <summary>The music tracks a user can pick and preview, in Campaign tab order.</summary>
+    public static IReadOnlyList<CampaignSoundtrack> LibrarySoundtracks { get; } =
+    [
+        CampaignSoundtrack.UpbeatLifestyle,
+        CampaignSoundtrack.ModernAmbient,
+        CampaignSoundtrack.HeritageWarm,
+        CampaignSoundtrack.LuxuryCinematic,
+    ];
+
+    public static bool IsLibrarySoundtrack(CampaignSoundtrack soundtrack) => LibrarySoundtracks.Contains(soundtrack);
 
     public static CampaignSoundtrack ResolveSoundtrack(CampaignSoundtrack selected, int? yearBuilt) =>
         selected != CampaignSoundtrack.AutoByHomeEra
@@ -231,6 +261,7 @@ public static class CampaignCreativeDirector
         CampaignSoundtrack.HeritageWarm => HeritageWarmAssetId,
         CampaignSoundtrack.ModernAmbient => ModernAmbientAssetId,
         CampaignSoundtrack.UpbeatLifestyle => UpbeatLifestyleAssetId,
+        CampaignSoundtrack.LuxuryCinematic => LuxuryCinematicAssetId,
         _ => throw new ArgumentOutOfRangeException(nameof(soundtrack)),
     };
 
@@ -239,6 +270,7 @@ public static class CampaignCreativeDirector
         CampaignSoundtrack.HeritageWarm => MusicMood.WarmCinematic,
         CampaignSoundtrack.ModernAmbient => MusicMood.ModernAmbient,
         CampaignSoundtrack.UpbeatLifestyle => MusicMood.UpbeatLifestyle,
+        CampaignSoundtrack.LuxuryCinematic => MusicMood.WarmCinematic,
         _ => MusicMood.None,
     };
 

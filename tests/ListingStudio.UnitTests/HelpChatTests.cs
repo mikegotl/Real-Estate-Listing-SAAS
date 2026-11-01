@@ -40,7 +40,7 @@ public sealed class HelpChatTests
         Assert.Equal("Just listed", notes["Marketing template"]);
         Assert.Contains("room-by-room narration", notes["Voiceover words"], StringComparison.Ordinal);
         Assert.Contains("British accent", notes["Voice"], StringComparison.Ordinal);
-        Assert.Contains("Heritage warm", notes["Music"], StringComparison.Ordinal);
+        Assert.Contains("Warm acoustic", notes["Music"], StringComparison.Ordinal);
         Assert.Contains("home's era", notes["Music"], StringComparison.Ordinal);
         Assert.Contains("-18 dB", notes["Music"], StringComparison.Ordinal);
         Assert.Equal("No captions in this version.", notes["Captions"]);

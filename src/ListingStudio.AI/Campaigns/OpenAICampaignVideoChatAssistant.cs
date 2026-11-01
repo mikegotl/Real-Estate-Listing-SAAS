@@ -59,7 +59,7 @@ public sealed class OpenAICampaignVideoChatAssistant(
         "change_music_volume", "remove_voiceover", "change_caption_style", "remove_captions", "change_voice",
     ];
 
-    private static readonly string[] MusicChoices = ["none", "heritage_warm", "modern_ambient", "upbeat_lifestyle"];
+    private static readonly string[] MusicChoices = ["none", "warm_acoustic", "modern_chill", "upbeat_pop", "luxury_cinematic"];
 
     private static readonly JsonElement OutputSchema = JsonDocument.Parse(JsonSerializer.Serialize(new
     {
@@ -259,9 +259,10 @@ public sealed class OpenAICampaignVideoChatAssistant(
                     String(item, "music") switch
                     {
                         "none" => CampaignSoundtrack.None,
-                        "heritage_warm" => CampaignSoundtrack.HeritageWarm,
-                        "modern_ambient" => CampaignSoundtrack.ModernAmbient,
-                        "upbeat_lifestyle" => CampaignSoundtrack.UpbeatLifestyle,
+                        "warm_acoustic" or "heritage_warm" => CampaignSoundtrack.HeritageWarm,
+                        "modern_chill" or "modern_ambient" => CampaignSoundtrack.ModernAmbient,
+                        "upbeat_pop" or "upbeat_lifestyle" => CampaignSoundtrack.UpbeatLifestyle,
+                        "luxury_cinematic" => CampaignSoundtrack.LuxuryCinematic,
                         _ => null,
                     },
                     Integer(item, "volume_change_db"),
@@ -280,9 +281,10 @@ public sealed class OpenAICampaignVideoChatAssistant(
 
     private static string MusicName(CampaignSoundtrack soundtrack) => soundtrack switch
     {
-        CampaignSoundtrack.HeritageWarm => "heritage_warm",
-        CampaignSoundtrack.ModernAmbient => "modern_ambient",
-        CampaignSoundtrack.UpbeatLifestyle => "upbeat_lifestyle",
+        CampaignSoundtrack.HeritageWarm => "warm_acoustic",
+        CampaignSoundtrack.ModernAmbient => "modern_chill",
+        CampaignSoundtrack.UpbeatLifestyle => "upbeat_pop",
+        CampaignSoundtrack.LuxuryCinematic => "luxury_cinematic",
         _ => "none",
     };
 

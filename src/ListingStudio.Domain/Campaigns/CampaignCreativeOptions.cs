@@ -27,6 +27,8 @@ public enum CampaignSoundtrack
     UpbeatLifestyle,
     /// <summary>No music in the file; the agent adds a sound in the TikTok or Instagram app.</summary>
     AddInApp,
+    /// <summary>Piano and strings for high-end listings.</summary>
+    LuxuryCinematic,
 }
 
 /// <summary>

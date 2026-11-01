@@ -637,14 +637,13 @@ app.MapGet("/campaigns/{jobId:guid}/still-posts/{kind}", async (
         : Results.Stream(post.Content, post.ContentType);
 }).RequireAuthorization();
 
-// A 15-second sample of a library soundtrack for the Campaign tab's music preview.
+// A library soundtrack for the Campaign tab's music preview.
 app.MapGet("/campaigns/soundtracks/{soundtrack}", async (
     CampaignSoundtrack soundtrack,
     ICampaignSoundtrackService soundtrackService,
     CancellationToken cancellationToken) =>
 {
-    if (soundtrack is not (CampaignSoundtrack.HeritageWarm or CampaignSoundtrack.ModernAmbient
-        or CampaignSoundtrack.UpbeatLifestyle))
+    if (!CampaignCreativeDirector.IsLibrarySoundtrack(soundtrack))
     {
         return Results.NotFound();
     }
@@ -659,7 +658,10 @@ app.MapGet("/campaigns/soundtracks/{soundtrack}", async (
             cancellationToken);
         return asset is null
             ? Results.NotFound()
-            : Results.File(await File.ReadAllBytesAsync(asset.FilePath, cancellationToken), "audio/wav");
+            : Results.File(
+                await File.ReadAllBytesAsync(asset.FilePath, cancellationToken),
+                "audio/mpeg",
+                enableRangeProcessing: true);
     }
     finally
     {

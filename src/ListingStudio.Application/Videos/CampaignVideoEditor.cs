@@ -399,9 +399,10 @@ public static class CampaignVideoEditor
 
     public static string TrackName(CampaignSoundtrack soundtrack) => soundtrack switch
     {
-        CampaignSoundtrack.HeritageWarm => "Heritage warm",
-        CampaignSoundtrack.ModernAmbient => "Modern ambient",
-        CampaignSoundtrack.UpbeatLifestyle => "Upbeat lifestyle",
+        CampaignSoundtrack.HeritageWarm => "Warm acoustic",
+        CampaignSoundtrack.ModernAmbient => "Modern chill",
+        CampaignSoundtrack.UpbeatLifestyle => "Upbeat pop",
+        CampaignSoundtrack.LuxuryCinematic => "Luxury cinematic",
         CampaignSoundtrack.None => "no music",
         _ => Words(soundtrack.ToString()),
     };
@@ -412,6 +413,7 @@ public static class CampaignVideoEditor
         CampaignCreativeDirector.HeritageWarmAssetId => CampaignSoundtrack.HeritageWarm,
         CampaignCreativeDirector.ModernAmbientAssetId => CampaignSoundtrack.ModernAmbient,
         CampaignCreativeDirector.UpbeatLifestyleAssetId => CampaignSoundtrack.UpbeatLifestyle,
+        CampaignCreativeDirector.LuxuryCinematicAssetId => CampaignSoundtrack.LuxuryCinematic,
         _ => null,
     };
 

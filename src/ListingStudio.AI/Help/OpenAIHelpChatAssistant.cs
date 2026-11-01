@@ -76,7 +76,7 @@ public sealed class OpenAIHelpChatAssistant(
         - Campaign tab: choose deliverables (vertical social video for TikTok, Reels and Shorts; YouTube tour; Facebook
           feed video; full narrated tour for long scripts), a Marketing template (Balanced showcase, Price drop, Quick
           tour, Feature spotlight, Agent showcase, Just listed, Open house; price drop and open house need confirmed
-          details), Narration source, Music (Choose for the home's era, Upbeat lifestyle, Modern ambient, Heritage warm,
+          details), Narration source, Music (Choose for the home's era, Upbeat pop, Modern chill, Warm acoustic, Luxury cinematic,
           none so you can add a sound in TikTok or Instagram, or no music), short-video Style (Fast cuts on the beat or
           Cinematic glide) and Voiceover (short 30-second voiceover, music and text only, or full 60-second tour
           voiceover), "Show my name and phone on short videos", and an Advanced panel for on-screen elements, caption
