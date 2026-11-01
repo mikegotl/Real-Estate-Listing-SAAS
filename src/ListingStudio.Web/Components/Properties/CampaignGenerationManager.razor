@@ -224,9 +224,10 @@
                 <MudItem xs="12" sm="6">
                     <MudSelect T="CampaignSoundtrack" Label="Music" Value="selectedSoundtrack" ValueChanged="SetSoundtrack" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
                         <MudSelectItem Value="CampaignSoundtrack.AutoByHomeEra">Choose for the home's era</MudSelectItem>
-                        <MudSelectItem Value="CampaignSoundtrack.UpbeatLifestyle">Upbeat lifestyle</MudSelectItem>
-                        <MudSelectItem Value="CampaignSoundtrack.ModernAmbient">Modern ambient</MudSelectItem>
-                        <MudSelectItem Value="CampaignSoundtrack.HeritageWarm">Heritage warm</MudSelectItem>
+                        @foreach (var track in CampaignCreativeDirector.LibrarySoundtracks)
+                        {
+                            <MudSelectItem Value="track">@SoundtrackName(track)</MudSelectItem>
+                        }
                         <MudSelectItem Value="CampaignSoundtrack.AddInApp">None, I'll add a sound in TikTok or Instagram</MudSelectItem>
                         <MudSelectItem Value="CampaignSoundtrack.None">No music</MudSelectItem>
                     </MudSelect>
@@ -241,7 +242,7 @@
                     else if (selectedSoundtrack == CampaignSoundtrack.AutoByHomeEra)
                     {
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                            Older homes get Heritage warm, mid-century homes Upbeat lifestyle, newer homes Modern ambient.
+                            Older homes get Warm acoustic, mid-century homes Upbeat pop, newer homes Modern chill.
                         </MudText>
                     }
                     else if (selectedSoundtrack == CampaignSoundtrack.AddInApp)
@@ -1242,10 +1243,9 @@
             : selectedOutputs & ~selection;
     }
 
-    private CampaignSoundtrack? PreviewSoundtrack => selectedSoundtrack
-        is CampaignSoundtrack.HeritageWarm or CampaignSoundtrack.ModernAmbient or CampaignSoundtrack.UpbeatLifestyle
-            ? selectedSoundtrack
-            : null;
+    private CampaignSoundtrack? PreviewSoundtrack => CampaignCreativeDirector.IsLibrarySoundtrack(selectedSoundtrack)
+        ? selectedSoundtrack
+        : null;
 
     private bool IsCreativeElementSelected(CampaignVideoElement element) => selectedCreativeElements.HasFlag(element);
 
@@ -1398,9 +1398,8 @@
     private static string SoundtrackName(CampaignSoundtrack soundtrack) => soundtrack switch
     {
         CampaignSoundtrack.AutoByHomeEra => "chosen for the home's era",
-        CampaignSoundtrack.UpbeatLifestyle => "Upbeat lifestyle",
-        CampaignSoundtrack.ModernAmbient => "Modern ambient",
-        CampaignSoundtrack.HeritageWarm => "Heritage warm",
+        CampaignSoundtrack.UpbeatLifestyle or CampaignSoundtrack.ModernAmbient or CampaignSoundtrack.HeritageWarm
+            or CampaignSoundtrack.LuxuryCinematic => CampaignVideoEditor.TrackName(soundtrack),
         CampaignSoundtrack.AddInApp => "added in the app",
         CampaignSoundtrack.None => "no music",
         _ => Display(soundtrack),

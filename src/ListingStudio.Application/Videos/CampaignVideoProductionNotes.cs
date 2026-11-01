@@ -116,7 +116,7 @@ public static class CampaignVideoProductionNotes
 
         var name = track is { } known ? CampaignVideoEditor.TrackName(known) : "a built-in track";
         var why = job.Soundtrack == CampaignSoundtrack.AutoByHomeEra
-            ? " Picked automatically for the home's era (older homes get Heritage warm, mid-century Upbeat lifestyle, newer homes Modern ambient)."
+            ? " Picked automatically for the home's era (older homes get Warm acoustic, mid-century Upbeat pop, newer homes Modern chill)."
             : track == job.Soundtrack ? " Chosen on the Campaign tab." : " Changed in this video's chat.";
         var ducking = specification.Audio.NarrationSegments.Count > 0 ? ", lowered under the voiceover" : string.Empty;
         return $"The built-in {name} track at {specification.Audio.Music.GainDb.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} dB{ducking}.{why}";
