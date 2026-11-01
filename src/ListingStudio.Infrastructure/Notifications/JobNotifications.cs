@@ -225,6 +225,10 @@ public static class JobNotificationText
         CampaignGenerationStage.RenderHero or CampaignGenerationStage.RenderFeature
             or CampaignGenerationStage.RenderTeaser or CampaignGenerationStage.RenderLongForm => "rendering videos",
         CampaignGenerationStage.GenerateSocialCopy => "writing social posts",
+        CampaignGenerationStage.PlanVerticalLibrary => "choosing the vertical videos",
+        CampaignGenerationStage.GenerateVariantNarration => "recording the vertical voiceovers",
+        CampaignGenerationStage.RenderVariants => "rendering the vertical videos",
+        CampaignGenerationStage.GenerateVariantCopy => "writing the vertical captions",
         _ => "finishing up",
     };
 }

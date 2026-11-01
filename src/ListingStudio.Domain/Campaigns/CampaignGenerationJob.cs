@@ -28,6 +28,58 @@ public enum CampaignGenerationStage
     RenderLongForm,
     GenerateSocialCopy,
     FinalizeCampaign,
+
+    // Vertical video library (VerticalVideoLibraryV1). Appended; stored by name.
+    PlanVerticalLibrary,
+    GenerateVariantNarration,
+    RenderVariants,
+    GenerateVariantCopy,
+    FinalizeVerticalLibrary,
+}
+
+/// <summary>
+/// The order stages run in. Persisted values are append-only, so the library stages have higher numbers than the
+/// stages they run between; compare stages with <see cref="Rank"/>, never with their numeric values.
+/// </summary>
+public static class CampaignGenerationStageOrder
+{
+    private static readonly CampaignGenerationStage[] Ordered =
+    [
+        CampaignGenerationStage.ValidateProperty,
+        CampaignGenerationStage.AnalyzeMedia,
+        CampaignGenerationStage.GenerateStory,
+        CampaignGenerationStage.GenerateMasterVideoPlan,
+        CampaignGenerationStage.GenerateNarration,
+        CampaignGenerationStage.PlanVerticalLibrary,
+        CampaignGenerationStage.GenerateDerivativePlans,
+        CampaignGenerationStage.GenerateRequiredAiVideo,
+        CampaignGenerationStage.RenderHero,
+        CampaignGenerationStage.RenderFeature,
+        CampaignGenerationStage.RenderTeaser,
+        CampaignGenerationStage.RenderLongForm,
+        CampaignGenerationStage.GenerateVariantNarration,
+        CampaignGenerationStage.RenderVariants,
+        CampaignGenerationStage.GenerateVariantCopy,
+        CampaignGenerationStage.FinalizeVerticalLibrary,
+        CampaignGenerationStage.GenerateSocialCopy,
+        CampaignGenerationStage.FinalizeCampaign,
+    ];
+
+    public static int Rank(CampaignGenerationStage stage)
+    {
+        var index = Array.IndexOf(Ordered, stage);
+        return index >= 0 ? index : throw new ArgumentOutOfRangeException(nameof(stage));
+    }
+
+    public static bool IsVerticalLibraryStage(CampaignGenerationStage stage) => stage is CampaignGenerationStage.PlanVerticalLibrary
+        or CampaignGenerationStage.GenerateVariantNarration
+        or CampaignGenerationStage.RenderVariants
+        or CampaignGenerationStage.GenerateVariantCopy
+        or CampaignGenerationStage.FinalizeVerticalLibrary;
+
+    /// <summary>The stages a job shows, in running order; library stages only for library jobs.</summary>
+    public static IReadOnlyList<CampaignGenerationStage> For(bool usesVerticalLibrary, CampaignGenerationStage current) =>
+        Ordered.Where(stage => usesVerticalLibrary || !IsVerticalLibraryStage(stage) || stage == current).ToArray();
 }
 
 public sealed class CampaignGenerationJob
@@ -116,6 +168,15 @@ public sealed class CampaignGenerationJob
     public bool OpenHouseVerified { get; private set; }
 
     public string? ShortFormLocalizedCopyJson { get; private set; }
+
+    /// <summary>
+    /// Null for every campaign made without the vertical video library. Set only when the library was on for the
+    /// workspace when the campaign was requested; cleared again if the library falls back to one shared video.
+    /// </summary>
+    public VerticalVideoSelection? VerticalSelection { get; private set; }
+
+    /// <summary>The campaign makes several recommended vertical videos instead of one shared vertical edit.</summary>
+    public bool UsesVerticalLibrary => VerticalSelection is VerticalVideoSelection.RecommendedThree or VerticalVideoSelection.AllEligible;
 
     public CampaignNarrationRegion NarrationRegion { get; private set; }
 
@@ -223,7 +284,8 @@ public sealed class CampaignGenerationJob
 
     public void CompleteStage(CampaignGenerationStage nextStage, DateTimeOffset now)
     {
-        if (Status != CampaignGenerationStatus.Running || nextStage <= CurrentStage)
+        if (Status != CampaignGenerationStatus.Running
+            || CampaignGenerationStageOrder.Rank(nextStage) <= CampaignGenerationStageOrder.Rank(CurrentStage))
         {
             throw new InvalidOperationException("The campaign stage cannot be completed.");
         }
@@ -343,6 +405,32 @@ public sealed class CampaignGenerationJob
     {
         LongFormLocalizedCopyJson = Required(localizedCopyJson, 500_000, nameof(localizedCopyJson));
     }
+
+    /// <summary>Asks for the vertical video library. Only before work starts, and only with a vertical output.</summary>
+    public void RequestVerticalLibrary(VerticalVideoSelection selection)
+    {
+        if (selection is not (VerticalVideoSelection.RecommendedThree or VerticalVideoSelection.AllEligible))
+        {
+            throw new ArgumentOutOfRangeException(nameof(selection));
+        }
+
+        if (Status != CampaignGenerationStatus.Queued || CurrentStage != CampaignGenerationStage.ValidateProperty)
+        {
+            throw new InvalidOperationException("The vertical video library can only be chosen before the campaign starts.");
+        }
+
+        if (!RequestedOutputs.HasFlag(CampaignOutputSelection.TikTok)
+            && !RequestedOutputs.HasFlag(CampaignOutputSelection.InstagramReel)
+            && !RequestedOutputs.HasFlag(CampaignOutputSelection.YouTubeShort))
+        {
+            throw new InvalidOperationException("The vertical video library needs a vertical output.");
+        }
+
+        VerticalSelection = selection;
+    }
+
+    /// <summary>Falls back to the one shared vertical edit (feature switched off, or no format can be made).</summary>
+    public void UseLegacyVertical() => VerticalSelection = null;
 
     public void SetShortFormLocalizedCopy(string localizedCopyJson)
     {

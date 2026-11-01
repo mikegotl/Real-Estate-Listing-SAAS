@@ -169,6 +169,13 @@ public sealed class CampaignVideoLibrary
             throw new InvalidOperationException("This library already has that format at that position.");
         }
 
+        var key = CampaignVideoVariant.CreateIdempotencyKey(
+            CampaignGenerationJobId, plan.Format, plan.Sequence, plan.RecipeVersion, plan.HookVariant);
+        if (Variants.Any(variant => variant.IdempotencyKey == key))
+        {
+            throw new InvalidOperationException("This library already has that video.");
+        }
+
         var variant = CampaignVideoVariant.Create(this, plan, now);
         Variants.Add(variant);
         UpdatedAtUtc = now;
@@ -256,7 +263,8 @@ public sealed record CampaignVideoVariantPlan(
     string? CallToAction,
     string RecipeJson,
     string RecipeVersion,
-    string? CaptionsJson = null);
+    string? CaptionsJson = null,
+    string HookVariant = CampaignVideoVariant.DefaultHookVariant);
 
 /// <summary>
 /// One planned video in a library: one creative angle with its own hook, primary shot, voiceover and call to action.
@@ -268,6 +276,8 @@ public sealed class CampaignVideoVariant
     public const int MaximumCallToActionLength = 80;
     public const int MaximumGroundingKeyLength = 200;
     public const int MaximumRecipeVersionLength = 40;
+    public const int MaximumIdempotencyKeyLength = 160;
+    public const string DefaultHookVariant = "a";
     public static readonly IReadOnlySet<int> AllowedDurations = new HashSet<int> { 15, 30, 45, 60 };
 
     private CampaignVideoVariant() { }
@@ -277,6 +287,15 @@ public sealed class CampaignVideoVariant
     public Guid OrganizationId { get; private set; }
 
     public Guid CampaignVideoLibraryId { get; private set; }
+
+    /// <summary>
+    /// <c>{job}:{format}:{sequence}:{recipe version}:{hook variant}</c>. The same plan always maps to the same video, so
+    /// a retried or resumed campaign finds the work it already did instead of adding a duplicate. Null only for the
+    /// backfilled legacy video.
+    /// </summary>
+    public string? IdempotencyKey { get; private set; }
+
+    public string HookVariant { get; private set; } = DefaultHookVariant;
 
     public VerticalCreativeFormat Format { get; private set; }
 
@@ -305,6 +324,9 @@ public sealed class CampaignVideoVariant
 
     /// <summary>This video's own social caption copy; the campaign-wide captions stay for legacy and landscape outputs.</summary>
     public string? CaptionsJson { get; private set; }
+
+    /// <summary>This video's voiceover in the campaign's spoken language, kept so a retry never re-translates it.</summary>
+    public string? NarrationLocalizationJson { get; private set; }
 
     public CampaignVideoVariantStatus Status { get; private set; }
 
@@ -361,6 +383,9 @@ public sealed class CampaignVideoVariant
             Id = Guid.NewGuid(),
             OrganizationId = library.OrganizationId,
             CampaignVideoLibraryId = library.Id,
+            IdempotencyKey = CreateIdempotencyKey(
+                library.CampaignGenerationJobId, plan.Format, plan.Sequence, recipeVersion, plan.HookVariant),
+            HookVariant = NormalizeHookVariant(plan.HookVariant),
             Library = library,
             Format = plan.Format,
             Purpose = plan.Purpose,
@@ -380,6 +405,51 @@ public sealed class CampaignVideoVariant
             UpdatedAtUtc = now,
             FinishedAtUtc = plan.IsEligible ? null : now,
         };
+    }
+
+    public static string CreateIdempotencyKey(
+        Guid campaignGenerationJobId,
+        VerticalCreativeFormat format,
+        int sequence,
+        string recipeVersion,
+        string? hookVariant)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(recipeVersion);
+        var key = $"{campaignGenerationJobId:N}:{format}:{sequence}:{recipeVersion.Trim()}:{NormalizeHookVariant(hookVariant)}";
+        return key.Length > MaximumIdempotencyKeyLength ? throw new ArgumentException("The video key is too long.") : key;
+    }
+
+    private static string NormalizeHookVariant(string? hookVariant)
+    {
+        var normalized = string.IsNullOrWhiteSpace(hookVariant) ? DefaultHookVariant : hookVariant.Trim().ToLowerInvariant();
+        return normalized.Length <= 8 && normalized.All(char.IsAsciiLetterOrDigit)
+            ? normalized
+            : throw new ArgumentException("A hook variant is a short letter or number code.", nameof(hookVariant));
+    }
+
+    /// <summary>This video's own post caption copy, written once its edit is fixed.</summary>
+    public void SetCaptions(string captionsJson, DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(captionsJson);
+        if (captionsJson.Length > 20_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(captionsJson));
+        }
+
+        CaptionsJson = captionsJson;
+        UpdatedAtUtc = now;
+    }
+
+    public void SetNarrationLocalization(string localizationJson, DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(localizationJson);
+        if (localizationJson.Length > 200_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(localizationJson));
+        }
+
+        NarrationLocalizationJson = localizationJson;
+        UpdatedAtUtc = now;
     }
 
     public void MarkGenerating(DateTimeOffset now)

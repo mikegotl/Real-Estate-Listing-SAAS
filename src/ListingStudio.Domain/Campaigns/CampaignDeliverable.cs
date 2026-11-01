@@ -138,6 +138,14 @@ public sealed class CampaignDeliverable
     /// </summary>
     public Guid? CampaignVideoVariantId { get; private set; }
 
+    /// <summary>
+    /// A campaign-level output (one per kind): not linked to a library video, or linked to the legacy video the
+    /// AddVerticalVideoLibrary backfill made for it, which reuses this deliverable's id as the video id. Recommended
+    /// library videos always have their own ids. Queries spell this out as
+    /// <c>CampaignVideoVariantId == null || CampaignVideoVariantId == Id</c>.
+    /// </summary>
+    public bool IsCampaignLevel => CampaignVideoVariantId is null || CampaignVideoVariantId == Id;
+
     public CampaignGenerationJob CampaignGenerationJob { get; private set; } = null!;
 
     public VideoNarration VideoNarration { get; private set; } = null!;

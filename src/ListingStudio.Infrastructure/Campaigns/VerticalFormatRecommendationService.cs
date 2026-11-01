@@ -152,7 +152,12 @@ internal static class VerticalPlanningInputLoader
             .ToArrayAsync(cancellationToken);
         return rows
             .GroupBy(claim => claim.Kind)
-            .Select(group => group.OrderByDescending(claim => claim.ConfirmedAtUtc).ThenByDescending(claim => claim.Id).First())
+            // Latest decision wins. A withdrawal recorded in the same instant as a confirmation wins the tie, so an
+            // ambiguous history never unlocks a claim.
+            .Select(group => group.OrderByDescending(claim => claim.ConfirmedAtUtc)
+                .ThenByDescending(claim => claim.IsWithdrawn)
+                .ThenByDescending(claim => claim.Id)
+                .First())
             .Where(claim => claim.IsActiveAt(now))
             .OrderBy(claim => claim.Kind)
             .ToArray();

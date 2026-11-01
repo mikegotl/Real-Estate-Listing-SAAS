@@ -55,7 +55,7 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         var jobIds = jobs.Select(job => job.Id).ToArray();
         var videos = await dbContext.CampaignDeliverables.AsNoTracking()
             .Where(video => video.OrganizationId == organizationId && jobIds.Contains(video.CampaignGenerationJobId)
-                && video.Kind == CampaignOutputKind.TikTok).ToListAsync(cancellationToken);
+                && video.Kind == CampaignOutputKind.TikTok && (video.CampaignVideoVariantId == null || video.CampaignVideoVariantId == video.Id)).ToListAsync(cancellationToken);
         var videoIds = videos.Select(video => video.Id).ToArray();
         var reviews = await dbContext.CampaignVideoReviews.AsNoTracking()
             .Where(review => review.OrganizationId == organizationId && videoIds.Contains(review.CampaignDeliverableId))
@@ -83,7 +83,8 @@ public sealed class CampaignReviewService(ApplicationDbContext dbContext, UserMa
         var video = await dbContext.CampaignDeliverables.AsNoTracking()
             .Include(candidate => candidate.CampaignGenerationJob)
             .SingleOrDefaultAsync(candidate => candidate.OrganizationId == organizationId
-                && candidate.CampaignGenerationJobId == jobId && candidate.Kind == CampaignOutputKind.TikTok,
+                && candidate.CampaignGenerationJobId == jobId && candidate.Kind == CampaignOutputKind.TikTok
+                && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id),
                 cancellationToken);
         if (video is null)
         {

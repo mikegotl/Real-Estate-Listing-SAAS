@@ -723,6 +723,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("VerticalSelection")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<Guid?>("VideoNarrationId")
                         .HasColumnType("uuid");
 
@@ -1184,8 +1188,22 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("HookVariant")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasDefaultValue("a");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
                     b.Property<bool>("IsEligible")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("NarrationLocalizationJson")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
@@ -1227,6 +1245,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(32)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CampaignVideoLibraryId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "CampaignVideoLibraryId");
 

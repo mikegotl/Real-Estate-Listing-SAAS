@@ -66,6 +66,7 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
             .HasDefaultValue(false)
             .IsRequired();
         builder.Property(job => job.ShortFormLocalizedCopyJson).HasColumnType("text");
+        builder.Property(job => job.VerticalSelection).HasConversion<string>().HasMaxLength(32);
         builder.Property(job => job.NarrationRegion)
             .HasConversion<string>()
             .HasMaxLength(32)

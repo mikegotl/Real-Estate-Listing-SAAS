@@ -55,6 +55,12 @@ public sealed class CampaignVideoVariantConfiguration : IEntityTypeConfiguration
             .HasMaxLength(CampaignVideoVariant.MaximumRecipeVersionLength).IsRequired();
         builder.Property(variant => variant.CaptionsJson).HasColumnType("jsonb");
         builder.Property(variant => variant.Error).HasMaxLength(500);
+        builder.Property(variant => variant.IdempotencyKey).HasMaxLength(CampaignVideoVariant.MaximumIdempotencyKeyLength);
+        builder.Property(variant => variant.HookVariant).HasMaxLength(8).HasDefaultValue(CampaignVideoVariant.DefaultHookVariant).IsRequired();
+        builder.Property(variant => variant.NarrationLocalizationJson).HasColumnType("text");
+        builder.HasIndex(variant => new { variant.CampaignVideoLibraryId, variant.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("\"IdempotencyKey\" IS NOT NULL");
         builder.HasIndex(variant => new { variant.CampaignVideoLibraryId, variant.Format, variant.Sequence }).IsUnique();
         builder.HasIndex(variant => new { variant.OrganizationId, variant.CampaignVideoLibraryId });
         builder.HasIndex(variant => new { variant.OrganizationId, variant.Format, variant.Status });

@@ -30,6 +30,20 @@ public interface ICampaignGenerationService
         CampaignNarrationPreferences narrationPreferences,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Same as the other overloads, but asks for several recommended vertical videos instead of one shared vertical
+    /// edit. The request only takes effect while VerticalVideoLibraryV1 is on for the workspace; otherwise the
+    /// campaign is the legacy one, exactly as before.
+    /// </summary>
+    Task<CampaignGenerationResult?> EnqueueAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        CampaignNarrationPreferences narrationPreferences,
+        VerticalVideoSelection verticalSelection,
+        CancellationToken cancellationToken = default);
+
     Task<CampaignGenerationResult?> GetLatestAsync(
         string userId,
         Guid propertyId,

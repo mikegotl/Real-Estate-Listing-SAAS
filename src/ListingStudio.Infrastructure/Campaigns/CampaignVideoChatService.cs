@@ -243,6 +243,7 @@ public sealed partial class CampaignVideoChatService(
             .SingleOrDefaultAsync(candidate => candidate.CampaignGenerationJobId == jobId
                 && candidate.OrganizationId == organizationId
                 && candidate.Kind == kind
+                && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id)
                 && candidate.Status == CampaignDeliverableStatus.Rendered,
                 cancellationToken);
         if (deliverable is null)
@@ -277,6 +278,7 @@ public sealed partial class CampaignVideoChatService(
             .SingleOrDefaultAsync(candidate => candidate.CampaignGenerationJobId == jobId
                 && candidate.OrganizationId == organizationId
                 && candidate.Kind == kind
+                && (candidate.CampaignVideoVariantId == null || candidate.CampaignVideoVariantId == candidate.Id)
                 && candidate.Status == CampaignDeliverableStatus.Rendered,
                 cancellationToken);
     }
