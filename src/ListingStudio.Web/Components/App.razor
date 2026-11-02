@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="@ThemeChoice">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -20,6 +20,23 @@
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script src="@Assets["campaign-sharing.js"]"></script>
     <script src="@Assets["media-preview.js"]"></script>
+    <script src="@Assets["theme.js"]"></script>
     <script src="_framework/blazor.web.js"></script>
 </body>
 </html>
+
+@code {
+    // The header switch saves the visitor's choice in this cookie, so the server renders the right theme on the
+    // first paint and keeps it through enhanced navigation. No cookie means the page follows the device setting.
+    public const string ThemeCookieName = "ls-theme";
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? ThemeChoice => HttpContext?.Request.Cookies[ThemeCookieName] switch
+    {
+        "dark" => "dark",
+        "light" => "light",
+        _ => null,
+    };
+}

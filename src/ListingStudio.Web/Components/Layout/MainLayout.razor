@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 
 <MudThemeProvider Theme="Theme" />
+@* The dark palette is always sent; CSS applies it only when dark mode is on (see theme.js and App.razor). *@
+<DarkThemeVariables Theme="Theme" IsDarkMode="true" ObserveSystemDarkModeChange="false" DefaultScrollbar="true" />
 
 <MudLayout Class="app-shell">
     <MudAppBar Elevation="0" Class="app-header">
@@ -60,6 +62,45 @@
             Divider = "#E6E1D8",
             TableLines = "#ECE8E1",
             LinesDefault = "#E6E1D8",
+        },
+        // Dark mode keeps the harbor navy shell and brass accents but moves pages onto deep navy paper,
+        // with lighter tints of the brand colours so text and buttons keep their contrast.
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#8DB8DD",
+            PrimaryContrastText = "#0B1622",
+            Secondary = "#D9AE6E",
+            SecondaryContrastText = "#1A1206",
+            Tertiary = "#8FBBA4",
+            TertiaryContrastText = "#0B1622",
+            Info = "#86B9E6",
+            Success = "#6FC392",
+            Warning = "#E5AE52",
+            Error = "#F2877C",
+            Dark = "#08111B",
+            Black = "#05090F",
+            Background = "#0D1824",
+            BackgroundGray = "#132131",
+            Surface = "#142231",
+            DrawerBackground = "#142231",
+            DrawerText = "#ECE6DC",
+            AppbarBackground = "#08111B",
+            AppbarText = "#F5F1EA",
+            TextPrimary = "#ECE6DC",
+            TextSecondary = "#A8B3C0",
+            TextDisabled = "rgba(236, 230, 220, .38)",
+            ActionDefault = "#B8C2CD",
+            ActionDisabled = "rgba(236, 230, 220, .26)",
+            ActionDisabledBackground = "rgba(236, 230, 220, .12)",
+            Divider = "#26384B",
+            DividerLight = "#1E2E3F",
+            TableLines = "#22344A",
+            TableStriped = "rgba(255, 255, 255, .03)",
+            TableHover = "rgba(255, 255, 255, .05)",
+            LinesDefault = "#26384B",
+            LinesInputs = "#4A5D72",
+            OverlayDark = "rgba(2, 6, 12, .6)",
+            Skeleton = "rgba(255, 255, 255, .08)",
         },
         Typography = new Typography
         {

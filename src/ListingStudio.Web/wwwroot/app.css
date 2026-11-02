@@ -50,6 +50,47 @@
     --ls-warning: var(--mud-palette-warning);
     --ls-error: var(--mud-palette-error);
     --ls-error-soft: rgba(var(--mud-palette-error-rgb), .1);
+    --ls-chat-bubble: #F1EEE6;
+    color-scheme: light;
+}
+
+/* Dark mode. The MudBlazor dark palette arrives from DarkThemeVariables (MainLayout); these are the extra shades
+   app.css owns. Both blocks must stay identical: the first is the saved choice from the header switch, the
+   second follows the device setting when no choice is saved. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --ls-primary-soft: rgba(var(--mud-palette-primary-rgb), .14);
+    --ls-primary-border: rgba(var(--mud-palette-primary-rgb), .4);
+    --ls-accent-strong: #E2C08D;
+    --ls-accent-soft: rgba(var(--mud-palette-secondary-rgb), .16);
+    --ls-subtle: #8D98A5;
+    --ls-surface-muted: #182838;
+    --ls-line-strong: #3A4E64;
+    --ls-night-rgb: 8, 17, 27;
+    --ls-night-2: #112539;
+    --ls-night-3: #1A3A57;
+    --ls-chat-bubble: #1C2D3F;
+    --ls-success-soft: rgba(var(--mud-palette-success-rgb), .16);
+    --ls-error-soft: rgba(var(--mud-palette-error-rgb), .16);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --ls-primary-soft: rgba(var(--mud-palette-primary-rgb), .14);
+        --ls-primary-border: rgba(var(--mud-palette-primary-rgb), .4);
+        --ls-accent-strong: #E2C08D;
+        --ls-accent-soft: rgba(var(--mud-palette-secondary-rgb), .16);
+        --ls-subtle: #8D98A5;
+        --ls-surface-muted: #182838;
+        --ls-line-strong: #3A4E64;
+        --ls-night-rgb: 8, 17, 27;
+        --ls-night-2: #112539;
+        --ls-night-3: #1A3A57;
+        --ls-chat-bubble: #1C2D3F;
+        --ls-success-soft: rgba(var(--mud-palette-success-rgb), .16);
+        --ls-error-soft: rgba(var(--mud-palette-error-rgb), .16);
+    }
 }
 
 :root {
@@ -124,6 +165,18 @@ h1:focus { outline: none; }
 .notification-trigger { align-items: center; background: none; border: 0; border-radius: 50%; color: var(--ls-on-night); cursor: pointer; display: flex; height: 40px; justify-content: center; position: relative; width: 40px; }
 .notification-trigger:hover, .notification-trigger[aria-expanded="true"] { background: rgba(255, 255, 255, .08); }
 .notification-trigger:focus-visible { outline: 2px solid var(--ls-accent-light); outline-offset: 2px; }
+
+/* Dark mode switch in the header: a moon in light mode, a sun in dark mode. */
+.theme-toggle { align-items: center; background: none; border: 0; border-radius: 50%; color: var(--ls-on-night); cursor: pointer; display: flex; flex: 0 0 auto; height: 40px; justify-content: center; padding: 0; width: 40px; }
+.theme-toggle:hover { background: rgba(255, 255, 255, .08); }
+.theme-toggle:focus-visible { outline: 2px solid var(--ls-accent-light); outline-offset: 2px; }
+.theme-toggle .theme-toggle-sun { display: none; }
+:root[data-theme="dark"] .theme-toggle .theme-toggle-moon { display: none; }
+:root[data-theme="dark"] .theme-toggle .theme-toggle-sun { display: inline-block; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle .theme-toggle-moon { display: none; }
+    :root:not([data-theme="light"]) .theme-toggle .theme-toggle-sun { display: inline-block; }
+}
 .notification-count { background: var(--ls-accent-light); border: 2px solid var(--ls-night); border-radius: 999px; color: var(--ls-night); font-size: .66rem; font-weight: 800; line-height: 1; min-width: 20px; padding: 3px 5px; position: absolute; right: 0; text-align: center; top: 1px; }
 .notification-panel { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 14px; box-shadow: 0 18px 40px rgba(2, 6, 23, .28); color: var(--ls-ink); max-height: min(520px, calc(100vh - 96px)); overflow-y: auto; position: absolute; right: -8px; top: calc(100% + 10px); width: 360px; z-index: 1300; }
 .notification-panel-header { align-items: center; border-bottom: 1px solid var(--ls-line); display: flex; justify-content: space-between; padding: 14px 16px; }
@@ -310,7 +363,7 @@ h1:focus { outline: none; }
 .storyboard-stop.is-filled::before { background: var(--ls-primary-border); }
 .storyboard-stop.next-stop::before { display: none; }
 .stop-marker { align-items: center; background: var(--ls-surface); border: 2px solid var(--ls-line-strong); border-radius: 50%; color: var(--ls-muted); display: flex; font-size: .9rem; font-weight: 750; height: 36px; justify-content: center; position: relative; width: 36px; z-index: 1; }
-.is-filled .stop-marker { background: var(--ls-primary); border-color: var(--ls-primary); color: var(--ls-on-night); }
+.is-filled .stop-marker { background: var(--ls-primary); border-color: var(--ls-primary); color: var(--mud-palette-primary-text); }
 .next-stop .stop-marker { border-style: dashed; color: var(--ls-accent); }
 .stop-head { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }
 .stop-title { align-items: baseline; display: flex; flex-wrap: wrap; gap: 4px 10px; min-height: 36px; padding-top: 4px; }
@@ -340,7 +393,7 @@ h1:focus { outline: none; }
 .storyboard-photo-image { aspect-ratio: 4 / 3; background-color: var(--ls-surface-muted); background-position: center; background-size: cover; position: relative; }
 .scene-number { background: rgba(var(--ls-night-rgb), .82); border-radius: 999px; color: var(--ls-on-night); font-size: .75rem; font-weight: 750; left: 8px; min-width: 26px; padding: 3px 8px; position: absolute; text-align: center; top: 8px; }
 .walkthrough-play { align-items: center; background: rgba(var(--ls-night-rgb), .72); border: 2px solid rgba(255, 255, 255, .85); border-radius: 999px; color: #fff; cursor: pointer; display: inline-flex; height: 48px; justify-content: center; left: 50%; position: absolute; top: 50%; transform: translate(-50%, -50%); transition: background .15s ease, transform .15s ease; width: 48px; }
-.walkthrough-play:hover, .walkthrough-play:focus-visible { background: var(--ls-primary); transform: translate(-50%, -50%) scale(1.06); }
+.walkthrough-play:hover, .walkthrough-play:focus-visible { background: var(--ls-night-3); transform: translate(-50%, -50%) scale(1.06); }
 .walkthrough-play:focus-visible { outline: 2px solid var(--ls-accent); outline-offset: 2px; }
 .walkthrough-video { background: #000; height: 100%; inset: 0; object-fit: cover; position: absolute; width: 100%; }
 .opening-sequence-stage { background: rgba(var(--ls-night-rgb), .82); border-radius: 999px; color: #fff; font-size: .72rem; font-weight: 700; left: .65rem; padding: .28rem .55rem; position: absolute; top: .65rem; z-index: 3; }
@@ -406,7 +459,7 @@ h1:focus { outline: none; }
 /* Photo fixes: the Fix button and Edited badge sit on the photo, and a running fix covers it with its progress. */
 .photo-fix-menu { position: absolute; right: 6px; top: 6px; }
 .photo-fix-button { align-items: center; background: rgba(var(--ls-night-rgb), .78); border: 0; border-radius: 999px; color: var(--ls-on-night); cursor: pointer; display: inline-flex; font: inherit; font-size: .74rem; font-weight: 700; gap: 3px; padding: 3px 9px 3px 6px; transition: background .15s ease; }
-.photo-fix-button:hover, .photo-fix-button:focus-visible { background: var(--ls-primary); }
+.photo-fix-button:hover, .photo-fix-button:focus-visible { background: var(--ls-night-3); }
 .photo-fix-button:focus-visible { outline: 2px solid var(--ls-accent); outline-offset: 2px; }
 .photo-fix-button .mud-icon-root, .photo-fix-edited .mud-icon-root { font-size: .95rem; }
 .photo-fix-edited { align-items: center; background: var(--ls-surface); border: 0; border-radius: 999px; bottom: 6px; color: var(--ls-accent-strong); cursor: pointer; display: inline-flex; font: inherit; font-size: .7rem; font-weight: 750; gap: 3px; left: 6px; padding: 2px 8px 2px 5px; position: absolute; }
@@ -431,7 +484,7 @@ h1:focus { outline: none; }
 }
 
 /* Platform administration */
-.admin-hero { align-items: center; background: linear-gradient(130deg, var(--ls-night), var(--ls-primary)); border-radius: 22px; color: var(--ls-on-night); display: flex; justify-content: space-between; margin-bottom: 18px; padding: 28px 32px; }
+.admin-hero { align-items: center; background: linear-gradient(130deg, var(--ls-night), var(--ls-night-3)); border-radius: 22px; color: var(--ls-on-night); display: flex; justify-content: space-between; margin-bottom: 18px; padding: 28px 32px; }
 .admin-hero p { color: rgba(255, 255, 255, .78); margin: 8px 0 0; }
 .admin-range { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .admin-range-copy { color: var(--ls-muted); font-size: .82rem; margin: 0 0 16px; }
@@ -566,7 +619,7 @@ h1:focus { outline: none; }
 .map-direction .mud-icon-root { color: var(--ls-accent); font-size: 1.05rem; }
 .map-direction:hover, .map-direction:focus-visible { border-color: var(--ls-primary); }
 .map-direction:focus-visible { outline: 2px solid var(--ls-primary); outline-offset: 2px; }
-.map-direction.is-active { background: var(--ls-primary); border-color: var(--ls-primary); color: var(--ls-on-night); }
+.map-direction.is-active { background: var(--ls-primary); border-color: var(--ls-primary); color: var(--mud-palette-primary-text); }
 .map-direction.is-active .mud-icon-root { color: var(--ls-accent-light); }
 .map-direction:disabled { cursor: progress; opacity: .6; }
 .map-detail-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
@@ -579,7 +632,7 @@ h1:focus { outline: none; }
 .walkthrough-route-step strong { display: block; font-weight: 650; }
 .walkthrough-route-step:hover, .walkthrough-route-step:focus-visible { border-color: var(--ls-primary); }
 .walkthrough-route-step.is-selected { background: var(--ls-primary-soft); border-color: var(--ls-primary); }
-.walkthrough-route-number { align-items: center; background: var(--ls-primary); border-radius: 999px; color: var(--ls-on-night); display: inline-flex; flex: none; font-size: .72rem; font-weight: 750; height: 22px; justify-content: center; width: 22px; }
+.walkthrough-route-number { align-items: center; background: var(--ls-primary); border-radius: 999px; color: var(--mud-palette-primary-text); display: inline-flex; flex: none; font-size: .72rem; font-weight: 750; height: 22px; justify-content: center; width: 22px; }
 .walkthrough-route-direction { color: var(--ls-muted); display: block; font-size: .74rem; }
 .walkthrough-route-direction.is-assumed { font-style: italic; }
 .walkthrough-route-narrated { color: var(--ls-accent); margin-left: 2px; }
@@ -637,6 +690,10 @@ h1:focus { outline: none; }
 .property-tab-panels { padding-top: 18px; }
 .property-tab-panels .mud-paper.mt-6:first-child { margin-top: 0 !important; }
 .property-description { line-height: 1.75; max-width: 75ch; white-space: pre-line; }
+
+/* With the Admin link and the dark mode switch the header runs out of room below about 1440px, so the account
+   pill shows only its icon there; the address stays in its tooltip and is still read by screen readers. */
+@media (max-width: 1440px) { .user-pill span { clip: rect(0 0 0 0); height: 1px; overflow: hidden; position: absolute; width: 1px; }.user-pill { padding: 7px; } }
 
 @media (max-width: 1050px) {
     .hero-section { gap: 38px; grid-template-columns: 1fr 430px; }
@@ -759,7 +816,7 @@ a.stage-pill:hover { text-decoration: underline; }
 .video-chat-header { align-items: flex-start; display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .video-chat-messages { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; margin-bottom: 10px; }
 .video-chat-message { border-radius: 10px; max-width: 92%; padding: 8px 10px; }
-.video-chat-message.assistant { align-self: flex-start; background: #F1EEE6; }
+.video-chat-message.assistant { align-self: flex-start; background: var(--ls-chat-bubble); }
 .video-chat-message.user { align-self: flex-end; background: rgba(226, 192, 141, .35); }
 .video-chat-changes { font-size: .82rem; margin: 6px 0; padding-left: 1.1rem; }
 .video-chat-confirm { background: rgba(255,255,255,.7); border: 1px solid rgba(20,40,70,.12); border-radius: 8px; margin-top: 8px; padding: 8px 10px; }
