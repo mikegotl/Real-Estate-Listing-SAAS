@@ -33,6 +33,7 @@
                    Variant="Variant.Outlined" Disabled="busy" Class="mb-4" data-testid="feature-picker">
             <MudSelectItem Value="@FeatureFlagKeys.VerticalVideoLibraryV1">Vertical video library</MudSelectItem>
             <MudSelectItem Value="@FeatureFlagKeys.Kling4FullTourV1">Kling 4 continuous Tour Map</MudSelectItem>
+            <MudSelectItem Value="@FeatureFlagKeys.Kling4NativePresenterV1">Kling 4 native presenter</MudSelectItem>
         </MudSelect>
         <header class="feature-switch-head">
             <div>
@@ -132,13 +133,19 @@
     private bool Changed => view is not null && (global != view.State.IsGloballyEnabled || everyone != view.State.IsEnabledForAllOrganizations
         || !pilots.Keys.ToHashSet().SetEquals(view.State.PilotOrganizationIds));
 
-    private string FeatureName => featureKey == FeatureFlagKeys.Kling4FullTourV1
-        ? "Kling 4 continuous Tour Map"
-        : "Vertical video library";
+    private string FeatureName => featureKey switch
+    {
+        FeatureFlagKeys.Kling4FullTourV1 => "Kling 4 continuous Tour Map",
+        FeatureFlagKeys.Kling4NativePresenterV1 => "Kling 4 native presenter",
+        _ => "Vertical video library",
+    };
 
-    private string FeatureHelp => featureKey == FeatureFlagKeys.Kling4FullTourV1
-        ? "Experimental 30-second 1080p continuous tours generated from the approved Tour Map, with the agent presenter limited to the lip-synced opening and closing. Off restores the established CLS edit for every workspace, including queued campaigns that have not submitted to the provider yet. Existing deliverables are retained for comparison."
-        : "Recommended multi-format vertical videos, the Creative format testing tab, performance tracking and the One Listing Four TikToks article. Off gives every workspace the single shared vertical video and the previous copy. Turning it off never deletes libraries, tests or recorded numbers; unfinished library campaigns fall back to the shared video and queued creative tests wait.";
+    private string FeatureHelp => featureKey switch
+    {
+        FeatureFlagKeys.Kling4FullTourV1 => "Experimental 30-second 1080p continuous tours generated from the approved Tour Map, with the agent presenter limited to the lip-synced opening and closing. Off restores the established CLS edit for every workspace, including queued campaigns that have not submitted to the provider yet. Existing deliverables are retained for comparison.",
+        FeatureFlagKeys.Kling4NativePresenterV1 => "Experimental single-call 30-second Kling 4 video using the consented profile headshot as the opening and closing frame, approved Tour Map photos in between, and Kling's native speech and music. Off restores the established CLS edit for queued work that has not reached Higgsfield. Existing deliverables are retained for comparison.",
+        _ => "Recommended multi-format vertical videos, the Creative format testing tab, performance tracking and the One Listing Four TikToks article. Off gives every workspace the single shared vertical video and the previous copy. Turning it off never deletes libraries, tests or recorded numbers; unfinished library campaigns fall back to the shared video and queued creative tests wait.",
+    };
 
     protected override Task OnInitializedAsync() => LoadFeatureAsync(featureKey);
 

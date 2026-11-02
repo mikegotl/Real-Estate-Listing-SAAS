@@ -7,6 +7,7 @@ using ListingStudio.Application.Audio;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Billing;
 using ListingStudio.Application.Properties;
+using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Infrastructure.Persistence;
@@ -143,6 +144,17 @@ public sealed class CampaignGenerationService(
         return await featureStateService.IsEnabledAsync(FeatureFlagKeys.Kling4FullTourV1, organizationId, cancellationToken);
     }
 
+    public async Task<bool> IsKlingNativePresenterEnabledAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return await featureStateService.IsEnabledAsync(
+            FeatureFlagKeys.Kling4NativePresenterV1,
+            organizationId,
+            cancellationToken);
+    }
+
     public Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
         CampaignCreativeOptions options, Guid caseRequestId, CancellationToken cancellationToken = default)
     {
@@ -198,6 +210,12 @@ public sealed class CampaignGenerationService(
                 FeatureFlagKeys.Kling4FullTourV1,
                 organizationId,
                 cancellationToken);
+        var usesKlingNativePresenter = videoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+            && testCaseKey is null
+            && await featureStateService.IsEnabledAsync(
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                organizationId,
+                cancellationToken);
         // The library is decided here, before anything is queued: with the switch off (globally, or for this
         // workspace) the request is the legacy campaign, with the same fingerprint it always had.
         // Render regression test cases (a test key with no library request) always make the legacy vertical edit.
@@ -218,9 +236,17 @@ public sealed class CampaignGenerationService(
         }
 
         var planAccess = await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken);
-        if (usesKlingFullTour && !planAccess.IncludesPremiumAi)
+        if ((usesKlingFullTour || usesKlingNativePresenter) && !planAccess.IncludesPremiumAi)
         {
             throw new PlanFeatureUnavailableException(PlanFeatureAccess.PremiumAiUpgradeMessage);
+        }
+        if (usesKlingNativePresenter
+            && (!creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar)
+                || !creativeOptions.AgentAvatarConsentConfirmed
+                || creativeOptions.AgentPortraitId is null))
+        {
+            throw new InvalidOperationException(
+                "The Kling 4 native presenter requires an uploaded profile headshot and AI-presenter consent.");
         }
         if (creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) && !planAccess.IncludesPremiumAi)
         {
@@ -285,6 +311,11 @@ public sealed class CampaignGenerationService(
         if (usesKlingFullTour && media.Length < 2)
         {
             throw new InvalidOperationException("The Kling 4 full tour needs at least two approved Tour Map photos.");
+        }
+        if (usesKlingNativePresenter && media.Length < NativePresenterVideoPolicy.MinimumTourFrames)
+        {
+            throw new InvalidOperationException(
+                "The Kling 4 native presenter needs at least one approved Tour Map photo.");
         }
         if (creativeOptions.Elements.HasFlag(CampaignVideoElement.KitchenIslandOrbit))
         {
@@ -395,6 +426,11 @@ public sealed class CampaignGenerationService(
             fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                 $"{fingerprint}:kling4-full-tour-v1"))).ToLowerInvariant();
         }
+        if (usesKlingNativePresenter)
+        {
+            fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                $"{fingerprint}:kling4-native-presenter-v1"))).ToLowerInvariant();
+        }
 
         if (testCaseKey is not null)
         {
@@ -430,6 +466,10 @@ public sealed class CampaignGenerationService(
         if (usesKlingFullTour)
         {
             job.RequestVideoStrategy(CampaignVideoStrategy.Kling4FullTour);
+        }
+        else if (usesKlingNativePresenter)
+        {
+            job.RequestVideoStrategy(CampaignVideoStrategy.Kling4NativePresenter);
         }
         if (usesLibrary)
         {

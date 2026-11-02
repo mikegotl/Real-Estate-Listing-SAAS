@@ -87,29 +87,44 @@
                 <ArticleGuideLink Placement="@ArticleLinks.Placements.DeliverableSelector" Class="mt-3" />
             }
         </MudPaper>
-        @if (klingFullTourEnabled)
+        @if (klingFullTourEnabled || klingNativePresenterEnabled)
         {
             <MudPaper Outlined="true" Class="pa-4 mb-4" data-testid="video-strategy-picker">
                 <MudText Typo="Typo.subtitle1">Tour video strategy</MudText>
                 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-                    Compare the established CLS edit with an experimental continuous Kling 4 tour. The experimental
-                    option follows up to ten approved Tour Map photos in order at 1080p for the 30-second campaign edits.
-                    Your campaign goal, selected formats, hook, captions, narration, soundtrack, and social copy still
-                    apply whichever tour strategy you choose.
+                    Compare the established CLS edit with separately switchable Kling 4 pilots. Both pilots use only
+                    approved Tour Map photos and affect 30-second campaign edits; longer outputs keep the established edit.
                 </MudText>
-                <MudRadioGroup T="CampaignVideoStrategy" @bind-Value="selectedVideoStrategy">
+                <MudRadioGroup T="CampaignVideoStrategy" Value="selectedVideoStrategy" ValueChanged="VideoStrategyChanged">
                     <MudRadio Value="CampaignVideoStrategy.Established" Color="Color.Primary">
                         Established CLS edit (control)
                     </MudRadio>
-                    <MudRadio Value="CampaignVideoStrategy.Kling4FullTour" Color="Color.Primary">
-                        Kling 4 continuous Tour Map (pilot)
-                    </MudRadio>
+                    @if (klingFullTourEnabled)
+                    {
+                        <MudRadio Value="CampaignVideoStrategy.Kling4FullTour" Color="Color.Primary">
+                            Kling 4 continuous Tour Map (pilot)
+                        </MudRadio>
+                    }
+                    @if (klingNativePresenterEnabled)
+                    {
+                        <MudRadio Value="CampaignVideoStrategy.Kling4NativePresenter" Color="Color.Primary">
+                            Kling 4 native presenter, speech and music (pilot)
+                        </MudRadio>
+                    }
                 </MudRadioGroup>
                 @if (selectedVideoStrategy == CampaignVideoStrategy.Kling4FullTour)
                 {
                     <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
                         The agent presenter still appears only for the lip-synced opening and closing. The property keeps
                         the center of the video, and longer or non-30-second outputs continue to use the established edit.
+                    </MudAlert>
+                }
+                else if (selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                        Kling uses your consented profile headshot as the opening and closing keyframe, places up to eight
+                        approved Tour Map photos between them, and generates the speech and instrumental music in one
+                        30-second call. Exact wording and room order are generative and the finished video is validated.
                     </MudAlert>
                 }
             </MudPaper>
@@ -489,7 +504,11 @@
                              Disabled="@(busy || IsReadOnly)"
                              Label="I confirm this is my photo and I consent to its use as an AI presenter in this campaign" />
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
-                    @if (AgentAvatarVideoService.IsEnabled)
+                    @if (selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
+                    {
+                        <span>Kling 4 will use this portrait as the opening and closing presenter keyframe and generate native speech and music. HeyGen is not used for the native-presenter video.</span>
+                    }
+                    else if (AgentAvatarVideoService.IsEnabled)
                     {
                         <span>Creative Listing Studio will create short lip-synced opening and closing clips from your approved portrait and the selected AI narration. If the presenter provider is unavailable, the campaign continues with your static portrait.</span>
                     }
@@ -787,6 +806,7 @@
     private CampaignGenerationStatus? reportedStatus;
     private bool libraryEnabled;
     private bool klingFullTourEnabled;
+    private bool klingNativePresenterEnabled;
     private CampaignVideoStrategy selectedVideoStrategy = CampaignVideoStrategy.Established;
     private VerticalCreativePlan? verticalPlan;
     private VerticalVideoPicker? verticalPicker;
@@ -901,7 +921,12 @@
             failedAnalysisCount = media.Count(item => item.AnalysisStatus == PropertyMediaAnalysisStatus.Failed);
             libraryEnabled = await Service.IsVerticalLibraryEnabledAsync(userId, pollingCancellation.Token);
             klingFullTourEnabled = await Service.IsKlingFullTourEnabledAsync(userId, pollingCancellation.Token);
-            if (!klingFullTourEnabled)
+            klingNativePresenterEnabled = await Service.IsKlingNativePresenterEnabledAsync(
+                userId,
+                pollingCancellation.Token);
+            if ((!klingFullTourEnabled && selectedVideoStrategy == CampaignVideoStrategy.Kling4FullTour)
+                || (!klingNativePresenterEnabled
+                    && selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter))
             {
                 selectedVideoStrategy = CampaignVideoStrategy.Established;
             }
@@ -967,6 +992,11 @@
     private async Task GenerateAsync() => await MutateAsync(async userId =>
     {
         var elements = RequestedElements;
+        if (selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
+        {
+            elements &= ~CampaignVideoElement.AgentPortrait;
+            elements |= CampaignVideoElement.AgentAvatar;
+        }
 
         var portraitId = elements.HasFlag(CampaignVideoElement.AgentPortrait)
             || elements.HasFlag(CampaignVideoElement.AgentAvatar)
@@ -1307,7 +1337,29 @@
             || !string.IsNullOrWhiteSpace(selectedOpenHouseText)
                 && selectedOpenHouseText.Trim().Length <= CampaignCreativeOptions.MaximumOpenHouseTextLength
                 && selectedOpenHouseVerified)
-        && (!selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar) || selectedAgentAvatarConsent);
+        && (!selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar) || selectedAgentAvatarConsent)
+        && (selectedVideoStrategy != CampaignVideoStrategy.Kling4NativePresenter
+            || portrait is not null
+                && selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
+                && selectedAgentAvatarConsent);
+
+    private void VideoStrategyChanged(CampaignVideoStrategy strategy)
+    {
+        selectedVideoStrategy = strategy;
+        if (strategy != CampaignVideoStrategy.Kling4NativePresenter)
+        {
+            return;
+        }
+
+        if (portrait is null)
+        {
+            error = "Add a profile headshot before choosing the Kling 4 native presenter.";
+            return;
+        }
+
+        selectedCreativeElements &= ~CampaignVideoElement.AgentPortrait;
+        selectedCreativeElements |= CampaignVideoElement.AgentAvatar;
+    }
 
     private void ApplyTemplate(CampaignMarketingTemplate template)
     {

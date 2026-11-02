@@ -256,6 +256,62 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
     }
 
     [Fact]
+    public async Task NativePresenterUsesAgentAtBothEndsAndTourMapPhotosInTheMiddle()
+    {
+        var uploaded = 0;
+        var handler = new RoutingHandler(request => request.RequestUri!.AbsoluteUri switch
+        {
+            "https://api.higgsfield.test/files/generate-upload-url" => Json(new
+            {
+                upload_url = $"https://uploads.storage.test/{++uploaded}",
+                public_url = $"https://cdn.storage.test/frame-{uploaded}.jpg",
+            }),
+            "https://api.higgsfield.test/kling-video/v4.0/image-to-video" => Json(new
+            {
+                status = "queued",
+                request_id = "req_native_presenter",
+            }),
+            _ when request.RequestUri!.Host == "uploads.storage.test" => new HttpResponseMessage(HttpStatusCode.OK),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var client = new HttpClient(handler);
+        await using var agent = new MemoryStream([1]);
+        await using var exterior = new MemoryStream([2]);
+        await using var kitchen = new MemoryStream([3]);
+        var provider = CreateProvider(client);
+
+        var requestId = await provider.SubmitNativePresenterAsync(new NativePresenterVideoSubmission(
+            new WalkthroughVideoFrame(agent, "image/jpeg"),
+            [
+                new(new WalkthroughVideoFrame(exterior, "image/jpeg"), "Exterior front", null, WalkthroughDirection.Ahead),
+                new(new WalkthroughVideoFrame(kitchen, "image/jpeg"), "Kitchen", "A large center island."),
+            ],
+            "Welcome to your next home.",
+            "Contact me today to schedule your private showing.",
+            "Generate buyer interest.",
+            "Upbeat instrumental with no lyrics.",
+            "campaign-native-1"));
+
+        Assert.Equal("req_native_presenter", requestId);
+        using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
+        var root = generation.RootElement;
+        Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("image_url").GetString());
+        Assert.Equal(2, root.GetProperty("image_urls").GetArrayLength());
+        Assert.Equal("https://cdn.storage.test/frame-2.jpg", root.GetProperty("image_urls")[0].GetString());
+        Assert.Equal("https://cdn.storage.test/frame-3.jpg", root.GetProperty("image_urls")[1].GetString());
+        Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("end_image_url").GetString());
+        Assert.Equal(30, root.GetProperty("duration").GetInt32());
+        Assert.Equal("1080p", root.GetProperty("resolution").GetString());
+        var prompt = root.GetProperty("prompt").GetString()!;
+        Assert.Contains("same real-estate agent shown in the first and last keyframe", prompt, StringComparison.Ordinal);
+        Assert.Contains("says exactly: \"Welcome to your next home.\"", prompt, StringComparison.Ordinal);
+        Assert.Contains("A large center island.", prompt, StringComparison.Ordinal);
+        Assert.Contains("Upbeat instrumental with no lyrics.", prompt, StringComparison.Ordinal);
+        Assert.Contains("native-presenter", provider.NativePresenterGenerationVersion, StringComparison.Ordinal);
+        Assert.Equal(30_000, provider.NativePresenterDurationMs);
+    }
+
+    [Fact]
     public async Task PollDownloadsTheFinishedClipWithoutSendingTheKeyToTheVideoHost()
     {
         var handler = new RoutingHandler(request => request.RequestUri!.Host switch

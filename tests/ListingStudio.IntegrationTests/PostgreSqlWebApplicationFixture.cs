@@ -558,6 +558,7 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
     private readonly ConcurrentQueue<Exception> submissionFailures = new();
     private readonly ConcurrentDictionary<string, ConcurrentQueue<WalkthroughVideoState>> polls = new();
     private readonly ConcurrentDictionary<string, FullTourVideoSubmission> fullTourRequests = new();
+    private readonly ConcurrentDictionary<string, NativePresenterVideoSubmission> nativePresenterRequests = new();
     private int submitCount;
 
     public bool IsEnabled => true;
@@ -569,6 +570,10 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
     public string FullTourGenerationVersion => "fake-kling4-full-tour-v1";
 
     public int FullTourDurationMs => 30_000;
+
+    public string NativePresenterGenerationVersion => "fake-kling4-native-presenter-v1";
+
+    public int NativePresenterDurationMs => 30_000;
 
     public int SubmitCount => submitCount;
 
@@ -633,11 +638,33 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         return Task.FromResult(requestId);
     }
 
+    public Task<string> SubmitNativePresenterAsync(
+        NativePresenterVideoSubmission submission,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref submitCount);
+        Assert.InRange(
+            submission.TourFrames.Count,
+            NativePresenterVideoPolicy.MinimumTourFrames,
+            NativePresenterVideoPolicy.MaximumTourFrames);
+        Assert.True(submission.AgentPortrait.Content.CanRead);
+        Assert.All(submission.TourFrames, frame => Assert.True(frame.Frame.Content.CanRead));
+        if (submissionFailures.TryDequeue(out var failure))
+        {
+            return Task.FromException<string>(failure);
+        }
+
+        var requestId = $"fake-{Guid.NewGuid():N}";
+        nativePresenterRequests[requestId] = submission;
+        return Task.FromResult(requestId);
+    }
+
     public Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,
         CancellationToken cancellationToken = default)
     {
-        if (fullTourRequests.ContainsKey(providerRequestId))
+        if (fullTourRequests.ContainsKey(providerRequestId)
+            || nativePresenterRequests.ContainsKey(providerRequestId))
         {
             return Task.FromResult(new WalkthroughVideoPollResult(
                 WalkthroughVideoState.Completed,

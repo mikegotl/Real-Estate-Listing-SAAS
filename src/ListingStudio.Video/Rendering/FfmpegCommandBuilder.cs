@@ -382,7 +382,13 @@ public static class FfmpegCommandBuilder
 
         videoFilters.Add("format=yuv420p");
         filters.Add($"[{current}]{string.Join(',', videoFilters)}[vout]");
-        BuildAudioFilters(request, filters, programMs, inputs.NarrationInput, inputs.MusicInput);
+        BuildAudioFilters(
+            request,
+            filters,
+            programMs,
+            inputs.NarrationInput,
+            inputs.MusicInput,
+            inputs.FullTourInput);
         return string.Join(';', filters);
     }
 
@@ -927,8 +933,25 @@ public static class FfmpegCommandBuilder
         List<string> filters,
         int programMs,
         int? narrationInput,
-        int? musicInput)
+        int? musicInput,
+        int? fullTourInput)
     {
+        if (request.FullTour is { UseNativeAudio: true })
+        {
+            if (fullTourInput is null)
+            {
+                throw new ArgumentException("The native Kling audio source is missing.", nameof(request));
+            }
+
+            var nativeMaster = request.Specification.AspectRatio == VideoAspectRatio.Vertical9By16
+                ? "loudnorm=I=-14:TP=-1.5:LRA=11,"
+                : "loudnorm=I=-16:TP=-1.5:LRA=11,";
+            filters.Add(
+                $"[{fullTourInput.Value}:a]apad,atrim=duration={Seconds(programMs)},{nativeMaster}"
+                + $"aresample={request.Specification.Output.SampleRateHz},aformat=channel_layouts=stereo[aout]");
+            return;
+        }
+
         var segments = request.Specification.Audio.NarrationSegments;
         string? narrationLabel = null;
         if (segments.Count > 0)

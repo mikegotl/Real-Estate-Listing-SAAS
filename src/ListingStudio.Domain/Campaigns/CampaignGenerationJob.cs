@@ -18,6 +18,7 @@ public enum CampaignVideoStrategy
 {
     Established = 0,
     Kling4FullTour = 1,
+    Kling4NativePresenter = 2,
 }
 
 public enum CampaignGenerationStage
@@ -340,7 +341,7 @@ public sealed class CampaignGenerationJob
 
     public void MarkFullTourSubmitted(string requestId, string generationVersion, DateTimeOffset now)
     {
-        if (VideoStrategy != CampaignVideoStrategy.Kling4FullTour)
+        if (VideoStrategy is not (CampaignVideoStrategy.Kling4FullTour or CampaignVideoStrategy.Kling4NativePresenter))
         {
             throw new InvalidOperationException("This campaign does not use the Kling full-tour strategy.");
         }
@@ -362,7 +363,7 @@ public sealed class CampaignGenerationJob
         int durationMs,
         DateTimeOffset now)
     {
-        if (VideoStrategy != CampaignVideoStrategy.Kling4FullTour
+        if (VideoStrategy is not (CampaignVideoStrategy.Kling4FullTour or CampaignVideoStrategy.Kling4NativePresenter)
             || string.IsNullOrWhiteSpace(FullTourProviderRequestId)
             || fileSize <= 0
             || durationMs <= 0)
@@ -379,7 +380,7 @@ public sealed class CampaignGenerationJob
 
     public void ResetFullTourSubmission(DateTimeOffset now)
     {
-        if (VideoStrategy != CampaignVideoStrategy.Kling4FullTour)
+        if (VideoStrategy is not (CampaignVideoStrategy.Kling4FullTour or CampaignVideoStrategy.Kling4NativePresenter))
         {
             throw new InvalidOperationException("This campaign does not use the Kling full-tour strategy.");
         }
