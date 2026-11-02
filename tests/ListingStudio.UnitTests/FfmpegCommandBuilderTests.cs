@@ -83,6 +83,41 @@ public sealed class FfmpegCommandBuilderTests : IDisposable
     }
 
     [Fact]
+    public void BuildPreservesNativeKlingAudioWhenThePresenterStrategyRequestsIt()
+    {
+        var request = CreateRequest();
+        var scenes = request.Specification.Scenes.ToArray();
+        scenes[1] = scenes[1] with { DurationMs = 23_000 };
+        var fullTour = CreateFile("kling4-native-presenter.mp4");
+        request = request with
+        {
+            Specification = request.Specification with
+            {
+                RequestedDuration = RequestedDuration.Feature30,
+                Audio = request.Specification.Audio with
+                {
+                    NarrationSegments = [],
+                    Music = request.Specification.Audio.Music with { AssetId = null },
+                },
+                Scenes = scenes,
+            },
+            Narration = null,
+            Music = null,
+            AgentPresenter = null,
+            FullTour = new VideoRenderFullTourAsset(fullTour, 30_000, UseNativeAudio: true),
+        };
+
+        var command = FfmpegCommandBuilder.Build(request);
+        var arguments = command.Arguments.ToList();
+        var graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+
+        Assert.Contains(fullTour, arguments);
+        Assert.Contains(":a]apad,atrim=duration=30,loudnorm=I=-16", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("anullsrc", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain(request.Narration?.FilePath ?? "never", arguments);
+    }
+
+    [Fact]
     public void BuildUsesBothWorkerCoresForLipSyncedPresenterRenders()
     {
         var request = CreateBrandedRequest();

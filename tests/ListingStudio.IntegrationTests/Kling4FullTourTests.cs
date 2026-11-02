@@ -1,6 +1,7 @@
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Properties;
+using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
@@ -158,6 +159,85 @@ public sealed partial class CampaignGenerationTests
         await verifyScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
             owner.UserId,
             FeatureFlagKeys.Kling4FullTourV1,
+            globallyEnabled: false,
+            enabledForAllOrganizations: false,
+            []);
+    }
+
+    [Fact]
+    public async Task KlingNativePresenterUsesConsentedPortraitAndPreservesProviderAudio()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("kling4-native-presenter");
+        await GrantReviewAdminAsync(owner.UserId);
+        Guid portraitId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = uploadScope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using (var portrait = new MemoryStream(OnePixelPng))
+            {
+                portraitId = (await portraits.UploadAsync(
+                    owner.UserId,
+                    new AgentPortraitUpload("agent.png", "image/png", portrait.Length, portrait))).Id;
+            }
+
+            var media = uploadScope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            await using var exterior = new MemoryStream(OnePixelPng);
+            await media.UploadAsync(owner.UserId, owner.PropertyId, new PropertyMediaUpload(
+                "exterior.png", "image/png", exterior.Length, exterior, WalkthroughStoryboard.ExteriorFront));
+            await using var kitchen = new MemoryStream(OnePixelPng);
+            await media.UploadAsync(owner.UserId, owner.PropertyId, new PropertyMediaUpload(
+                "kitchen.png", "image/png", kitchen.Length, kitchen, "Kitchen"));
+        }
+
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis with
+        {
+            Category = PropertyMediaCategory.Kitchen,
+            RoomType = "Kitchen",
+            Description = "A center island anchors the kitchen.",
+        });
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        var options = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = portraitId,
+            AgentAvatarConsentConfirmed = true,
+        };
+
+        CampaignGenerationResult queued;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+                owner.UserId,
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                globallyEnabled: true,
+                enabledForAllOrganizations: false,
+                [owner.OrganizationId]);
+            queued = (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.FacebookFeed,
+                options,
+                CampaignNarrationPreferences.Default,
+                CampaignVideoStrategy.Kling4NativePresenter))!;
+        }
+
+        var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+
+        Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, completed.VideoStrategy);
+        var render = Assert.IsType<VideoRenderRequest>(fixture.Factory.VideoRenderer.LastRequest);
+        Assert.True(render.FullTour?.UseNativeAudio);
+        Assert.Null(render.Narration);
+        Assert.Null(render.Music);
+        Assert.Null(render.AgentPresenter);
+        Assert.Empty(render.Specification.Audio.NarrationSegments);
+
+        await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
+        await verifyScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+            owner.UserId,
+            FeatureFlagKeys.Kling4NativePresenterV1,
             globallyEnabled: false,
             enabledForAllOrganizations: false,
             []);

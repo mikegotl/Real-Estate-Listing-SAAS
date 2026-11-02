@@ -127,6 +127,73 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         return FullTourPromptPreamble + "\nRequired route:\n" + string.Join('\n', path);
     }
 
+    public const string NativePresenterPromptPreamble = """
+        Create one polished 30-second real-estate campaign video with native synchronized speech and tasteful
+        instrumental background music. The same real-estate agent shown in the first and last keyframe is the on-camera
+        presenter. Preserve the agent's identity, face, skin tone, hair and clothing. Begin with the agent speaking the
+        exact opening line, move into a brisk stabilized property tour through every supplied middle keyframe in its
+        exact order, then return to the same agent for the exact closing line. Lower the music clearly under speech.
+        Preserve the real property's architecture, layout, doors, windows, fixtures, finishes, furniture and landscaping.
+        Do not invent rooms, amenities, views, people, claims, text, logos or contact information. Only mention the
+        verified details supplied below. Do not show the agent inside a room unless a supplied keyframe does so.
+        """;
+
+    public static string NativePresenterPrompt(NativePresenterVideoSubmission submission)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        if (submission.TourFrames is null
+            || submission.TourFrames.Count is < NativePresenterVideoPolicy.MinimumTourFrames
+                or > NativePresenterVideoPolicy.MaximumTourFrames)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(submission),
+                "A native-presenter tour needs one to eight approved Tour Map photos.");
+        }
+
+        static string Clean(string value, int maximumLength, string field)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(value, field);
+            var clean = string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            if (clean.Length > maximumLength || clean.Any(char.IsControl))
+            {
+                throw new ArgumentOutOfRangeException(field);
+            }
+
+            return clean;
+        }
+
+        var route = submission.TourFrames.Select((frame, index) =>
+        {
+            var stop = Clean(frame.StopName, 80, nameof(frame.StopName));
+            var highlight = string.IsNullOrWhiteSpace(frame.ApprovedHighlight)
+                ? "Identify the space only; make no additional claim."
+                : $"Approved detail to mention briefly: {Clean(frame.ApprovedHighlight, 240, nameof(frame.ApprovedHighlight))}";
+            var direction = index + 1 >= submission.TourFrames.Count
+                ? "Then return to the agent for the closing."
+                : frame.DirectionToNext switch
+                {
+                    WalkthroughDirection.Ahead => "Continue straight ahead to the next keyframe.",
+                    WalkthroughDirection.Left => "Turn left to reach the next keyframe.",
+                    WalkthroughDirection.Right => "Turn right to reach the next keyframe.",
+                    WalkthroughDirection.Upstairs => "Move upstairs to reach the next keyframe.",
+                    WalkthroughDirection.Downstairs => "Move downstairs to reach the next keyframe.",
+                    _ => "Move naturally to the next keyframe without inventing a connecting room.",
+                };
+            return $"Tour keyframe {index + 1}: {stop}. {highlight} {direction}";
+        });
+
+        return $"""
+            {NativePresenterPromptPreamble}
+            The agent says exactly: "{Clean(submission.OpeningLine, 300, nameof(submission.OpeningLine))}"
+            Campaign goal: {Clean(submission.CampaignGoal, 160, nameof(submission.CampaignGoal))}
+            Music: {Clean(submission.MusicDirection, 160, nameof(submission.MusicDirection))}
+            Pace: a confident introduction, followed by a faster approximately 1.5x walking pace through the home.
+            Required ordered tour:
+            {string.Join('\n', route)}
+            The agent closes by saying exactly: "{Clean(submission.ClosingLine, 300, nameof(submission.ClosingLine))}"
+            """;
+    }
+
     private static string DirectionLine(string movement) =>
         $"\nDirection: the next space is {movement}";
 
@@ -173,6 +240,20 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             return $"higgsfield/{configuration.GenerationVersion}/full-tour-{identity}";
         }
     }
+
+    public string NativePresenterGenerationVersion
+    {
+        get
+        {
+            var configuration = options.Value;
+            var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                $"{configuration.FullTourModel}\n{configuration.FullTourDurationSeconds}\n"
+                + $"{configuration.FullTourResolution}\n{NativePresenterPromptPreamble}")))[..12].ToLowerInvariant();
+            return $"higgsfield/{configuration.GenerationVersion}/native-presenter-{identity}";
+        }
+    }
+
+    public int NativePresenterDurationMs => options.Value.FullTourDurationSeconds * 1_000;
 
     public async Task<string> SubmitAerialIntroAsync(
         AerialIntroVideoSubmission submission,
@@ -244,6 +325,38 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                     urls.Count > 2 ? urls.Skip(1).Take(urls.Count - 2).ToArray() : null,
                     urls[^1],
                     FullTourPrompt(submission.Frames),
+                    configuration.FullTourDurationSeconds,
+                    configuration.FullTourResolution),
+                options: SerializerOptions),
+        };
+        var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
+        return IsRequestId(queued?.RequestId)
+            ? queued!.RequestId!
+            : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
+    }
+
+    public async Task<string> SubmitNativePresenterAsync(
+        NativePresenterVideoSubmission submission,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        var prompt = NativePresenterPrompt(submission);
+        var configuration = EnsureEnabled();
+        var agentUrl = await UploadAsync(configuration, submission.AgentPortrait, cancellationToken);
+        var tourUrls = new List<string>(submission.TourFrames.Count);
+        foreach (var frame in submission.TourFrames)
+        {
+            tourUrls.Add(await UploadAsync(configuration, frame.Frame, cancellationToken));
+        }
+
+        using var message = new HttpRequestMessage(HttpMethod.Post, ApiUri(configuration, configuration.FullTourModel.Trim('/')))
+        {
+            Content = JsonContent.Create(
+                new FullTourGenerationRequest(
+                    agentUrl,
+                    tourUrls.ToArray(),
+                    agentUrl,
+                    prompt,
                     configuration.FullTourDurationSeconds,
                     configuration.FullTourResolution),
                 options: SerializerOptions),

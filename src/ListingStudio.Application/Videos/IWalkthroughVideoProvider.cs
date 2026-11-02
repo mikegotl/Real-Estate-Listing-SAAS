@@ -8,6 +8,13 @@ public static class FullTourVideoPolicy
     public const int MaximumFrames = 10;
 }
 
+public static class NativePresenterVideoPolicy
+{
+    // The same portrait is the first and last frame, leaving eight of Kling 4's ten slots for the property.
+    public const int MinimumTourFrames = 1;
+    public const int MaximumTourFrames = 8;
+}
+
 /// <summary>
 /// Generates a walk-through clip that starts on one listing photo and ends on the next. Generation is asynchronous:
 /// a submission returns a provider request ID that is polled until the clip is ready.
@@ -27,6 +34,12 @@ public interface IWalkthroughVideoProvider
 
     /// <summary>The requested full-tour duration.</summary>
     int FullTourDurationMs { get; }
+
+    /// <summary>Identifies the Kling 4 native-presenter prompt and ordered-keyframe request.</summary>
+    string NativePresenterGenerationVersion { get; }
+
+    /// <summary>The requested native-presenter duration.</summary>
+    int NativePresenterDurationMs { get; }
 
     Task<string> SubmitAsync(
         WalkthroughVideoSubmission submission,
@@ -49,6 +62,14 @@ public interface IWalkthroughVideoProvider
     /// </summary>
     Task<string> SubmitFullTourAsync(
         FullTourVideoSubmission submission,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generates one native-audio campaign video. The portrait opens and closes the video while approved Tour Map
+    /// photos occupy the ordered middle keyframes.
+    /// </summary>
+    Task<string> SubmitNativePresenterAsync(
+        NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default);
 
     Task<WalkthroughVideoPollResult> PollAsync(
@@ -81,6 +102,21 @@ public sealed record FullTourVideoFrame(
 
 public sealed record FullTourVideoSubmission(
     IReadOnlyList<FullTourVideoFrame> Frames,
+    string IdempotencyKey);
+
+public sealed record NativePresenterTourFrame(
+    WalkthroughVideoFrame Frame,
+    string StopName,
+    string? ApprovedHighlight = null,
+    WalkthroughDirection? DirectionToNext = null);
+
+public sealed record NativePresenterVideoSubmission(
+    WalkthroughVideoFrame AgentPortrait,
+    IReadOnlyList<NativePresenterTourFrame> TourFrames,
+    string OpeningLine,
+    string ClosingLine,
+    string CampaignGoal,
+    string MusicDirection,
     string IdempotencyKey);
 
 public enum WalkthroughVideoState

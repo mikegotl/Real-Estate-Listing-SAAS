@@ -86,7 +86,8 @@ public sealed record VideoRenderAerialIntroAsset(
 /// </summary>
 public sealed record VideoRenderFullTourAsset(
     string FilePath,
-    int DurationMs);
+    int DurationMs,
+    bool UseNativeAudio = false);
 
 /// <summary>
 /// A lip-synced agent presenter whose first and optional second source sections align with the campaign narration.

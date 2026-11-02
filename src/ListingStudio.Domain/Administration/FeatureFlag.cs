@@ -15,7 +15,14 @@ public static class FeatureFlagKeys
     /// </summary>
     public const string Kling4FullTourV1 = "Kling4FullTourV1";
 
-    public static IReadOnlyList<string> All { get; } = [VerticalVideoLibraryV1, Kling4FullTourV1];
+    /// <summary>
+    /// Experimental single-call Kling 4 campaign with the approved agent portrait as both the opening and closing
+    /// keyframe, approved Tour Map photos in between, and Kling's native speech and music preserved in the render.
+    /// </summary>
+    public const string Kling4NativePresenterV1 = "Kling4NativePresenterV1";
+
+    public static IReadOnlyList<string> All { get; } =
+        [VerticalVideoLibraryV1, Kling4FullTourV1, Kling4NativePresenterV1];
 
     public static bool IsKnown(string key) => All.Contains(key, StringComparer.Ordinal);
 }

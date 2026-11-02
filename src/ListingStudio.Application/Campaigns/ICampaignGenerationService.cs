@@ -78,6 +78,9 @@ public interface ICampaignGenerationService
     /// <summary>Whether the Kling 4 full-tour pilot is on for the signed-in user's workspace.</summary>
     Task<bool> IsKlingFullTourEnabledAsync(string userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Whether the single-call Kling 4 native presenter pilot is on for the signed-in user's workspace.</summary>
+    Task<bool> IsKlingNativePresenterEnabledAsync(string userId, CancellationToken cancellationToken = default);
+
     Task<CampaignGenerationResult?> GetLatestAsync(
         string userId,
         Guid propertyId,
