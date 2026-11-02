@@ -28,9 +28,10 @@
                 </AuthorizeView>
             </div>
             <div class="account-actions">
+                <ThemeToggle />
                 <CommentsButton @rendermode="InteractiveServer" />
                 <NotificationBell @rendermode="InteractiveServer" />
-                <span class="user-pill">
+                <span class="user-pill" title="@auth.User.Identity?.Name">
                     <MudIcon Icon="@Icons.Material.Filled.AccountCircle" Size="Size.Small" />
                     <span>@auth.User.Identity?.Name</span>
                 </span>
@@ -59,6 +60,7 @@
         </Authorized>
         <NotAuthorized>
             <div class="guest-actions">
+                <ThemeToggle />
                 <MudButton Href="/articles" Variant="Variant.Text" Color="Color.Inherit" Class="nav-articles"
                            StartIcon="@Icons.Material.Filled.Article">Articles</MudButton>
                 <MudButton Href="/Account/Login" Variant="Variant.Text" Color="Color.Inherit">Log in</MudButton>

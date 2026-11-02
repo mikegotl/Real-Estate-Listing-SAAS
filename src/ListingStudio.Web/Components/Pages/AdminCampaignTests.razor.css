@@ -22,7 +22,7 @@
 .review-case-list li:first-child { border-top: 0; }
 .review-case-list strong { flex: 1; font-weight: 600; min-width: 0; }
 .review-case-number { align-items: center; background: var(--ls-surface); border: 1px solid var(--ls-line-strong); border-radius: 50%; color: var(--ls-subtle); display: inline-flex; flex: none; font-size: .72rem; font-weight: 700; height: 24px; justify-content: center; width: 24px; }
-.review-case-list li.started .review-case-number { background: var(--ls-primary); border-color: var(--ls-primary); color: #fff; }
+.review-case-list li.started .review-case-number { background: var(--ls-primary); border-color: var(--ls-primary); color: var(--mud-palette-primary-text); }
 .review-case-list a { font-size: .82rem; white-space: nowrap; }
 .review-case-waiting { color: var(--ls-subtle); font-size: .8rem; }
 

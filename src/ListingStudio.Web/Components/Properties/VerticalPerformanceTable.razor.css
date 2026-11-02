@@ -37,7 +37,7 @@
 }
 
 .performance-table .group-business {
-    background: rgba(176, 141, 87, 0.08);
+    background: var(--ls-accent-soft);
 }
 
 .performance-name {
@@ -67,8 +67,8 @@
 }
 
 .performance-badge.business {
-    background: #8a6a33;
-    color: #fff;
+    background: var(--mud-palette-secondary);
+    color: var(--mud-palette-secondary-text);
 }
 
 .performance-empty {
@@ -82,11 +82,11 @@
 }
 
 .uplift.up {
-    color: #2e7d32;
+    color: var(--mud-palette-success);
 }
 
 .uplift.down {
-    color: #b3261e;
+    color: var(--mud-palette-error);
 }
 
 .performance-footnote {

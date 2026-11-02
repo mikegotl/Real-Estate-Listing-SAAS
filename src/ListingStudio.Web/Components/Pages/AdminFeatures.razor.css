@@ -2,8 +2,8 @@
 .feature-switch-head { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
 .feature-switch-head code { color: var(--ls-subtle); font-size: .78rem; }
 .feature-state { border-radius: 999px; font-size: .82rem; font-weight: 600; padding: 4px 12px; }
-.feature-state.on { background: rgba(46, 125, 50, .12); color: #1b5e20; }
-.feature-state.off { background: rgba(0, 0, 0, .06); color: var(--ls-muted); }
+.feature-state.on { background: var(--ls-success-soft); color: var(--ls-success); }
+.feature-state.off { background: var(--ls-surface-muted); color: var(--ls-muted); }
 .feature-help { color: var(--ls-muted); font-size: .88rem; margin: 8px 0; max-width: 72ch; }
 .feature-toggles { display: grid; gap: 4px; margin: 16px 0; }
 .feature-pilots { border-top: 1px solid var(--ls-line); margin-top: 8px; padding-top: 16px; }
