@@ -32,6 +32,18 @@ public sealed class AdminFeaturesTests : IAsyncDisposable
     public ValueTask DisposeAsync() => context.DisposeAsync();
 
     [Fact]
+    public void EveryReleaseUnitIsVisibleWithoutOpeningAPopover()
+    {
+        var cut = context.Render<AdminFeatures>();
+        var picker = cut.Find("[data-testid=feature-picker]");
+
+        Assert.Contains("Vertical video library", picker.TextContent, StringComparison.Ordinal);
+        Assert.Contains("Kling 4 continuous Tour Map", picker.TextContent, StringComparison.Ordinal);
+        Assert.Contains("Kling 4 native presenter", picker.TextContent, StringComparison.Ordinal);
+        Assert.Equal(3, picker.QuerySelectorAll("button").Length);
+    }
+
+    [Fact]
     public void PilotForTestersAndAdminsSavesThroughTheCentralSwitch()
     {
         var cut = context.Render<AdminFeatures>();
