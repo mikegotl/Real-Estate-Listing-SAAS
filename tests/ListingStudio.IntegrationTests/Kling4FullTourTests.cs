@@ -442,6 +442,10 @@ public sealed partial class CampaignGenerationTests
             Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
             AgentPortraitId = portraitId,
             AgentAvatarConsentConfirmed = true,
+            PresenterScript = new NativePresenterScript(
+                "Hi, I'm Dana. Come see this home with me.",
+                "Step inside to the bright entry,   then the kitchen with its center island.",
+                "Call me today to book a private showing."),
         };
 
         CampaignGenerationResult queued;
@@ -464,7 +468,8 @@ public sealed partial class CampaignGenerationTests
             Assert.NotNull(preview);
             Assert.True(preview.IsReady, string.Join("; ", preview.Problems));
             Assert.Equal(["Exterior front", "Kitchen"], preview.Frames.Select(frame => frame.StopName));
-            Assert.Contains("Welcome to your next home", preview.Prompt, StringComparison.Ordinal);
+            Assert.Contains("the kitchen with its center island.", preview.Prompt, StringComparison.Ordinal);
+            Assert.Equal("Hi, I'm Dana. Come see this home with me.", preview.Script.Opening);
             var landscapeOnly = await campaigns.PreviewKlingNativePresenterAsync(
                 owner.UserId,
                 owner.PropertyId,
@@ -493,6 +498,14 @@ public sealed partial class CampaignGenerationTests
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
         Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, completed.VideoStrategy);
+        // The agent's exact script is stored with the campaign and sent to Kling word for word (whitespace tidied).
+        Assert.Equal(
+            "Step inside to the bright entry, then the kitchen with its center island.",
+            completed.CreativeOptions.PresenterScript?.Tour);
+        var sent = Assert.IsType<NativePresenterVideoSubmission>(fixture.Factory.WalkthroughVideoProvider.LastNativePresenterSubmission);
+        Assert.Equal("Hi, I'm Dana. Come see this home with me.", sent.OpeningLine);
+        Assert.Equal("Step inside to the bright entry, then the kitchen with its center island.", sent.TourVoiceover);
+        Assert.Equal("Call me today to book a private showing.", sent.ClosingLine);
         Assert.Equal("Higgsfield", completed.ProviderAudit?.Provider);
         Assert.False(string.IsNullOrWhiteSpace(completed.ProviderAudit?.RequestId));
         Assert.Equal("fake-kling4-native-presenter-v1", completed.ProviderAudit?.GenerationVersion);

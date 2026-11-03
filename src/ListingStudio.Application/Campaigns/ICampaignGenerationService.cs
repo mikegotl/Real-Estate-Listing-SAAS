@@ -82,6 +82,18 @@ public interface ICampaignGenerationService
     Task<bool> IsKlingNativePresenterEnabledAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The suggested exact script for the Kling 4 native presenter, built from the Tour Map's room narration and the
+    /// campaign goal, for the agent to edit before Generate. Null when the property is not in the user's workspace.
+    /// </summary>
+    Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
+        string userId,
+        Guid propertyId,
+        CampaignMarketingTemplate marketingTemplate,
+        string? openHouseText,
+        VerticalCampaignGoal? goal,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Platform admins only: builds the exact Kling 4 native-presenter request these settings would send, and lists
     /// anything that would stop it, without uploading a photo or calling the provider. Null when the property is
     /// not in the user's workspace.
@@ -240,7 +252,8 @@ public sealed record KlingNativePresenterPreview(
     IReadOnlyList<string> Problems,
     IReadOnlyList<KlingNativePresenterPreviewFrame> Frames,
     string? Prompt,
-    decimal EstimatedCostUsd)
+    decimal EstimatedCostUsd,
+    NativePresenterScript Script)
 {
     public bool IsReady => Problems.Count == 0;
 }

@@ -73,6 +73,10 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
             .HasSentinel(CampaignVoiceoverMode.ShortHook)
             .IsRequired();
         builder.Property(job => job.OpenHouseText).HasMaxLength(CampaignCreativeOptions.MaximumOpenHouseTextLength);
+        builder.Property(job => job.NativePresenterOpening).HasMaxLength(NativePresenterScript.MaximumOpeningLength);
+        builder.Property(job => job.NativePresenterTour).HasMaxLength(NativePresenterScript.MaximumTourLength);
+        builder.Property(job => job.NativePresenterClosing).HasMaxLength(NativePresenterScript.MaximumClosingLength);
+        builder.Ignore(job => job.PresenterScript);
         builder.Property(job => job.OpenHouseVerified)
             .HasDefaultValue(false)
             .IsRequired();

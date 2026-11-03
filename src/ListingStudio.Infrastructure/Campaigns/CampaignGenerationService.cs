@@ -241,11 +241,21 @@ public sealed class CampaignGenerationService(
                 goal,
                 creativeOptions.MarketingTemplate,
                 creativeOptions.OpenHouseText,
-                creativeOptions.Soundtrack),
+                creativeOptions.Soundtrack,
+                creativeOptions.PresenterScript),
             cancellationToken);
         if (plan.Frames.Count < NativePresenterVideoPolicy.MinimumTourFrames)
         {
             problems.Add("Place at least one photo on the Tour Map.");
+        }
+
+        try
+        {
+            plan.Script.Validate();
+        }
+        catch (ArgumentException exception)
+        {
+            problems.Add(exception.Message.Split(" (Parameter", 2)[0]);
         }
 
         string? prompt = null;
@@ -261,11 +271,12 @@ public sealed class CampaignGenerationService(
                             frame.ApprovedHighlight,
                             frame.DirectionToNext))
                         .ToArray(),
-                    plan.OpeningLine,
-                    plan.ClosingLine,
+                    plan.Script.Opening,
+                    plan.Script.Closing,
                     plan.CampaignGoal,
                     plan.MusicDirection,
-                    "preview"));
+                    "preview",
+                    plan.Script.Tour));
             }
             catch (ArgumentException exception)
             {
@@ -283,7 +294,37 @@ public sealed class CampaignGenerationService(
                     frame.DirectionToNext?.ToString()))
                 .ToArray(),
             prompt,
-            walkthroughVideoProvider.EstimatedNativePresenterCostUsd);
+            walkthroughVideoProvider.EstimatedNativePresenterCostUsd,
+            plan.Script);
+    }
+
+    public async Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
+        string userId,
+        Guid propertyId,
+        CampaignMarketingTemplate marketingTemplate,
+        string? openHouseText,
+        VerticalCampaignGoal? goal,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await dbContext.Properties.AsNoTracking().AnyAsync(
+                candidate => candidate.Id == propertyId && candidate.OrganizationId == organizationId,
+                cancellationToken))
+        {
+            return null;
+        }
+
+        var plan = await NativePresenterRequestPlanner.BuildAsync(
+            dbContext,
+            new NativePresenterPlanInput(
+                organizationId,
+                propertyId,
+                goal,
+                marketingTemplate,
+                openHouseText?.Trim(),
+                CampaignSoundtrack.AutoByHomeEra),
+            cancellationToken);
+        return plan.Script;
     }
 
     public Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
@@ -364,6 +405,13 @@ public sealed class CampaignGenerationService(
             throw new InvalidOperationException(
                 "The selected Kling 4 pilot is switched off for this workspace. Choose the established edit or ask an admin to turn it on.");
         }
+
+        // The exact presenter script only means something to the native presenter; elsewhere it must not change the
+        // campaign's fingerprint or be stored.
+        creativeOptions = creativeOptions with
+        {
+            PresenterScript = usesKlingNativePresenter ? creativeOptions.PresenterScript?.Normalized() : null,
+        };
 
         if (usesKlingNativePresenter && !usesLibrary && !HasThirtySecondVertical(requestedOutputs, creativeOptions))
         {

@@ -322,6 +322,31 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
     }
 
     [Fact]
+    public void NativePresenterPromptCarriesTheExactTourVoiceoverInsteadOfRoomHints()
+    {
+        var submission = new NativePresenterVideoSubmission(
+            new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
+            [
+                new(new WalkthroughVideoFrame(Stream.Null, "image/jpeg"), "Exterior front", null, WalkthroughDirection.Ahead),
+                new(new WalkthroughVideoFrame(Stream.Null, "image/jpeg"), "Kitchen", "A large center island."),
+            ],
+            "Hi, I'm Dana.",
+            "Call me today.",
+            "Generate buyer interest.",
+            "Upbeat instrumental with no lyrics.",
+            "campaign-native-2",
+            "Step inside,  then the kitchen.");
+
+        var prompt = HiggsfieldWalkthroughVideoProvider.NativePresenterPrompt(submission);
+
+        Assert.Contains("Over the tour, the agent's voice says exactly: \"Step inside, then the kitchen.\"", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("A large center island.", prompt, StringComparison.Ordinal);
+        Assert.Contains("says nothing beyond the supplied opening, voiceover and closing", prompt, StringComparison.Ordinal);
+        Assert.Throws<ArgumentOutOfRangeException>(() => HiggsfieldWalkthroughVideoProvider.NativePresenterPrompt(
+            submission with { TourVoiceover = "She said \"wow\"." }));
+    }
+
+    [Fact]
     public async Task PollDownloadsTheFinishedClipWithoutSendingTheKeyToTheVideoHost()
     {
         var handler = new RoutingHandler(request => request.RequestUri!.Host switch

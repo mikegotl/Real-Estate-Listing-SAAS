@@ -665,11 +665,14 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
 
         var requestId = $"fake-{Guid.NewGuid():N}";
         nativePresenterRequests[requestId] = submission;
+        LastNativePresenterSubmission = submission;
         return Task.FromResult(requestId);
     }
 
+    public NativePresenterVideoSubmission? LastNativePresenterSubmission { get; private set; }
+
     public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission) =>
-        $"Fake native-presenter prompt: {submission.OpeningLine} {submission.ClosingLine}";
+        $"Fake native-presenter prompt: {submission.OpeningLine} {submission.TourVoiceover} {submission.ClosingLine}";
 
     public Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,

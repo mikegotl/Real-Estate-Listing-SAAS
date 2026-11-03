@@ -127,6 +127,12 @@ public sealed class CampaignGenerationJob
         ShortFormVoiceover = creativeOptions.Voiceover;
         OpenHouseText = creativeOptions.OpenHouseText?.Trim();
         OpenHouseVerified = creativeOptions.OpenHouseVerified;
+        if (creativeOptions.PresenterScript?.Normalized() is { } script)
+        {
+            NativePresenterOpening = script.Opening;
+            NativePresenterTour = script.Tour;
+            NativePresenterClosing = script.Closing;
+        }
         NarrationRegion = narrationPreferences.Region;
         SpokenLanguage = narrationPreferences.SpokenLanguage;
         CaptionLanguage = narrationPreferences.CaptionLanguage;
@@ -193,6 +199,18 @@ public sealed class CampaignGenerationJob
     public CampaignVoiceoverMode ShortFormVoiceover { get; private set; }
 
     public string? OpenHouseText { get; private set; }
+
+    /// <summary>The agent-approved exact script for the Kling 4 native presenter; null uses the suggested script.</summary>
+    public string? NativePresenterOpening { get; private set; }
+
+    public string? NativePresenterTour { get; private set; }
+
+    public string? NativePresenterClosing { get; private set; }
+
+    public NativePresenterScript? PresenterScript =>
+        NativePresenterOpening is { } opening && NativePresenterTour is { } tour && NativePresenterClosing is { } closing
+            ? new NativePresenterScript(opening, tour, closing)
+            : null;
 
     public bool OpenHouseVerified { get; private set; }
 
@@ -655,7 +673,8 @@ public sealed class CampaignGenerationJob
         Pace,
         ShortFormVoiceover,
         OpenHouseText,
-        OpenHouseVerified);
+        OpenHouseVerified,
+        PresenterScript);
 
     public void SetSocialCopy(string longCaption, string shortCaption)
     {

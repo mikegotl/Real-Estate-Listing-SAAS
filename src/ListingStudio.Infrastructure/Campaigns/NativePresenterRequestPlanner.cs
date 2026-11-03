@@ -14,7 +14,8 @@ public sealed record NativePresenterPlanInput(
     VerticalCampaignGoal? Goal,
     CampaignMarketingTemplate MarketingTemplate,
     string? OpenHouseText,
-    CampaignSoundtrack Soundtrack);
+    CampaignSoundtrack Soundtrack,
+    NativePresenterScript? ApprovedScript = null);
 
 public sealed record NativePresenterPlanFrame(
     Guid PropertyMediaId,
@@ -26,8 +27,8 @@ public sealed record NativePresenterPlanFrame(
 
 public sealed record NativePresenterPlan(
     IReadOnlyList<NativePresenterPlanFrame> Frames,
-    string OpeningLine,
-    string ClosingLine,
+    NativePresenterScript Script,
+    bool ScriptIsApproved,
     string CampaignGoal,
     string MusicDirection);
 
@@ -100,12 +101,63 @@ public static class NativePresenterRequestPlanner
             .Where(candidate => candidate.Id == input.PropertyId && candidate.OrganizationId == input.OrganizationId)
             .Select(candidate => new { candidate.City, candidate.State, candidate.YearBuilt })
             .SingleAsync(cancellationToken);
+        var script = input.ApprovedScript?.Normalized()
+            ?? SuggestScript(property.City, property.State, frames, input);
         return new NativePresenterPlan(
             frames,
-            $"Welcome to your next home in {property.City}, {property.State}. Let me show you around.",
-            ClosingLine,
+            script,
+            input.ApprovedScript is not null,
             Goal(input),
             Music(input.Soundtrack, property.YearBuilt));
+    }
+
+    /// <summary>
+    /// A starting script the agent edits: the opening, one short line per Tour Map stop in order (its approved room
+    /// narration's first sentence, or the stop's name), and a closing, kept inside the 30-second word budget.
+    /// </summary>
+    public static NativePresenterScript SuggestScript(
+        string city,
+        string state,
+        IReadOnlyList<NativePresenterPlanFrame> frames,
+        NativePresenterPlanInput input)
+    {
+        var opening = $"Welcome to your next home in {city}, {state}. Let me show you around.";
+        var closing = input.Goal == VerticalCampaignGoal.OpenHouse
+            || (input.Goal is null && input.MarketingTemplate == CampaignMarketingTemplate.OpenHouse)
+                ? $"Join me at the open house, {input.OpenHouseText}. Contact me to save your spot."
+                : ClosingLine;
+        var budget = NativePresenterScript.MaximumWords
+            - NativePresenterScript.CountWords(opening)
+            - NativePresenterScript.CountWords(closing);
+        var lines = new List<string>();
+        foreach (var frame in frames)
+        {
+            var line = FirstSentence(frame.ApprovedHighlight) ?? $"Here is the {frame.StopName.Trim().ToLowerInvariant()}.";
+            var words = NativePresenterScript.CountWords(line);
+            if (words > budget)
+            {
+                break;
+            }
+
+            lines.Add(line);
+            budget -= words;
+        }
+
+        var tour = lines.Count > 0 ? string.Join(' ', lines) : "Take a look around this home.";
+        return new NativePresenterScript(opening, tour, closing).Normalized();
+    }
+
+    private static string? FirstSentence(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var clean = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Replace("\"", string.Empty, StringComparison.Ordinal);
+        var end = clean.IndexOfAny(['.', '!', '?']);
+        var sentence = end < 0 ? clean + "." : clean[..(end + 1)];
+        return sentence.Length < 2 ? null : sentence;
     }
 
     private static string Goal(NativePresenterPlanInput input) => input.Goal switch

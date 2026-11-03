@@ -31,6 +31,7 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
         "20261101150821_AddCreativeTestCaptionStyle",
         "20261101230434_AddKling4FullTourStrategy",
         "20261103200359_StoreCampaignProviderPrompt",
+        "20261103210321_AddNativePresenterScript",
     ];
 
     [Fact]

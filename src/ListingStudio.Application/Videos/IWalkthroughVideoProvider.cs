@@ -126,7 +126,8 @@ public sealed record NativePresenterVideoSubmission(
     string ClosingLine,
     string CampaignGoal,
     string MusicDirection,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? TourVoiceover = null);
 
 public enum WalkthroughVideoState
 {

@@ -1622,7 +1622,8 @@ public sealed partial class CampaignGenerationProcessor(
                     job.VerticalGoal,
                     job.MarketingTemplate,
                     job.OpenHouseText,
-                    job.Soundtrack),
+                    job.Soundtrack,
+                    job.PresenterScript),
                 cancellationToken);
             if (plan.Frames.Count < NativePresenterVideoPolicy.MinimumTourFrames)
             {
@@ -1658,11 +1659,12 @@ public sealed partial class CampaignGenerationProcessor(
                 var submission = new NativePresenterVideoSubmission(
                     new WalkthroughVideoFrame(agentPortrait, portrait.MimeType),
                     nativeFrames,
-                    plan.OpeningLine,
-                    plan.ClosingLine,
+                    plan.Script.Opening,
+                    plan.Script.Closing,
                     plan.CampaignGoal,
                     plan.MusicDirection,
-                    $"campaign-native-presenter-{job.Id:N}");
+                    $"campaign-native-presenter-{job.Id:N}",
+                    plan.Script.Tour);
                 var submittedPrompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
                 var requestId = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
                 dbContext.ChangeTracker.Clear();

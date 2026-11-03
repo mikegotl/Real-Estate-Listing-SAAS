@@ -127,6 +127,31 @@
                         approved Tour Map photos between them, and generates the speech and instrumental music in one
                         30-second call. Exact wording and room order are generative and the finished video is validated.
                     </MudAlert>
+                    <MudPaper Outlined="true" Class="pa-3 mt-2" data-testid="presenter-script">
+                        <MudText Typo="Typo.subtitle2">Presenter script</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                            Kling is told to say these words exactly. 30 seconds holds about @NativePresenterScript.MaximumWords words.
+                        </MudText>
+                        <MudTextField T="string" @bind-Value="presenterOpening" Label="Opening (agent on camera)"
+                                      Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)"
+                                      MaxLength="NativePresenterScript.MaximumOpeningLength" data-testid="presenter-opening" />
+                        <MudTextField T="string" @bind-Value="presenterTour" Label="Tour voiceover (over the AI tour)"
+                                      Variant="Variant.Outlined" Lines="4" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
+                                      MaxLength="NativePresenterScript.MaximumTourLength" data-testid="presenter-tour" />
+                        <MudTextField T="string" @bind-Value="presenterClosing" Label="Closing (agent on camera)"
+                                      Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
+                                      MaxLength="NativePresenterScript.MaximumClosingLength" data-testid="presenter-closing" />
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-2">
+                            <MudText Typo="Typo.caption" Color="@(PresenterWordCount > NativePresenterScript.MaximumWords ? Color.Error : Color.Default)"
+                                     data-testid="presenter-word-count">
+                                @PresenterWordCount / @NativePresenterScript.MaximumWords words
+                            </MudText>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                       Disabled="@(busy || IsReadOnly)" OnClick="UseSuggestedScriptAsync">
+                                Use suggested script
+                            </MudButton>
+                        </MudStack>
+                    </MudPaper>
                     @if (NativePresenterBlockers.Count > 0)
                     {
                         <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="native-presenter-blockers">
@@ -886,6 +911,9 @@
     private bool busy;
     private bool previewingKling;
     private KlingNativePresenterPreview? klingPreview;
+    private string? presenterOpening;
+    private string? presenterTour;
+    private string? presenterClosing;
     private bool pollingStarted;
     private string? error;
     private string? refreshError;
@@ -955,6 +983,10 @@
             selectedGoal = null;
             restoreVerticalRequest = null;
             selectedVideoStrategy = CampaignVideoStrategy.Established;
+            presenterOpening = null;
+            presenterTour = null;
+            presenterClosing = null;
+            klingPreview = null;
             appliedFocus = null;
             resetSelectionsWhenCancelled = false;
         }
@@ -1014,6 +1046,12 @@
                     selectedGoal = job.VerticalRequest?.Goal;
                     restoreVerticalRequest = job.VerticalRequest;
                     selectedVideoStrategy = job.VideoStrategy;
+                    if (job.CreativeOptions.PresenterScript is { } savedScript)
+                    {
+                        presenterOpening = savedScript.Opening;
+                        presenterTour = savedScript.Tour;
+                        presenterClosing = savedScript.Closing;
+                    }
                 }
 
                 if (job?.Status is null or CampaignGenerationStatus.Completed or CampaignGenerationStatus.Cancelled)
@@ -1132,6 +1170,12 @@
             || elements.HasFlag(CampaignVideoElement.AgentAvatar)
                 ? portrait?.Id
                 : null;
+        var script = selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+            && !string.IsNullOrWhiteSpace(presenterOpening)
+            && !string.IsNullOrWhiteSpace(presenterTour)
+            && !string.IsNullOrWhiteSpace(presenterClosing)
+                ? new NativePresenterScript(presenterOpening, presenterTour, presenterClosing)
+                : null;
         return new CampaignCreativeOptions(
                 elements,
                 selectedSoundtrack,
@@ -1144,7 +1188,8 @@
                 selectedPace,
                 selectedVoiceover,
                 selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText?.Trim() : null,
-                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse && selectedOpenHouseVerified);
+                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse && selectedOpenHouseVerified,
+                script);
     }
 
     private async Task GenerateAsync() => await MutateAsync(async userId =>
@@ -1293,6 +1338,10 @@
         verticalPlan = null;
         verticalPicker = null;
         selectedVideoStrategy = CampaignVideoStrategy.Established;
+        presenterOpening = null;
+        presenterTour = null;
+        presenterClosing = null;
+        klingPreview = null;
         soundtrackChosen = false;
         captionStyleChosen = false;
         templateNote = null;
@@ -1546,7 +1595,7 @@
                 && selectedAgentAvatarConsent
                 && NativePresenterBlockers.Count == 0);
 
-    private void VideoStrategyChanged(CampaignVideoStrategy strategy)
+    private async Task VideoStrategyChanged(CampaignVideoStrategy strategy)
     {
         selectedVideoStrategy = strategy;
         klingPreview = null;
@@ -1559,6 +1608,13 @@
         if (selectedVoiceover == CampaignVoiceoverMode.Full)
         {
             selectedVoiceover = CampaignVoiceoverMode.ShortHook;
+        }
+
+        if (string.IsNullOrWhiteSpace(presenterOpening)
+            && string.IsNullOrWhiteSpace(presenterTour)
+            && string.IsNullOrWhiteSpace(presenterClosing))
+        {
+            await UseSuggestedScriptAsync();
         }
 
         if (portrait is null)
@@ -1798,7 +1854,52 @@
                 blockers.Add("Place at least one photo on the Tour Map.");
             }
 
+            if (string.IsNullOrWhiteSpace(presenterOpening)
+                || string.IsNullOrWhiteSpace(presenterTour)
+                || string.IsNullOrWhiteSpace(presenterClosing))
+            {
+                blockers.Add("Fill in all three parts of the presenter script.");
+            }
+            else if (PresenterWordCount > NativePresenterScript.MaximumWords)
+            {
+                blockers.Add($"Shorten the presenter script to {NativePresenterScript.MaximumWords} words (now {PresenterWordCount}).");
+            }
+            else if ((presenterOpening + presenterTour + presenterClosing).Contains('"', StringComparison.Ordinal))
+            {
+                blockers.Add("Remove double quotation marks from the presenter script.");
+            }
+
             return blockers;
+        }
+    }
+
+    private int PresenterWordCount =>
+        NativePresenterScript.CountWords(presenterOpening)
+        + NativePresenterScript.CountWords(presenterTour)
+        + NativePresenterScript.CountWords(presenterClosing);
+
+    private async Task UseSuggestedScriptAsync()
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var suggested = await Service.SuggestNativePresenterScriptAsync(
+                userId,
+                PropertyId,
+                selectedMarketingTemplate,
+                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText : null,
+                selectedGoal,
+                pollingCancellation.Token);
+            if (suggested is not null)
+            {
+                presenterOpening = suggested.Opening;
+                presenterTour = suggested.Tour;
+                presenterClosing = suggested.Closing;
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or UnauthorizedAccessException)
+        {
+            error = exception.Message;
         }
     }
 
