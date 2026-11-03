@@ -691,13 +691,24 @@ h1:focus { outline: none; }
 .property-tab-panels .mud-paper.mt-6:first-child { margin-top: 0 !important; }
 .property-description { line-height: 1.75; max-width: 75ch; white-space: pre-line; }
 
-/* With the Admin link and the dark mode switch the header runs out of room below about 1440px, so the account
-   pill shows only its icon there; the address stays in its tooltip and is still read by screen readers. */
-@media (max-width: 1440px) { .user-pill span { clip: rect(0 0 0 0); height: 1px; overflow: hidden; position: absolute; width: 1px; }.user-pill { padding: 7px; } }
+/* The signed-in header holds seven links, the dark mode switch, Comments, notifications, the account pill and Log out.
+   The pill shows only its icon (the address is in its tooltip and still read by screen readers), link labels give way
+   to icons on narrower screens, and the links shrink before the account actions so Log out can never be pushed off
+   screen. */
+.user-pill { padding: 7px; }
+.user-pill span { clip: rect(0 0 0 0); height: 1px; overflow: hidden; position: absolute; width: 1px; }
+.nav-links { min-width: 0; overflow: hidden; }
+.account-actions { flex-shrink: 0; }
+@media (max-width: 1360px) {
+    .nav-links .mud-button-label { font-size: 0; }.nav-links .mud-button-icon-start { margin: 0; }
+    .comments-trigger span { display: none; }.comments-trigger { justify-content: center; padding: 0; width: 36px; }
+}
 
 @media (max-width: 1050px) {
     .hero-section { gap: 38px; grid-template-columns: 1fr 430px; }
     .nav-links .mud-button-label { font-size: 0; }.nav-links .mud-button-icon-start { margin: 0; }
+    /* Below this width the icon-only links no longer fit beside the account actions, so they move into the menu. */
+    .nav-links { display: none; }.mobile-nav { display: block; }
     .user-pill span { display: none; }.user-pill { padding: 7px; }.comments-trigger span { display: none; }.comments-trigger { justify-content: center; padding: 0; width: 36px; }
     .account-stage { grid-template-columns: minmax(320px, .8fr) minmax(460px, 1.2fr); }.account-story { padding-inline: 50px; }
 }
