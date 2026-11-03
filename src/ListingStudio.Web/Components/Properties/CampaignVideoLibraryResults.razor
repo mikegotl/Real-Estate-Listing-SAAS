@@ -48,6 +48,10 @@
                                         <span> · version @video.Version</span>
                                     }
                                 </MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block"
+                                         data-testid="@($"generation-source-{video.Format}")">
+                                    @GenerationSource(video)
+                                </MudText>
                             </div>
                             <div class="video-library-chips">
                                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@TechnicalColor(video.TechnicalStatus)"
@@ -180,6 +184,12 @@
     [Parameter]
     public bool ShowGuideLink { get; set; }
 
+    [Parameter]
+    public CampaignVideoStrategy VideoStrategy { get; set; } = CampaignVideoStrategy.Established;
+
+    [Parameter]
+    public CampaignProviderAudit? ProviderAudit { get; set; }
+
     private CampaignVideoLibraryView? library;
     private readonly Dictionary<(Guid DeliverableId, int Version), string?> drafts = [];
     private (Guid JobId, DateTimeOffset Stamp)? loaded;
@@ -276,6 +286,32 @@
 
     // The version keeps the browser from playing or saving a cached copy of an earlier cut.
     private static string VideoUrl(CampaignLibraryVideoView video) => $"/campaigns/videos/{video.DeliverableId}?v={video.Version}";
+
+    private string GenerationSource(CampaignLibraryVideoView video)
+    {
+        if (VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+            && video.DurationSeconds == 30)
+        {
+            return ProviderAudit?.RequestId is { Length: > 0 } requestId
+                ? $"Source: Kling 4 native presenter via Higgsfield · request {requestId}"
+                : "Source: Kling 4 native presenter via Higgsfield · waiting for provider request ID";
+        }
+
+        if (VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
+        {
+            return "Source: established CLS edit · this shorter format is outside the current 30-second Kling pilot";
+        }
+
+        if (VideoStrategy == CampaignVideoStrategy.Kling4FullTour
+            && video.DurationSeconds == 30)
+        {
+            return ProviderAudit?.RequestId is { Length: > 0 } requestId
+                ? $"Source: Kling 4 continuous Tour Map via Higgsfield · request {requestId}"
+                : "Source: Kling 4 continuous Tour Map via Higgsfield · waiting for provider request ID";
+        }
+
+        return "Source: established Creative Listing Studio edit";
+    }
 
     private static string TechnicalText(CampaignVideoTechnicalStatus status) => status switch
     {

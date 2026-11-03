@@ -440,10 +440,11 @@ public sealed class CampaignGenerationService(
         var existing = await dbContext.CampaignGenerationJobs
             .Include(candidate => candidate.Deliverables)
             .Where(candidate => candidate.OrganizationId == organizationId && candidate.PropertyId == propertyId
+                && candidate.SourceFingerprint == fingerprint
                 && (candidate.Status == CampaignGenerationStatus.Queued
                     || candidate.Status == CampaignGenerationStatus.Running
-                    || (candidate.SourceFingerprint == fingerprint
-                        && (testCaseKey != null || candidate.Status == CampaignGenerationStatus.Completed))))
+                    || candidate.Status == CampaignGenerationStatus.Completed
+                    || testCaseKey != null))
             .OrderByDescending(candidate => candidate.CreatedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
         if (existing is not null)
@@ -451,6 +452,19 @@ public sealed class CampaignGenerationService(
             await transaction.CommitAsync(cancellationToken);
             if (testCaseKey is not null && existing.SourceFingerprint != fingerprint) return null;
             return ToResult(existing);
+        }
+
+        var conflictingActive = await dbContext.CampaignGenerationJobs.AsNoTracking().AnyAsync(
+            candidate => candidate.OrganizationId == organizationId
+                && candidate.PropertyId == propertyId
+                && candidate.SourceFingerprint != fingerprint
+                && (candidate.Status == CampaignGenerationStatus.Queued
+                    || candidate.Status == CampaignGenerationStatus.Running),
+            cancellationToken);
+        if (conflictingActive)
+        {
+            throw new InvalidOperationException(
+                "Another campaign for this property is still processing with different settings. Wait for it to finish or cancel it before starting this campaign; your selected video strategy was not changed.");
         }
 
         await campaignBillingGate.EnsureCampaignCapacityAsync(organizationId, propertyId, userId, cancellationToken);
@@ -757,7 +771,13 @@ public sealed class CampaignGenerationService(
             job.VerticalSelection is { } selection
                 ? new CampaignVerticalRequestResult(selection, job.VerticalGoal, job.VerticalFormats)
                 : null,
-            job.VideoStrategy);
+            job.VideoStrategy,
+            job.VideoStrategy is CampaignVideoStrategy.Kling4FullTour or CampaignVideoStrategy.Kling4NativePresenter
+                ? new CampaignProviderAudit(
+                    "Higgsfield",
+                    job.FullTourProviderRequestId,
+                    job.FullTourGenerationVersion)
+                : null);
     }
 
     // The goal and an agent's format list are part of what was asked for, so a different choice is a new campaign.

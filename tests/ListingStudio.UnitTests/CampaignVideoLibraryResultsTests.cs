@@ -95,12 +95,35 @@ public sealed class CampaignVideoLibraryResultsTests : IAsyncDisposable
         Assert.Equal("/go/article/one-listing-four-tiktoks?from=library-gallery", link.GetAttribute("href"));
     }
 
-    private IRenderedComponent<CampaignVideoLibraryResults> Render(bool readOnly = false, bool guide = false) =>
+    [Fact]
+    public void KlingNativeCampaignLabelsProviderBackedAndEstablishedResultsSeparately()
+    {
+        var cut = Render(
+            strategy: CampaignVideoStrategy.Kling4NativePresenter,
+            audit: new CampaignProviderAudit("Higgsfield", "request-123", "native-presenter-v1"));
+
+        Assert.Contains(
+            "established CLS edit",
+            cut.Find("[data-testid=generation-source-WowFeature]").TextContent,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "Kling 4 native presenter via Higgsfield · request request-123",
+            cut.Find("[data-testid=generation-source-PriceFirst]").TextContent,
+            StringComparison.Ordinal);
+    }
+
+    private IRenderedComponent<CampaignVideoLibraryResults> Render(
+        bool readOnly = false,
+        bool guide = false,
+        CampaignVideoStrategy strategy = CampaignVideoStrategy.Established,
+        CampaignProviderAudit? audit = null) =>
         context.Render<CampaignVideoLibraryResults>(parameters => parameters
             .Add(component => component.JobId, FakeLibraryService.Job)
             .Add(component => component.Stamp, DateTimeOffset.UnixEpoch)
             .Add(component => component.IsReadOnly, readOnly)
-            .Add(component => component.ShowGuideLink, guide));
+            .Add(component => component.ShowGuideLink, guide)
+            .Add(component => component.VideoStrategy, strategy)
+            .Add(component => component.ProviderAudit, audit));
 
     private sealed class FakeLibraryService : ICampaignVideoLibraryService
     {
