@@ -8,6 +8,7 @@
 @inject IAgentAvatarVideoService AgentAvatarVideoService
 @inject IPlanFeatureGate PlanFeatureGate
 @inject IServiceScopeFactory ScopeFactory
+@inject IDialogService DialogService
 @inject ILogger<CampaignGenerationManager> Logger
 @inject IJSRuntime JSRuntime
 
@@ -620,7 +621,14 @@
             <MudAlert Severity="@(job.Status == CampaignGenerationStatus.Failed ? Severity.Error : Severity.Warning)" Class="mb-4">
                 @if (job.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
                 {
-                    <span><strong>Previous attempt:</strong> @DisplayError(job) Retrying automatically.</span>
+                    @if (job.CancellationRequested)
+                    {
+                        <span><strong>Cancellation requested.</strong> The current step will stop safely; no further retries will start.</span>
+                    }
+                    else
+                    {
+                        <span><strong>Previous attempt:</strong> @DisplayError(job) Retrying automatically.</span>
+                    }
                 }
                 else
                 {
@@ -766,10 +774,16 @@
                     Retry failed stage
                 </MudButton>
             }
-            @if (job.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
+            @if (!IsReadOnly && job.Status is CampaignGenerationStatus.Failed
+                or CampaignGenerationStatus.Queued
+                or CampaignGenerationStatus.Running)
             {
-                <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="busy" OnClick="CancelAsync">
-                    Cancel campaign
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Error"
+                           Disabled="@(busy || job.CancellationRequested)"
+                           OnClick="CancelAndStartOverAsync"
+                           data-testid="cancel-and-start-over">
+                    @(job.CancellationRequested ? "Cancelling…" : "Cancel and start over")
                 </MudButton>
             }
             <MudButton Variant="Variant.Text" Disabled="busy" OnClick="LoadAsync">Refresh</MudButton>
@@ -848,6 +862,7 @@
     private VerticalCampaignGoal? selectedGoal;
     private CampaignVerticalRequestResult? restoreVerticalRequest;
     private string? appliedFocus;
+    private bool resetSelectionsWhenCancelled;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -869,6 +884,7 @@
             restoreVerticalRequest = null;
             selectedVideoStrategy = CampaignVideoStrategy.Established;
             appliedFocus = null;
+            resetSelectionsWhenCancelled = false;
         }
 
         await LoadAsync();
@@ -888,6 +904,11 @@
             planIncludesPresenter = (await PlanFeatureGate.GetAccessAsync(userId, pollingCancellation.Token)).IncludesPremiumAi;
             roomNarration = await LoadRoomNarrationAsync(userId, pollingCancellation.Token);
             aerialIntro = await LoadAerialIntroAsync(userId, pollingCancellation.Token);
+            if (resetSelectionsWhenCancelled && job?.Status == CampaignGenerationStatus.Cancelled)
+            {
+                ResetCampaignSelections();
+                resetSelectionsWhenCancelled = false;
+            }
             longFormAvailable = roomNarration.IsInUse
                 ? roomNarration.WordCount > IPropertyNarrationScriptService.ShortFormWordLimit
                 : script is { MarketingUseAccepted: true } && NarrationScriptPolicy.RequiresLongForm(script.ExtractedText);
@@ -1142,13 +1163,80 @@
         }
     });
 
-    private async Task CancelAsync() => await MutateAsync(async userId =>
+    private async Task CancelAndStartOverAsync()
     {
-        if (job is not null && await Service.CancelAsync(userId, job.Id))
+        if (job is null)
         {
-            job = await Service.GetAsync(userId, job.Id);
+            return;
         }
-    });
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Cancel this campaign and start over?",
+            "Creative Listing Studio will stop this campaign and its automatic retries. Your property, Tour Map, photos, videos, narration, and profile remain saved. You will return to fresh campaign selections.",
+            yesText: "Cancel and start over",
+            cancelText: "Keep campaign");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        await MutateAsync(async userId =>
+        {
+            if (job is not null && await Service.CancelAsync(userId, job.Id))
+            {
+                resetSelectionsWhenCancelled = true;
+                await LoadAsync();
+            }
+        });
+    }
+
+    private void ResetCampaignSelections()
+    {
+        selectedOutputs = CampaignOutputSelectionPolicy.Recommended;
+        selectedCreativeElements = CampaignCreativeOptions.SocialDefault.Elements;
+        selectedSoundtrack = CampaignCreativeOptions.SocialDefault.Soundtrack;
+        selectedCaptionStyle = CampaignCreativeOptions.SocialDefault.CaptionStyle;
+        selectedMarketingTemplate = CampaignCreativeOptions.SocialDefault.MarketingTemplate;
+        selectedPriceReductionAmount = null;
+        selectedPriceReductionVerified = false;
+        selectedOpenHouseText = null;
+        selectedOpenHouseVerified = false;
+        selectedAgentAvatarConsent = false;
+        selectedPace = CampaignCreativeOptions.SocialDefault.Pace;
+        selectedVoiceover = CampaignCreativeOptions.SocialDefault.Voiceover;
+        selectedNarrationRegion = CampaignNarrationPreferences.Default.Region;
+        selectedSpokenLanguage = CampaignNarrationPreferences.Default.SpokenLanguage;
+        selectedCaptionLanguage = CampaignNarrationPreferences.Default.CaptionLanguage;
+        selectedVoiceAccent = CampaignNarrationPreferences.Default.VoiceAccent;
+        selectedLocalizeAgentCard = CampaignNarrationPreferences.Default.LocalizeAgentCard;
+        selectedGoal = null;
+        restoreVerticalRequest = null;
+        verticalPlan = null;
+        verticalPicker = null;
+        selectedVideoStrategy = CampaignVideoStrategy.Established;
+        soundtrackChosen = false;
+        captionStyleChosen = false;
+        templateNote = null;
+        if (profileIncludesPresenter && portrait is not null && planIncludesPresenter)
+        {
+            selectedCreativeElements &= ~CampaignVideoElement.AgentPortrait;
+            selectedCreativeElements |= CampaignVideoElement.AgentAvatar;
+            selectedAgentAvatarConsent = true;
+        }
+        else if (profileIncludesPresenter && portrait is not null)
+        {
+            selectedCreativeElements |= CampaignVideoElement.AgentPortrait;
+            selectedCreativeElements &= ~CampaignVideoElement.AgentAvatar;
+            selectedAgentAvatarConsent = false;
+        }
+        else
+        {
+            selectedCreativeElements &= ~CampaignVideoElement.AgentAvatar;
+            selectedAgentAvatarConsent = false;
+        }
+
+        selectionInitialized = true;
+    }
 
     private async Task MutateAsync(Func<string, Task> action)
     {

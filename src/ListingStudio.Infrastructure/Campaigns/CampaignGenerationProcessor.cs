@@ -1576,13 +1576,21 @@ public sealed partial class CampaignGenerationProcessor(
                 "Kling 4 was selected, but this workspace no longer has premium AI access. No fallback video was rendered.");
         }
 
-        // Only 30-second outputs use this 30-second master. Other outputs continue to provide a clean comparison.
-        var hasThirtySecondOutput = await dbContext.CampaignDeliverables.AsNoTracking().AnyAsync(
+        // Only 30-second outputs use this 30-second master. At this stage, campaign-level outputs already have a
+        // deliverable, while vertical-library outputs exist only as planned variants; their deliverables are created
+        // later by GenerateVariantNarration. Check both sources so a recommended 30-second video can reach Kling.
+        var hasThirtySecondDeliverable = await dbContext.CampaignDeliverables.AsNoTracking().AnyAsync(
             candidate => candidate.CampaignGenerationJobId == job.Id
                 && candidate.OrganizationId == job.OrganizationId
                 && candidate.RequestedDuration == RequestedDuration.Feature30,
             cancellationToken);
-        if (!hasThirtySecondOutput)
+        var hasThirtySecondLibraryVariant = job.UsesVerticalLibrary
+            && await dbContext.CampaignVideoVariants.AsNoTracking().AnyAsync(
+                candidate => candidate.OrganizationId == job.OrganizationId
+                    && candidate.Library.CampaignGenerationJobId == job.Id
+                    && candidate.DurationSeconds == (int)RequestedDuration.Feature30,
+                cancellationToken);
+        if (!hasThirtySecondDeliverable && !hasThirtySecondLibraryVariant)
         {
             throw new InvalidOperationException(
                 "Kling 4 currently requires at least one 30-second campaign output. No fallback video was rendered.");
