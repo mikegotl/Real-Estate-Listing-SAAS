@@ -1000,6 +1000,38 @@ public sealed partial class CampaignGenerationTests(PostgreSqlWebApplicationFixt
     }
 
     [Fact]
+    public async Task FailedCampaignCanBeCancelledAndStartedAgainWithTheSameSelections()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-failed-start-over");
+        await UploadAsync(owner);
+        var queued = await EnqueueAsync(owner);
+        await using (var workerScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var dbContext = workerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(candidate => candidate.Id == queued.Id);
+            var now = fixture.Factory.TimeProvider.GetUtcNow();
+            tracked.BeginStage(now, TimeSpan.FromMinutes(1));
+            tracked.Fail("The provider returned invalid data.", now);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using var browserScope = fixture.Factory.Services.CreateAsyncScope();
+        var campaigns = browserScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+        Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
+        var cancelled = await campaigns.GetAsync(owner.UserId, queued.Id);
+        Assert.NotNull(cancelled);
+        Assert.Equal(CampaignGenerationStatus.Cancelled, cancelled.Status);
+        Assert.Null(cancelled.LastError);
+
+        var replacement = await campaigns.EnqueueAsync(owner.UserId, owner.PropertyId);
+        Assert.NotNull(replacement);
+        Assert.NotEqual(queued.Id, replacement.Id);
+        Assert.Equal(CampaignGenerationStatus.Queued, replacement.Status);
+        Assert.Equal(queued.RequestedOutputs, replacement.RequestedOutputs);
+        Assert.True(await campaigns.CancelAsync(owner.UserId, replacement.Id));
+    }
+
+    [Fact]
     public async Task StoryTimeoutIsRetriedAndReportedWithoutProviderDetails()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-story-timeout");

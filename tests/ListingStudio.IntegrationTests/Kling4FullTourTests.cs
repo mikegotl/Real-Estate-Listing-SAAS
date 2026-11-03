@@ -252,6 +252,90 @@ public sealed partial class CampaignGenerationTests
     }
 
     [Fact]
+    public async Task KlingNativePresenterAcceptsThirtySecondRecommendedLibraryVariantBeforeItsDeliverableExists()
+    {
+        var (admin, owner) = await CreateLibraryListingAsync("kling4-native-library");
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services,
+            owner.UserId,
+            Domain.Billing.SubscriptionPlan.Professional,
+            fixture.Factory.TimeProvider.GetUtcNow());
+        Guid portraitId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = uploadScope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using var portrait = new MemoryStream(OnePixelPng);
+            portraitId = (await portraits.UploadAsync(
+                owner.UserId,
+                new AgentPortraitUpload("agent.png", "image/png", portrait.Length, portrait))).Id;
+        }
+
+        try
+        {
+            await SetLibrarySwitchAsync(admin, true, false, owner.OrganizationId);
+            await using (var featureScope = fixture.Factory.Services.CreateAsyncScope())
+            {
+                await featureScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+                    admin,
+                    FeatureFlagKeys.Kling4NativePresenterV1,
+                    globallyEnabled: true,
+                    enabledForAllOrganizations: false,
+                    [owner.OrganizationId]);
+            }
+
+            QueueLibraryProviders(narratedVideos: 0);
+            var options = CampaignCreativeOptions.SocialDefault with
+            {
+                Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+                AgentPortraitId = portraitId,
+                AgentAvatarConsentConfirmed = true,
+            };
+            CampaignGenerationResult queued;
+            await using (var enqueueScope = fixture.Factory.Services.CreateAsyncScope())
+            {
+                queued = (await enqueueScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
+                    owner.UserId,
+                    owner.PropertyId,
+                    CampaignOutputSelection.TikTok,
+                    options,
+                    CampaignNarrationPreferences.Default,
+                    CampaignVideoStrategy.Kling4NativePresenter,
+                    new VerticalLibraryRequest(
+                        VerticalVideoSelection.RecommendedThree,
+                        VerticalCampaignGoal.MaximizeReach)))!;
+            }
+
+            await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.RenderHero);
+
+            await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
+            var campaigns = verifyScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+            var result = await campaigns.GetAsync(owner.UserId, queued.Id);
+            Assert.NotNull(result);
+            Assert.NotEqual(CampaignGenerationStatus.Failed, result.Status);
+            Assert.Equal(CampaignGenerationStage.RenderHero, result.CurrentStage);
+            Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, result.VideoStrategy);
+            Assert.Equal("Higgsfield", result.ProviderAudit?.Provider);
+            Assert.False(string.IsNullOrWhiteSpace(result.ProviderAudit?.RequestId));
+            Assert.Equal("fake-kling4-native-presenter-v1", result.ProviderAudit?.GenerationVersion);
+            Assert.True(await verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .CampaignVideoVariants.AnyAsync(candidate => candidate.Library.CampaignGenerationJobId == queued.Id
+                    && candidate.DurationSeconds == 30));
+            Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
+        }
+        finally
+        {
+            await SetLibrarySwitchAsync(admin, false, false);
+            await using var featureScope = fixture.Factory.Services.CreateAsyncScope();
+            await featureScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+                admin,
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                globallyEnabled: false,
+                enabledForAllOrganizations: false,
+                []);
+        }
+    }
+
+    [Fact]
     public async Task KlingFullTourIsGeneratedOnceAndSuppliedOnlyToTheThirtySecondRender()
     {
         var owner = await CreateOwnerAndPropertyAsync("kling4-render");
