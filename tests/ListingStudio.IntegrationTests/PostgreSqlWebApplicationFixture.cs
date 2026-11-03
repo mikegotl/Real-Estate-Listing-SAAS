@@ -451,6 +451,12 @@ public sealed class FakeRenderedVideoValidator : IRenderedVideoValidator
 
     public void EnqueueFailure(string problem) => failures.Enqueue(problem);
 
+    /// <summary>What the audio probe reports for a source video such as a Kling result; null means "cannot tell".</summary>
+    public bool? SourceAudioPresent { get; set; }
+
+    public Task<bool?> HasAudioStreamAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult(SourceAudioPresent);
+
     public Task<RenderedVideoValidation> ValidateAsync(
         string path,
         Mp4Expectations expectations,

@@ -248,12 +248,15 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             var configuration = options.Value;
             var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                 $"{configuration.FullTourModel}\n{configuration.FullTourDurationSeconds}\n"
-                + $"{configuration.FullTourResolution}\n{NativePresenterPromptPreamble}")))[..12].ToLowerInvariant();
+                + $"{configuration.FullTourResolution}\n{NativePresenterPromptPreamble}\n"
+                + $"{OptionalField(configuration.NativePresenterSound)}\n{OptionalField(configuration.NativePresenterAspectRatio)}")))[..12].ToLowerInvariant();
             return $"higgsfield/{configuration.GenerationVersion}/native-presenter-{identity}";
         }
     }
 
     public int NativePresenterDurationMs => options.Value.FullTourDurationSeconds * 1_000;
+
+    public decimal EstimatedNativePresenterCostUsd => options.Value.EstimatedFullTourCostPerCallUsd;
 
     public async Task<string> SubmitAerialIntroAsync(
         AerialIntroVideoSubmission submission,
@@ -364,7 +367,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                     agentUrl,
                     prompt,
                     configuration.FullTourDurationSeconds,
-                    configuration.FullTourResolution),
+                    configuration.FullTourResolution,
+                    OptionalField(configuration.NativePresenterSound),
+                    OptionalField(configuration.NativePresenterAspectRatio)),
                 options: SerializerOptions),
         };
         var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
@@ -372,6 +377,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             ? queued!.RequestId!
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
     }
+
+    private static string? OptionalField(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission)
     {
@@ -632,7 +639,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         [property: JsonPropertyName("end_image_url")] string EndImageUrl,
         [property: JsonPropertyName("prompt")] string Prompt,
         [property: JsonPropertyName("duration")] int Duration,
-        [property: JsonPropertyName("resolution")] string Resolution);
+        [property: JsonPropertyName("resolution")] string Resolution,
+        [property: JsonPropertyName("sound"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Sound = null,
+        [property: JsonPropertyName("aspect_ratio"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AspectRatio = null);
 
     private sealed record QueuedResponse([property: JsonPropertyName("request_id")] string? RequestId);
 

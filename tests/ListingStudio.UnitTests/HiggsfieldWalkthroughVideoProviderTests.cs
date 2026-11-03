@@ -227,6 +227,8 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal("https://cdn.storage.test/frame-3.jpg", root.GetProperty("end_image_url").GetString());
         Assert.Equal(30, root.GetProperty("duration").GetInt32());
         Assert.Equal("1080p", root.GetProperty("resolution").GetString());
+        Assert.False(root.TryGetProperty("sound", out _));
+        Assert.False(root.TryGetProperty("aspect_ratio", out _));
         var prompt = root.GetProperty("prompt").GetString()!;
         Assert.Equal(provider.BuildFullTourPrompt(submission), prompt);
         Assert.Contains("exact order", prompt, StringComparison.Ordinal);
@@ -306,6 +308,9 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("end_image_url").GetString());
         Assert.Equal(30, root.GetProperty("duration").GetInt32());
         Assert.Equal("1080p", root.GetProperty("resolution").GetString());
+        // The renderer uses Kling's own sound as the whole soundtrack, so it must be asked for explicitly.
+        Assert.Equal("on", root.GetProperty("sound").GetString());
+        Assert.Equal("9:16", root.GetProperty("aspect_ratio").GetString());
         var prompt = root.GetProperty("prompt").GetString()!;
         Assert.Equal(provider.BuildNativePresenterPrompt(submission), prompt);
         Assert.Contains("same real-estate agent shown in the first and last keyframe", prompt, StringComparison.Ordinal);

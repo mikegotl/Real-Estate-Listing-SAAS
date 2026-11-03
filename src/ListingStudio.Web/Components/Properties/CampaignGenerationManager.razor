@@ -127,6 +127,65 @@
                         approved Tour Map photos between them, and generates the speech and instrumental music in one
                         30-second call. Exact wording and room order are generative and the finished video is validated.
                     </MudAlert>
+                    @if (NativePresenterBlockers.Count > 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="native-presenter-blockers">
+                            <span>Before you can generate:</span>
+                            <ul class="mb-0">
+                                @foreach (var blocker in NativePresenterBlockers)
+                                {
+                                    <li>@blocker</li>
+                                }
+                            </ul>
+                        </MudAlert>
+                    }
+                    @if (isPlatformAdmin && !IsReadOnly)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="mt-2"
+                                   StartIcon="@Icons.Material.Filled.Preview"
+                                   Disabled="@(busy || previewingKling)"
+                                   OnClick="PreviewKlingAsync"
+                                   data-testid="preview-kling-request">
+                            Preview Kling request (free)
+                        </MudButton>
+                        @if (klingPreview is not null)
+                        {
+                            <div class="mt-3" data-testid="kling-preview">
+                                @if (klingPreview.IsReady)
+                                {
+                                    <MudAlert Severity="Severity.Success" Dense="true">
+                                        Ready. Generate would send this request to Kling 4 (estimated @klingPreview.EstimatedCostUsd.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))). Nothing has been sent.
+                                    </MudAlert>
+                                }
+                                else
+                                {
+                                    <MudAlert Severity="Severity.Warning" Dense="true">
+                                        <span>Generate would be refused:</span>
+                                        <ul class="mb-0">
+                                            @foreach (var problem in klingPreview.Problems)
+                                            {
+                                                <li>@problem</li>
+                                            }
+                                        </ul>
+                                    </MudAlert>
+                                }
+                                <MudText Typo="Typo.subtitle2" Class="mt-2">Keyframes</MudText>
+                                <ol class="mb-2">
+                                    <li>Your profile headshot (opening)</li>
+                                    @foreach (var frame in klingPreview.Frames)
+                                    {
+                                        <li>@frame.StopName@(frame.DirectionToNext is null ? null : $", then {frame.DirectionToNext.ToLowerInvariant()}")@(frame.ApprovedHighlight is null ? " (no approved detail)" : null)</li>
+                                    }
+                                    <li>Your profile headshot (closing)</li>
+                                </ol>
+                                @if (klingPreview.Prompt is not null)
+                                {
+                                    <MudText Typo="Typo.subtitle2">Prompt</MudText>
+                                    <pre style="white-space:pre-wrap;font-size:0.8rem;" data-testid="kling-preview-prompt">@klingPreview.Prompt</pre>
+                                }
+                            </div>
+                        }
+                    }
                 }
             </MudPaper>
         }
@@ -825,6 +884,8 @@
     private readonly CancellationTokenSource pollingCancellation = new();
     private CampaignGenerationResult? job;
     private bool busy;
+    private bool previewingKling;
+    private KlingNativePresenterPreview? klingPreview;
     private bool pollingStarted;
     private string? error;
     private string? refreshError;
@@ -1058,7 +1119,7 @@
         }
     }
 
-    private async Task GenerateAsync() => await MutateAsync(async userId =>
+    private CampaignCreativeOptions BuildCreativeOptions()
     {
         var elements = RequestedElements;
         if (selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
@@ -1071,7 +1132,7 @@
             || elements.HasFlag(CampaignVideoElement.AgentAvatar)
                 ? portrait?.Id
                 : null;
-        var creativeOptions = new CampaignCreativeOptions(
+        return new CampaignCreativeOptions(
                 elements,
                 selectedSoundtrack,
                 selectedCaptionStyle,
@@ -1084,6 +1145,11 @@
                 selectedVoiceover,
                 selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText?.Trim() : null,
                 selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse && selectedOpenHouseVerified);
+    }
+
+    private async Task GenerateAsync() => await MutateAsync(async userId =>
+    {
+        var creativeOptions = BuildCreativeOptions();
         var narrationPreferences = new CampaignNarrationPreferences(
                 selectedNarrationRegion,
                 selectedSpokenLanguage,
@@ -1477,14 +1543,22 @@
         && (selectedVideoStrategy != CampaignVideoStrategy.Kling4NativePresenter
             || portrait is not null
                 && selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
-                && selectedAgentAvatarConsent);
+                && selectedAgentAvatarConsent
+                && NativePresenterBlockers.Count == 0);
 
     private void VideoStrategyChanged(CampaignVideoStrategy strategy)
     {
         selectedVideoStrategy = strategy;
+        klingPreview = null;
         if (strategy != CampaignVideoStrategy.Kling4NativePresenter)
         {
             return;
+        }
+
+        // Kling only replaces the 30-second vertical video; a full voiceover makes that video 60 seconds.
+        if (selectedVoiceover == CampaignVoiceoverMode.Full)
+        {
+            selectedVoiceover = CampaignVoiceoverMode.ShortHook;
         }
 
         if (portrait is null)
@@ -1696,6 +1770,63 @@
 
     private static string Dimensions(string aspectRatio) =>
         aspectRatio == "16:9" ? "1920 × 1080" : "1080 × 1920";
+
+    /// <summary>What still stops a native-presenter Generate, in the agent's words (empty when nothing does).</summary>
+    private IReadOnlyList<string> NativePresenterBlockers
+    {
+        get
+        {
+            var blockers = new List<string>();
+            if (portrait is null)
+            {
+                blockers.Add("Add a profile headshot on your Profile page.");
+            }
+
+            if (!selectedAgentAvatarConsent)
+            {
+                blockers.Add("Tick the AI presenter consent box under Agent presenter, below.");
+            }
+
+            if (!LibraryMode
+                && (!selectedOutputs.HasFlag(CampaignOutputSelection.TikTok) || selectedVoiceover == CampaignVoiceoverMode.Full))
+            {
+                blockers.Add("Select TikTok with a short or no voiceover; Kling replaces only the 30-second vertical video.");
+            }
+
+            if (mediaLoaded && mediaCount == 0)
+            {
+                blockers.Add("Place at least one photo on the Tour Map.");
+            }
+
+            return blockers;
+        }
+    }
+
+    private async Task PreviewKlingAsync()
+    {
+        previewingKling = true;
+        error = null;
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            klingPreview = await Service.PreviewKlingNativePresenterAsync(
+                userId,
+                PropertyId,
+                selectedOutputs,
+                BuildCreativeOptions(),
+                selectedGoal,
+                LibraryMode && verticalPicker is { Chosen.Count: > 0 },
+                pollingCancellation.Token);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or UnauthorizedAccessException)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            previewingKling = false;
+        }
+    }
 
     private static string VideoStrategyName(CampaignVideoStrategy strategy) => strategy switch
     {
