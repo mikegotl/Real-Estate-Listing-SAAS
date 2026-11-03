@@ -1415,7 +1415,8 @@ public sealed partial class CampaignGenerationProcessor(
             return false;
         }
 
-        // The strategy may have fallen back after the kill switch or plan check; reload the authoritative job.
+        // Reload the authoritative job after provider work. Experimental strategies never silently turn into an
+        // established render: the user must be able to trust the strategy shown on the result.
         job = await GetJobAsync(jobId, cancellationToken);
         if (job.VideoStrategy != CampaignVideoStrategy.Kling4NativePresenter
             && job.CreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
@@ -1557,21 +1558,22 @@ public sealed partial class CampaignGenerationProcessor(
         var featureKey = usesNativePresenter
             ? FeatureFlagKeys.Kling4NativePresenterV1
             : FeatureFlagKeys.Kling4FullTourV1;
-        var enabled = walkthroughVideoProvider.IsEnabled
-            && await featureStateService.IsEnabledAsync(
-                featureKey,
-                job.OrganizationId,
-                cancellationToken)
-            && await IncludesPremiumAiAsync(job, cancellationToken);
-        if (!enabled)
+        if (!walkthroughVideoProvider.IsEnabled)
         {
-            dbContext.ChangeTracker.Clear();
-            var trackedFallback = await dbContext.CampaignGenerationJobs.SingleAsync(
-                candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
-                cancellationToken);
-            trackedFallback.UseEstablishedVideoStrategy();
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return true;
+            throw new InvalidOperationException(
+                "Kling 4 was selected, but Higgsfield is not configured in the campaign Worker. No fallback video was rendered.");
+        }
+
+        if (!await featureStateService.IsEnabledAsync(featureKey, job.OrganizationId, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Kling 4 was selected, but its release switch was turned off before provider submission. No fallback video was rendered.");
+        }
+
+        if (!await IncludesPremiumAiAsync(job, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Kling 4 was selected, but this workspace no longer has premium AI access. No fallback video was rendered.");
         }
 
         // Only 30-second outputs use this 30-second master. Other outputs continue to provide a clean comparison.
@@ -1582,13 +1584,8 @@ public sealed partial class CampaignGenerationProcessor(
             cancellationToken);
         if (!hasThirtySecondOutput)
         {
-            dbContext.ChangeTracker.Clear();
-            var trackedFallback = await dbContext.CampaignGenerationJobs.SingleAsync(
-                candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
-                cancellationToken);
-            trackedFallback.UseEstablishedVideoStrategy();
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return true;
+            throw new InvalidOperationException(
+                "Kling 4 currently requires at least one 30-second campaign output. No fallback video was rendered.");
         }
 
         if (job.FullTourAssetPath is not null)

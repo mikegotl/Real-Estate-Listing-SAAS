@@ -15,6 +15,90 @@ namespace ListingStudio.IntegrationTests;
 public sealed partial class CampaignGenerationTests
 {
     [Fact]
+    public async Task KlingNativeRequestRejectsRatherThanReusingAnActiveEstablishedCampaignForTheProperty()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("kling4-active-strategy");
+        await GrantReviewAdminAsync(owner.UserId);
+        Guid portraitId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = uploadScope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using (var portrait = new MemoryStream(OnePixelPng))
+            {
+                portraitId = (await portraits.UploadAsync(
+                    owner.UserId,
+                    new AgentPortraitUpload("agent.png", "image/png", portrait.Length, portrait))).Id;
+            }
+
+            var media = uploadScope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            await using var exterior = new MemoryStream(OnePixelPng);
+            await media.UploadAsync(owner.UserId, owner.PropertyId, new PropertyMediaUpload(
+                "exterior.png", "image/png", exterior.Length, exterior, WalkthroughStoryboard.ExteriorFront));
+        }
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var features = scope.ServiceProvider.GetRequiredService<IFeatureStateService>();
+        await features.ConfigureAsync(
+            owner.UserId,
+            FeatureFlagKeys.Kling4NativePresenterV1,
+            globallyEnabled: true,
+            enabledForAllOrganizations: false,
+            [owner.OrganizationId]);
+        await features.ConfigureAsync(
+            owner.UserId,
+            FeatureFlagKeys.VerticalVideoLibraryV1,
+            globallyEnabled: true,
+            enabledForAllOrganizations: false,
+            [owner.OrganizationId]);
+        var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+        var established = (await campaigns.EnqueueAsync(
+            owner.UserId,
+            owner.PropertyId,
+            CampaignOutputSelection.FacebookFeed,
+            CampaignCreativeOptions.SocialDefault,
+            CampaignNarrationPreferences.Default,
+            CampaignVideoStrategy.Established))!;
+        var nativeOptions = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = portraitId,
+            AgentAvatarConsentConfirmed = true,
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => campaigns.EnqueueAsync(
+            owner.UserId,
+            owner.PropertyId,
+            CampaignOutputSelection.TikTok,
+            nativeOptions,
+            CampaignNarrationPreferences.Default,
+            CampaignVideoStrategy.Kling4NativePresenter,
+            new VerticalLibraryRequest(VerticalVideoSelection.RecommendedThree, VerticalCampaignGoal.MaximizeReach)));
+
+        Assert.Contains("different settings", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("selected video strategy was not changed", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            CampaignVideoStrategy.Established,
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().CampaignGenerationJobs
+                .Where(candidate => candidate.Id == established.Id)
+                .Select(candidate => candidate.VideoStrategy)
+                .SingleAsync());
+
+        await campaigns.CancelAsync(owner.UserId, established.Id);
+        await features.ConfigureAsync(
+            owner.UserId,
+            FeatureFlagKeys.VerticalVideoLibraryV1,
+            globallyEnabled: false,
+            enabledForAllOrganizations: false,
+            []);
+        await features.ConfigureAsync(
+            owner.UserId,
+            FeatureFlagKeys.Kling4NativePresenterV1,
+            globallyEnabled: false,
+            enabledForAllOrganizations: false,
+            []);
+    }
+
+    [Fact]
     public async Task KlingFullTourRequestIsStoredOnlyWhileItsWorkspaceReleaseSwitchIsOn()
     {
         var owner = await CreateOwnerAndPropertyAsync("kling4-strategy");
@@ -98,6 +182,73 @@ public sealed partial class CampaignGenerationTests
             CampaignVideoStrategy.Kling4FullTour))!;
         Assert.Equal(CampaignVideoStrategy.Established, control.VideoStrategy);
         await campaigns.CancelAsync(owner.UserId, control.Id);
+    }
+
+    [Fact]
+    public async Task KlingNativePresenterFailsClearlyInsteadOfSilentlyRenderingEstablishedVideoWhenSwitchTurnsOff()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("kling4-native-no-fallback");
+        await GrantReviewAdminAsync(owner.UserId);
+        Guid portraitId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = uploadScope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using (var portrait = new MemoryStream(OnePixelPng))
+            {
+                portraitId = (await portraits.UploadAsync(
+                    owner.UserId,
+                    new AgentPortraitUpload("agent.png", "image/png", portrait.Length, portrait))).Id;
+            }
+
+            var media = uploadScope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            await using var exterior = new MemoryStream(OnePixelPng);
+            await media.UploadAsync(owner.UserId, owner.PropertyId, new PropertyMediaUpload(
+                "exterior.png", "image/png", exterior.Length, exterior, WalkthroughStoryboard.ExteriorFront));
+        }
+
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        var options = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = portraitId,
+            AgentAvatarConsentConfirmed = true,
+        };
+
+        CampaignGenerationResult queued;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var features = scope.ServiceProvider.GetRequiredService<IFeatureStateService>();
+            await features.ConfigureAsync(
+                owner.UserId,
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                globallyEnabled: true,
+                enabledForAllOrganizations: false,
+                [owner.OrganizationId]);
+            queued = (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.FacebookFeed,
+                options,
+                CampaignNarrationPreferences.Default,
+                CampaignVideoStrategy.Kling4NativePresenter))!;
+            await features.ConfigureAsync(
+                owner.UserId,
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                globallyEnabled: false,
+                enabledForAllOrganizations: false,
+                []);
+        }
+
+        var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+        Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, failed.VideoStrategy);
+        Assert.Contains("release switch was turned off", failed.LastError, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            failed.Deliverables,
+            candidate => candidate.Status == CampaignDeliverableStatus.Rendered);
     }
 
     [Fact]
@@ -227,6 +378,9 @@ public sealed partial class CampaignGenerationTests
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
         Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, completed.VideoStrategy);
+        Assert.Equal("Higgsfield", completed.ProviderAudit?.Provider);
+        Assert.False(string.IsNullOrWhiteSpace(completed.ProviderAudit?.RequestId));
+        Assert.Equal("fake-kling4-native-presenter-v1", completed.ProviderAudit?.GenerationVersion);
         var render = Assert.IsType<VideoRenderRequest>(fixture.Factory.VideoRenderer.LastRequest);
         Assert.True(render.FullTour?.UseNativeAudio);
         Assert.Null(render.Narration);

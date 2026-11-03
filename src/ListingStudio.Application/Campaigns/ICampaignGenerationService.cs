@@ -134,7 +134,18 @@ public sealed record CampaignGenerationResult(
     IReadOnlyList<CampaignDeliverableResult> Deliverables,
     IReadOnlyList<CampaignStillPostResult> StillPosts,
     CampaignVerticalRequestResult? VerticalRequest = null,
-    CampaignVideoStrategy VideoStrategy = CampaignVideoStrategy.Established);
+    CampaignVideoStrategy VideoStrategy = CampaignVideoStrategy.Established,
+    CampaignProviderAudit? ProviderAudit = null);
+
+/// <summary>
+/// Non-secret evidence for an experimental provider-backed campaign. Temporary signed image URLs and credentials are
+/// deliberately excluded; the provider request ID and deterministic generation version correlate the request with
+/// provider logs and the exact prompt implementation.
+/// </summary>
+public sealed record CampaignProviderAudit(
+    string Provider,
+    string? RequestId,
+    string? GenerationVersion);
 
 /// <summary>A campaign's vertical library request: how the videos were chosen, the goal, and any agent-picked formats.</summary>
 public sealed record CampaignVerticalRequestResult(

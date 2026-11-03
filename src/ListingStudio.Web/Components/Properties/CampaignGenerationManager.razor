@@ -583,6 +583,36 @@
             </MudChip>
             <MudText Typo="Typo.body2">@Display(job.CurrentStage)</MudText>
         </MudStack>
+        <MudPaper Outlined="true" Class="pa-3 mb-4" data-testid="campaign-generation-audit">
+            <MudText Typo="Typo.subtitle2">Generation audit</MudText>
+            <MudText Typo="Typo.body2">
+                Strategy: <strong>@VideoStrategyName(job.VideoStrategy)</strong>
+            </MudText>
+            @if (job.ProviderAudit is { } audit)
+            {
+                <MudText Typo="Typo.body2">Provider: <strong>@audit.Provider</strong></MudText>
+                <MudText Typo="Typo.body2">
+                    Request ID: <code>@(audit.RequestId ?? "Waiting for provider submission")</code>
+                </MudText>
+                <MudText Typo="Typo.body2">
+                    Generation version: <code>@(audit.GenerationVersion ?? "Waiting for provider submission")</code>
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    This campaign uses the Creative Listing Studio renderer rather than the Kling provider path.
+                </MudText>
+            }
+            @if (job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+                && job.VerticalRequest is not null)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+                    Kling supplies the native presenter, speech, music and ordered Tour Map for each 30-second result.
+                    Shorter recommended formats remain visibly labeled as established CLS edits.
+                </MudText>
+            }
+        </MudPaper>
         <MudProgressLinear Value="job.ProgressPercent" Color="Color.Primary" Class="mb-4" />
 
         @if (!string.IsNullOrWhiteSpace(job.LastError))
@@ -616,7 +646,12 @@
 
         @if (job.VerticalRequest is not null)
         {
-            <CampaignVideoLibraryResults JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" ShowGuideLink="libraryEnabled" />
+            <CampaignVideoLibraryResults JobId="job.Id"
+                                         Stamp="job.UpdatedAtUtc"
+                                         IsReadOnly="IsReadOnly"
+                                         ShowGuideLink="libraryEnabled"
+                                         VideoStrategy="job.VideoStrategy"
+                                         ProviderAudit="job.ProviderAudit" />
             <CampaignPerformancePanel JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" />
         }
 
@@ -1560,6 +1595,13 @@
 
     private static string Dimensions(string aspectRatio) =>
         aspectRatio == "16:9" ? "1920 × 1080" : "1080 × 1920";
+
+    private static string VideoStrategyName(CampaignVideoStrategy strategy) => strategy switch
+    {
+        CampaignVideoStrategy.Kling4FullTour => "Kling 4 continuous Tour Map",
+        CampaignVideoStrategy.Kling4NativePresenter => "Kling 4 native presenter, speech and music",
+        _ => "Established CLS edit",
+    };
 
     private sealed record OutputOption(CampaignOutputSelection Selection, string Name, string Details);
 
