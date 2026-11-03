@@ -601,7 +601,18 @@ public sealed class CampaignGenerationService(
             return false;
         }
 
-        job.RequestCancellation(timeProvider.GetUtcNow());
+        var now = timeProvider.GetUtcNow();
+        job.RequestCancellation(now);
+        if (job.Status == CampaignGenerationStatus.Cancelled && job.UsesVerticalLibrary)
+        {
+            var library = await dbContext.CampaignVideoLibraries
+                .Include(candidate => candidate.Variants)
+                .SingleOrDefaultAsync(
+                    candidate => candidate.CampaignGenerationJobId == job.Id
+                        && candidate.OrganizationId == organizationId,
+                    cancellationToken);
+            library?.Cancel(now);
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -776,7 +787,8 @@ public sealed class CampaignGenerationService(
                 ? new CampaignProviderAudit(
                     "Higgsfield",
                     job.FullTourProviderRequestId,
-                    job.FullTourGenerationVersion)
+                    job.FullTourGenerationVersion,
+                    job.FullTourSubmittedPrompt)
                 : null);
     }
 

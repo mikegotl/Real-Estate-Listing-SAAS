@@ -598,6 +598,16 @@
                 <MudText Typo="Typo.body2">
                     Generation version: <code>@(audit.GenerationVersion ?? "Waiting for provider submission")</code>
                 </MudText>
+                @if (isPlatformAdmin && !string.IsNullOrWhiteSpace(audit.SubmittedPrompt))
+                {
+                    <MudExpansionPanels Class="mt-2">
+                        <MudExpansionPanel Text="Submitted Higgsfield prompt">
+                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap" data-testid="campaign-submitted-prompt">
+                                @audit.SubmittedPrompt
+                            </MudText>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                }
             }
             else
             {
@@ -863,6 +873,7 @@
     private CampaignVerticalRequestResult? restoreVerticalRequest;
     private string? appliedFocus;
     private bool resetSelectionsWhenCancelled;
+    private bool isPlatformAdmin;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -895,7 +906,9 @@
     {
         try
         {
-            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var userId = UserIdentity.GetRequiredUserId(authenticationState.User);
+            isPlatformAdmin = authenticationState.User.IsInRole(PlatformAdministration.Role);
             job = await Service.GetLatestAsync(userId, PropertyId, pollingCancellation.Token);
             var script = await NarrationScriptService.GetAsync(userId, PropertyId, pollingCancellation.Token);
             var profile = await AgentProfileService.GetAsync(userId, pollingCancellation.Token);

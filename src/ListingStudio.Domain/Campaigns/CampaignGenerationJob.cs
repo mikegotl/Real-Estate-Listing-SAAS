@@ -160,6 +160,8 @@ public sealed class CampaignGenerationJob
 
     public string? FullTourGenerationVersion { get; private set; }
 
+    public string? FullTourSubmittedPrompt { get; private set; }
+
     public DateTimeOffset? FullTourSubmittedAtUtc { get; private set; }
 
     public string? FullTourAssetPath { get; private set; }
@@ -332,6 +334,7 @@ public sealed class CampaignGenerationJob
         VideoStrategy = CampaignVideoStrategy.Established;
         FullTourProviderRequestId = null;
         FullTourGenerationVersion = null;
+        FullTourSubmittedPrompt = null;
         FullTourSubmittedAtUtc = null;
         FullTourAssetPath = null;
         FullTourContentType = null;
@@ -339,7 +342,11 @@ public sealed class CampaignGenerationJob
         FullTourDurationMs = null;
     }
 
-    public void MarkFullTourSubmitted(string requestId, string generationVersion, DateTimeOffset now)
+    public void MarkFullTourSubmitted(
+        string requestId,
+        string generationVersion,
+        string submittedPrompt,
+        DateTimeOffset now)
     {
         if (VideoStrategy is not (CampaignVideoStrategy.Kling4FullTour or CampaignVideoStrategy.Kling4NativePresenter))
         {
@@ -348,6 +355,7 @@ public sealed class CampaignGenerationJob
 
         FullTourProviderRequestId = Required(requestId, 200, nameof(requestId));
         FullTourGenerationVersion = Required(generationVersion, 200, nameof(generationVersion));
+        FullTourSubmittedPrompt = Required(submittedPrompt, 20_000, nameof(submittedPrompt));
         FullTourSubmittedAtUtc = now;
         FullTourAssetPath = null;
         FullTourContentType = null;

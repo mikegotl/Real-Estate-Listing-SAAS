@@ -311,6 +311,43 @@ public sealed partial class CampaignGenerationTests
     }
 
     [Fact]
+    public async Task CancellingBeforeProviderSubmissionCancelsEveryUnfinishedLibraryVideo()
+    {
+        var (admin, owner) = await CreateLibraryListingAsync("library-cancel-before-provider");
+        try
+        {
+            await SetLibrarySwitchAsync(admin, true, false, owner.OrganizationId);
+            QueueLibraryProviders(narratedVideos: 0);
+            var queued = await EnqueueLibraryAsync(owner, VerticalVideoSelection.RecommendedThree);
+            await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.GenerateRequiredAiVideo);
+
+            await using var scope = fixture.Factory.Services.CreateAsyncScope();
+            var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+            Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
+
+            var cancelled = await campaigns.GetAsync(owner.UserId, queued.Id);
+            Assert.NotNull(cancelled);
+            Assert.Equal(CampaignGenerationStatus.Cancelled, cancelled.Status);
+            Assert.Null(cancelled.ProviderAudit);
+
+            var view = await scope.ServiceProvider.GetRequiredService<ICampaignVideoLibraryService>()
+                .GetAsync(owner.UserId, queued.Id);
+            Assert.NotNull(view);
+            Assert.Equal(CampaignVideoLibraryStatus.Cancelled, view.Status);
+            Assert.NotEmpty(view.Videos);
+            Assert.All(view.Videos, video =>
+            {
+                Assert.Equal(CampaignVideoVariantStatus.Cancelled, video.Status);
+                Assert.Equal(CampaignVideoTechnicalStatus.Cancelled, video.TechnicalStatus);
+            });
+        }
+        finally
+        {
+            await SetLibrarySwitchAsync(admin, false, false);
+        }
+    }
+
+    [Fact]
     public async Task InterruptedVideoResumesWithoutADuplicatePlanVoiceoverOrRender()
     {
         var (admin, owner) = await CreateLibraryListingAsync("library-resume");

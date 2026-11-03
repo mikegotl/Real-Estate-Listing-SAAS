@@ -29,6 +29,7 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
             .IsRequired();
         builder.Property(job => job.FullTourProviderRequestId).HasMaxLength(200);
         builder.Property(job => job.FullTourGenerationVersion).HasMaxLength(200);
+        builder.Property(job => job.FullTourSubmittedPrompt).HasMaxLength(20_000);
         builder.Property(job => job.FullTourAssetPath).HasMaxLength(1_024);
         builder.Property(job => job.FullTourContentType).HasMaxLength(100);
         builder.Property(job => job.CreativeElements)

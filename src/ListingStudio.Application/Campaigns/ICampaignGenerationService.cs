@@ -139,13 +139,14 @@ public sealed record CampaignGenerationResult(
 
 /// <summary>
 /// Non-secret evidence for an experimental provider-backed campaign. Temporary signed image URLs and credentials are
-/// deliberately excluded; the provider request ID and deterministic generation version correlate the request with
-/// provider logs and the exact prompt implementation.
+/// deliberately excluded; the provider request ID, deterministic generation version and submitted text prompt
+/// correlate the request with provider logs. The Web host renders the prompt for platform administrators only.
 /// </summary>
 public sealed record CampaignProviderAudit(
     string Provider,
     string? RequestId,
-    string? GenerationVersion);
+    string? GenerationVersion,
+    string? SubmittedPrompt = null);
 
 /// <summary>A campaign's vertical library request: how the videos were chosen, the goal, and any agent-picked formats.</summary>
 public sealed record CampaignVerticalRequestResult(

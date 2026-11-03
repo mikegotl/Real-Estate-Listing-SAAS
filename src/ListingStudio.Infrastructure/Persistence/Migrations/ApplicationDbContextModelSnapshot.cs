@@ -674,6 +674,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("FullTourSubmittedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("FullTourSubmittedPrompt")
+                        .HasMaxLength(20000)
+                        .HasColumnType("character varying(20000)");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
