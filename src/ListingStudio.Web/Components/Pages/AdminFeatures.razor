@@ -29,12 +29,29 @@
 @if (view is not null)
 {
     <MudPaper Elevation="0" Class="admin-panel feature-switch" data-testid="@($"feature-{featureKey}")">
-        <MudSelect T="string" Label="Release unit" Value="featureKey" ValueChanged="ChangeFeatureAsync"
-                   Variant="Variant.Outlined" Disabled="busy" Class="mb-4" data-testid="feature-picker">
-            <MudSelectItem Value="@FeatureFlagKeys.VerticalVideoLibraryV1">Vertical video library</MudSelectItem>
-            <MudSelectItem Value="@FeatureFlagKeys.Kling4FullTourV1">Kling 4 continuous Tour Map</MudSelectItem>
-            <MudSelectItem Value="@FeatureFlagKeys.Kling4NativePresenterV1">Kling 4 native presenter</MudSelectItem>
-        </MudSelect>
+        <div class="feature-unit-picker" role="group" aria-label="Release unit" data-testid="feature-picker">
+            <button type="button"
+                    class="@(featureKey == FeatureFlagKeys.VerticalVideoLibraryV1 ? "selected" : null)"
+                    aria-pressed="@(featureKey == FeatureFlagKeys.VerticalVideoLibraryV1)"
+                    disabled="@busy"
+                    @onclick="@(() => ChangeFeatureAsync(FeatureFlagKeys.VerticalVideoLibraryV1))">
+                Vertical video library
+            </button>
+            <button type="button"
+                    class="@(featureKey == FeatureFlagKeys.Kling4FullTourV1 ? "selected" : null)"
+                    aria-pressed="@(featureKey == FeatureFlagKeys.Kling4FullTourV1)"
+                    disabled="@busy"
+                    @onclick="@(() => ChangeFeatureAsync(FeatureFlagKeys.Kling4FullTourV1))">
+                Kling 4 continuous Tour Map
+            </button>
+            <button type="button"
+                    class="@(featureKey == FeatureFlagKeys.Kling4NativePresenterV1 ? "selected" : null)"
+                    aria-pressed="@(featureKey == FeatureFlagKeys.Kling4NativePresenterV1)"
+                    disabled="@busy"
+                    @onclick="@(() => ChangeFeatureAsync(FeatureFlagKeys.Kling4NativePresenterV1))">
+                Kling 4 native presenter
+            </button>
+        </div>
         <header class="feature-switch-head">
             <div>
                 <MudText Typo="Typo.h5" HtmlTag="h2">@FeatureName</MudText>
