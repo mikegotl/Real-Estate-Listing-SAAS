@@ -451,6 +451,12 @@ public sealed class FakeRenderedVideoValidator : IRenderedVideoValidator
 
     public void EnqueueFailure(string problem) => failures.Enqueue(problem);
 
+    /// <summary>What the audio probe reports for a source video such as a Kling result; null means "cannot tell".</summary>
+    public bool? SourceAudioPresent { get; set; }
+
+    public Task<bool?> HasAudioStreamAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult(SourceAudioPresent);
+
     public Task<RenderedVideoValidation> ValidateAsync(
         string path,
         Mp4Expectations expectations,
@@ -659,11 +665,14 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
 
         var requestId = $"fake-{Guid.NewGuid():N}";
         nativePresenterRequests[requestId] = submission;
+        LastNativePresenterSubmission = submission;
         return Task.FromResult(requestId);
     }
 
+    public NativePresenterVideoSubmission? LastNativePresenterSubmission { get; private set; }
+
     public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission) =>
-        $"Fake native-presenter prompt: {submission.OpeningLine} {submission.ClosingLine}";
+        $"Fake native-presenter prompt: {submission.OpeningLine} {submission.TourVoiceover} {submission.ClosingLine}";
 
     public Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,

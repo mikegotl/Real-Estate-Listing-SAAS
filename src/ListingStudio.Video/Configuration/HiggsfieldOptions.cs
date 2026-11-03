@@ -25,6 +25,18 @@ public sealed class HiggsfieldOptions
 
     public string FullTourResolution { get; init; } = "1080p";
 
+    /// <summary>
+    /// The value of Kling's <c>sound</c> field for the native-presenter video, which must carry speech and music.
+    /// Empty leaves the field out of the request.
+    /// </summary>
+    public string NativePresenterSound { get; init; } = "on";
+
+    /// <summary>
+    /// The value of Kling's <c>aspect_ratio</c> field for the native-presenter video. It is only used for vertical
+    /// 30-second outputs, so it is requested as 9:16 instead of following the headshot's shape. Empty leaves it out.
+    /// </summary>
+    public string NativePresenterAspectRatio { get; init; } = "9:16";
+
     public int ClipDurationSeconds { get; init; } = 5;
     public string GenerationVersion { get; init; } = "walkthrough-v1";
     public int RequestTimeoutSeconds { get; init; } = 120;

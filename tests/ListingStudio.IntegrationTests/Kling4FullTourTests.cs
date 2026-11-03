@@ -173,15 +173,15 @@ public sealed partial class CampaignGenerationTests
             enabledForAllOrganizations: false,
             []);
         Assert.False(await campaigns.IsKlingFullTourEnabledAsync(owner.UserId));
-        var control = (await campaigns.EnqueueAsync(
+        // A pilot request with the switch off is refused, never quietly turned into the control edit.
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => campaigns.EnqueueAsync(
             owner.UserId,
             owner.PropertyId,
             CampaignOutputSelection.FacebookFeed,
             CampaignCreativeOptions.SocialDefault,
             CampaignNarrationPreferences.Default,
-            CampaignVideoStrategy.Kling4FullTour))!;
-        Assert.Equal(CampaignVideoStrategy.Established, control.VideoStrategy);
-        await campaigns.CancelAsync(owner.UserId, control.Id);
+            CampaignVideoStrategy.Kling4FullTour));
+        Assert.Contains("switched off", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -210,6 +210,7 @@ public sealed partial class CampaignGenerationTests
         fixture.Factory.StoryGenerator.Enqueue(SafeStory);
         fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
         fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        fixture.Factory.VoiceProvider.Enqueue(CreateSegmentedVoiceResult);
         var options = CampaignCreativeOptions.SocialDefault with
         {
             Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
@@ -230,7 +231,7 @@ public sealed partial class CampaignGenerationTests
             queued = (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
                 owner.UserId,
                 owner.PropertyId,
-                CampaignOutputSelection.FacebookFeed,
+                CampaignOutputSelection.TikTok,
                 options,
                 CampaignNarrationPreferences.Default,
                 CampaignVideoStrategy.Kling4NativePresenter))!;
@@ -435,11 +436,16 @@ public sealed partial class CampaignGenerationTests
         fixture.Factory.StoryGenerator.Enqueue(SafeStory);
         fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
         fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        fixture.Factory.VoiceProvider.Enqueue(CreateSegmentedVoiceResult);
         var options = CampaignCreativeOptions.SocialDefault with
         {
             Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
             AgentPortraitId = portraitId,
             AgentAvatarConsentConfirmed = true,
+            PresenterScript = new NativePresenterScript(
+                "Hi, I'm Dana. Come see this home with me.",
+                "Step inside to the bright entry,   then the kitchen with its center island.",
+                "Call me today to book a private showing."),
         };
 
         CampaignGenerationResult queued;
@@ -451,10 +457,39 @@ public sealed partial class CampaignGenerationTests
                 globallyEnabled: true,
                 enabledForAllOrganizations: false,
                 [owner.OrganizationId]);
-            queued = (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
+            var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+            var preview = await campaigns.PreviewKlingNativePresenterAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.TikTok,
+                options,
+                null,
+                usesVerticalLibrary: false);
+            Assert.NotNull(preview);
+            Assert.True(preview.IsReady, string.Join("; ", preview.Problems));
+            Assert.Equal(["Exterior front", "Kitchen"], preview.Frames.Select(frame => frame.StopName));
+            Assert.Contains("the kitchen with its center island.", preview.Prompt, StringComparison.Ordinal);
+            Assert.Equal("Hi, I'm Dana. Come see this home with me.", preview.Script.Opening);
+            var landscapeOnly = await campaigns.PreviewKlingNativePresenterAsync(
                 owner.UserId,
                 owner.PropertyId,
                 CampaignOutputSelection.FacebookFeed,
+                options,
+                null,
+                usesVerticalLibrary: false);
+            Assert.Contains(landscapeOnly!.Problems, problem => problem.Contains("TikTok", StringComparison.Ordinal));
+            var noVertical = await Assert.ThrowsAsync<InvalidOperationException>(() => campaigns.EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.FacebookFeed,
+                options,
+                CampaignNarrationPreferences.Default,
+                CampaignVideoStrategy.Kling4NativePresenter));
+            Assert.Contains("30-second vertical", noVertical.Message, StringComparison.Ordinal);
+            queued = (await campaigns.EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.TikTok,
                 options,
                 CampaignNarrationPreferences.Default,
                 CampaignVideoStrategy.Kling4NativePresenter))!;
@@ -463,6 +498,14 @@ public sealed partial class CampaignGenerationTests
         var completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
 
         Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, completed.VideoStrategy);
+        // The agent's exact script is stored with the campaign and sent to Kling word for word (whitespace tidied).
+        Assert.Equal(
+            "Step inside to the bright entry, then the kitchen with its center island.",
+            completed.CreativeOptions.PresenterScript?.Tour);
+        var sent = Assert.IsType<NativePresenterVideoSubmission>(fixture.Factory.WalkthroughVideoProvider.LastNativePresenterSubmission);
+        Assert.Equal("Hi, I'm Dana. Come see this home with me.", sent.OpeningLine);
+        Assert.Equal("Step inside to the bright entry, then the kitchen with its center island.", sent.TourVoiceover);
+        Assert.Equal("Call me today to book a private showing.", sent.ClosingLine);
         Assert.Equal("Higgsfield", completed.ProviderAudit?.Provider);
         Assert.False(string.IsNullOrWhiteSpace(completed.ProviderAudit?.RequestId));
         Assert.Equal("fake-kling4-native-presenter-v1", completed.ProviderAudit?.GenerationVersion);
@@ -481,4 +524,97 @@ public sealed partial class CampaignGenerationTests
             enabledForAllOrganizations: false,
             []);
     }
+
+    [Fact]
+    public async Task KlingNativePresenterWithoutProviderAudioKeepsThePictureAndAddsCampaignVoice()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("kling4-native-silent");
+        await GrantReviewAdminAsync(owner.UserId);
+        Guid portraitId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = uploadScope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using (var portrait = new MemoryStream(OnePixelPng))
+            {
+                portraitId = (await portraits.UploadAsync(
+                    owner.UserId,
+                    new AgentPortraitUpload("agent.png", "image/png", portrait.Length, portrait))).Id;
+            }
+
+            var media = uploadScope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            await using var exterior = new MemoryStream(OnePixelPng);
+            await media.UploadAsync(owner.UserId, owner.PropertyId, new PropertyMediaUpload(
+                "exterior.png", "image/png", exterior.Length, exterior, WalkthroughStoryboard.ExteriorFront));
+            await using var kitchen = new MemoryStream(OnePixelPng);
+            await media.UploadAsync(owner.UserId, owner.PropertyId, new PropertyMediaUpload(
+                "kitchen.png", "image/png", kitchen.Length, kitchen, "Kitchen"));
+        }
+
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis with
+        {
+            Category = PropertyMediaCategory.Kitchen,
+            RoomType = "Kitchen",
+            Description = "A center island anchors the kitchen.",
+        });
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        fixture.Factory.VoiceProvider.Enqueue(CreateVoiceResult);
+        fixture.Factory.VoiceProvider.Enqueue(CreateSegmentedVoiceResult);
+        var options = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = portraitId,
+            AgentAvatarConsentConfirmed = true,
+        };
+
+        CampaignGenerationResult queued;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+                owner.UserId,
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                globallyEnabled: true,
+                enabledForAllOrganizations: false,
+                [owner.OrganizationId]);
+            var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+            queued = (await campaigns.EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.TikTok,
+                options,
+                CampaignNarrationPreferences.Default,
+                CampaignVideoStrategy.Kling4NativePresenter))!;
+        }
+
+        fixture.Factory.RenderedVideoValidator.SourceAudioPresent = false;
+        CampaignGenerationResult completed;
+        try
+        {
+            completed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Completed);
+        }
+        finally
+        {
+            fixture.Factory.RenderedVideoValidator.SourceAudioPresent = null;
+        }
+
+        Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, completed.VideoStrategy);
+        Assert.Equal("Higgsfield", completed.ProviderAudit?.Provider);
+        Assert.False(string.IsNullOrWhiteSpace(completed.ProviderAudit?.RequestId));
+        Assert.Equal("fake-kling4-native-presenter-v1", completed.ProviderAudit?.GenerationVersion);
+        var render = Assert.IsType<VideoRenderRequest>(fixture.Factory.VideoRenderer.LastRequest);
+        Assert.NotNull(render.FullTour);
+        Assert.False(render.FullTour.UseNativeAudio);
+        Assert.NotNull(render.Narration);
+        Assert.Null(render.AgentPresenter);
+
+        await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
+        await verifyScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+            owner.UserId,
+            FeatureFlagKeys.Kling4NativePresenterV1,
+            globallyEnabled: false,
+            enabledForAllOrganizations: false,
+            []);
+    }
+
 }

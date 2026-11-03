@@ -1261,7 +1261,9 @@ public sealed partial class CampaignGenerationProcessor(
                 ? null
                 : await MaterializeNarrationAsync(job, narrationId, directory, cancellationToken);
             var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
+            // The native-presenter video already shows the agent at both ends, with or without its own sound.
             var agentPresenter = usesNativeKlingAudio
+                || (fullTour is not null && job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
                 ? null
                 : await MaterializeAgentPresenterAsync(
                     job,
@@ -1582,7 +1584,8 @@ public sealed partial class CampaignGenerationProcessor(
         var hasThirtySecondDeliverable = await dbContext.CampaignDeliverables.AsNoTracking().AnyAsync(
             candidate => candidate.CampaignGenerationJobId == job.Id
                 && candidate.OrganizationId == job.OrganizationId
-                && candidate.RequestedDuration == RequestedDuration.Feature30,
+                && candidate.RequestedDuration == RequestedDuration.Feature30
+                && (!usesNativePresenter || candidate.AspectRatio == VideoAspectRatio.Vertical9By16),
             cancellationToken);
         var hasThirtySecondLibraryVariant = job.UsesVerticalLibrary
             && await dbContext.CampaignVideoVariants.AsNoTracking().AnyAsync(
@@ -1593,12 +1596,96 @@ public sealed partial class CampaignGenerationProcessor(
         if (!hasThirtySecondDeliverable && !hasThirtySecondLibraryVariant)
         {
             throw new InvalidOperationException(
-                "Kling 4 currently requires at least one 30-second campaign output. No fallback video was rendered.");
+                usesNativePresenter
+                    ? "The Kling 4 native presenter needs a 30-second vertical video (TikTok with a short or no voiceover). No fallback video was rendered."
+                    : "Kling 4 currently requires at least one 30-second campaign output. No fallback video was rendered.");
         }
 
         if (job.FullTourAssetPath is not null)
         {
             return true;
+        }
+
+        if (job.FullTourProviderRequestId is null && usesNativePresenter)
+        {
+            if (!job.AgentAvatarConsentConfirmed || job.AgentPortraitId is not { } portraitId)
+            {
+                throw new InvalidOperationException(
+                    "The Kling 4 native presenter requires an approved profile headshot and consent.");
+            }
+
+            var plan = await NativePresenterRequestPlanner.BuildAsync(
+                dbContext,
+                new NativePresenterPlanInput(
+                    job.OrganizationId,
+                    job.PropertyId,
+                    job.VerticalGoal,
+                    job.MarketingTemplate,
+                    job.OpenHouseText,
+                    job.Soundtrack,
+                    job.PresenterScript),
+                cancellationToken);
+            if (plan.Frames.Count < NativePresenterVideoPolicy.MinimumTourFrames)
+            {
+                throw new InvalidOperationException("The Kling 4 native presenter needs at least one approved Tour Map photo.");
+            }
+
+            var portrait = await dbContext.AgentPortraits.AsNoTracking()
+                .Where(candidate => candidate.Id == portraitId
+                    && candidate.OrganizationId == job.OrganizationId
+                    && candidate.UserId == job.RequestedByUserId)
+                .Select(candidate => new { candidate.BlobPath, candidate.MimeType })
+                .SingleOrDefaultAsync(cancellationToken)
+                ?? throw new InvalidOperationException("The campaign's approved agent photo is unavailable.");
+            var streams = new List<Stream>(plan.Frames.Count + 1);
+            try
+            {
+                var agentPortrait = await propertyMediaStorage.OpenReadAsync(portrait.BlobPath, cancellationToken)
+                    ?? throw new FileNotFoundException("The campaign's approved agent photo could not be opened.");
+                streams.Add(agentPortrait);
+                var nativeFrames = new List<NativePresenterTourFrame>(plan.Frames.Count);
+                foreach (var frame in plan.Frames)
+                {
+                    var stream = await propertyMediaStorage.OpenReadAsync(frame.BlobPath, cancellationToken)
+                        ?? throw new FileNotFoundException("A Tour Map photo could not be opened.");
+                    streams.Add(stream);
+                    nativeFrames.Add(new NativePresenterTourFrame(
+                        new WalkthroughVideoFrame(stream, frame.MimeType),
+                        frame.StopName,
+                        frame.ApprovedHighlight,
+                        frame.DirectionToNext));
+                }
+
+                var submission = new NativePresenterVideoSubmission(
+                    new WalkthroughVideoFrame(agentPortrait, portrait.MimeType),
+                    nativeFrames,
+                    plan.Script.Opening,
+                    plan.Script.Closing,
+                    plan.CampaignGoal,
+                    plan.MusicDirection,
+                    $"campaign-native-presenter-{job.Id:N}",
+                    plan.Script.Tour);
+                var submittedPrompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
+                var requestId = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
+                dbContext.ChangeTracker.Clear();
+                var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
+                    candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
+                    cancellationToken);
+                tracked.MarkFullTourSubmitted(
+                    requestId,
+                    walkthroughVideoProvider.NativePresenterGenerationVersion,
+                    submittedPrompt,
+                    timeProvider.GetUtcNow());
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return false;
+            }
+            finally
+            {
+                foreach (var stream in streams)
+                {
+                    await stream.DisposeAsync();
+                }
+            }
         }
 
         if (job.FullTourProviderRequestId is null)
@@ -1610,9 +1697,7 @@ public sealed partial class CampaignGenerationProcessor(
                     && candidate.WalkthroughStop != null)
                 .OrderBy(candidate => candidate.DisplayOrder)
                 .ThenBy(candidate => candidate.Id)
-                .Take(usesNativePresenter
-                    ? NativePresenterVideoPolicy.MaximumTourFrames
-                    : FullTourVideoPolicy.MaximumFrames)
+                .Take(FullTourVideoPolicy.MaximumFrames)
                 .Select(candidate => new
                 {
                     candidate.Id,
@@ -1622,12 +1707,9 @@ public sealed partial class CampaignGenerationProcessor(
                     candidate.AnalysisDescription,
                 })
                 .ToArrayAsync(cancellationToken);
-            if ((!usesNativePresenter && media.Length < FullTourVideoPolicy.MinimumFrames)
-                || (usesNativePresenter && media.Length < NativePresenterVideoPolicy.MinimumTourFrames))
+            if (media.Length < FullTourVideoPolicy.MinimumFrames)
             {
-                throw new InvalidOperationException(usesNativePresenter
-                    ? "The Kling 4 native presenter needs at least one approved Tour Map photo."
-                    : "The Kling 4 full tour needs at least two approved Tour Map photos.");
+                throw new InvalidOperationException("The Kling 4 full tour needs at least two approved Tour Map photos.");
             }
 
             var directions = (await dbContext.WalkthroughStopDirections.AsNoTracking()
@@ -1637,45 +1719,10 @@ public sealed partial class CampaignGenerationProcessor(
                     .ToArrayAsync(cancellationToken))
                 .GroupBy(candidate => candidate.Stop, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.First().Direction, StringComparer.OrdinalIgnoreCase);
-            var streams = new List<Stream>(media.Length + (usesNativePresenter ? 1 : 0));
+            var streams = new List<Stream>(media.Length);
             try
             {
-                Stream? agentPortrait = null;
-                string? agentPortraitMimeType = null;
-                Dictionary<string, string>? approvedNarration = null;
-                if (usesNativePresenter)
-                {
-                    if (!job.AgentAvatarConsentConfirmed || job.AgentPortraitId is not { } portraitId)
-                    {
-                        throw new InvalidOperationException(
-                            "The Kling 4 native presenter requires an approved profile headshot and consent.");
-                    }
-
-                    var portrait = await dbContext.AgentPortraits.AsNoTracking()
-                        .Where(candidate => candidate.Id == portraitId
-                            && candidate.OrganizationId == job.OrganizationId
-                            && candidate.UserId == job.RequestedByUserId)
-                        .Select(candidate => new { candidate.BlobPath, candidate.MimeType })
-                        .SingleOrDefaultAsync(cancellationToken)
-                        ?? throw new InvalidOperationException("The campaign's approved agent photo is unavailable.");
-                    agentPortrait = await propertyMediaStorage.OpenReadAsync(portrait.BlobPath, cancellationToken)
-                        ?? throw new FileNotFoundException("The campaign's approved agent photo could not be opened.");
-                    agentPortraitMimeType = portrait.MimeType;
-                    streams.Add(agentPortrait);
-                    approvedNarration = (await dbContext.WalkthroughStopNarrations.AsNoTracking()
-                            .Where(candidate => candidate.OrganizationId == job.OrganizationId
-                                && candidate.PropertyId == job.PropertyId)
-                            .Select(candidate => new { candidate.Stop, candidate.Text })
-                            .ToArrayAsync(cancellationToken))
-                        .GroupBy(candidate => candidate.Stop, StringComparer.OrdinalIgnoreCase)
-                        .ToDictionary(
-                            group => group.Key,
-                            group => group.OrderByDescending(candidate => candidate.Text.Length).First().Text,
-                            StringComparer.OrdinalIgnoreCase);
-                }
-
                 var frames = new List<FullTourVideoFrame>(media.Length);
-                var nativeFrames = new List<NativePresenterTourFrame>(media.Length);
                 for (var index = 0; index < media.Length; index++)
                 {
                     var item = media[index];
@@ -1692,48 +1739,18 @@ public sealed partial class CampaignGenerationProcessor(
                         new WalkthroughVideoFrame(stream, item.MimeType),
                         item.StopName,
                         direction));
-                    nativeFrames.Add(new NativePresenterTourFrame(
-                        new WalkthroughVideoFrame(stream, item.MimeType),
-                        item.StopName,
-                        approvedNarration is not null
-                            && approvedNarration.TryGetValue(item.StopName, out var narration)
-                                ? NativePresenterExcerpt(narration)
-                                : NativePresenterExcerpt(item.AnalysisDescription),
-                        direction));
                 }
 
-                string requestId;
-                string submittedPrompt;
-                if (usesNativePresenter)
-                {
-                    var submission = new NativePresenterVideoSubmission(
-                            new WalkthroughVideoFrame(
-                                agentPortrait!,
-                                agentPortraitMimeType!),
-                            nativeFrames,
-                            await NativePresenterOpeningLineAsync(job, cancellationToken),
-                            "Contact me today to schedule your private showing.",
-                            NativePresenterGoal(job),
-                            await NativePresenterMusicAsync(job, cancellationToken),
-                            $"campaign-native-presenter-{job.Id:N}");
-                    submittedPrompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
-                    requestId = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
-                }
-                else
-                {
-                    var submission = new FullTourVideoSubmission(frames, $"campaign-full-tour-{job.Id:N}");
-                    submittedPrompt = walkthroughVideoProvider.BuildFullTourPrompt(submission);
-                    requestId = await walkthroughVideoProvider.SubmitFullTourAsync(submission, cancellationToken);
-                }
+                var submission = new FullTourVideoSubmission(frames, $"campaign-full-tour-{job.Id:N}");
+                var submittedPrompt = walkthroughVideoProvider.BuildFullTourPrompt(submission);
+                var requestId = await walkthroughVideoProvider.SubmitFullTourAsync(submission, cancellationToken);
                 dbContext.ChangeTracker.Clear();
                 var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
                     candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
                     cancellationToken);
                 tracked.MarkFullTourSubmitted(
                     requestId,
-                    usesNativePresenter
-                        ? walkthroughVideoProvider.NativePresenterGenerationVersion
-                        : walkthroughVideoProvider.FullTourGenerationVersion,
+                    walkthroughVideoProvider.FullTourGenerationVersion,
                     submittedPrompt,
                     timeProvider.GetUtcNow());
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -1811,73 +1828,6 @@ public sealed partial class CampaignGenerationProcessor(
         }
 
         return true;
-    }
-
-    private async Task<string> NativePresenterOpeningLineAsync(
-        CampaignGenerationJob job,
-        CancellationToken cancellationToken)
-    {
-        var location = await dbContext.Properties.AsNoTracking()
-            .Where(candidate => candidate.Id == job.PropertyId
-                && candidate.OrganizationId == job.OrganizationId)
-            .Select(candidate => new { candidate.City, candidate.State })
-            .SingleAsync(cancellationToken);
-        return $"Welcome to your next home in {location.City}, {location.State}. Let me show you around.";
-    }
-
-    private static string NativePresenterGoal(CampaignGenerationJob job) => job.VerticalGoal switch
-    {
-        VerticalCampaignGoal.MaximizeReach => "Maximize reach with an energetic, immediately engaging property tour.",
-        VerticalCampaignGoal.BuyerInterest => "Generate serious buyer interest by emphasizing only approved property details.",
-        VerticalCampaignGoal.OpenHouse => $"Promote the verified open house: {job.OpenHouseText}.",
-        VerticalCampaignGoal.NewListing => "Announce a newly listed home with an inviting first look.",
-        VerticalCampaignGoal.PriceChange => "Announce the verified price change without making a value claim.",
-        _ => job.MarketingTemplate switch
-        {
-            CampaignMarketingTemplate.OpenHouse => $"Promote the verified open house: {job.OpenHouseText}.",
-            CampaignMarketingTemplate.JustListed => "Announce a newly listed home with an inviting first look.",
-            CampaignMarketingTemplate.PriceDrop => "Announce the verified price change without making a value claim.",
-            CampaignMarketingTemplate.FeatureSpotlight => "Highlight the most interesting approved property details.",
-            CampaignMarketingTemplate.QuickTour => "Maximize reach with a concise, energetic property tour.",
-            _ => "Create buyer interest with a polished, factual tour of the home.",
-        },
-    };
-
-    private async Task<string> NativePresenterMusicAsync(
-        CampaignGenerationJob job,
-        CancellationToken cancellationToken)
-    {
-        var soundtrack = job.Soundtrack;
-        if (soundtrack == CampaignSoundtrack.AutoByHomeEra)
-        {
-            var year = await dbContext.Properties.AsNoTracking()
-                .Where(candidate => candidate.Id == job.PropertyId
-                    && candidate.OrganizationId == job.OrganizationId)
-                .Select(candidate => candidate.YearBuilt)
-                .SingleAsync(cancellationToken);
-            soundtrack = year switch
-            {
-                < 1965 => CampaignSoundtrack.HeritageWarm,
-                < 2000 => CampaignSoundtrack.UpbeatLifestyle,
-                _ => CampaignSoundtrack.ModernAmbient,
-            };
-        }
-
-        return soundtrack switch
-        {
-            CampaignSoundtrack.HeritageWarm => "Warm acoustic instrumental appropriate to the home's era; no lyrics.",
-            CampaignSoundtrack.UpbeatLifestyle => "Upbeat lifestyle instrumental with a contemporary pulse; no lyrics.",
-            CampaignSoundtrack.LuxuryCinematic => "Refined cinematic piano and strings for a luxury property; no lyrics.",
-            CampaignSoundtrack.None or CampaignSoundtrack.AddInApp =>
-                "Very subtle neutral instrumental bed; no lyrics, and keep it well below the agent's speech.",
-            _ => "Modern ambient instrumental with a confident real-estate-tour pace; no lyrics.",
-        };
-    }
-
-    private static string? NativePresenterExcerpt(string? text)
-    {
-        var normalized = WalkthroughStopNarration.Normalize(text);
-        return normalized is null ? null : normalized[..Math.Min(normalized.Length, 240)];
     }
 
     private async Task<VideoRenderAgentPresenterAsset?> MaterializeAgentPresenterAsync(
@@ -2265,28 +2215,37 @@ public sealed partial class CampaignGenerationProcessor(
             return null;
         }
 
-        // A queued job can outlive the switch; never introduce the experimental asset after the kill switch is off.
-        var featureKey = job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
-            ? FeatureFlagKeys.Kling4NativePresenterV1
-            : FeatureFlagKeys.Kling4FullTourV1;
-        if (!await featureStateService.IsEnabledAsync(
-                featureKey,
-                job.OrganizationId,
-                cancellationToken))
+        // The native presenter is requested from Kling as 9:16, so only vertical outputs use it; a landscape crop would
+        // keep only the middle third of the frame. The continuous tour keeps its existing behaviour.
+        var usesNativePresenter = job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter;
+        if (usesNativePresenter && specification.AspectRatio != VideoAspectRatio.Vertical9By16)
         {
             return null;
         }
 
+        // The release switch stops new provider submissions. A Kling video that already finished was paid for and
+        // the agent chose it, so it is still used when the switch is turned off later.
         await using var source = await campaignAssetStorage.OpenReadAsync(job.FullTourAssetPath, cancellationToken);
         if (source is null)
         {
-            return null;
+            throw new FileNotFoundException("The finished Kling 4 video for this campaign could not be opened.");
         }
 
-        var nativeAudio = job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter;
-        var path = Path.Combine(directory, nativeAudio ? "kling4-native-presenter.mp4" : "kling4-full-tour.mp4");
-        await using var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        await source.CopyToAsync(target, cancellationToken);
+        var path = Path.Combine(directory, usesNativePresenter ? "kling4-native-presenter.mp4" : "kling4-full-tour.mp4");
+        await using (var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+            await source.CopyToAsync(target, cancellationToken);
+        }
+
+        var nativeAudio = usesNativePresenter;
+        if (nativeAudio && await renderedVideoValidator.HasAudioStreamAsync(path, cancellationToken) == false)
+        {
+            // Without Kling's own sound the video would have no soundtrack at all. Keep the Kling picture and let the
+            // established renderer add the campaign voice and music instead.
+            LogNativePresenterWithoutAudio(job.Id);
+            nativeAudio = false;
+        }
+
         return new VideoRenderFullTourAsset(path, durationMs, nativeAudio);
     }
 
@@ -2723,4 +2682,9 @@ public sealed partial class CampaignGenerationProcessor(
         Guid jobId,
         CampaignGenerationStage stage,
         int attemptNumber);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Kling 4 native presenter video for campaign {JobId} has no audio; using the campaign voice and music")]
+    private partial void LogNativePresenterWithoutAudio(Guid jobId);
 }

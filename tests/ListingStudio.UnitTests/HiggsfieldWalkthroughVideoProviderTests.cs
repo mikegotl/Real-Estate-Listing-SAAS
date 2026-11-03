@@ -227,6 +227,8 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal("https://cdn.storage.test/frame-3.jpg", root.GetProperty("end_image_url").GetString());
         Assert.Equal(30, root.GetProperty("duration").GetInt32());
         Assert.Equal("1080p", root.GetProperty("resolution").GetString());
+        Assert.False(root.TryGetProperty("sound", out _));
+        Assert.False(root.TryGetProperty("aspect_ratio", out _));
         var prompt = root.GetProperty("prompt").GetString()!;
         Assert.Equal(provider.BuildFullTourPrompt(submission), prompt);
         Assert.Contains("exact order", prompt, StringComparison.Ordinal);
@@ -306,6 +308,9 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("end_image_url").GetString());
         Assert.Equal(30, root.GetProperty("duration").GetInt32());
         Assert.Equal("1080p", root.GetProperty("resolution").GetString());
+        // The renderer uses Kling's own sound as the whole soundtrack, so it must be asked for explicitly.
+        Assert.Equal("on", root.GetProperty("sound").GetString());
+        Assert.Equal("9:16", root.GetProperty("aspect_ratio").GetString());
         var prompt = root.GetProperty("prompt").GetString()!;
         Assert.Equal(provider.BuildNativePresenterPrompt(submission), prompt);
         Assert.Contains("same real-estate agent shown in the first and last keyframe", prompt, StringComparison.Ordinal);
@@ -314,6 +319,31 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Contains("Upbeat instrumental with no lyrics.", prompt, StringComparison.Ordinal);
         Assert.Contains("native-presenter", provider.NativePresenterGenerationVersion, StringComparison.Ordinal);
         Assert.Equal(30_000, provider.NativePresenterDurationMs);
+    }
+
+    [Fact]
+    public void NativePresenterPromptCarriesTheExactTourVoiceoverInsteadOfRoomHints()
+    {
+        var submission = new NativePresenterVideoSubmission(
+            new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
+            [
+                new(new WalkthroughVideoFrame(Stream.Null, "image/jpeg"), "Exterior front", null, WalkthroughDirection.Ahead),
+                new(new WalkthroughVideoFrame(Stream.Null, "image/jpeg"), "Kitchen", "A large center island."),
+            ],
+            "Hi, I'm Dana.",
+            "Call me today.",
+            "Generate buyer interest.",
+            "Upbeat instrumental with no lyrics.",
+            "campaign-native-2",
+            "Step inside,  then the kitchen.");
+
+        var prompt = HiggsfieldWalkthroughVideoProvider.NativePresenterPrompt(submission);
+
+        Assert.Contains("Over the tour, the agent's voice says exactly: \"Step inside, then the kitchen.\"", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("A large center island.", prompt, StringComparison.Ordinal);
+        Assert.Contains("says nothing beyond the supplied opening, voiceover and closing", prompt, StringComparison.Ordinal);
+        Assert.Throws<ArgumentOutOfRangeException>(() => HiggsfieldWalkthroughVideoProvider.NativePresenterPrompt(
+            submission with { TourVoiceover = "She said \"wow\"." }));
     }
 
     [Fact]

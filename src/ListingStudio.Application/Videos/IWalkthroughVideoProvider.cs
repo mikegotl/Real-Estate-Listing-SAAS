@@ -75,6 +75,9 @@ public interface IWalkthroughVideoProvider
         NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Estimated provider charge for one native-presenter video, shown before an admin spends it.</summary>
+    decimal EstimatedNativePresenterCostUsd => 0m;
+
     /// <summary>Builds the exact prompt that <see cref="SubmitNativePresenterAsync"/> sends to the provider.</summary>
     string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission);
 
@@ -123,7 +126,8 @@ public sealed record NativePresenterVideoSubmission(
     string ClosingLine,
     string CampaignGoal,
     string MusicDirection,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? TourVoiceover = null);
 
 public enum WalkthroughVideoState
 {

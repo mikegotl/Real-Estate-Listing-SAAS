@@ -116,7 +116,8 @@ public sealed record CampaignCreativeOptions(
     CampaignPace Pace = CampaignPace.Fast,
     CampaignVoiceoverMode Voiceover = CampaignVoiceoverMode.ShortHook,
     string? OpenHouseText = null,
-    bool OpenHouseVerified = false)
+    bool OpenHouseVerified = false,
+    NativePresenterScript? PresenterScript = null)
 {
     public const int MaximumOpenHouseTextLength = 40;
 
@@ -226,6 +227,8 @@ public sealed record CampaignCreativeOptions(
                 nameof(OpenHouseText));
         }
 
+        PresenterScript?.Validate();
+
         var hasMusic = Elements.HasFlag(CampaignVideoElement.BackgroundMusic);
         if (hasMusic == (Soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp))
         {
@@ -316,4 +319,59 @@ public sealed record CampaignCreativeOptions(
         options.Validate();
         return options;
     }
+}
+
+/// <summary>
+/// The exact words the Kling 4 native presenter speaks: an on-camera opening, a voiceover over the AI-generated tour,
+/// and an on-camera closing. Thirty seconds holds about 75 spoken words, so the whole script is capped there.
+/// </summary>
+public sealed record NativePresenterScript(string Opening, string Tour, string Closing)
+{
+    public const int MaximumWords = 75;
+    public const int MaximumOpeningLength = 300;
+    public const int MaximumTourLength = 600;
+    public const int MaximumClosingLength = 300;
+
+    public int WordCount => CountWords(Opening) + CountWords(Tour) + CountWords(Closing);
+
+    public static int CountWords(string? text) =>
+        string.IsNullOrWhiteSpace(text) ? 0 : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+
+    /// <summary>The same script with runs of whitespace collapsed, as it is stored and sent.</summary>
+    public NativePresenterScript Normalized() => new(Clean(Opening), Clean(Tour), Clean(Closing));
+
+    public void Validate()
+    {
+        Check(Opening, MaximumOpeningLength, nameof(Opening), "opening");
+        Check(Tour, MaximumTourLength, nameof(Tour), "tour voiceover");
+        Check(Closing, MaximumClosingLength, nameof(Closing), "closing");
+        if (WordCount > MaximumWords)
+        {
+            throw new ArgumentException(
+                $"The presenter script is {WordCount} words; keep it to {MaximumWords} so it fits 30 seconds.",
+                nameof(Tour));
+        }
+    }
+
+    private static void Check(string? value, int maximumLength, string field, string label)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"Write the presenter's {label}.", field);
+        }
+
+        if (value.Trim().Length > maximumLength || value.Any(character => char.IsControl(character) && character is not ('\n' or '\r')))
+        {
+            throw new ArgumentException($"Keep the presenter's {label} to {maximumLength} characters of plain text.", field);
+        }
+
+        // Quotation marks would close the quoted line in the provider prompt.
+        if (value.Contains('"', StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"Remove double quotation marks from the presenter's {label}.", field);
+        }
+    }
+
+    private static string Clean(string? value) =>
+        string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 }

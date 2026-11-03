@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ListingStudio.Application.Videos;
 using ListingStudio.Application.Properties;
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Video.Configuration;
 using Microsoft.Extensions.Options;
@@ -136,6 +137,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         Preserve the real property's architecture, layout, doors, windows, fixtures, finishes, furniture and landscaping.
         Do not invent rooms, amenities, views, people, claims, text, logos or contact information. Only mention the
         verified details supplied below. Do not show the agent inside a room unless a supplied keyframe does so.
+        When an exact tour voiceover is supplied, the agent's voice speaks it word for word over the tour, and the agent
+        says nothing beyond the supplied opening, voiceover and closing.
         """;
 
     public static string NativePresenterPrompt(NativePresenterVideoSubmission submission)
@@ -162,12 +165,23 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             return clean;
         }
 
+        var exactVoiceover = string.IsNullOrWhiteSpace(submission.TourVoiceover)
+            ? null
+            : Clean(submission.TourVoiceover, NativePresenterScript.MaximumTourLength, nameof(submission.TourVoiceover));
+        if (exactVoiceover?.Contains('"', StringComparison.Ordinal) == true)
+        {
+            throw new ArgumentOutOfRangeException(nameof(submission), "The tour voiceover cannot contain quotation marks.");
+        }
+
         var route = submission.TourFrames.Select((frame, index) =>
         {
             var stop = Clean(frame.StopName, 80, nameof(frame.StopName));
-            var highlight = string.IsNullOrWhiteSpace(frame.ApprovedHighlight)
-                ? "Identify the space only; make no additional claim."
-                : $"Approved detail to mention briefly: {Clean(frame.ApprovedHighlight, 240, nameof(frame.ApprovedHighlight))}";
+            // With an exact voiceover the words are already fixed; a per-room hint would invite extra speech.
+            var highlight = exactVoiceover is not null
+                ? "Show the space; the voiceover covers it."
+                : string.IsNullOrWhiteSpace(frame.ApprovedHighlight)
+                    ? "Identify the space only; make no additional claim."
+                    : $"Approved detail to mention briefly: {Clean(frame.ApprovedHighlight, 240, nameof(frame.ApprovedHighlight))}";
             var direction = index + 1 >= submission.TourFrames.Count
                 ? "Then return to the agent for the closing."
                 : frame.DirectionToNext switch
@@ -189,7 +203,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             Music: {Clean(submission.MusicDirection, 160, nameof(submission.MusicDirection))}
             Pace: a confident introduction, followed by a faster approximately 1.5x walking pace through the home.
             Required ordered tour:
-            {string.Join('\n', route)}
+            {string.Join('\n', route)}{(exactVoiceover is null ? string.Empty : $"\nOver the tour, the agent's voice says exactly: \"{exactVoiceover}\"")}
             The agent closes by saying exactly: "{Clean(submission.ClosingLine, 300, nameof(submission.ClosingLine))}"
             """;
     }
@@ -248,12 +262,15 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             var configuration = options.Value;
             var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                 $"{configuration.FullTourModel}\n{configuration.FullTourDurationSeconds}\n"
-                + $"{configuration.FullTourResolution}\n{NativePresenterPromptPreamble}")))[..12].ToLowerInvariant();
+                + $"{configuration.FullTourResolution}\n{NativePresenterPromptPreamble}\n"
+                + $"{OptionalField(configuration.NativePresenterSound)}\n{OptionalField(configuration.NativePresenterAspectRatio)}")))[..12].ToLowerInvariant();
             return $"higgsfield/{configuration.GenerationVersion}/native-presenter-{identity}";
         }
     }
 
     public int NativePresenterDurationMs => options.Value.FullTourDurationSeconds * 1_000;
+
+    public decimal EstimatedNativePresenterCostUsd => options.Value.EstimatedFullTourCostPerCallUsd;
 
     public async Task<string> SubmitAerialIntroAsync(
         AerialIntroVideoSubmission submission,
@@ -364,7 +381,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                     agentUrl,
                     prompt,
                     configuration.FullTourDurationSeconds,
-                    configuration.FullTourResolution),
+                    configuration.FullTourResolution,
+                    OptionalField(configuration.NativePresenterSound),
+                    OptionalField(configuration.NativePresenterAspectRatio)),
                 options: SerializerOptions),
         };
         var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
@@ -372,6 +391,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             ? queued!.RequestId!
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
     }
+
+    private static string? OptionalField(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission)
     {
@@ -632,7 +653,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         [property: JsonPropertyName("end_image_url")] string EndImageUrl,
         [property: JsonPropertyName("prompt")] string Prompt,
         [property: JsonPropertyName("duration")] int Duration,
-        [property: JsonPropertyName("resolution")] string Resolution);
+        [property: JsonPropertyName("resolution")] string Resolution,
+        [property: JsonPropertyName("sound"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Sound = null,
+        [property: JsonPropertyName("aspect_ratio"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AspectRatio = null);
 
     private sealed record QueuedResponse([property: JsonPropertyName("request_id")] string? RequestId);
 

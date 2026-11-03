@@ -13,6 +13,13 @@ public interface IRenderedVideoValidator
         string path,
         Mp4Expectations expectations,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether a source video (such as a provider's Kling result) carries at least one audio stream. Null when it
+    /// cannot be told, which callers treat as "has audio" so nothing changes when the check is unavailable.
+    /// </summary>
+    Task<bool?> HasAudioStreamAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult<bool?>(null);
 }
 
 public sealed record Mp4Expectations(

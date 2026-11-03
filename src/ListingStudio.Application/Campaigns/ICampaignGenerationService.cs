@@ -81,6 +81,32 @@ public interface ICampaignGenerationService
     /// <summary>Whether the single-call Kling 4 native presenter pilot is on for the signed-in user's workspace.</summary>
     Task<bool> IsKlingNativePresenterEnabledAsync(string userId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The suggested exact script for the Kling 4 native presenter, built from the Tour Map's room narration and the
+    /// campaign goal, for the agent to edit before Generate. Null when the property is not in the user's workspace.
+    /// </summary>
+    Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
+        string userId,
+        Guid propertyId,
+        CampaignMarketingTemplate marketingTemplate,
+        string? openHouseText,
+        VerticalCampaignGoal? goal,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Platform admins only: builds the exact Kling 4 native-presenter request these settings would send, and lists
+    /// anything that would stop it, without uploading a photo or calling the provider. Null when the property is
+    /// not in the user's workspace.
+    /// </summary>
+    Task<KlingNativePresenterPreview?> PreviewKlingNativePresenterAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        VerticalCampaignGoal? goal,
+        bool usesVerticalLibrary,
+        CancellationToken cancellationToken = default);
+
     Task<CampaignGenerationResult?> GetLatestAsync(
         string userId,
         Guid propertyId,
@@ -220,3 +246,21 @@ public sealed record CampaignDownload(
     Stream Content,
     string ContentType,
     string FileName);
+
+/// <summary>A free, admin-only look at the Kling 4 native-presenter request before it is paid for.</summary>
+public sealed record KlingNativePresenterPreview(
+    IReadOnlyList<string> Problems,
+    IReadOnlyList<KlingNativePresenterPreviewFrame> Frames,
+    string? Prompt,
+    decimal EstimatedCostUsd,
+    NativePresenterScript Script)
+{
+    public bool IsReady => Problems.Count == 0;
+}
+
+public sealed record KlingNativePresenterPreviewFrame(
+    int Position,
+    Guid PropertyMediaId,
+    string StopName,
+    string? ApprovedHighlight,
+    string? DirectionToNext);

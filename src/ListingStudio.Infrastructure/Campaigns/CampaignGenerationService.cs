@@ -10,8 +10,11 @@ using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Videos;
+using ListingStudio.Infrastructure.Identity;
 using ListingStudio.Infrastructure.Persistence;
 using ListingStudio.Infrastructure.Properties;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace ListingStudio.Infrastructure.Campaigns;
@@ -24,7 +27,9 @@ public sealed class CampaignGenerationService(
     IPlanFeatureGate planFeatureGate,
     IWalkthroughTransitionService walkthroughTransitionService,
     IFeatureStateService featureStateService,
-    IVerticalCreativePlanningService verticalPlanningService) : ICampaignGenerationService, ICampaignTestGenerationService
+    IVerticalCreativePlanningService verticalPlanningService,
+    IWalkthroughVideoProvider walkthroughVideoProvider,
+    UserManager<ApplicationUser> users) : ICampaignGenerationService, ICampaignTestGenerationService
 {
     private const string WorkflowVersion = "campaign-localization-v9";
 
@@ -132,6 +137,15 @@ public sealed class CampaignGenerationService(
             videoStrategy: videoStrategy);
     }
 
+    /// <summary>Whether the request makes a 30-second vertical video, the only output the native presenter replaces.</summary>
+    public static bool HasThirtySecondVertical(
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions) =>
+        (requestedOutputs.HasFlag(CampaignOutputSelection.TikTok)
+            || requestedOutputs.HasFlag(CampaignOutputSelection.InstagramReel)
+            || requestedOutputs.HasFlag(CampaignOutputSelection.YouTubeShort))
+        && ShortFormCopyBuilder.DurationFor(creativeOptions.Voiceover) == RequestedDuration.Feature30;
+
     public async Task<bool> IsVerticalLibraryEnabledAsync(string userId, CancellationToken cancellationToken = default)
     {
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
@@ -153,6 +167,164 @@ public sealed class CampaignGenerationService(
             FeatureFlagKeys.Kling4NativePresenterV1,
             organizationId,
             cancellationToken);
+    }
+
+    public async Task<KlingNativePresenterPreview?> PreviewKlingNativePresenterAsync(
+        string userId,
+        Guid propertyId,
+        CampaignOutputSelection requestedOutputs,
+        CampaignCreativeOptions creativeOptions,
+        VerticalCampaignGoal? goal,
+        bool usesVerticalLibrary,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(creativeOptions);
+        var user = await users.FindByIdAsync(userId);
+        if (user is null || !await users.IsInRoleAsync(user, PlatformAdministration.Role))
+        {
+            throw new UnauthorizedAccessException("Platform administration access is required.");
+        }
+
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        var property = await dbContext.Properties.AsNoTracking()
+            .Where(candidate => candidate.Id == propertyId && candidate.OrganizationId == organizationId)
+            .Select(candidate => new { candidate.Id })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (property is null)
+        {
+            return null;
+        }
+
+        // The same checks, in the same words, that queueing and the Worker apply.
+        var problems = new List<string>();
+        if (!await featureStateService.IsEnabledAsync(FeatureFlagKeys.Kling4NativePresenterV1, organizationId, cancellationToken))
+        {
+            problems.Add("The Kling4NativePresenterV1 release switch is off for this workspace (Admin, Release switches).");
+        }
+
+        if (!walkthroughVideoProvider.IsEnabled)
+        {
+            problems.Add("Higgsfield is not configured on this site, so Kling cannot be called.");
+        }
+
+        if (!(await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken)).IncludesPremiumAi)
+        {
+            problems.Add(PlanFeatureAccess.PremiumAiUpgradeMessage);
+        }
+
+        var ownsPortrait = creativeOptions.AgentPortraitId is { } portraitId
+            && await dbContext.AgentPortraits.AsNoTracking().AnyAsync(
+                candidate => candidate.Id == portraitId
+                    && candidate.OrganizationId == organizationId
+                    && candidate.UserId == userId,
+                cancellationToken);
+        if (!ownsPortrait)
+        {
+            problems.Add("Add your own profile headshot; Kling opens and closes on it.");
+        }
+
+        if (!creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) || !creativeOptions.AgentAvatarConsentConfirmed)
+        {
+            problems.Add("Tick the AI presenter consent box under Agent presenter.");
+        }
+
+        if (!usesVerticalLibrary && !HasThirtySecondVertical(requestedOutputs, creativeOptions))
+        {
+            problems.Add("Select TikTok with a short or no voiceover; Kling only replaces the 30-second vertical video.");
+        }
+
+        var plan = await NativePresenterRequestPlanner.BuildAsync(
+            dbContext,
+            new NativePresenterPlanInput(
+                organizationId,
+                propertyId,
+                goal,
+                creativeOptions.MarketingTemplate,
+                creativeOptions.OpenHouseText,
+                creativeOptions.Soundtrack,
+                creativeOptions.PresenterScript),
+            cancellationToken);
+        if (plan.Frames.Count < NativePresenterVideoPolicy.MinimumTourFrames)
+        {
+            problems.Add("Place at least one photo on the Tour Map.");
+        }
+
+        try
+        {
+            plan.Script.Validate();
+        }
+        catch (ArgumentException exception)
+        {
+            problems.Add(exception.Message.Split(" (Parameter", 2)[0]);
+        }
+
+        string? prompt = null;
+        if (plan.Frames.Count > 0)
+        {
+            try
+            {
+                prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(new NativePresenterVideoSubmission(
+                    new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
+                    plan.Frames.Select(frame => new NativePresenterTourFrame(
+                            new WalkthroughVideoFrame(Stream.Null, frame.MimeType),
+                            frame.StopName,
+                            frame.ApprovedHighlight,
+                            frame.DirectionToNext))
+                        .ToArray(),
+                    plan.Script.Opening,
+                    plan.Script.Closing,
+                    plan.CampaignGoal,
+                    plan.MusicDirection,
+                    "preview",
+                    plan.Script.Tour));
+            }
+            catch (ArgumentException exception)
+            {
+                problems.Add($"The request could not be built: {exception.Message}");
+            }
+        }
+
+        return new KlingNativePresenterPreview(
+            problems,
+            plan.Frames.Select((frame, index) => new KlingNativePresenterPreviewFrame(
+                    index + 1,
+                    frame.PropertyMediaId,
+                    frame.StopName,
+                    frame.ApprovedHighlight,
+                    frame.DirectionToNext?.ToString()))
+                .ToArray(),
+            prompt,
+            walkthroughVideoProvider.EstimatedNativePresenterCostUsd,
+            plan.Script);
+    }
+
+    public async Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
+        string userId,
+        Guid propertyId,
+        CampaignMarketingTemplate marketingTemplate,
+        string? openHouseText,
+        VerticalCampaignGoal? goal,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        if (!await dbContext.Properties.AsNoTracking().AnyAsync(
+                candidate => candidate.Id == propertyId && candidate.OrganizationId == organizationId,
+                cancellationToken))
+        {
+            return null;
+        }
+
+        var plan = await NativePresenterRequestPlanner.BuildAsync(
+            dbContext,
+            new NativePresenterPlanInput(
+                organizationId,
+                propertyId,
+                goal,
+                marketingTemplate,
+                openHouseText?.Trim(),
+                CampaignSoundtrack.AutoByHomeEra),
+            cancellationToken);
+        return plan.Script;
     }
 
     public Task<CampaignGenerationResult?> EnqueueTestAsync(string userId, Guid propertyId,
@@ -225,6 +397,28 @@ public sealed class CampaignGenerationService(
                 || requestedOutputs.HasFlag(CampaignOutputSelection.InstagramReel)
                 || requestedOutputs.HasFlag(CampaignOutputSelection.YouTubeShort))
             && await featureStateService.IsEnabledAsync(FeatureFlagKeys.VerticalVideoLibraryV1, organizationId, cancellationToken);
+        if (testCaseKey is null
+            && ((videoStrategy == CampaignVideoStrategy.Kling4FullTour && !usesKlingFullTour)
+                || (videoStrategy == CampaignVideoStrategy.Kling4NativePresenter && !usesKlingNativePresenter)))
+        {
+            // Never quietly swap a requested pilot for the control edit: the agent would think they tested Kling.
+            throw new InvalidOperationException(
+                "The selected Kling 4 pilot is switched off for this workspace. Choose the established edit or ask an admin to turn it on.");
+        }
+
+        // The exact presenter script only means something to the native presenter; elsewhere it must not change the
+        // campaign's fingerprint or be stored.
+        creativeOptions = creativeOptions with
+        {
+            PresenterScript = usesKlingNativePresenter ? creativeOptions.PresenterScript?.Normalized() : null,
+        };
+
+        if (usesKlingNativePresenter && !usesLibrary && !HasThirtySecondVertical(requestedOutputs, creativeOptions))
+        {
+            throw new InvalidOperationException(
+                "The Kling 4 native presenter needs a 30-second vertical video: select TikTok and a short or no voiceover.");
+        }
+
         if (requireLibrary && !usesLibrary)
         {
             throw new InvalidOperationException("Creative format tests are switched off.");

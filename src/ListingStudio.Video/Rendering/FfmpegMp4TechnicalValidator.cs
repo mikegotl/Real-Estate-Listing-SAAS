@@ -170,6 +170,22 @@ public sealed class FfmpegMp4TechnicalValidator(IOptions<FfmpegOptions> options)
         return line.Length <= 300 ? line : line[..300];
     }
 
+    public async Task<bool?> HasAudioStreamAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        var probe = await RunAsync(
+            options.Value.ProbeExecutablePath,
+            ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path],
+            TimeSpan.FromSeconds(60),
+            cancellationToken);
+        return probe.ExitCode == 0 ? !string.IsNullOrWhiteSpace(probe.Output) : null;
+    }
+
     private static async Task<(int ExitCode, string Output, string Error)> RunAsync(
         string executable,
         IReadOnlyList<string> arguments,
