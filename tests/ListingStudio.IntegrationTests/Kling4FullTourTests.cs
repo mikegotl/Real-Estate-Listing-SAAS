@@ -317,6 +317,7 @@ public sealed partial class CampaignGenerationTests
             Assert.Equal("Higgsfield", result.ProviderAudit?.Provider);
             Assert.False(string.IsNullOrWhiteSpace(result.ProviderAudit?.RequestId));
             Assert.Equal("fake-kling4-native-presenter-v1", result.ProviderAudit?.GenerationVersion);
+            Assert.Contains("Fake native-presenter prompt", result.ProviderAudit?.SubmittedPrompt, StringComparison.Ordinal);
             Assert.True(await verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
                 .CampaignVideoVariants.AnyAsync(candidate => candidate.Library.CampaignGenerationJobId == queued.Id
                     && candidate.DurationSeconds == 30));

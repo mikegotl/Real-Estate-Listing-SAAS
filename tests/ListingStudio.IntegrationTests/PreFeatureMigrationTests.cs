@@ -30,6 +30,7 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
         "20261101015629_AddVerticalPerformanceMetrics",
         "20261101150821_AddCreativeTestCaptionStyle",
         "20261101230434_AddKling4FullTourStrategy",
+        "20261103200359_StoreCampaignProviderPrompt",
     ];
 
     [Fact]
@@ -58,7 +59,10 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
             {
                 await InsertAsync(connection, db.Model, "CampaignGenerationJobs", new()
                 {
-                    ["Id"] = job, ["OrganizationId"] = organization, ["PropertyId"] = property, ["Status"] = status,
+                    ["Id"] = job,
+                    ["OrganizationId"] = organization,
+                    ["PropertyId"] = property,
+                    ["Status"] = status,
                     ["RequestedOutputs"] = "TikTok, YouTubeTour",
                 });
             }
@@ -67,8 +71,14 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
             {
                 await InsertAsync(connection, db.Model, "CampaignDeliverables", new()
                 {
-                    ["Id"] = deliverable, ["OrganizationId"] = organization, ["PropertyId"] = property, ["CampaignGenerationJobId"] = finished,
-                    ["Kind"] = kind, ["Status"] = "Rendered", ["AspectRatio"] = aspect, ["RequestedDuration"] = 30,
+                    ["Id"] = deliverable,
+                    ["OrganizationId"] = organization,
+                    ["PropertyId"] = property,
+                    ["CampaignGenerationJobId"] = finished,
+                    ["Kind"] = kind,
+                    ["Status"] = "Rendered",
+                    ["AspectRatio"] = aspect,
+                    ["RequestedDuration"] = 30,
                 });
             }
 
@@ -87,6 +97,7 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
         Assert.All(jobs, job => Assert.Null(job.VerticalHookVariant));
         Assert.All(jobs, job => Assert.Equal(CampaignVideoStrategy.Established, job.VideoStrategy));
         Assert.All(jobs, job => Assert.Null(job.FullTourAssetPath));
+        Assert.All(jobs, job => Assert.Null(job.FullTourSubmittedPrompt));
         var deliverables = await db.CampaignDeliverables.AsNoTracking().Where(item => item.CampaignGenerationJobId == finished).ToListAsync();
         Assert.Equal(2, deliverables.Count);
         Assert.All(deliverables, item => Assert.True(item.IsCampaignLevel));

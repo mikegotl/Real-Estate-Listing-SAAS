@@ -324,7 +324,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                     urls[0],
                     urls.Count > 2 ? urls.Skip(1).Take(urls.Count - 2).ToArray() : null,
                     urls[^1],
-                    FullTourPrompt(submission.Frames),
+                    BuildFullTourPrompt(submission),
                     configuration.FullTourDurationSeconds,
                     configuration.FullTourResolution),
                 options: SerializerOptions),
@@ -335,12 +335,18 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
     }
 
+    public string BuildFullTourPrompt(FullTourVideoSubmission submission)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        return FullTourPrompt(submission.Frames);
+    }
+
     public async Task<string> SubmitNativePresenterAsync(
         NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(submission);
-        var prompt = NativePresenterPrompt(submission);
+        var prompt = BuildNativePresenterPrompt(submission);
         var configuration = EnsureEnabled();
         var agentUrl = await UploadAsync(configuration, submission.AgentPortrait, cancellationToken);
         var tourUrls = new List<string>(submission.TourFrames.Count);
@@ -365,6 +371,12 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         return IsRequestId(queued?.RequestId)
             ? queued!.RequestId!
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
+    }
+
+    public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        return NativePresenterPrompt(submission);
     }
 
     private async Task<string> QueueAsync(

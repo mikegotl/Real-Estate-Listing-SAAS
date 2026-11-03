@@ -210,12 +210,14 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         await using var kitchen = new MemoryStream([3]);
         var provider = CreateProvider(client);
 
-        var requestId = await provider.SubmitFullTourAsync(new FullTourVideoSubmission(
-        [
-            new(new WalkthroughVideoFrame(exterior, "image/jpeg"), "Exterior front", WalkthroughDirection.Ahead),
-            new(new WalkthroughVideoFrame(entry, "image/jpeg"), "Entry foyer", WalkthroughDirection.Left),
-            new(new WalkthroughVideoFrame(kitchen, "image/jpeg"), "Kitchen"),
-        ], "campaign-1"));
+        var submission = new FullTourVideoSubmission(
+            [
+                new(new WalkthroughVideoFrame(exterior, "image/jpeg"), "Exterior front", WalkthroughDirection.Ahead),
+                new(new WalkthroughVideoFrame(entry, "image/jpeg"), "Entry foyer", WalkthroughDirection.Left),
+                new(new WalkthroughVideoFrame(kitchen, "image/jpeg"), "Kitchen"),
+            ],
+            "campaign-1");
+        var requestId = await provider.SubmitFullTourAsync(submission);
 
         Assert.Equal("req_full_tour", requestId);
         using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
@@ -226,6 +228,7 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal(30, root.GetProperty("duration").GetInt32());
         Assert.Equal("1080p", root.GetProperty("resolution").GetString());
         var prompt = root.GetProperty("prompt").GetString()!;
+        Assert.Equal(provider.BuildFullTourPrompt(submission), prompt);
         Assert.Contains("exact order", prompt, StringComparison.Ordinal);
         Assert.Contains("Exterior front; next, straight ahead", prompt, StringComparison.Ordinal);
         Assert.Contains("Entry foyer; next, turn left", prompt, StringComparison.Ordinal);
@@ -280,7 +283,7 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         await using var kitchen = new MemoryStream([3]);
         var provider = CreateProvider(client);
 
-        var requestId = await provider.SubmitNativePresenterAsync(new NativePresenterVideoSubmission(
+        var submission = new NativePresenterVideoSubmission(
             new WalkthroughVideoFrame(agent, "image/jpeg"),
             [
                 new(new WalkthroughVideoFrame(exterior, "image/jpeg"), "Exterior front", null, WalkthroughDirection.Ahead),
@@ -290,7 +293,8 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
             "Contact me today to schedule your private showing.",
             "Generate buyer interest.",
             "Upbeat instrumental with no lyrics.",
-            "campaign-native-1"));
+            "campaign-native-1");
+        var requestId = await provider.SubmitNativePresenterAsync(submission);
 
         Assert.Equal("req_native_presenter", requestId);
         using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
@@ -303,6 +307,7 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal(30, root.GetProperty("duration").GetInt32());
         Assert.Equal("1080p", root.GetProperty("resolution").GetString());
         var prompt = root.GetProperty("prompt").GetString()!;
+        Assert.Equal(provider.BuildNativePresenterPrompt(submission), prompt);
         Assert.Contains("same real-estate agent shown in the first and last keyframe", prompt, StringComparison.Ordinal);
         Assert.Contains("says exactly: \"Welcome to your next home.\"", prompt, StringComparison.Ordinal);
         Assert.Contains("A large center island.", prompt, StringComparison.Ordinal);

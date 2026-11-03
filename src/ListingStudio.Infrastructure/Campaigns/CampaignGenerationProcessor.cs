@@ -1702,9 +1702,11 @@ public sealed partial class CampaignGenerationProcessor(
                         direction));
                 }
 
-                var requestId = usesNativePresenter
-                    ? await walkthroughVideoProvider.SubmitNativePresenterAsync(
-                        new NativePresenterVideoSubmission(
+                string requestId;
+                string submittedPrompt;
+                if (usesNativePresenter)
+                {
+                    var submission = new NativePresenterVideoSubmission(
                             new WalkthroughVideoFrame(
                                 agentPortrait!,
                                 agentPortraitMimeType!),
@@ -1713,11 +1715,16 @@ public sealed partial class CampaignGenerationProcessor(
                             "Contact me today to schedule your private showing.",
                             NativePresenterGoal(job),
                             await NativePresenterMusicAsync(job, cancellationToken),
-                            $"campaign-native-presenter-{job.Id:N}"),
-                        cancellationToken)
-                    : await walkthroughVideoProvider.SubmitFullTourAsync(
-                        new FullTourVideoSubmission(frames, $"campaign-full-tour-{job.Id:N}"),
-                        cancellationToken);
+                            $"campaign-native-presenter-{job.Id:N}");
+                    submittedPrompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
+                    requestId = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
+                }
+                else
+                {
+                    var submission = new FullTourVideoSubmission(frames, $"campaign-full-tour-{job.Id:N}");
+                    submittedPrompt = walkthroughVideoProvider.BuildFullTourPrompt(submission);
+                    requestId = await walkthroughVideoProvider.SubmitFullTourAsync(submission, cancellationToken);
+                }
                 dbContext.ChangeTracker.Clear();
                 var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
                     candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
@@ -1727,6 +1734,7 @@ public sealed partial class CampaignGenerationProcessor(
                     usesNativePresenter
                         ? walkthroughVideoProvider.NativePresenterGenerationVersion
                         : walkthroughVideoProvider.FullTourGenerationVersion,
+                    submittedPrompt,
                     timeProvider.GetUtcNow());
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return false;

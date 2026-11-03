@@ -64,6 +64,9 @@ public interface IWalkthroughVideoProvider
         FullTourVideoSubmission submission,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Builds the exact prompt that <see cref="SubmitFullTourAsync"/> sends to the provider.</summary>
+    string BuildFullTourPrompt(FullTourVideoSubmission submission);
+
     /// <summary>
     /// Generates one native-audio campaign video. The portrait opens and closes the video while approved Tour Map
     /// photos occupy the ordered middle keyframes.
@@ -71,6 +74,9 @@ public interface IWalkthroughVideoProvider
     Task<string> SubmitNativePresenterAsync(
         NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Builds the exact prompt that <see cref="SubmitNativePresenterAsync"/> sends to the provider.</summary>
+    string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission);
 
     Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,

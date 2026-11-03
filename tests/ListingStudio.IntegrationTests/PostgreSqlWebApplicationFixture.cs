@@ -638,6 +638,9 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         return Task.FromResult(requestId);
     }
 
+    public string BuildFullTourPrompt(FullTourVideoSubmission submission) =>
+        $"Fake full-tour prompt for {submission.Frames.Count} frames.";
+
     public Task<string> SubmitNativePresenterAsync(
         NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default)
@@ -658,6 +661,9 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         nativePresenterRequests[requestId] = submission;
         return Task.FromResult(requestId);
     }
+
+    public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission) =>
+        $"Fake native-presenter prompt: {submission.OpeningLine} {submission.ClosingLine}";
 
     public Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,
