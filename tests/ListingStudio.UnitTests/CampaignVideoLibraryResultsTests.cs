@@ -114,24 +114,50 @@ public sealed class CampaignVideoLibraryResultsTests : IAsyncDisposable
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AdminsSeeEveryParameterOfEachVideosKlingRequest()
+    {
+        var hidden = Render(strategy: CampaignVideoStrategy.Kling4NativePresenter);
+        Assert.Empty(hidden.FindAll("[data-testid=kling-request-WowFeature]"));
+
+        var cut = Render(strategy: CampaignVideoStrategy.Kling4NativePresenter, showRequests: true);
+
+        var request = cut.Find("[data-testid=kling-request-WowFeature]").TextContent;
+        Assert.Contains("image_urls[0]", request, StringComparison.Ordinal);
+        Assert.Contains("https://cdn.test/kitchen.jpg", request, StringComparison.Ordinal);
+        Assert.Contains("end_image_url", request, StringComparison.Ordinal);
+        Assert.Contains("720p", request, StringComparison.Ordinal);
+        Assert.Equal(
+            FakeLibraryService.WowRequestJson,
+            cut.Find("[data-testid=kling-submitted-request-WowFeature-json]").TextContent);
+        // A video without a recorded request shows none.
+        Assert.Empty(cut.FindAll("[data-testid=kling-request-PriceFirst]"));
+    }
+
     private IRenderedComponent<CampaignVideoLibraryResults> Render(
         bool readOnly = false,
         bool guide = false,
         CampaignVideoStrategy strategy = CampaignVideoStrategy.Established,
-        CampaignProviderAudit? audit = null) =>
+        CampaignProviderAudit? audit = null,
+        bool showRequests = false) =>
         context.Render<CampaignVideoLibraryResults>(parameters => parameters
             .Add(component => component.JobId, FakeLibraryService.Job)
             .Add(component => component.Stamp, DateTimeOffset.UnixEpoch)
             .Add(component => component.IsReadOnly, readOnly)
             .Add(component => component.ShowGuideLink, guide)
             .Add(component => component.VideoStrategy, strategy)
-            .Add(component => component.ProviderAudit, audit));
+            .Add(component => component.ProviderAudit, audit)
+            .Add(component => component.ShowProviderRequests, showRequests));
 
     private sealed class FakeLibraryService : ICampaignVideoLibraryService
     {
         public static readonly Guid Job = Guid.Parse("11111111-1111-1111-1111-111111111111");
         public static readonly Guid Wow = Guid.Parse("22222222-2222-2222-2222-222222222222");
         public static readonly Guid Price = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        public const string WowRequestJson = """
+            {"image_url":"https://cdn.test/agent.jpg","image_urls":["https://cdn.test/kitchen.jpg"],"end_image_url":"https://cdn.test/agent.jpg","prompt":"Wow prompt","duration":10,"resolution":"720p"}
+            """;
 
         public bool Empty { get; set; }
 
@@ -155,7 +181,9 @@ public sealed class CampaignVideoLibraryResultsTests : IAsyncDisposable
                         "Look at this kitchen.", "Call to book", 15, "wow-feature-v1", CampaignVideoVariantStatus.Rendered,
                         CampaignVideoTechnicalStatus.Passed, null, 1,
                         new CampaignVideoReviewState(1, CampaignVideoReviewDecision.Approved, null, []), captions,
-                        KlingRequestId: "request-wow"),
+                        KlingRequestId: "request-wow",
+                        KlingSubmittedPrompt: "Wow prompt",
+                        KlingSubmittedRequestJson: WowRequestJson),
                     new CampaignLibraryVideoView(Guid.NewGuid(), Price, VerticalCreativeFormat.PriceFirst, VerticalCampaignPurpose.Consideration, 2,
                         75, VerticalRecommendationStrength.Strong, ["The listing price is entered."],
                         "$450,000 in Raleigh, NC", "Call to book", 30, "price-first-v1", CampaignVideoVariantStatus.Rendered,

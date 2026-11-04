@@ -297,7 +297,7 @@ public sealed class CampaignVideoVariant
     public const int MaximumRecipeVersionLength = 40;
     public const int MaximumIdempotencyKeyLength = 160;
     public const string DefaultHookVariant = "a";
-    public static readonly IReadOnlySet<int> AllowedDurations = new HashSet<int> { 15, 30, 45, 60 };
+    public static readonly IReadOnlySet<int> AllowedDurations = new HashSet<int> { 10, 15, 30, 45, 60 };
 
     private CampaignVideoVariant() { }
 
@@ -357,6 +357,9 @@ public sealed class CampaignVideoVariant
     public string? KlingGenerationVersion { get; private set; }
 
     public string? KlingSubmittedPrompt { get; private set; }
+
+    /// <summary>The exact JSON body sent to Kling 4, including the uploaded image URLs; no credentials.</summary>
+    public string? KlingSubmittedRequestJson { get; private set; }
 
     public DateTimeOffset? KlingSubmittedAtUtc { get; private set; }
 
@@ -544,7 +547,12 @@ public sealed class CampaignVideoVariant
         UpdatedAtUtc = now;
     }
 
-    public void MarkKlingSubmitted(string requestId, string generationVersion, string submittedPrompt, DateTimeOffset now)
+    public void MarkKlingSubmitted(
+        string requestId,
+        string generationVersion,
+        string submittedPrompt,
+        DateTimeOffset now,
+        string? submittedRequestJson = null)
     {
         if (IsTerminal(Status))
         {
@@ -554,7 +562,10 @@ public sealed class CampaignVideoVariant
         ArgumentException.ThrowIfNullOrWhiteSpace(requestId);
         ArgumentException.ThrowIfNullOrWhiteSpace(generationVersion);
         ArgumentException.ThrowIfNullOrWhiteSpace(submittedPrompt);
-        if (requestId.Length > 200 || generationVersion.Length > 200 || submittedPrompt.Length > 20_000)
+        if (requestId.Length > 200
+            || generationVersion.Length > 200
+            || submittedPrompt.Length > 20_000
+            || submittedRequestJson?.Length > 40_000)
         {
             throw new ArgumentOutOfRangeException(nameof(requestId), "The Kling request details are too long.");
         }
@@ -562,6 +573,7 @@ public sealed class CampaignVideoVariant
         KlingProviderRequestId = requestId.Trim();
         KlingGenerationVersion = generationVersion.Trim();
         KlingSubmittedPrompt = submittedPrompt;
+        KlingSubmittedRequestJson = string.IsNullOrWhiteSpace(submittedRequestJson) ? null : submittedRequestJson;
         KlingSubmittedAtUtc = now;
         KlingAssetPath = null;
         KlingFileSize = null;

@@ -280,7 +280,9 @@ public sealed class CampaignVideoLibraryService(
             video?.Version ?? 0,
             video is null ? CampaignVideoReviewState.None(0) : ReviewState(video.Id, video.Version, reviews),
             VerticalVariantCaptions.FromJson(variant.CaptionsJson),
-            variant.KlingProviderRequestId);
+            variant.KlingProviderRequestId,
+            variant.KlingSubmittedPrompt,
+            variant.KlingSubmittedRequestJson);
     }
 
     private static CampaignVideoReviewState ReviewState(Guid deliverableId, int version, IReadOnlyList<CampaignVideoReview> reviews)

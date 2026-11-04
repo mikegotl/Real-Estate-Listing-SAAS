@@ -1,3 +1,4 @@
+using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 
 namespace ListingStudio.Application.Videos;
@@ -22,6 +23,22 @@ public static class NativePresenterVideoPolicy
     /// <summary>Fewer keyframes for a short video, so each space is on screen long enough to read.</summary>
     public static int MaximumTourFramesFor(int durationSeconds) =>
         Math.Clamp(durationSeconds * MaximumTourFrames / DefaultDurationSeconds, MinimumTourFrames, MaximumTourFrames);
+
+    /// <summary>
+    /// While Kling4NativePresenterV1 is on for pilot workspaces only, the Wow feature is a shorter, cheaper 10-second
+    /// 720p Kling video. Once the switch is on for every workspace (live), it is the full-length 1080p video.
+    /// </summary>
+    public const int PilotWowFeatureSeconds = 10;
+
+    public const string PilotResolution = "720p";
+
+    /// <summary>The library video's length, given its recipe length and whether the presenter is still in pilot.</summary>
+    public static int DurationFor(VerticalCreativeFormat format, int recipeSeconds, bool pilot) =>
+        pilot && format == VerticalCreativeFormat.WowFeature ? PilotWowFeatureSeconds : recipeSeconds;
+
+    /// <summary>The Kling resolution for a library video; null keeps the configured resolution (1080p).</summary>
+    public static string? ResolutionFor(VerticalCreativeFormat format, int durationSeconds) =>
+        format == VerticalCreativeFormat.WowFeature && durationSeconds == PilotWowFeatureSeconds ? PilotResolution : null;
 }
 
 /// <summary>
@@ -80,7 +97,7 @@ public interface IWalkthroughVideoProvider
     /// Generates one native-audio campaign video. The portrait opens and closes the video while approved Tour Map
     /// photos occupy the ordered middle keyframes.
     /// </summary>
-    Task<string> SubmitNativePresenterAsync(
+    Task<NativePresenterSubmissionResult> SubmitNativePresenterAsync(
         NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default);
 
@@ -89,6 +106,15 @@ public interface IWalkthroughVideoProvider
 
     /// <summary>Builds the exact prompt that <see cref="SubmitNativePresenterAsync"/> sends to the provider.</summary>
     string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission);
+
+    /// <summary>
+    /// Builds the exact HTTP request <see cref="SubmitNativePresenterAsync"/> sends, given the image URLs the photos
+    /// were uploaded to. Credentials are sent as headers and are never part of it.
+    /// </summary>
+    ProviderRequestPreview BuildNativePresenterRequest(
+        NativePresenterVideoSubmission submission,
+        string agentImageUrl,
+        IReadOnlyList<string> tourImageUrls);
 
     Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,
@@ -137,7 +163,14 @@ public sealed record NativePresenterVideoSubmission(
     string MusicDirection,
     string IdempotencyKey,
     string? TourVoiceover = null,
-    int DurationSeconds = NativePresenterVideoPolicy.DefaultDurationSeconds);
+    int DurationSeconds = NativePresenterVideoPolicy.DefaultDurationSeconds,
+    string? Resolution = null);
+
+/// <summary>One provider HTTP request: method, endpoint and the JSON body, without credentials.</summary>
+public sealed record ProviderRequestPreview(string Method, string Url, string BodyJson);
+
+/// <summary>The provider's request ID and the exact request that was sent to get it.</summary>
+public sealed record NativePresenterSubmissionResult(string RequestId, ProviderRequestPreview Request);
 
 public enum WalkthroughVideoState
 {

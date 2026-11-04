@@ -35,3 +35,17 @@ public sealed record FeatureFlagState(
 
     public static FeatureFlagState Off(string key) => new(key, false, false, [], null);
 }
+
+/// <summary>Pilot vs live for the Kling 4 native presenter.</summary>
+public static class KlingNativePresenterRelease
+{
+    /// <summary>
+    /// On for this workspace through the pilot list rather than for every workspace. Pilot Wow feature videos are
+    /// 10-second 720p Kling videos; live ones keep the full length at 1080p.
+    /// </summary>
+    public static bool IsPilot(FeatureFlagState state, Guid organizationId)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return state.IsEnabledFor(organizationId) && !state.IsEnabledForAllOrganizations;
+    }
+}

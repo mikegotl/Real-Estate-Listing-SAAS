@@ -1,0 +1,177 @@
+@using System.Text.Json
+
+@* Every parameter of one Kling 4 request, with the photo that goes in each image slot. Platform administrators only. *@
+<div class="kling-request mt-2" data-testid="@TestId">
+    @if (!string.IsNullOrWhiteSpace(Url))
+    {
+        <MudText Typo="Typo.body2"><code>@(Method ?? "POST") @Url</code></MudText>
+    }
+    @if (parsed is { } body)
+    {
+        <MudText Typo="Typo.subtitle2" Class="mt-2">Images</MudText>
+        <MudSimpleTable Dense="true" Bordered="true" Class="mb-2">
+            <thead>
+                <tr><th>Parameter</th><th>Photo</th><th>Value sent</th></tr>
+            </thead>
+            <tbody>
+                @if (body.Image is { } image)
+                {
+                    <tr>
+                        <td><code>image_url</code></td>
+                        <td>@Thumbnail(image, PortraitUrl, "Profile headshot")</td>
+                        <td class="kling-request-value">@image</td>
+                    </tr>
+                }
+                @for (var index = 0; index < body.Images.Count; index++)
+                {
+                    var position = index;
+                    var frame = Frames?.FirstOrDefault(candidate => candidate.Position == position + 1);
+                    <tr>
+                        <td><code>image_urls[@position]</code></td>
+                        <td>@Thumbnail(body.Images[position], frame is null ? null : $"/property-media/{frame.PropertyMediaId}", frame?.StopName ?? $"Photo {position + 1}")</td>
+                        <td class="kling-request-value">@body.Images[position]</td>
+                    </tr>
+                }
+                @if (body.EndImage is { } endImage)
+                {
+                    <tr>
+                        <td><code>end_image_url</code></td>
+                        <td>@Thumbnail(endImage, PortraitUrl, "Profile headshot")</td>
+                        <td class="kling-request-value">@endImage</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+
+        @if (body.Settings.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2">Other parameters</MudText>
+            <MudSimpleTable Dense="true" Bordered="true" Class="mb-2">
+                <tbody>
+                    @foreach (var setting in body.Settings)
+                    {
+                        <tr><td><code>@setting.Key</code></td><td>@setting.Value</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+
+        @if (body.Prompt is not null)
+        {
+            <MudText Typo="Typo.subtitle2">prompt</MudText>
+            <pre class="kling-request-pre" data-testid="@($"{TestId}-prompt")">@body.Prompt</pre>
+        }
+    }
+    <details class="mt-1">
+        <summary class="mud-typography-caption">Full request body (JSON)</summary>
+        <pre class="kling-request-pre" data-testid="@($"{TestId}-json")">@BodyJson</pre>
+    </details>
+    @if (IsPreview)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+            Photos get their Higgsfield URLs when Generate uploads them, so each URL above names the photo in its place.
+            Everything else is exactly what would be sent. The API key is sent as a header and is never shown.
+        </MudText>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string BodyJson { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Method { get; set; }
+
+    [Parameter]
+    public string? Url { get; set; }
+
+    [Parameter]
+    public Guid? AgentPortraitId { get; set; }
+
+    /// <summary>The Tour Map photos in request order, so the preview can show each one next to its slot.</summary>
+    [Parameter]
+    public IReadOnlyList<KlingNativePresenterPreviewFrame>? Frames { get; set; }
+
+    [Parameter]
+    public bool IsPreview { get; set; }
+
+    [Parameter]
+    public string TestId { get; set; } = "kling-request";
+
+    private ParsedBody? parsed;
+
+    private string? PortraitUrl => AgentPortraitId is { } id ? $"/agent-portraits/{id}" : null;
+
+    protected override void OnParametersSet() => parsed = Parse(BodyJson);
+
+    private static RenderFragment Thumbnail(string value, string? localUrl, string label) => builder =>
+    {
+        // A real upload URL is shown as itself; a preview placeholder is shown with the photo from this site.
+        var source = Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
+            ? value
+            : localUrl;
+        if (source is null)
+        {
+            builder.AddContent(0, label);
+            return;
+        }
+
+        builder.OpenElement(1, "img");
+        builder.AddAttribute(2, "src", source);
+        builder.AddAttribute(3, "alt", label);
+        builder.AddAttribute(4, "title", label);
+        builder.AddAttribute(5, "loading", "lazy");
+        builder.AddAttribute(6, "style", "width:56px;height:56px;object-fit:cover;border-radius:4px;display:block;");
+        builder.CloseElement();
+    };
+
+    private static ParsedBody? Parse(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            string? image = null, endImage = null, prompt = null;
+            var images = new List<string>();
+            var settings = new List<KeyValuePair<string, string>>();
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                switch (property.Name)
+                {
+                    case "image_url":
+                        image = property.Value.ToString();
+                        break;
+                    case "end_image_url":
+                        endImage = property.Value.ToString();
+                        break;
+                    case "image_urls" when property.Value.ValueKind == JsonValueKind.Array:
+                        images.AddRange(property.Value.EnumerateArray().Select(item => item.ToString()));
+                        break;
+                    case "prompt":
+                        prompt = property.Value.ToString();
+                        break;
+                    default:
+                        settings.Add(new(property.Name, property.Value.ToString()));
+                        break;
+                }
+            }
+
+            return new ParsedBody(image, images, endImage, prompt, settings);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record ParsedBody(
+        string? Image,
+        IReadOnlyList<string> Images,
+        string? EndImage,
+        string? Prompt,
+        IReadOnlyList<KeyValuePair<string, string>> Settings);
+}
