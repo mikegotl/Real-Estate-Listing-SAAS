@@ -289,17 +289,19 @@
 
     private string GenerationSource(CampaignLibraryVideoView video)
     {
+        // Each library video of 30 seconds or less has its own Kling request; a campaign made before that used one.
         if (VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
-            && video.DurationSeconds == 30)
+            && video.DurationSeconds <= 30)
         {
-            return ProviderAudit?.RequestId is { Length: > 0 } requestId
+            var requestId = video.KlingRequestId ?? (video.DurationSeconds == 30 ? ProviderAudit?.RequestId : null);
+            return requestId is { Length: > 0 }
                 ? $"Source: Kling 4 native presenter via Higgsfield · request {requestId}"
                 : "Source: Kling 4 native presenter via Higgsfield · waiting for provider request ID";
         }
 
         if (VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
         {
-            return "Source: established CLS edit · this shorter format is outside the current 30-second Kling pilot";
+            return "Source: established CLS edit · longer than Kling's 30 seconds per call";
         }
 
         if (VideoStrategy == CampaignVideoStrategy.Kling4FullTour

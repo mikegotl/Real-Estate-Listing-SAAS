@@ -717,6 +717,9 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<string>("NativePresenterFormatScriptsJson")
+                        .HasColumnType("text");
+
                     b.Property<string>("NativePresenterOpening")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
@@ -1390,6 +1393,31 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("IsEligible")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("KlingAssetPath")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<int?>("KlingDurationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<long?>("KlingFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("KlingGenerationVersion")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("KlingProviderRequestId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("KlingSubmittedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("KlingSubmittedPrompt")
+                        .HasMaxLength(20000)
+                        .HasColumnType("character varying(20000)");
 
                     b.Property<string>("NarrationLocalizationJson")
                         .HasColumnType("text");

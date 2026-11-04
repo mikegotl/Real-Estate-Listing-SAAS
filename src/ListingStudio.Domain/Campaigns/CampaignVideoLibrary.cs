@@ -351,6 +351,22 @@ public sealed class CampaignVideoVariant
 
     public string? Error { get; private set; }
 
+    /// <summary>This video's own Kling 4 native-presenter request (Kling4NativePresenter campaigns only).</summary>
+    public string? KlingProviderRequestId { get; private set; }
+
+    public string? KlingGenerationVersion { get; private set; }
+
+    public string? KlingSubmittedPrompt { get; private set; }
+
+    public DateTimeOffset? KlingSubmittedAtUtc { get; private set; }
+
+    /// <summary>The finished Kling 4 video, once Higgsfield returned it.</summary>
+    public string? KlingAssetPath { get; private set; }
+
+    public long? KlingFileSize { get; private set; }
+
+    public int? KlingDurationMs { get; private set; }
+
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
@@ -525,6 +541,63 @@ public sealed class CampaignVideoVariant
 
         Status = CampaignVideoVariantStatus.Planned;
         FinishedAtUtc = null;
+        UpdatedAtUtc = now;
+    }
+
+    public void MarkKlingSubmitted(string requestId, string generationVersion, string submittedPrompt, DateTimeOffset now)
+    {
+        if (IsTerminal(Status))
+        {
+            throw new InvalidOperationException("A finished video cannot start a Kling request.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(generationVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(submittedPrompt);
+        if (requestId.Length > 200 || generationVersion.Length > 200 || submittedPrompt.Length > 20_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestId), "The Kling request details are too long.");
+        }
+
+        KlingProviderRequestId = requestId.Trim();
+        KlingGenerationVersion = generationVersion.Trim();
+        KlingSubmittedPrompt = submittedPrompt;
+        KlingSubmittedAtUtc = now;
+        KlingAssetPath = null;
+        KlingFileSize = null;
+        KlingDurationMs = null;
+        UpdatedAtUtc = now;
+    }
+
+    public void MarkKlingCompleted(string assetPath, long fileSize, int durationMs, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(KlingProviderRequestId))
+        {
+            throw new InvalidOperationException("No Kling request was submitted for this video.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(assetPath);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fileSize);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(durationMs);
+        if (assetPath.Length > 1_024)
+        {
+            throw new ArgumentOutOfRangeException(nameof(assetPath));
+        }
+
+        KlingAssetPath = assetPath;
+        KlingFileSize = fileSize;
+        KlingDurationMs = durationMs;
+        UpdatedAtUtc = now;
+    }
+
+    /// <summary>Forgets a failed or timed-out Kling request, so a retry of this video submits a new one.</summary>
+    public void ResetKling(DateTimeOffset now)
+    {
+        KlingProviderRequestId = null;
+        KlingSubmittedAtUtc = null;
+        KlingAssetPath = null;
+        KlingFileSize = null;
+        KlingDurationMs = null;
         UpdatedAtUtc = now;
     }
 

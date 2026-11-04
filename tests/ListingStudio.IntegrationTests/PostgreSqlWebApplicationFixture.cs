@@ -666,10 +666,14 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         var requestId = $"fake-{Guid.NewGuid():N}";
         nativePresenterRequests[requestId] = submission;
         LastNativePresenterSubmission = submission;
+        NativePresenterSubmissions.Enqueue(submission);
         return Task.FromResult(requestId);
     }
 
     public NativePresenterVideoSubmission? LastNativePresenterSubmission { get; private set; }
+
+    /// <summary>Every native-presenter submission, so a test can find its own campaign's by idempotency key.</summary>
+    public ConcurrentQueue<NativePresenterVideoSubmission> NativePresenterSubmissions { get; } = new();
 
     public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission) =>
         $"Fake native-presenter prompt: {submission.OpeningLine} {submission.TourVoiceover} {submission.ClosingLine}";

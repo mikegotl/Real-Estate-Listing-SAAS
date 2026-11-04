@@ -1223,7 +1223,8 @@ public sealed partial class CampaignGenerationProcessor(
         string assetPath,
         Func<long, Task> commit,
         CancellationToken cancellationToken,
-        bool isRevision = false)
+        bool isRevision = false,
+        Guid? variantId = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"listing-studio-campaign-{job.Id:N}-{label}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -1252,7 +1253,7 @@ public sealed partial class CampaignGenerationProcessor(
                 directory,
                 cancellationToken);
             var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, isRevision, cancellationToken);
-            var fullTour = await MaterializeFullTourAsync(job, specification, directory, isRevision, cancellationToken);
+            var fullTour = await MaterializeFullTourAsync(job, specification, directory, isRevision, variantId, cancellationToken);
             var usesNativeKlingAudio = fullTour?.UseNativeAudio == true;
             var renderSpecification = usesNativeKlingAudio
                 ? UseNativeKlingAudio(specification)
@@ -1361,13 +1362,15 @@ public sealed partial class CampaignGenerationProcessor(
         }
     }
 
-    private static VideoProductionSpecification UseNativeKlingAudio(VideoProductionSpecification specification) =>
+    public static VideoProductionSpecification UseNativeKlingAudio(VideoProductionSpecification specification) =>
         specification with
         {
             Audio = specification.Audio with
             {
                 NarrationSegments = [],
-                Music = specification.Audio.Music with { AssetId = null },
+                // Kling's own track is the whole soundtrack, so no CLS music is planned at all: the renderer rejects
+                // a plan that has no music asset but still carries a mood, timing or gain.
+                Music = new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0),
             },
             Scenes = specification.Scenes.Select(scene => scene with
             {
@@ -1578,6 +1581,12 @@ public sealed partial class CampaignGenerationProcessor(
                 "Kling 4 was selected, but this workspace no longer has premium AI access. No fallback video was rendered.");
         }
 
+        // A library campaign makes one Kling video per library video, each with its own length and script.
+        if (usesNativePresenter && await LoadLibraryAsync(job, cancellationToken) is { } library)
+        {
+            return await GenerateLibraryKlingVideosAsync(job, library, cancellationToken);
+        }
+
         // Only 30-second outputs use this 30-second master. At this stage, campaign-level outputs already have a
         // deliverable, while vertical-library outputs exist only as planned variants; their deliverables are created
         // later by GenerateVariantNarration. Check both sources so a recommended 30-second video can reach Kling.
@@ -1664,7 +1673,8 @@ public sealed partial class CampaignGenerationProcessor(
                     plan.CampaignGoal,
                     plan.MusicDirection,
                     $"campaign-native-presenter-{job.Id:N}",
-                    plan.Script.Tour);
+                    plan.Script.Tour,
+                    walkthroughVideoProvider.NativePresenterDurationMs / 1_000);
                 var submittedPrompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
                 var requestId = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
                 dbContext.ChangeTracker.Clear();
@@ -2194,23 +2204,21 @@ public sealed partial class CampaignGenerationProcessor(
     }
 
     /// <summary>
-    /// Supplies the Kling master only to 30-second first-pass renders. Revisions deliberately use the established
-    /// scene timeline so a targeted chat edit cannot unexpectedly regenerate or obscure its requested change.
+    /// Supplies the Kling video only to first-pass renders: the campaign's 30-second master, or a library video's own
+    /// Kling video. Revisions deliberately use the established scene timeline so a targeted chat edit cannot
+    /// unexpectedly regenerate or obscure its requested change.
     /// </summary>
     private async Task<VideoRenderFullTourAsset?> MaterializeFullTourAsync(
         CampaignGenerationJob job,
         VideoProductionSpecification specification,
         string directory,
         bool isRevision,
+        Guid? variantId,
         CancellationToken cancellationToken)
     {
         if (isRevision
             || job.VideoStrategy is not (CampaignVideoStrategy.Kling4FullTour
-                or CampaignVideoStrategy.Kling4NativePresenter)
-            || specification.RequestedDuration != RequestedDuration.Feature30
-            || job.FullTourAssetPath is null
-            || job.FullTourContentType != "video/mp4"
-            || job.FullTourDurationMs is not { } durationMs)
+                or CampaignVideoStrategy.Kling4NativePresenter))
         {
             return null;
         }
@@ -2223,9 +2231,40 @@ public sealed partial class CampaignGenerationProcessor(
             return null;
         }
 
+        string assetPath;
+        int durationMs;
+        if (usesNativePresenter && variantId is { } id)
+        {
+            // A library video uses only its own Kling video; one longer than Kling's 30 seconds has none.
+            var video = await dbContext.CampaignVideoVariants.AsNoTracking()
+                .Where(candidate => candidate.Id == id && candidate.OrganizationId == job.OrganizationId)
+                .Select(candidate => new { candidate.KlingAssetPath, candidate.KlingDurationMs })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (video is not { KlingAssetPath: { } variantAsset, KlingDurationMs: { } variantDurationMs }
+                || Math.Abs(variantDurationMs - ((int)specification.RequestedDuration * 1_000)) > 1_000)
+            {
+                return null;
+            }
+
+            assetPath = variantAsset;
+            durationMs = variantDurationMs;
+        }
+        else if (specification.RequestedDuration != RequestedDuration.Feature30
+            || job.FullTourAssetPath is null
+            || job.FullTourContentType != "video/mp4"
+            || job.FullTourDurationMs is not { } jobDurationMs)
+        {
+            return null;
+        }
+        else
+        {
+            assetPath = job.FullTourAssetPath;
+            durationMs = jobDurationMs;
+        }
+
         // The release switch stops new provider submissions. A Kling video that already finished was paid for and
         // the agent chose it, so it is still used when the switch is turned off later.
-        await using var source = await campaignAssetStorage.OpenReadAsync(job.FullTourAssetPath, cancellationToken);
+        await using var source = await campaignAssetStorage.OpenReadAsync(assetPath, cancellationToken);
         if (source is null)
         {
             throw new FileNotFoundException("The finished Kling 4 video for this campaign could not be opened.");

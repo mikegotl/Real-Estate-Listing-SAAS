@@ -202,7 +202,8 @@ public sealed partial class CampaignGenerationProcessor
                     trackedVariant.MarkRendered(now);
                     await dbContext.SaveChangesAsync(cancellationToken);
                 },
-                cancellationToken);
+                cancellationToken,
+                variantId: variant.Id);
             var elapsed = Stopwatch.GetElapsedTime(started);
             VerticalVideoMetrics.RecordStep("render", variant.Format, "ok", elapsed);
             LogVariantRendered(jobId, library.Id, variant.Id, variant.Format, (long)elapsed.TotalMilliseconds);

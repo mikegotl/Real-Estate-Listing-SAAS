@@ -80,7 +80,8 @@ public sealed record CampaignLibraryVideoView(
     string? Problem,
     int Version,
     CampaignVideoReviewState Review,
-    VerticalVariantCaptions? Captions)
+    VerticalVariantCaptions? Captions,
+    string? KlingRequestId = null)
 {
     public bool IsRendered => DeliverableId is not null && Status == CampaignVideoVariantStatus.Rendered;
 
