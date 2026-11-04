@@ -565,6 +565,7 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
     private readonly ConcurrentDictionary<string, ConcurrentQueue<WalkthroughVideoState>> polls = new();
     private readonly ConcurrentDictionary<string, FullTourVideoSubmission> fullTourRequests = new();
     private readonly ConcurrentDictionary<string, NativePresenterVideoSubmission> nativePresenterRequests = new();
+    private readonly ConcurrentDictionary<string, bool> finishedNativePresenterRequests = new();
     private int submitCount;
 
     public bool IsEnabled => true;
@@ -663,6 +664,15 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
             return Task.FromException<string>(failure);
         }
 
+        // A request is still running until it has been polled to completion. Count this campaign's running ones.
+        var campaign = submission.IdempotencyKey.Length > 58 ? submission.IdempotencyKey[..58] : submission.IdempotencyKey;
+        var running = nativePresenterRequests.Count(item => !finishedNativePresenterRequests.ContainsKey(item.Key)
+            && item.Value.IdempotencyKey.StartsWith(campaign, StringComparison.Ordinal));
+        if (running > 0)
+        {
+            OverlappingNativePresenterSubmissions.Enqueue(submission.IdempotencyKey);
+        }
+
         var requestId = $"fake-{Guid.NewGuid():N}";
         nativePresenterRequests[requestId] = submission;
         LastNativePresenterSubmission = submission;
@@ -675,6 +685,9 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
     /// <summary>Every native-presenter submission, so a test can find its own campaign's by idempotency key.</summary>
     public ConcurrentQueue<NativePresenterVideoSubmission> NativePresenterSubmissions { get; } = new();
 
+    /// <summary>Native-presenter submissions made while the same campaign still had one running.</summary>
+    public ConcurrentQueue<string> OverlappingNativePresenterSubmissions { get; } = new();
+
     public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission) =>
         $"Fake native-presenter prompt: {submission.OpeningLine} {submission.TourVoiceover} {submission.ClosingLine}";
 
@@ -685,6 +698,7 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         if (fullTourRequests.ContainsKey(providerRequestId)
             || nativePresenterRequests.ContainsKey(providerRequestId))
         {
+            finishedNativePresenterRequests[providerRequestId] = true;
             return Task.FromResult(new WalkthroughVideoPollResult(
                 WalkthroughVideoState.Completed,
                 new MemoryStream(ClipBytes),
