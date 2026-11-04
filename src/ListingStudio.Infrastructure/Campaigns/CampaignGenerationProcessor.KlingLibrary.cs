@@ -54,23 +54,39 @@ public sealed partial class CampaignGenerationProcessor
             .Where(variant => variant.Status is CampaignVideoVariantStatus.Planned or CampaignVideoVariantStatus.Generating
                 && variant.KlingAssetPath is null)
             .ToArray();
+        // One Kling request at a time: Higgsfield refuses a new generation while the account's previous one is still
+        // running, so the next video is submitted only after the one before it has finished.
+        var inFlight = open.Any(variant => variant.KlingProviderRequestId is not null);
         foreach (var variant in open)
         {
             try
             {
                 if (variant.KlingProviderRequestId is null)
                 {
+                    if (inFlight)
+                    {
+                        continue;
+                    }
+
                     await SubmitLibraryKlingVideoAsync(job, library, variant, cancellationToken);
+                    inFlight = true;
                     continue;
                 }
 
                 await PollLibraryKlingVideoAsync(job, library, variant, cancellationToken);
             }
+            catch (HttpRequestException exception) when (IsProviderBusy(exception)
+                && timeProvider.GetUtcNow() - library.CreatedAtUtc < MaximumKlingQueueTime)
+            {
+                // Busy or rate-limited: wait and submit again at the next poll instead of spending the stage's retries.
+                LogLibraryKlingBusy(job.Id, variant.Id, (int?)exception.StatusCode);
+                inFlight = true;
+            }
             catch (Exception exception) when (exception is not OperationCanceledException
                 && (exception is KlingVideoFailedException || IsVariantFailure(exception, job)))
             {
                 await ResetVariantKlingAsync(job, variant.Id, cancellationToken);
-                await FailVariantAsync(job, variant.Id, exception, cancellationToken);
+                await FailVariantAsync(job, variant.Id, KlingFailure(exception), cancellationToken);
             }
         }
 
@@ -264,6 +280,21 @@ public sealed partial class CampaignGenerationProcessor
         dbContext.ChangeTracker.Clear();
     }
 
+    /// <summary>How long a library's Kling videos may wait for Higgsfield to accept them before they are failed.</summary>
+    private static readonly TimeSpan MaximumKlingQueueTime = TimeSpan.FromHours(3);
+
+    private static bool IsProviderBusy(HttpRequestException exception) => exception.StatusCode is
+        System.Net.HttpStatusCode.TooManyRequests
+        or System.Net.HttpStatusCode.Conflict
+        or System.Net.HttpStatusCode.ServiceUnavailable;
+
+    /// <summary>Keeps the provider's HTTP status in the video's error, so a refused request says why.</summary>
+    private static Exception KlingFailure(Exception exception) => exception is HttpRequestException { StatusCode: { } status }
+        ? new KlingVideoFailedException(
+            $"Higgsfield refused the Kling 4 request (HTTP {(int)status}).",
+            exception)
+        : exception;
+
     /// <summary>A Kling request that cannot succeed by trying the same request again.</summary>
     private sealed class KlingVideoFailedException : InvalidOperationException
     {
@@ -277,6 +308,11 @@ public sealed partial class CampaignGenerationProcessor
         {
         }
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} Kling 4 video {VariantId} was refused as busy (HTTP {StatusCode}); submitting again later")]
+    private partial void LogLibraryKlingBusy(Guid jobId, Guid variantId, int? statusCode);
 
     [LoggerMessage(
         Level = LogLevel.Information,

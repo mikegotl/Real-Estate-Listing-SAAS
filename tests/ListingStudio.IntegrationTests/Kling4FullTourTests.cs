@@ -254,11 +254,13 @@ public sealed partial class CampaignGenerationTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task KlingNativePresenterMakesOneKlingVideoPerLibraryVideoWithItsOwnLengthAndScript(bool failOneKlingVideo)
+    [InlineData("none")]
+    [InlineData("refused")]
+    [InlineData("busy")]
+    public async Task KlingNativePresenterMakesOneKlingVideoPerLibraryVideoWithItsOwnLengthAndScript(string providerProblem)
     {
-        var (admin, owner) = await CreateLibraryListingAsync(failOneKlingVideo ? "kling4-native-library-fail" : "kling4-native-library");
+        var failOneKlingVideo = providerProblem == "refused";
+        var (admin, owner) = await CreateLibraryListingAsync($"kling4-native-library-{providerProblem}");
         await BillingPlanTestData.SubscribeAsync(
             fixture.Factory.Services,
             owner.UserId,
@@ -316,12 +318,14 @@ public sealed partial class CampaignGenerationTests
                         VerticalCampaignGoal.MaximizeReach)))!;
             }
 
-            if (failOneKlingVideo)
+            if (providerProblem != "none")
             {
-                // Kling refuses the first library video's request; the other videos must still get theirs.
+                // Refused: the first video fails on its own and the others still get theirs. Busy: Higgsfield is still
+                // working on another generation, so the video waits and is submitted again instead of failing.
                 await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.GenerateRequiredAiVideo);
-                fixture.Factory.WalkthroughVideoProvider.EnqueueSubmissionFailure(
-                    new InvalidOperationException("Kling rejected this request."));
+                fixture.Factory.WalkthroughVideoProvider.EnqueueSubmissionFailure(failOneKlingVideo
+                    ? new InvalidOperationException("Kling rejected this request.")
+                    : new HttpRequestException("Busy.", null, System.Net.HttpStatusCode.TooManyRequests));
             }
 
             await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.RenderHero);
@@ -371,6 +375,10 @@ public sealed partial class CampaignGenerationTests
                 .Where(submission => submission.IdempotencyKey.Contains(queued.Id.ToString("N"), StringComparison.Ordinal))
                 .ToArray();
             Assert.Equal(kling.Length, sent.Length);
+            // Higgsfield takes one generation at a time, so each video waits for the one before it.
+            Assert.DoesNotContain(
+                fixture.Factory.WalkthroughVideoProvider.OverlappingNativePresenterSubmissions,
+                key => key.Contains(queued.Id.ToString("N"), StringComparison.Ordinal));
             foreach (var variant in kling)
             {
                 var submission = Assert.Single(sent, item => item.IdempotencyKey.EndsWith(variant.Id.ToString("N"), StringComparison.Ordinal));
