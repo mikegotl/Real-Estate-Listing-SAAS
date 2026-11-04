@@ -319,6 +319,25 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Contains("Upbeat instrumental with no lyrics.", prompt, StringComparison.Ordinal);
         Assert.Contains("native-presenter", provider.NativePresenterGenerationVersion, StringComparison.Ordinal);
         Assert.Equal(30_000, provider.NativePresenterDurationMs);
+        Assert.Contains("Length: 30 seconds.", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NativePresenterPromptStatesEachVideosOwnLengthWithinKlingsLimit()
+    {
+        var submission = new NativePresenterVideoSubmission(
+            new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
+            [new(new WalkthroughVideoFrame(Stream.Null, "image/jpeg"), "Sunroom", null)],
+            "You have to see this sunroom.",
+            "Message me to see it.",
+            "Maximize reach.",
+            "Upbeat instrumental with no lyrics.",
+            "campaign-native-wow",
+            DurationSeconds: 15);
+
+        Assert.Contains("Length: 15 seconds.", HiggsfieldWalkthroughVideoProvider.NativePresenterPrompt(submission), StringComparison.Ordinal);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            HiggsfieldWalkthroughVideoProvider.NativePresenterPrompt(submission with { DurationSeconds = 45 }));
     }
 
     [Fact]

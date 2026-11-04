@@ -124,34 +124,78 @@
                 {
                     <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
                         Kling uses your consented profile headshot as the opening and closing keyframe, places up to eight
-                        approved Tour Map photos between them, and generates the speech and instrumental music in one
-                        30-second call. Exact wording and room order are generative and the finished video is validated.
+                        approved Tour Map photos between them, and generates the speech and instrumental music.
+                        @(KlingVideoSlots.Count > 0
+                            ? $"Each vertical video below gets its own Kling call ({KlingVideoSlots.Count} in all), with its own length and script."
+                            : "One 30-second call makes the vertical video.")
+                        Exact wording and room order are generative and the finished video is validated.
                     </MudAlert>
-                    <MudPaper Outlined="true" Class="pa-3 mt-2" data-testid="presenter-script">
-                        <MudText Typo="Typo.subtitle2">Presenter script</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
-                            Kling is told to say these words exactly. 30 seconds holds about @NativePresenterScript.MaximumWords words.
-                        </MudText>
-                        <MudTextField T="string" @bind-Value="presenterOpening" Label="Opening (agent on camera)"
-                                      Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)"
-                                      MaxLength="NativePresenterScript.MaximumOpeningLength" data-testid="presenter-opening" />
-                        <MudTextField T="string" @bind-Value="presenterTour" Label="Tour voiceover (over the AI tour)"
-                                      Variant="Variant.Outlined" Lines="4" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
-                                      MaxLength="NativePresenterScript.MaximumTourLength" data-testid="presenter-tour" />
-                        <MudTextField T="string" @bind-Value="presenterClosing" Label="Closing (agent on camera)"
-                                      Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
-                                      MaxLength="NativePresenterScript.MaximumClosingLength" data-testid="presenter-closing" />
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-2">
-                            <MudText Typo="Typo.caption" Color="@(PresenterWordCount > NativePresenterScript.MaximumWords ? Color.Error : Color.Default)"
-                                     data-testid="presenter-word-count">
-                                @PresenterWordCount / @NativePresenterScript.MaximumWords words
+                    @if (KlingVideoSlots.Count > 0)
+                    {
+                        @foreach (var slot in KlingVideoSlots)
+                        {
+                            var draft = DraftFor(slot.Format);
+                            var maximumWords = NativePresenterScript.MaximumWordsFor(slot.Seconds);
+                            <MudPaper Outlined="true" Class="pa-3 mt-2" data-testid="@($"presenter-script-{slot.Format}")">
+                                <MudText Typo="Typo.subtitle2">@VerticalFormatNames.Name(slot.Format) · @slot.Seconds seconds</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                                    This video's own Kling call. Kling is told to say these words exactly. @slot.Seconds seconds holds about @maximumWords words.
+                                </MudText>
+                                <MudTextField T="string" @bind-Value="draft.Opening" Label="Opening (agent on camera)"
+                                              Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)"
+                                              MaxLength="NativePresenterScript.MaximumOpeningLength" />
+                                <MudTextField T="string" @bind-Value="draft.Tour" Label="Tour voiceover (over the AI tour)"
+                                              Variant="Variant.Outlined" Lines="3" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
+                                              MaxLength="NativePresenterScript.MaximumTourLength" />
+                                <MudTextField T="string" @bind-Value="draft.Closing" Label="Closing (agent on camera)"
+                                              Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
+                                              MaxLength="NativePresenterScript.MaximumClosingLength" />
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-2">
+                                    <MudText Typo="Typo.caption" Color="@(draft.WordCount > maximumWords ? Color.Error : Color.Default)">
+                                        @draft.WordCount / @maximumWords words
+                                    </MudText>
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                               Disabled="@(busy || IsReadOnly)" OnClick="@(() => UseSuggestedFormatScriptAsync(slot))">
+                                        Use suggested script
+                                    </MudButton>
+                                </MudStack>
+                            </MudPaper>
+                        }
+                        @if (LongLibraryVideos.Count > 0)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2" data-testid="kling-long-videos">
+                                @string.Join(", ", LongLibraryVideos.Select(VerticalFormatNames.Name)) @(LongLibraryVideos.Count == 1 ? "is" : "are") longer than Kling's 30 seconds, so @(LongLibraryVideos.Count == 1 ? "it keeps" : "they keep") the established edit.
                             </MudText>
-                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                       Disabled="@(busy || IsReadOnly)" OnClick="UseSuggestedScriptAsync">
-                                Use suggested script
-                            </MudButton>
-                        </MudStack>
-                    </MudPaper>
+                        }
+                    }
+                    else
+                    {
+                        <MudPaper Outlined="true" Class="pa-3 mt-2" data-testid="presenter-script">
+                            <MudText Typo="Typo.subtitle2">Presenter script</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                                Kling is told to say these words exactly. 30 seconds holds about @NativePresenterScript.MaximumWords words.
+                            </MudText>
+                            <MudTextField T="string" @bind-Value="presenterOpening" Label="Opening (agent on camera)"
+                                          Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)"
+                                          MaxLength="NativePresenterScript.MaximumOpeningLength" data-testid="presenter-opening" />
+                            <MudTextField T="string" @bind-Value="presenterTour" Label="Tour voiceover (over the AI tour)"
+                                          Variant="Variant.Outlined" Lines="4" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
+                                          MaxLength="NativePresenterScript.MaximumTourLength" data-testid="presenter-tour" />
+                            <MudTextField T="string" @bind-Value="presenterClosing" Label="Closing (agent on camera)"
+                                          Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)" Class="mt-2"
+                                          MaxLength="NativePresenterScript.MaximumClosingLength" data-testid="presenter-closing" />
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-2">
+                                <MudText Typo="Typo.caption" Color="@(PresenterWordCount > NativePresenterScript.MaximumWords ? Color.Error : Color.Default)"
+                                         data-testid="presenter-word-count">
+                                    @PresenterWordCount / @NativePresenterScript.MaximumWords words
+                                </MudText>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                           Disabled="@(busy || IsReadOnly)" OnClick="UseSuggestedScriptAsync">
+                                    Use suggested script
+                                </MudButton>
+                            </MudStack>
+                        </MudPaper>
+                    }
                     @if (NativePresenterBlockers.Count > 0)
                     {
                         <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="native-presenter-blockers">
@@ -179,7 +223,7 @@
                                 @if (klingPreview.IsReady)
                                 {
                                     <MudAlert Severity="Severity.Success" Dense="true">
-                                        Ready. Generate would send this request to Kling 4 (estimated @klingPreview.EstimatedCostUsd.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))). Nothing has been sent.
+                                        Ready. Generate would send @(klingPreview.Videos is { Count: > 1 } ? $"these {klingPreview.Videos.Count} requests" : "this request") to Kling 4 (estimated @klingPreview.EstimatedCostUsd.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))). Nothing has been sent.
                                     </MudAlert>
                                 }
                                 else
@@ -194,19 +238,43 @@
                                         </ul>
                                     </MudAlert>
                                 }
-                                <MudText Typo="Typo.subtitle2" Class="mt-2">Keyframes</MudText>
-                                <ol class="mb-2">
-                                    <li>Your profile headshot (opening)</li>
-                                    @foreach (var frame in klingPreview.Frames)
-                                    {
-                                        <li>@frame.StopName@(frame.DirectionToNext is null ? null : $", then {frame.DirectionToNext.ToLowerInvariant()}")@(frame.ApprovedHighlight is null ? " (no approved detail)" : null)</li>
-                                    }
-                                    <li>Your profile headshot (closing)</li>
-                                </ol>
-                                @if (klingPreview.Prompt is not null)
+                                @if (klingPreview.Videos is { Count: > 0 } previewVideos && previewVideos.Any(video => video.Format != VerticalCreativeFormat.LegacySingle))
                                 {
-                                    <MudText Typo="Typo.subtitle2">Prompt</MudText>
-                                    <pre style="white-space:pre-wrap;font-size:0.8rem;" data-testid="kling-preview-prompt">@klingPreview.Prompt</pre>
+                                    @foreach (var video in previewVideos)
+                                    {
+                                        <MudText Typo="Typo.subtitle1" Class="mt-3" data-testid="@($"kling-preview-{video.Format}")">@VerticalFormatNames.Name(video.Format) · @video.DurationSeconds seconds</MudText>
+                                        <MudText Typo="Typo.subtitle2" Class="mt-1">Keyframes</MudText>
+                                        <ol class="mb-2">
+                                            <li>Your profile headshot (opening)</li>
+                                            @foreach (var frame in video.Frames)
+                                            {
+                                                <li>@frame.StopName@(frame.DirectionToNext is null ? null : $", then {frame.DirectionToNext.ToLowerInvariant()}")</li>
+                                            }
+                                            <li>Your profile headshot (closing)</li>
+                                        </ol>
+                                        @if (video.Prompt is not null)
+                                        {
+                                            <MudText Typo="Typo.subtitle2">Prompt</MudText>
+                                            <pre style="white-space:pre-wrap;font-size:0.8rem;">@video.Prompt</pre>
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.subtitle2" Class="mt-2">Keyframes</MudText>
+                                    <ol class="mb-2">
+                                        <li>Your profile headshot (opening)</li>
+                                        @foreach (var frame in klingPreview.Frames)
+                                        {
+                                            <li>@frame.StopName@(frame.DirectionToNext is null ? null : $", then {frame.DirectionToNext.ToLowerInvariant()}")@(frame.ApprovedHighlight is null ? " (no approved detail)" : null)</li>
+                                        }
+                                        <li>Your profile headshot (closing)</li>
+                                    </ol>
+                                    @if (klingPreview.Prompt is not null)
+                                    {
+                                        <MudText Typo="Typo.subtitle2">Prompt</MudText>
+                                        <pre style="white-space:pre-wrap;font-size:0.8rem;" data-testid="kling-preview-prompt">@klingPreview.Prompt</pre>
+                                    }
                                 }
                             </div>
                         }
@@ -220,7 +288,7 @@
                                      Picker="verticalPicker"
                                      Goal="selectedGoal"
                                      GoalChanged="ChooseGoal"
-                                     SelectionChanged="StateHasChanged"
+                                     SelectionChanged="VerticalSelectionChangedAsync"
                                      Disabled="@(busy || IsReadOnly)"
                                      OtherOutputCount="OtherOutputCount">
                 @if (!IsReadOnly)
@@ -703,8 +771,9 @@
                 && job.VerticalRequest is not null)
             {
                 <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
-                    Kling supplies the native presenter, speech, music and ordered Tour Map for each 30-second result.
-                    Shorter recommended formats remain visibly labeled as established CLS edits.
+                    Each vertical video of 30 seconds or less has its own Kling request, with its own presenter,
+                    speech, music and Tour Map order; each video below shows its request ID. Longer videos are
+                    labeled as established CLS edits.
                 </MudText>
             }
         </MudPaper>
@@ -914,6 +983,7 @@
     private string? presenterOpening;
     private string? presenterTour;
     private string? presenterClosing;
+    private readonly Dictionary<VerticalCreativeFormat, PresenterDraft> formatDrafts = [];
     private bool pollingStarted;
     private string? error;
     private string? refreshError;
@@ -986,6 +1056,7 @@
             presenterOpening = null;
             presenterTour = null;
             presenterClosing = null;
+            formatDrafts.Clear();
             klingPreview = null;
             appliedFocus = null;
             resetSelectionsWhenCancelled = false;
@@ -1051,6 +1122,12 @@
                         presenterOpening = savedScript.Opening;
                         presenterTour = savedScript.Tour;
                         presenterClosing = savedScript.Closing;
+                    }
+
+                    formatDrafts.Clear();
+                    foreach (var saved in job.CreativeOptions.FormatPresenterScripts ?? [])
+                    {
+                        formatDrafts[saved.Format] = PresenterDraft.From(saved.Script);
                     }
                 }
 
@@ -1170,7 +1247,14 @@
             || elements.HasFlag(CampaignVideoElement.AgentAvatar)
                 ? portrait?.Id
                 : null;
+        var formatScripts = selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter && KlingVideoSlots.Count > 0
+            ? KlingVideoSlots
+                .Where(slot => formatDrafts.TryGetValue(slot.Format, out var draft) && draft.IsComplete)
+                .Select(slot => new FormatPresenterScript(slot.Format, formatDrafts[slot.Format].ToScript()))
+                .ToArray()
+            : null;
         var script = selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+            && KlingVideoSlots.Count == 0
             && !string.IsNullOrWhiteSpace(presenterOpening)
             && !string.IsNullOrWhiteSpace(presenterTour)
             && !string.IsNullOrWhiteSpace(presenterClosing)
@@ -1189,7 +1273,8 @@
                 selectedVoiceover,
                 selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText?.Trim() : null,
                 selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse && selectedOpenHouseVerified,
-                script);
+                script,
+                formatScripts is { Length: > 0 } ? formatScripts : null);
     }
 
     private async Task GenerateAsync() => await MutateAsync(async userId =>
@@ -1341,6 +1426,7 @@
         presenterOpening = null;
         presenterTour = null;
         presenterClosing = null;
+        formatDrafts.Clear();
         klingPreview = null;
         soundtrackChosen = false;
         captionStyleChosen = false;
@@ -1610,7 +1696,11 @@
             selectedVoiceover = CampaignVoiceoverMode.ShortHook;
         }
 
-        if (string.IsNullOrWhiteSpace(presenterOpening)
+        if (KlingVideoSlots.Count > 0)
+        {
+            await FillMissingFormatScriptsAsync();
+        }
+        else if (string.IsNullOrWhiteSpace(presenterOpening)
             && string.IsNullOrWhiteSpace(presenterTour)
             && string.IsNullOrWhiteSpace(presenterClosing))
         {
@@ -1854,7 +1944,32 @@
                 blockers.Add("Place at least one photo on the Tour Map.");
             }
 
-            if (string.IsNullOrWhiteSpace(presenterOpening)
+            if (KlingVideoSlots.Count > 0)
+            {
+                foreach (var slot in KlingVideoSlots)
+                {
+                    var name = VerticalFormatNames.Name(slot.Format);
+                    var draft = formatDrafts.GetValueOrDefault(slot.Format);
+                    var maximum = NativePresenterScript.MaximumWordsFor(slot.Seconds);
+                    if (draft is not { IsComplete: true })
+                    {
+                        blockers.Add($"{name}: fill in all three parts of the presenter script.");
+                    }
+                    else if (draft.WordCount > maximum)
+                    {
+                        blockers.Add($"{name}: shorten the presenter script to {maximum} words (now {draft.WordCount}).");
+                    }
+                    else if ((draft.Opening + draft.Tour + draft.Closing).Contains('"', StringComparison.Ordinal))
+                    {
+                        blockers.Add($"{name}: remove double quotation marks from the presenter script.");
+                    }
+                }
+            }
+            else if (LibraryMode && verticalPicker is { Chosen.Count: > 0 })
+            {
+                blockers.Add("Choose at least one vertical video of 30 seconds or less; Kling makes up to 30 seconds per call.");
+            }
+            else if (string.IsNullOrWhiteSpace(presenterOpening)
                 || string.IsNullOrWhiteSpace(presenterTour)
                 || string.IsNullOrWhiteSpace(presenterClosing))
             {
@@ -1889,7 +2004,7 @@
                 selectedMarketingTemplate,
                 selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText : null,
                 selectedGoal,
-                pollingCancellation.Token);
+                cancellationToken: pollingCancellation.Token);
             if (suggested is not null)
             {
                 presenterOpening = suggested.Opening;
@@ -1901,6 +2016,115 @@
         {
             error = exception.Message;
         }
+    }
+
+    /// <summary>The library videos Kling makes, each with its own call: the chosen ones of 30 seconds or less.</summary>
+    private IReadOnlyList<KlingVideoSlot> KlingVideoSlots =>
+        selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter && LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker
+            ? picker.Chosen
+                .Select(format => (Format: format, Recipe: verticalPlan?.Recipes.FirstOrDefault(recipe => recipe.Format == format)))
+                .Where(item => (item.Recipe?.DurationSeconds ?? NativePresenterScript.DefaultSeconds) <= NativePresenterScript.DefaultSeconds)
+                .Select(item => new KlingVideoSlot(
+                    item.Format,
+                    item.Recipe?.DurationSeconds ?? NativePresenterScript.DefaultSeconds,
+                    item.Recipe?.PrimaryPropertyMediaId))
+                .ToArray()
+            : [];
+
+    /// <summary>Chosen library videos too long for one Kling call; they keep the established edit.</summary>
+    private IReadOnlyList<VerticalCreativeFormat> LongLibraryVideos =>
+        selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter && LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker
+            ? picker.Chosen
+                .Where(format => verticalPlan?.Recipes.FirstOrDefault(recipe => recipe.Format == format) is { DurationSeconds: > NativePresenterScript.DefaultSeconds })
+                .ToArray()
+            : [];
+
+    private PresenterDraft DraftFor(VerticalCreativeFormat format)
+    {
+        if (!formatDrafts.TryGetValue(format, out var draft))
+        {
+            draft = new PresenterDraft();
+            formatDrafts[format] = draft;
+        }
+
+        return draft;
+    }
+
+    private async Task VerticalSelectionChangedAsync()
+    {
+        klingPreview = null;
+        if (KlingVideoSlots.Count > 0)
+        {
+            await FillMissingFormatScriptsAsync();
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>Suggests a script for every Kling video that has none yet; the agent's edits are kept.</summary>
+    private async Task FillMissingFormatScriptsAsync()
+    {
+        foreach (var slot in KlingVideoSlots)
+        {
+            if (formatDrafts.TryGetValue(slot.Format, out var draft) && !draft.IsEmpty)
+            {
+                continue;
+            }
+
+            await UseSuggestedFormatScriptAsync(slot);
+        }
+    }
+
+    private async Task UseSuggestedFormatScriptAsync(KlingVideoSlot slot)
+    {
+        try
+        {
+            var userId = await UserIdentity.GetRequiredUserIdAsync(AuthenticationStateProvider);
+            var suggested = await Service.SuggestNativePresenterScriptAsync(
+                userId,
+                PropertyId,
+                selectedMarketingTemplate,
+                selectedMarketingTemplate == CampaignMarketingTemplate.OpenHouse ? selectedOpenHouseText : null,
+                selectedGoal,
+                slot.Format,
+                slot.Seconds,
+                slot.LeadMediaId,
+                pollingCancellation.Token);
+            if (suggested is not null)
+            {
+                formatDrafts[slot.Format] = PresenterDraft.From(suggested);
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or UnauthorizedAccessException)
+        {
+            error = exception.Message;
+        }
+    }
+
+    private sealed record KlingVideoSlot(VerticalCreativeFormat Format, int Seconds, Guid? LeadMediaId);
+
+    /// <summary>One library video's presenter script while the agent edits it.</summary>
+    private sealed class PresenterDraft
+    {
+        public string? Opening { get; set; }
+
+        public string? Tour { get; set; }
+
+        public string? Closing { get; set; }
+
+        public int WordCount =>
+            NativePresenterScript.CountWords(Opening) + NativePresenterScript.CountWords(Tour) + NativePresenterScript.CountWords(Closing);
+
+        public bool IsComplete =>
+            !string.IsNullOrWhiteSpace(Opening) && !string.IsNullOrWhiteSpace(Tour) && !string.IsNullOrWhiteSpace(Closing);
+
+        public bool IsEmpty =>
+            string.IsNullOrWhiteSpace(Opening) && string.IsNullOrWhiteSpace(Tour) && string.IsNullOrWhiteSpace(Closing);
+
+        public NativePresenterScript ToScript() => new(Opening!, Tour!, Closing!);
+
+        public static PresenterDraft From(NativePresenterScript script) =>
+            new() { Opening = script.Opening, Tour = script.Tour, Closing = script.Closing };
     }
 
     private async Task PreviewKlingAsync()
@@ -1917,6 +2141,7 @@
                 BuildCreativeOptions(),
                 selectedGoal,
                 LibraryMode && verticalPicker is { Chosen.Count: > 0 },
+                LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker ? picker.Chosen : null,
                 pollingCancellation.Token);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or UnauthorizedAccessException)

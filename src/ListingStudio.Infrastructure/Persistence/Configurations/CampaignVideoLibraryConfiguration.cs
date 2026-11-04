@@ -55,6 +55,10 @@ public sealed class CampaignVideoVariantConfiguration : IEntityTypeConfiguration
             .HasMaxLength(CampaignVideoVariant.MaximumRecipeVersionLength).IsRequired();
         builder.Property(variant => variant.CaptionsJson).HasColumnType("jsonb");
         builder.Property(variant => variant.Error).HasMaxLength(500);
+        builder.Property(variant => variant.KlingProviderRequestId).HasMaxLength(200);
+        builder.Property(variant => variant.KlingGenerationVersion).HasMaxLength(200);
+        builder.Property(variant => variant.KlingSubmittedPrompt).HasMaxLength(20_000);
+        builder.Property(variant => variant.KlingAssetPath).HasMaxLength(1_024);
         builder.Property(variant => variant.IdempotencyKey).HasMaxLength(CampaignVideoVariant.MaximumIdempotencyKeyLength);
         builder.Property(variant => variant.HookVariant).HasMaxLength(8).HasDefaultValue(CampaignVideoVariant.DefaultHookVariant).IsRequired();
         builder.Property(variant => variant.NarrationLocalizationJson).HasColumnType("text");

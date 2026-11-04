@@ -5,6 +5,7 @@ using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
+using ListingStudio.Infrastructure.Campaigns;
 using ListingStudio.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -252,10 +253,12 @@ public sealed partial class CampaignGenerationTests
             candidate => candidate.Status == CampaignDeliverableStatus.Rendered);
     }
 
-    [Fact]
-    public async Task KlingNativePresenterAcceptsThirtySecondRecommendedLibraryVariantBeforeItsDeliverableExists()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KlingNativePresenterMakesOneKlingVideoPerLibraryVideoWithItsOwnLengthAndScript(bool failOneKlingVideo)
     {
-        var (admin, owner) = await CreateLibraryListingAsync("kling4-native-library");
+        var (admin, owner) = await CreateLibraryListingAsync(failOneKlingVideo ? "kling4-native-library-fail" : "kling4-native-library");
         await BillingPlanTestData.SubscribeAsync(
             fixture.Factory.Services,
             owner.UserId,
@@ -290,6 +293,13 @@ public sealed partial class CampaignGenerationTests
                 Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
                 AgentPortraitId = portraitId,
                 AgentAvatarConsentConfirmed = true,
+                // The agent's own words for the Price first video; the others get a script written for their format.
+                FormatPresenterScripts =
+                [
+                    new FormatPresenterScript(
+                        VerticalCreativeFormat.PriceFirst,
+                        new NativePresenterScript("Hi, I'm Dana.", "Here is the price and the kitchen.", "Call me today.")),
+                ],
             };
             CampaignGenerationResult queued;
             await using (var enqueueScope = fixture.Factory.Services.CreateAsyncScope())
@@ -306,6 +316,14 @@ public sealed partial class CampaignGenerationTests
                         VerticalCampaignGoal.MaximizeReach)))!;
             }
 
+            if (failOneKlingVideo)
+            {
+                // Kling refuses the first library video's request; the other videos must still get theirs.
+                await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.GenerateRequiredAiVideo);
+                fixture.Factory.WalkthroughVideoProvider.EnqueueSubmissionFailure(
+                    new InvalidOperationException("Kling rejected this request."));
+            }
+
             await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.RenderHero);
 
             await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
@@ -315,13 +333,59 @@ public sealed partial class CampaignGenerationTests
             Assert.NotEqual(CampaignGenerationStatus.Failed, result.Status);
             Assert.Equal(CampaignGenerationStage.RenderHero, result.CurrentStage);
             Assert.Equal(CampaignVideoStrategy.Kling4NativePresenter, result.VideoStrategy);
-            Assert.Equal("Higgsfield", result.ProviderAudit?.Provider);
-            Assert.False(string.IsNullOrWhiteSpace(result.ProviderAudit?.RequestId));
-            Assert.Equal("fake-kling4-native-presenter-v1", result.ProviderAudit?.GenerationVersion);
-            Assert.Contains("Fake native-presenter prompt", result.ProviderAudit?.SubmittedPrompt, StringComparison.Ordinal);
-            Assert.True(await verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
-                .CampaignVideoVariants.AnyAsync(candidate => candidate.Library.CampaignGenerationJobId == queued.Id
-                    && candidate.DurationSeconds == 30));
+            Assert.Equal(
+                [VerticalCreativeFormat.PriceFirst],
+                result.CreativeOptions.FormatPresenterScripts?.Select(item => item.Format));
+
+            // One Kling call per library video, never one shared video.
+            var database = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var job = await database.CampaignGenerationJobs.AsNoTracking().SingleAsync(candidate => candidate.Id == queued.Id);
+            Assert.Null(job.FullTourProviderRequestId);
+            var variants = await database.CampaignVideoVariants.AsNoTracking()
+                .Where(candidate => candidate.Library.CampaignGenerationJobId == queued.Id && candidate.IsEligible)
+                .OrderBy(candidate => candidate.Sequence)
+                .ToArrayAsync();
+            var kling = variants.Where(candidate => candidate.DurationSeconds <= 30).ToArray();
+            Assert.True(kling.Length >= 2, $"Expected several Kling videos, got {kling.Length}.");
+            if (failOneKlingVideo)
+            {
+                var refused = kling[0];
+                Assert.Equal(CampaignVideoVariantStatus.Failed, refused.Status);
+                Assert.Equal("Kling rejected this request.", refused.Error);
+                Assert.Null(refused.KlingProviderRequestId);
+                kling = kling[1..];
+            }
+
+            Assert.All(kling, variant =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(variant.KlingProviderRequestId));
+                Assert.EndsWith($"/{variant.DurationSeconds}s", variant.KlingGenerationVersion, StringComparison.Ordinal);
+                Assert.Equal(CampaignGenerationProcessor.VariantKlingAssetPath(
+                    owner.OrganizationId, owner.PropertyId, queued.Id, variant.CampaignVideoLibraryId, variant.Id), variant.KlingAssetPath);
+                Assert.Equal(variant.DurationSeconds * 1_000, variant.KlingDurationMs);
+            });
+            Assert.Equal(kling.Length, kling.Select(variant => variant.KlingProviderRequestId).Distinct().Count());
+            Assert.All(variants.Where(candidate => candidate.DurationSeconds > 30), variant => Assert.Null(variant.KlingProviderRequestId));
+
+            var sent = fixture.Factory.WalkthroughVideoProvider.NativePresenterSubmissions
+                .Where(submission => submission.IdempotencyKey.Contains(queued.Id.ToString("N"), StringComparison.Ordinal))
+                .ToArray();
+            Assert.Equal(kling.Length, sent.Length);
+            foreach (var variant in kling)
+            {
+                var submission = Assert.Single(sent, item => item.IdempotencyKey.EndsWith(variant.Id.ToString("N"), StringComparison.Ordinal));
+                Assert.Equal(variant.DurationSeconds, submission.DurationSeconds);
+                Assert.InRange(
+                    NativePresenterScript.CountWords(submission.OpeningLine)
+                        + NativePresenterScript.CountWords(submission.TourVoiceover)
+                        + NativePresenterScript.CountWords(submission.ClosingLine),
+                    1,
+                    NativePresenterScript.MaximumWordsFor(variant.DurationSeconds));
+                if (variant.Format == VerticalCreativeFormat.PriceFirst)
+                {
+                    Assert.Equal("Here is the price and the kitchen.", submission.TourVoiceover);
+                }
+            }
             Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
         }
         finally

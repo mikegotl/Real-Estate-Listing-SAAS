@@ -129,7 +129,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     }
 
     public const string NativePresenterPromptPreamble = """
-        Create one polished 30-second real-estate campaign video with native synchronized speech and tasteful
+        Create one polished real-estate campaign video of the requested length with native synchronized speech and tasteful
         instrumental background music. The same real-estate agent shown in the first and last keyframe is the on-camera
         presenter. Preserve the agent's identity, face, skin tone, hair and clothing. Begin with the agent speaking the
         exact opening line, move into a brisk stabilized property tour through every supplied middle keyframe in its
@@ -144,6 +144,12 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     public static string NativePresenterPrompt(NativePresenterVideoSubmission submission)
     {
         ArgumentNullException.ThrowIfNull(submission);
+        if (submission.DurationSeconds is < NativePresenterVideoPolicy.MinimumDurationSeconds
+            or > NativePresenterVideoPolicy.MaximumDurationSeconds)
+        {
+            throw new ArgumentOutOfRangeException(nameof(submission), "Kling 4 makes 3 to 30 seconds of video per call.");
+        }
+
         if (submission.TourFrames is null
             || submission.TourFrames.Count is < NativePresenterVideoPolicy.MinimumTourFrames
                 or > NativePresenterVideoPolicy.MaximumTourFrames)
@@ -198,6 +204,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
 
         return $"""
             {NativePresenterPromptPreamble}
+            Length: {submission.DurationSeconds} seconds.
             The agent says exactly: "{Clean(submission.OpeningLine, 300, nameof(submission.OpeningLine))}"
             Campaign goal: {Clean(submission.CampaignGoal, 160, nameof(submission.CampaignGoal))}
             Music: {Clean(submission.MusicDirection, 160, nameof(submission.MusicDirection))}
@@ -380,7 +387,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                     tourUrls.ToArray(),
                     agentUrl,
                     prompt,
-                    configuration.FullTourDurationSeconds,
+                    submission.DurationSeconds,
                     configuration.FullTourResolution,
                     OptionalField(configuration.NativePresenterSound),
                     OptionalField(configuration.NativePresenterAspectRatio)),

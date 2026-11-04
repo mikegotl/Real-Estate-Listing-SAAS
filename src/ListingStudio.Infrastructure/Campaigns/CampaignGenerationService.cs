@@ -176,6 +176,7 @@ public sealed class CampaignGenerationService(
         CampaignCreativeOptions creativeOptions,
         VerticalCampaignGoal? goal,
         bool usesVerticalLibrary,
+        IReadOnlyList<VerticalCreativeFormat>? libraryFormats = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(creativeOptions);
@@ -233,69 +234,126 @@ public sealed class CampaignGenerationService(
             problems.Add("Select TikTok with a short or no voiceover; Kling only replaces the 30-second vertical video.");
         }
 
-        var plan = await NativePresenterRequestPlanner.BuildAsync(
-            dbContext,
-            new NativePresenterPlanInput(
-                organizationId,
-                propertyId,
-                goal,
-                creativeOptions.MarketingTemplate,
-                creativeOptions.OpenHouseText,
-                creativeOptions.Soundtrack,
-                creativeOptions.PresenterScript),
-            cancellationToken);
-        if (plan.Frames.Count < NativePresenterVideoPolicy.MinimumTourFrames)
+        // One request per library video of 30 seconds or less, exactly as the Worker would plan them; otherwise the
+        // one shared 30-second vertical video.
+        var requests = new List<(VerticalCreativeFormat? Format, int Seconds, Guid? Lead, NativePresenterScript? Script)>();
+        if (usesVerticalLibrary && libraryFormats is { Count: > 0 })
         {
-            problems.Add("Place at least one photo on the Tour Map.");
+            var verticalPlan = await verticalPlanningService.PlanForOrganizationAsync(
+                organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
+            foreach (var format in libraryFormats.Distinct())
+            {
+                var recipe = verticalPlan?.Recipes.FirstOrDefault(candidate => candidate.Format == format);
+                var seconds = recipe?.DurationSeconds ?? NativePresenterVideoPolicy.DefaultDurationSeconds;
+                if (seconds > NativePresenterVideoPolicy.MaximumDurationSeconds)
+                {
+                    continue;
+                }
+
+                requests.Add((format, seconds, recipe?.PrimaryPropertyMediaId,
+                    creativeOptions.FormatPresenterScripts?.FirstOrDefault(item => item.Format == format)?.Script));
+            }
+
+            if (requests.Count == 0)
+            {
+                problems.Add("None of the chosen vertical videos is 30 seconds or less, so Kling would not be used.");
+            }
+        }
+        else
+        {
+            requests.Add((null, NativePresenterVideoPolicy.DefaultDurationSeconds, null, creativeOptions.PresenterScript));
         }
 
-        try
+        var videos = new List<KlingNativePresenterVideoPreview>(requests.Count);
+        foreach (var request in requests)
         {
-            plan.Script.Validate();
-        }
-        catch (ArgumentException exception)
-        {
-            problems.Add(exception.Message.Split(" (Parameter", 2)[0]);
-        }
+            var videoProblems = new List<string>();
+            var plan = await NativePresenterRequestPlanner.BuildAsync(
+                dbContext,
+                new NativePresenterPlanInput(
+                    organizationId,
+                    propertyId,
+                    goal,
+                    creativeOptions.MarketingTemplate,
+                    creativeOptions.OpenHouseText,
+                    creativeOptions.Soundtrack,
+                    request.Script,
+                    request.Format,
+                    request.Seconds,
+                    request.Lead),
+                cancellationToken);
+            if (plan.Frames.Count < NativePresenterVideoPolicy.MinimumTourFrames)
+            {
+                videoProblems.Add("Place at least one photo on the Tour Map.");
+            }
 
-        string? prompt = null;
-        if (plan.Frames.Count > 0)
-        {
             try
             {
-                prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(new NativePresenterVideoSubmission(
-                    new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
-                    plan.Frames.Select(frame => new NativePresenterTourFrame(
-                            new WalkthroughVideoFrame(Stream.Null, frame.MimeType),
-                            frame.StopName,
-                            frame.ApprovedHighlight,
-                            frame.DirectionToNext))
-                        .ToArray(),
-                    plan.Script.Opening,
-                    plan.Script.Closing,
-                    plan.CampaignGoal,
-                    plan.MusicDirection,
-                    "preview",
-                    plan.Script.Tour));
+                plan.Script.Validate(request.Seconds);
             }
             catch (ArgumentException exception)
             {
-                problems.Add($"The request could not be built: {exception.Message}");
+                videoProblems.Add(exception.Message.Split(" (Parameter", 2)[0]);
             }
+
+            string? prompt = null;
+            if (plan.Frames.Count > 0)
+            {
+                try
+                {
+                    prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(new NativePresenterVideoSubmission(
+                        new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
+                        plan.Frames.Select(frame => new NativePresenterTourFrame(
+                                new WalkthroughVideoFrame(Stream.Null, frame.MimeType),
+                                frame.StopName,
+                                frame.ApprovedHighlight,
+                                frame.DirectionToNext))
+                            .ToArray(),
+                        plan.Script.Opening,
+                        plan.Script.Closing,
+                        plan.CampaignGoal,
+                        plan.MusicDirection,
+                        "preview",
+                        plan.Script.Tour,
+                        request.Seconds));
+                }
+                catch (ArgumentException exception)
+                {
+                    videoProblems.Add($"The request could not be built: {exception.Message}");
+                }
+            }
+
+            videos.Add(new KlingNativePresenterVideoPreview(
+                request.Format ?? VerticalCreativeFormat.LegacySingle,
+                request.Seconds,
+                plan.Frames.Select((frame, index) => new KlingNativePresenterPreviewFrame(
+                        index + 1,
+                        frame.PropertyMediaId,
+                        frame.StopName,
+                        frame.ApprovedHighlight,
+                        frame.DirectionToNext?.ToString()))
+                    .ToArray(),
+                prompt,
+                plan.Script,
+                videoProblems));
         }
 
+        // Each video's own problems are listed under its name when there is more than one video.
+        foreach (var video in videos)
+        {
+            problems.AddRange(videos.Count > 1 || video.Format != VerticalCreativeFormat.LegacySingle
+                ? video.Problems.Select(problem => $"{VerticalFormatNames.Name(video.Format)}: {problem}")
+                : video.Problems);
+        }
+
+        var first = videos.FirstOrDefault();
         return new KlingNativePresenterPreview(
-            problems,
-            plan.Frames.Select((frame, index) => new KlingNativePresenterPreviewFrame(
-                    index + 1,
-                    frame.PropertyMediaId,
-                    frame.StopName,
-                    frame.ApprovedHighlight,
-                    frame.DirectionToNext?.ToString()))
-                .ToArray(),
-            prompt,
-            walkthroughVideoProvider.EstimatedNativePresenterCostUsd,
-            plan.Script);
+            problems.Distinct().ToArray(),
+            first?.Frames ?? [],
+            first?.Prompt,
+            walkthroughVideoProvider.EstimatedNativePresenterCostUsd * videos.Count,
+            first?.Script ?? new NativePresenterScript(string.Empty, string.Empty, string.Empty),
+            videos);
     }
 
     public async Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
@@ -304,8 +362,17 @@ public sealed class CampaignGenerationService(
         CampaignMarketingTemplate marketingTemplate,
         string? openHouseText,
         VerticalCampaignGoal? goal,
+        VerticalCreativeFormat? format = null,
+        int durationSeconds = 30,
+        Guid? leadMediaId = null,
         CancellationToken cancellationToken = default)
     {
+        if (durationSeconds is < NativePresenterVideoPolicy.MinimumDurationSeconds
+            or > NativePresenterVideoPolicy.MaximumDurationSeconds)
+        {
+            throw new ArgumentOutOfRangeException(nameof(durationSeconds), "Kling 4 makes 3 to 30 seconds of video per call.");
+        }
+
         var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
         if (!await dbContext.Properties.AsNoTracking().AnyAsync(
                 candidate => candidate.Id == propertyId && candidate.OrganizationId == organizationId,
@@ -322,7 +389,11 @@ public sealed class CampaignGenerationService(
                 goal,
                 marketingTemplate,
                 openHouseText?.Trim(),
-                CampaignSoundtrack.AutoByHomeEra),
+                CampaignSoundtrack.AutoByHomeEra,
+                null,
+                format == VerticalCreativeFormat.LegacySingle ? null : format,
+                durationSeconds,
+                leadMediaId),
             cancellationToken);
         return plan.Script;
     }
@@ -411,6 +482,10 @@ public sealed class CampaignGenerationService(
         creativeOptions = creativeOptions with
         {
             PresenterScript = usesKlingNativePresenter ? creativeOptions.PresenterScript?.Normalized() : null,
+            // Per-video scripts only mean something to a native-presenter library campaign.
+            FormatPresenterScripts = usesKlingNativePresenter && usesLibrary && creativeOptions.FormatPresenterScripts is { Count: > 0 } scripts
+                ? scripts.Select(item => item with { Script = item.Script.Normalized() }).ToArray()
+                : null,
         };
 
         if (usesKlingNativePresenter && !usesLibrary && !HasThirtySecondVertical(requestedOutputs, creativeOptions))

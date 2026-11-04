@@ -13,6 +13,7 @@ namespace ListingStudio.IntegrationTests;
 public sealed partial class FfmpegRenderingTests
 {
     [Theory]
+    [InlineData(VerticalCreativeFormat.WowFeature)]
     [InlineData(VerticalCreativeFormat.PriceFirst)]
     [InlineData(VerticalCreativeFormat.HostedPov)]
     public async Task KlingNativePresenterLibraryVariantRendersWithKlingSound(VerticalCreativeFormat format)
@@ -61,11 +62,12 @@ public sealed partial class FfmpegRenderingTests
             timing, grounding);
         specification = CampaignGenerationProcessor.UseNativeKlingAudio(specification);
 
-        // What Kling returns: a 30-second 9:16 clip with its own speech and music.
+        // What Kling returns for this video: a 9:16 clip of the video's own length with its own speech and music.
+        var seconds = recipe.DurationSeconds;
         var kling = Path.Combine(directory, "kling4-native-presenter.mp4");
         await RunFfmpegAsync(options.Value.ExecutablePath, "-v", "error",
-            "-f", "lavfi", "-i", "testsrc=size=1080x1920:rate=24:duration=30",
-            "-f", "lavfi", "-i", "sine=frequency=330:duration=30",
+            "-f", "lavfi", "-i", $"testsrc=size=1080x1920:rate=24:duration={seconds}",
+            "-f", "lavfi", "-i", $"sine=frequency=330:duration={seconds}",
             "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", kling);
         var renderer = new FfmpegVideoRenderer(options, Options.Create(new VideoBrandingTemplateOptions
         {
@@ -81,10 +83,11 @@ public sealed partial class FfmpegRenderingTests
             null,
             output,
             PropertyVideos: videos,
-            FullTour: new VideoRenderFullTourAsset(kling, 30_000, UseNativeAudio: true)));
+            FullTour: new VideoRenderFullTourAsset(kling, seconds * 1_000, UseNativeAudio: true)));
 
         var result = await new FfmpegMp4TechnicalValidator(options)
             .ValidateAsync(output, Mp4Expectations.For(specification), CancellationToken.None);
         Assert.True(result.IsValid, string.Join("; ", result.Problems));
+        Assert.InRange(result.DurationSeconds!.Value, seconds - 0.2, seconds + 0.2);
     }
 }

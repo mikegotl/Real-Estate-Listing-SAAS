@@ -77,6 +77,8 @@ public sealed class CampaignGenerationJobConfiguration : IEntityTypeConfiguratio
         builder.Property(job => job.NativePresenterTour).HasMaxLength(NativePresenterScript.MaximumTourLength);
         builder.Property(job => job.NativePresenterClosing).HasMaxLength(NativePresenterScript.MaximumClosingLength);
         builder.Ignore(job => job.PresenterScript);
+        builder.Property(job => job.NativePresenterFormatScriptsJson).HasColumnType("text");
+        builder.Ignore(job => job.FormatPresenterScripts);
         builder.Property(job => job.OpenHouseVerified)
             .HasDefaultValue(false)
             .IsRequired();

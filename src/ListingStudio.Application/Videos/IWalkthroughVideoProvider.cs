@@ -13,6 +13,15 @@ public static class NativePresenterVideoPolicy
     // The same portrait is the first and last frame, leaving eight of Kling 4's ten slots for the property.
     public const int MinimumTourFrames = 1;
     public const int MaximumTourFrames = 8;
+
+    /// <summary>Kling 4 makes 3 to 30 seconds per call; a library video longer than that keeps the established edit.</summary>
+    public const int MinimumDurationSeconds = 3;
+    public const int MaximumDurationSeconds = 30;
+    public const int DefaultDurationSeconds = 30;
+
+    /// <summary>Fewer keyframes for a short video, so each space is on screen long enough to read.</summary>
+    public static int MaximumTourFramesFor(int durationSeconds) =>
+        Math.Clamp(durationSeconds * MaximumTourFrames / DefaultDurationSeconds, MinimumTourFrames, MaximumTourFrames);
 }
 
 /// <summary>
@@ -127,7 +136,8 @@ public sealed record NativePresenterVideoSubmission(
     string CampaignGoal,
     string MusicDirection,
     string IdempotencyKey,
-    string? TourVoiceover = null);
+    string? TourVoiceover = null,
+    int DurationSeconds = NativePresenterVideoPolicy.DefaultDurationSeconds);
 
 public enum WalkthroughVideoState
 {

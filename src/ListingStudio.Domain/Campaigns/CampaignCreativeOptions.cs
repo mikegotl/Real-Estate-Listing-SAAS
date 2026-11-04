@@ -117,7 +117,8 @@ public sealed record CampaignCreativeOptions(
     CampaignVoiceoverMode Voiceover = CampaignVoiceoverMode.ShortHook,
     string? OpenHouseText = null,
     bool OpenHouseVerified = false,
-    NativePresenterScript? PresenterScript = null)
+    NativePresenterScript? PresenterScript = null,
+    IReadOnlyList<FormatPresenterScript>? FormatPresenterScripts = null)
 {
     public const int MaximumOpenHouseTextLength = 40;
 
@@ -228,6 +229,22 @@ public sealed record CampaignCreativeOptions(
         }
 
         PresenterScript?.Validate();
+        if (FormatPresenterScripts is { } formatScripts)
+        {
+            if (formatScripts.Count > 10
+                || formatScripts.Any(item => item is null || !Enum.IsDefined(item.Format)
+                    || item.Format == VerticalCreativeFormat.LegacySingle || item.Script is null)
+                || formatScripts.Select(item => item.Format).Distinct().Count() != formatScripts.Count)
+            {
+                throw new ArgumentException("Each vertical video can have one presenter script.", nameof(FormatPresenterScripts));
+            }
+
+            foreach (var item in formatScripts)
+            {
+                // The format's own length is known only once its video is planned; 30 seconds is Kling's longest call.
+                item.Script.Validate();
+            }
+        }
 
         var hasMusic = Elements.HasFlag(CampaignVideoElement.BackgroundMusic);
         if (hasMusic == (Soundtrack is CampaignSoundtrack.None or CampaignSoundtrack.AddInApp))
@@ -328,6 +345,10 @@ public sealed record CampaignCreativeOptions(
 public sealed record NativePresenterScript(string Opening, string Tour, string Closing)
 {
     public const int MaximumWords = 75;
+    public const int DefaultSeconds = 30;
+
+    /// <summary>About two and a half spoken words a second: 75 for 30 seconds, 37 for 15.</summary>
+    public static int MaximumWordsFor(int seconds) => Math.Clamp(seconds, 1, DefaultSeconds) * MaximumWords / DefaultSeconds;
     public const int MaximumOpeningLength = 300;
     public const int MaximumTourLength = 600;
     public const int MaximumClosingLength = 300;
@@ -340,16 +361,16 @@ public sealed record NativePresenterScript(string Opening, string Tour, string C
     /// <summary>The same script with runs of whitespace collapsed, as it is stored and sent.</summary>
     public NativePresenterScript Normalized() => new(Clean(Opening), Clean(Tour), Clean(Closing));
 
-    public void Validate()
+    public void Validate(int seconds = DefaultSeconds)
     {
         Check(Opening, MaximumOpeningLength, nameof(Opening), "opening");
         Check(Tour, MaximumTourLength, nameof(Tour), "tour voiceover");
         Check(Closing, MaximumClosingLength, nameof(Closing), "closing");
-        if (WordCount > MaximumWords)
+        var maximum = MaximumWordsFor(seconds);
+        if (WordCount > maximum)
         {
             throw new ArgumentException(
-                $"The presenter script is {WordCount} words; keep it to {MaximumWords} so it fits 30 seconds.",
-                nameof(Tour));
+                $"The presenter script is {WordCount} words; keep it to {maximum} so it fits {seconds} seconds.");
         }
     }
 
@@ -375,3 +396,6 @@ public sealed record NativePresenterScript(string Opening, string Tour, string C
     private static string Clean(string? value) =>
         string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 }
+
+/// <summary>The exact Kling 4 presenter script for one vertical library video.</summary>
+public sealed record FormatPresenterScript(VerticalCreativeFormat Format, NativePresenterScript Script);

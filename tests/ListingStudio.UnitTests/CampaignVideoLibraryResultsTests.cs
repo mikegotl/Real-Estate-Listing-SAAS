@@ -96,16 +96,18 @@ public sealed class CampaignVideoLibraryResultsTests : IAsyncDisposable
     }
 
     [Fact]
-    public void KlingNativeCampaignLabelsProviderBackedAndEstablishedResultsSeparately()
+    public void KlingNativeCampaignShowsEachVideosOwnKlingRequest()
     {
         var cut = Render(
             strategy: CampaignVideoStrategy.Kling4NativePresenter,
             audit: new CampaignProviderAudit("Higgsfield", "request-123", "native-presenter-v1"));
 
+        // The 15-second Wow feature has its own Kling request; a 30-second video from an older campaign without one
+        // still shows the campaign's shared request.
         Assert.Contains(
-            "established CLS edit",
+            "Kling 4 native presenter via Higgsfield · request request-wow",
             cut.Find("[data-testid=generation-source-WowFeature]").TextContent,
-            StringComparison.OrdinalIgnoreCase);
+            StringComparison.Ordinal);
         Assert.Contains(
             "Kling 4 native presenter via Higgsfield · request request-123",
             cut.Find("[data-testid=generation-source-PriceFirst]").TextContent,
@@ -152,7 +154,8 @@ public sealed class CampaignVideoLibraryResultsTests : IAsyncDisposable
                         89, VerticalRecommendationStrength.Strong, ["A standout kitchen photo can open the video."],
                         "Look at this kitchen.", "Call to book", 15, "wow-feature-v1", CampaignVideoVariantStatus.Rendered,
                         CampaignVideoTechnicalStatus.Passed, null, 1,
-                        new CampaignVideoReviewState(1, CampaignVideoReviewDecision.Approved, null, []), captions),
+                        new CampaignVideoReviewState(1, CampaignVideoReviewDecision.Approved, null, []), captions,
+                        KlingRequestId: "request-wow"),
                     new CampaignLibraryVideoView(Guid.NewGuid(), Price, VerticalCreativeFormat.PriceFirst, VerticalCampaignPurpose.Consideration, 2,
                         75, VerticalRecommendationStrength.Strong, ["The listing price is entered."],
                         "$450,000 in Raleigh, NC", "Call to book", 30, "price-first-v1", CampaignVideoVariantStatus.Rendered,

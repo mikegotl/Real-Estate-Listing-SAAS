@@ -91,12 +91,15 @@ public interface ICampaignGenerationService
         CampaignMarketingTemplate marketingTemplate,
         string? openHouseText,
         VerticalCampaignGoal? goal,
+        VerticalCreativeFormat? format = null,
+        int durationSeconds = 30,
+        Guid? leadMediaId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Platform admins only: builds the exact Kling 4 native-presenter request these settings would send, and lists
-    /// anything that would stop it, without uploading a photo or calling the provider. Null when the property is
-    /// not in the user's workspace.
+    /// anything that would stop it, without uploading a photo or calling the provider. With library formats, there is
+    /// one request per library video of 30 seconds or less. Null when the property is not in the user's workspace.
     /// </summary>
     Task<KlingNativePresenterPreview?> PreviewKlingNativePresenterAsync(
         string userId,
@@ -105,6 +108,7 @@ public interface ICampaignGenerationService
         CampaignCreativeOptions creativeOptions,
         VerticalCampaignGoal? goal,
         bool usesVerticalLibrary,
+        IReadOnlyList<VerticalCreativeFormat>? libraryFormats = null,
         CancellationToken cancellationToken = default);
 
     Task<CampaignGenerationResult?> GetLatestAsync(
@@ -253,10 +257,20 @@ public sealed record KlingNativePresenterPreview(
     IReadOnlyList<KlingNativePresenterPreviewFrame> Frames,
     string? Prompt,
     decimal EstimatedCostUsd,
-    NativePresenterScript Script)
+    NativePresenterScript Script,
+    IReadOnlyList<KlingNativePresenterVideoPreview>? Videos = null)
 {
     public bool IsReady => Problems.Count == 0;
 }
+
+/// <summary>One library video's own Kling 4 request: its format, length, keyframes, script and prompt.</summary>
+public sealed record KlingNativePresenterVideoPreview(
+    VerticalCreativeFormat Format,
+    int DurationSeconds,
+    IReadOnlyList<KlingNativePresenterPreviewFrame> Frames,
+    string? Prompt,
+    NativePresenterScript Script,
+    IReadOnlyList<string> Problems);
 
 public sealed record KlingNativePresenterPreviewFrame(
     int Position,

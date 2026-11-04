@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ListingStudio.Domain.Organizations;
 using ListingStudio.Domain.Properties;
 using ListingStudio.Domain.Videos;
@@ -133,6 +134,12 @@ public sealed class CampaignGenerationJob
             NativePresenterTour = script.Tour;
             NativePresenterClosing = script.Closing;
         }
+
+        NativePresenterFormatScriptsJson = creativeOptions.FormatPresenterScripts is { Count: > 0 } formatScripts
+            ? JsonSerializer.Serialize(formatScripts
+                .Select(item => new StoredFormatScript(item.Format.ToString(), item.Script.Normalized()))
+                .ToArray())
+            : null;
         NarrationRegion = narrationPreferences.Region;
         SpokenLanguage = narrationPreferences.SpokenLanguage;
         CaptionLanguage = narrationPreferences.CaptionLanguage;
@@ -211,6 +218,23 @@ public sealed class CampaignGenerationJob
         NativePresenterOpening is { } opening && NativePresenterTour is { } tour && NativePresenterClosing is { } closing
             ? new NativePresenterScript(opening, tour, closing)
             : null;
+
+    /// <summary>The agent-approved exact Kling 4 script for each library video, as JSON; null uses suggested scripts.</summary>
+    public string? NativePresenterFormatScriptsJson { get; private set; }
+
+    public IReadOnlyList<FormatPresenterScript>? FormatPresenterScripts =>
+        string.IsNullOrWhiteSpace(NativePresenterFormatScriptsJson)
+            ? null
+            : (JsonSerializer.Deserialize<StoredFormatScript[]>(NativePresenterFormatScriptsJson) ?? [])
+                .Where(item => Enum.TryParse<VerticalCreativeFormat>(item.Format, out _))
+                .Select(item => new FormatPresenterScript(Enum.Parse<VerticalCreativeFormat>(item.Format), item.Script))
+                .ToArray();
+
+    /// <summary>The approved script for one library video, if the agent wrote one.</summary>
+    public NativePresenterScript? PresenterScriptFor(VerticalCreativeFormat format) =>
+        FormatPresenterScripts?.FirstOrDefault(item => item.Format == format)?.Script;
+
+    private sealed record StoredFormatScript(string Format, NativePresenterScript Script);
 
     public bool OpenHouseVerified { get; private set; }
 
@@ -674,7 +698,8 @@ public sealed class CampaignGenerationJob
         ShortFormVoiceover,
         OpenHouseText,
         OpenHouseVerified,
-        PresenterScript);
+        PresenterScript,
+        FormatPresenterScripts);
 
     public void SetSocialCopy(string longCaption, string shortCaption)
     {

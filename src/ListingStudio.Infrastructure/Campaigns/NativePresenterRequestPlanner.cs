@@ -1,3 +1,5 @@
+using System.Globalization;
+using ListingStudio.Application.Audio;
 using ListingStudio.Application.Properties;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Campaigns;
@@ -15,7 +17,19 @@ public sealed record NativePresenterPlanInput(
     CampaignMarketingTemplate MarketingTemplate,
     string? OpenHouseText,
     CampaignSoundtrack Soundtrack,
-    NativePresenterScript? ApprovedScript = null);
+    NativePresenterScript? ApprovedScript = null,
+    VerticalCreativeFormat? Format = null,
+    int DurationSeconds = NativePresenterVideoPolicy.DefaultDurationSeconds,
+    Guid? LeadMediaId = null);
+
+/// <summary>The verified listing facts a suggested script may say.</summary>
+public sealed record NativePresenterListing(
+    string City,
+    string State,
+    decimal ListingPrice,
+    int Bedrooms,
+    decimal Bathrooms,
+    int? SquareFeet);
 
 public sealed record NativePresenterPlanFrame(
     Guid PropertyMediaId,
@@ -30,11 +44,13 @@ public sealed record NativePresenterPlan(
     NativePresenterScript Script,
     bool ScriptIsApproved,
     string CampaignGoal,
-    string MusicDirection);
+    string MusicDirection,
+    int DurationSeconds = NativePresenterVideoPolicy.DefaultDurationSeconds);
 
 /// <summary>
 /// Builds the Kling 4 native-presenter request from the approved Tour Map. The Worker uses it to submit the paid call
-/// and the admin preview uses it to show the same request for free, so both always agree.
+/// and the admin preview uses it to show the same request for free, so both always agree. A vertical library video
+/// gets its own request: its own length, its own opening shot and a script written for its format.
 /// </summary>
 public static class NativePresenterRequestPlanner
 {
@@ -54,7 +70,6 @@ public static class NativePresenterRequestPlanner
                 && candidate.WalkthroughStop != null)
             .OrderBy(candidate => candidate.DisplayOrder)
             .ThenBy(candidate => candidate.Id)
-            .Take(NativePresenterVideoPolicy.MaximumTourFrames)
             .Select(candidate => new
             {
                 candidate.Id,
@@ -64,6 +79,16 @@ public static class NativePresenterRequestPlanner
                 candidate.AnalysisDescription,
             })
             .ToArrayAsync(cancellationToken);
+        // The video opens on its format's lead shot when that photo is on the Tour Map, then follows the route.
+        // The hosted walk-through follows the route from its first stop, so it never jumps to a lead shot.
+        if (input.Format != VerticalCreativeFormat.HostedPov
+            && input.LeadMediaId is { } leadId
+            && media.FirstOrDefault(candidate => candidate.Id == leadId) is { } lead)
+        {
+            media = [lead, .. media.Where(candidate => candidate.Id != leadId)];
+        }
+
+        media = media.Take(NativePresenterVideoPolicy.MaximumTourFramesFor(input.DurationSeconds)).ToArray();
         var directions = (await dbContext.WalkthroughStopDirections.AsNoTracking()
                 .Where(candidate => candidate.OrganizationId == input.OrganizationId
                     && candidate.PropertyId == input.PropertyId)
@@ -99,40 +124,88 @@ public static class NativePresenterRequestPlanner
 
         var property = await dbContext.Properties.AsNoTracking()
             .Where(candidate => candidate.Id == input.PropertyId && candidate.OrganizationId == input.OrganizationId)
-            .Select(candidate => new { candidate.City, candidate.State, candidate.YearBuilt })
+            .Select(candidate => new
+            {
+                candidate.City,
+                candidate.State,
+                candidate.YearBuilt,
+                candidate.ListingPrice,
+                candidate.Bedrooms,
+                candidate.Bathrooms,
+                candidate.SquareFeet,
+            })
             .SingleAsync(cancellationToken);
         var script = input.ApprovedScript?.Normalized()
-            ?? SuggestScript(property.City, property.State, frames, input);
+            ?? SuggestScript(
+                new NativePresenterListing(
+                    property.City,
+                    property.State,
+                    property.ListingPrice,
+                    property.Bedrooms,
+                    property.Bathrooms,
+                    property.SquareFeet),
+                frames,
+                input);
         return new NativePresenterPlan(
             frames,
             script,
             input.ApprovedScript is not null,
             Goal(input),
-            Music(input.Soundtrack, property.YearBuilt));
+            Music(input.Soundtrack, property.YearBuilt),
+            input.DurationSeconds);
     }
 
-    /// <summary>
-    /// A starting script the agent edits: the opening, one short line per Tour Map stop in order (its approved room
-    /// narration's first sentence, or the stop's name), and a closing, kept inside the 30-second word budget.
-    /// </summary>
+    /// <summary>A starting script for the shared vertical video, from the city and Tour Map alone.</summary>
     public static NativePresenterScript SuggestScript(
         string city,
         string state,
         IReadOnlyList<NativePresenterPlanFrame> frames,
+        NativePresenterPlanInput input) =>
+        SuggestScript(new NativePresenterListing(city, state, 0, 0, 0, null), frames, input);
+
+    /// <summary>
+    /// A starting script the agent edits: an opening written for the video's format, one short line per Tour Map stop
+    /// in order (its approved room narration's first sentence, or the stop's name), and a closing, kept inside the
+    /// video's word budget. Listing shorthand such as state codes is written the way it is said.
+    /// </summary>
+    public static NativePresenterScript SuggestScript(
+        NativePresenterListing listing,
+        IReadOnlyList<NativePresenterPlanFrame> frames,
         NativePresenterPlanInput input)
     {
-        var opening = $"Welcome to your next home in {city}, {state}. Let me show you around.";
+        ArgumentNullException.ThrowIfNull(listing);
+        ArgumentNullException.ThrowIfNull(frames);
+        ArgumentNullException.ThrowIfNull(input);
+        var place = $"{listing.City.Trim()}, {listing.State.Trim()}";
+        var lines = new List<string>();
+        var opening = input.Format switch
+        {
+            VerticalCreativeFormat.PriceFirst when listing.ListingPrice > 0 =>
+                $"This home in {place} is listed at {listing.ListingPrice.ToString("C0", UnitedStates)}.",
+            VerticalCreativeFormat.WowFeature when frames.Count > 0 =>
+                $"You have to see this {frames[0].StopName.Trim().ToLowerInvariant()} in {place}.",
+            VerticalCreativeFormat.ExclusiveAccess => $"Here is a private look at a home in {place}.",
+            _ => $"Welcome to your next home in {place}. Let me show you around.",
+        };
+        if (input.Format == VerticalCreativeFormat.PriceFirst && Facts(listing) is { } facts)
+        {
+            lines.Add(facts);
+        }
+
         var closing = input.Goal == VerticalCampaignGoal.OpenHouse
             || (input.Goal is null && input.MarketingTemplate == CampaignMarketingTemplate.OpenHouse)
                 ? $"Join me at the open house, {input.OpenHouseText}. Contact me to save your spot."
                 : ClosingLine;
-        var budget = NativePresenterScript.MaximumWords
+        opening = SpeechText.ForSpeech(opening);
+        var budget = NativePresenterScript.MaximumWordsFor(input.DurationSeconds)
             - NativePresenterScript.CountWords(opening)
-            - NativePresenterScript.CountWords(closing);
-        var lines = new List<string>();
-        foreach (var frame in frames)
+            - NativePresenterScript.CountWords(closing)
+            - lines.Sum(NativePresenterScript.CountWords);
+        // The Wow feature opening already names its first space, so its tour starts with the next one.
+        foreach (var frame in input.Format == VerticalCreativeFormat.WowFeature ? frames.Skip(1) : frames)
         {
             var line = FirstSentence(frame.ApprovedHighlight) ?? $"Here is the {frame.StopName.Trim().ToLowerInvariant()}.";
+            line = SpeechText.ForSpeech(line);
             var words = NativePresenterScript.CountWords(line);
             if (words > budget)
             {
@@ -145,6 +218,29 @@ public static class NativePresenterRequestPlanner
 
         var tour = lines.Count > 0 ? string.Join(' ', lines) : "Take a look around this home.";
         return new NativePresenterScript(opening, tour, closing).Normalized();
+    }
+
+    private static readonly CultureInfo UnitedStates = CultureInfo.GetCultureInfo("en-US");
+
+    private static string? Facts(NativePresenterListing listing)
+    {
+        var parts = new List<string>();
+        if (listing.Bedrooms > 0)
+        {
+            parts.Add($"{listing.Bedrooms} {(listing.Bedrooms == 1 ? "bedroom" : "bedrooms")}");
+        }
+
+        if (listing.Bathrooms > 0)
+        {
+            parts.Add($"{listing.Bathrooms.ToString("0.#", UnitedStates)} {(listing.Bathrooms == 1 ? "bathroom" : "bathrooms")}");
+        }
+
+        if (listing.SquareFeet is { } squareFeet && squareFeet > 0)
+        {
+            parts.Add($"{squareFeet.ToString("N0", UnitedStates)} square feet");
+        }
+
+        return parts.Count == 0 ? null : SpeechText.ForSpeech(string.Join(", ", parts) + ".");
     }
 
     private static string? FirstSentence(string? text)

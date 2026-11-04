@@ -480,13 +480,14 @@ public static class FfmpegCommandBuilder
             return null;
         }
 
+        // Kling makes at most 30 seconds per call, so a Kling video covers a 15- or 30-second program.
         var programMs = (int)request.Specification.RequestedDuration * 1_000;
-        if (request.Specification.RequestedDuration != RequestedDuration.Feature30
+        if (request.Specification.RequestedDuration > RequestedDuration.Feature30
             || asset.DurationMs < programMs - 1_000
             || asset.DurationMs > programMs + 5_000
             || !File.Exists(asset.FilePath))
         {
-            throw new ArgumentException("A Kling full-tour asset must be an existing approximately 30-second clip.");
+            throw new ArgumentException("A Kling video must be an existing clip about as long as its 15- or 30-second program.");
         }
 
         return asset;
