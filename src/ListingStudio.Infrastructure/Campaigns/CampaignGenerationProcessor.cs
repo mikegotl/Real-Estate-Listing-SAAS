@@ -1361,13 +1361,15 @@ public sealed partial class CampaignGenerationProcessor(
         }
     }
 
-    private static VideoProductionSpecification UseNativeKlingAudio(VideoProductionSpecification specification) =>
+    public static VideoProductionSpecification UseNativeKlingAudio(VideoProductionSpecification specification) =>
         specification with
         {
             Audio = specification.Audio with
             {
                 NarrationSegments = [],
-                Music = specification.Audio.Music with { AssetId = null },
+                // Kling's own track is the whole soundtrack, so no CLS music is planned at all: the renderer rejects
+                // a plan that has no music asset but still carries a mood, timing or gain.
+                Music = new MusicPlan(null, MusicMood.None, 0, 0, 0, 0, 0, 0),
             },
             Scenes = specification.Scenes.Select(scene => scene with
             {
