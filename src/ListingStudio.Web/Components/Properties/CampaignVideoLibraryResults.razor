@@ -52,6 +52,14 @@
                                          data-testid="@($"generation-source-{video.Format}")">
                                     @GenerationSource(video)
                                 </MudText>
+                                @if (ShowProviderRequests && !string.IsNullOrWhiteSpace(video.KlingSubmittedRequestJson))
+                                {
+                                    <details class="mt-1" data-testid="@($"kling-request-{video.Format}")">
+                                        <summary class="mud-typography-caption">Kling 4 request sent (every parameter)</summary>
+                                        <KlingRequestDetails BodyJson="@video.KlingSubmittedRequestJson"
+                                                             TestId="@($"kling-submitted-request-{video.Format}")" />
+                                    </details>
+                                }
                             </div>
                             <div class="video-library-chips">
                                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@TechnicalColor(video.TechnicalStatus)"
@@ -189,6 +197,10 @@
 
     [Parameter]
     public CampaignProviderAudit? ProviderAudit { get; set; }
+
+    /// <summary>Shows each video's exact Kling request; the Campaign tab passes true for platform administrators only.</summary>
+    [Parameter]
+    public bool ShowProviderRequests { get; set; }
 
     private CampaignVideoLibraryView? library;
     private readonly Dictionary<(Guid DeliverableId, int Version), string?> drafts = [];

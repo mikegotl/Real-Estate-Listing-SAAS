@@ -1,3 +1,4 @@
+using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Campaigns;
 
 namespace ListingStudio.Application.Campaigns;
@@ -80,6 +81,12 @@ public interface ICampaignGenerationService
 
     /// <summary>Whether the single-call Kling 4 native presenter pilot is on for the signed-in user's workspace.</summary>
     Task<bool> IsKlingNativePresenterEnabledAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether the Kling native presenter is on for this workspace only through the pilot list. In pilot the Wow
+    /// feature is a 10-second 720p Kling video.
+    /// </summary>
+    Task<bool> IsKlingNativePresenterPilotAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The suggested exact script for the Kling 4 native presenter, built from the Tour Map's room narration and the
@@ -176,7 +183,8 @@ public sealed record CampaignProviderAudit(
     string Provider,
     string? RequestId,
     string? GenerationVersion,
-    string? SubmittedPrompt = null);
+    string? SubmittedPrompt = null,
+    string? SubmittedRequestJson = null);
 
 /// <summary>A campaign's vertical library request: how the videos were chosen, the goal, and any agent-picked formats.</summary>
 public sealed record CampaignVerticalRequestResult(
@@ -270,7 +278,9 @@ public sealed record KlingNativePresenterVideoPreview(
     IReadOnlyList<KlingNativePresenterPreviewFrame> Frames,
     string? Prompt,
     NativePresenterScript Script,
-    IReadOnlyList<string> Problems);
+    IReadOnlyList<string> Problems,
+    ProviderRequestPreview? Request = null,
+    Guid? AgentPortraitId = null);
 
 public sealed record KlingNativePresenterPreviewFrame(
     int Position,

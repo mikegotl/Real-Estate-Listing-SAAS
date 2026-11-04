@@ -365,12 +365,12 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         return FullTourPrompt(submission.Frames);
     }
 
-    public async Task<string> SubmitNativePresenterAsync(
+    public async Task<NativePresenterSubmissionResult> SubmitNativePresenterAsync(
         NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(submission);
-        var prompt = BuildNativePresenterPrompt(submission);
+        BuildNativePresenterPrompt(submission);
         var configuration = EnsureEnabled();
         var agentUrl = await UploadAsync(configuration, submission.AgentPortrait, cancellationToken);
         var tourUrls = new List<string>(submission.TourFrames.Count);
@@ -379,25 +379,52 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             tourUrls.Add(await UploadAsync(configuration, frame.Frame, cancellationToken));
         }
 
-        using var message = new HttpRequestMessage(HttpMethod.Post, ApiUri(configuration, configuration.FullTourModel.Trim('/')))
+        // The body that is sent is the body that is recorded, so the audit shows exactly what Kling received.
+        var request = BuildNativePresenterRequest(submission, agentUrl, tourUrls);
+        using var message = new HttpRequestMessage(HttpMethod.Post, new Uri(request.Url, UriKind.Absolute))
         {
-            Content = JsonContent.Create(
-                new FullTourGenerationRequest(
-                    agentUrl,
-                    tourUrls.ToArray(),
-                    agentUrl,
-                    prompt,
-                    submission.DurationSeconds,
-                    configuration.FullTourResolution,
-                    OptionalField(configuration.NativePresenterSound),
-                    OptionalField(configuration.NativePresenterAspectRatio)),
-                options: SerializerOptions),
+            Content = new StringContent(request.BodyJson, System.Text.Encoding.UTF8, "application/json"),
         };
         var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
         return IsRequestId(queued?.RequestId)
-            ? queued!.RequestId!
+            ? new NativePresenterSubmissionResult(queued!.RequestId!, request)
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
     }
+
+    public ProviderRequestPreview BuildNativePresenterRequest(
+        NativePresenterVideoSubmission submission,
+        string agentImageUrl,
+        IReadOnlyList<string> tourImageUrls)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentImageUrl);
+        ArgumentNullException.ThrowIfNull(tourImageUrls);
+        if (tourImageUrls.Count != submission.TourFrames.Count)
+        {
+            throw new ArgumentException("There must be one image URL for each Tour Map photo.", nameof(tourImageUrls));
+        }
+
+        var configuration = options.Value;
+        var body = new FullTourGenerationRequest(
+            agentImageUrl,
+            tourImageUrls.ToArray(),
+            agentImageUrl,
+            BuildNativePresenterPrompt(submission),
+            submission.DurationSeconds,
+            OptionalField(submission.Resolution) ?? configuration.FullTourResolution,
+            OptionalField(configuration.NativePresenterSound),
+            OptionalField(configuration.NativePresenterAspectRatio));
+        return new ProviderRequestPreview(
+            "POST",
+            ApiUri(configuration, configuration.FullTourModel.Trim('/')).ToString(),
+            JsonSerializer.Serialize(body, IndentedSerializerOptions));
+    }
+
+    private static readonly JsonSerializerOptions IndentedSerializerOptions = new(SerializerOptions)
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     private static string? OptionalField(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 

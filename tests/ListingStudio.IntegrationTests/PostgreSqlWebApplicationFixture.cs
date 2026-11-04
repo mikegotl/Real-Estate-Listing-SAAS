@@ -648,7 +648,7 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
     public string BuildFullTourPrompt(FullTourVideoSubmission submission) =>
         $"Fake full-tour prompt for {submission.Frames.Count} frames.";
 
-    public Task<string> SubmitNativePresenterAsync(
+    public Task<NativePresenterSubmissionResult> SubmitNativePresenterAsync(
         NativePresenterVideoSubmission submission,
         CancellationToken cancellationToken = default)
     {
@@ -661,7 +661,7 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         Assert.All(submission.TourFrames, frame => Assert.True(frame.Frame.Content.CanRead));
         if (submissionFailures.TryDequeue(out var failure))
         {
-            return Task.FromException<string>(failure);
+            return Task.FromException<NativePresenterSubmissionResult>(failure);
         }
 
         // A request is still running until it has been polled to completion. Count this campaign's running ones.
@@ -677,7 +677,12 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         nativePresenterRequests[requestId] = submission;
         LastNativePresenterSubmission = submission;
         NativePresenterSubmissions.Enqueue(submission);
-        return Task.FromResult(requestId);
+        return Task.FromResult(new NativePresenterSubmissionResult(
+            requestId,
+            BuildNativePresenterRequest(
+                submission,
+                "https://fake-uploads.test/agent.jpg",
+                submission.TourFrames.Select((_, index) => $"https://fake-uploads.test/photo-{index + 1}.jpg").ToArray())));
     }
 
     public NativePresenterVideoSubmission? LastNativePresenterSubmission { get; private set; }
@@ -690,6 +695,22 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
 
     public string BuildNativePresenterPrompt(NativePresenterVideoSubmission submission) =>
         $"Fake native-presenter prompt: {submission.OpeningLine} {submission.TourVoiceover} {submission.ClosingLine}";
+
+    public ProviderRequestPreview BuildNativePresenterRequest(
+        NativePresenterVideoSubmission submission,
+        string agentImageUrl,
+        IReadOnlyList<string> tourImageUrls) =>
+        new(
+            "POST",
+            "https://fake-higgsfield.test/kling-video/v4.0/image-to-video",
+            System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+            {
+                ["image_url"] = agentImageUrl,
+                ["image_urls"] = tourImageUrls,
+                ["end_image_url"] = agentImageUrl,
+                ["prompt"] = BuildNativePresenterPrompt(submission),
+                ["duration"] = submission.DurationSeconds,
+            }));
 
     public Task<WalkthroughVideoPollResult> PollAsync(
         string providerRequestId,

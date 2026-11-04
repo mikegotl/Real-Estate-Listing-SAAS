@@ -1676,16 +1676,17 @@ public sealed partial class CampaignGenerationProcessor(
                     plan.Script.Tour,
                     walkthroughVideoProvider.NativePresenterDurationMs / 1_000);
                 var submittedPrompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
-                var requestId = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
+                var submitted = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
                 dbContext.ChangeTracker.Clear();
                 var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
                     candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
                     cancellationToken);
                 tracked.MarkFullTourSubmitted(
-                    requestId,
+                    submitted.RequestId,
                     walkthroughVideoProvider.NativePresenterGenerationVersion,
                     submittedPrompt,
-                    timeProvider.GetUtcNow());
+                    timeProvider.GetUtcNow(),
+                    submitted.Request.BodyJson);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return false;
             }

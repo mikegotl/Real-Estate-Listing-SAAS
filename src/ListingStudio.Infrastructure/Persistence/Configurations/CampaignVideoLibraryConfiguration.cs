@@ -58,6 +58,7 @@ public sealed class CampaignVideoVariantConfiguration : IEntityTypeConfiguration
         builder.Property(variant => variant.KlingProviderRequestId).HasMaxLength(200);
         builder.Property(variant => variant.KlingGenerationVersion).HasMaxLength(200);
         builder.Property(variant => variant.KlingSubmittedPrompt).HasMaxLength(20_000);
+        builder.Property(variant => variant.KlingSubmittedRequestJson).HasMaxLength(40_000);
         builder.Property(variant => variant.KlingAssetPath).HasMaxLength(1_024);
         builder.Property(variant => variant.IdempotencyKey).HasMaxLength(CampaignVideoVariant.MaximumIdempotencyKeyLength);
         builder.Property(variant => variant.HookVariant).HasMaxLength(8).HasDefaultValue(CampaignVideoVariant.DefaultHookVariant).IsRequired();

@@ -257,8 +257,11 @@ public sealed partial class CampaignGenerationTests
     [InlineData("none")]
     [InlineData("refused")]
     [InlineData("busy")]
+    [InlineData("live")]
     public async Task KlingNativePresenterMakesOneKlingVideoPerLibraryVideoWithItsOwnLengthAndScript(string providerProblem)
     {
+        // "live": the switch is on for every workspace. Otherwise the workspace is on the pilot list.
+        var live = providerProblem == "live";
         var failOneKlingVideo = providerProblem == "refused";
         var (admin, owner) = await CreateLibraryListingAsync($"kling4-native-library-{providerProblem}");
         await BillingPlanTestData.SubscribeAsync(
@@ -285,8 +288,8 @@ public sealed partial class CampaignGenerationTests
                     admin,
                     FeatureFlagKeys.Kling4NativePresenterV1,
                     globallyEnabled: true,
-                    enabledForAllOrganizations: false,
-                    [owner.OrganizationId]);
+                    enabledForAllOrganizations: live,
+                    live ? [] : [owner.OrganizationId]);
             }
 
             QueueLibraryProviders(narratedVideos: 0);
@@ -318,7 +321,7 @@ public sealed partial class CampaignGenerationTests
                         VerticalCampaignGoal.MaximizeReach)))!;
             }
 
-            if (providerProblem != "none")
+            if (providerProblem is "refused" or "busy")
             {
                 // Refused: the first video fails on its own and the others still get theirs. Busy: Higgsfield is still
                 // working on another generation, so the video waits and is submitted again instead of failing.
@@ -393,7 +396,25 @@ public sealed partial class CampaignGenerationTests
                 {
                     Assert.Equal("Here is the price and the kitchen.", submission.TourVoiceover);
                 }
+
+                // Pilot: the Wow feature is a 10-second 720p Kling video. Live: full length at the configured 1080p.
+                if (variant.Format == VerticalCreativeFormat.WowFeature)
+                {
+                    Assert.Equal(live ? 15 : NativePresenterVideoPolicy.PilotWowFeatureSeconds, variant.DurationSeconds);
+                    Assert.Equal(live ? null : NativePresenterVideoPolicy.PilotResolution, submission.Resolution);
+                }
+                else
+                {
+                    Assert.Null(submission.Resolution);
+                }
+
+                // The exact request is kept with the real uploaded image URLs, for the admin audit.
+                Assert.NotNull(variant.KlingSubmittedRequestJson);
+                Assert.Contains("https://fake-uploads.test/agent.jpg", variant.KlingSubmittedRequestJson, StringComparison.Ordinal);
+                Assert.Contains("https://fake-uploads.test/photo-1.jpg", variant.KlingSubmittedRequestJson, StringComparison.Ordinal);
             }
+
+            Assert.Contains(variants, variant => variant.Format == VerticalCreativeFormat.WowFeature);
             Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
         }
         finally
@@ -542,6 +563,26 @@ public sealed partial class CampaignGenerationTests
             Assert.Equal(["Exterior front", "Kitchen"], preview.Frames.Select(frame => frame.StopName));
             Assert.Contains("the kitchen with its center island.", preview.Prompt, StringComparison.Ordinal);
             Assert.Equal("Hi, I'm Dana. Come see this home with me.", preview.Script.Opening);
+            // Every parameter that would be sent, with each photo named in its image slot until it is uploaded.
+            var request = Assert.Single(preview.Videos!).Request;
+            Assert.NotNull(request);
+            Assert.Equal("POST", request.Method);
+            using (var body = System.Text.Json.JsonDocument.Parse(request.BodyJson))
+            {
+                var root = body.RootElement;
+                Assert.Equal(CampaignGenerationService.PreviewImageUrlPlaceholder("your profile headshot"), root.GetProperty("image_url").GetString());
+                Assert.Equal(root.GetProperty("image_url").GetString(), root.GetProperty("end_image_url").GetString());
+                Assert.Equal(
+                    [
+                        CampaignGenerationService.PreviewImageUrlPlaceholder("photo 1, Exterior front"),
+                        CampaignGenerationService.PreviewImageUrlPlaceholder("photo 2, Kitchen"),
+                    ],
+                    root.GetProperty("image_urls").EnumerateArray().Select(item => item.GetString()));
+                Assert.Equal(preview.Prompt, root.GetProperty("prompt").GetString());
+                Assert.Equal(30, root.GetProperty("duration").GetInt32());
+            }
+
+            Assert.Equal(portraitId, preview.Videos![0].AgentPortraitId);
             var landscapeOnly = await campaigns.PreviewKlingNativePresenterAsync(
                 owner.UserId,
                 owner.PropertyId,

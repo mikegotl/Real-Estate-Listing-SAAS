@@ -129,6 +129,10 @@
                             ? $"Each vertical video below gets its own Kling call ({KlingVideoSlots.Count} in all), with its own length and script."
                             : "One 30-second call makes the vertical video.")
                         Exact wording and room order are generative and the finished video is validated.
+                        @if (klingNativePresenterPilot)
+                        {
+                            <span data-testid="kling-pilot-note"> Pilot mode: the Wow feature is a 10-second 720p Kling video; live mode makes it full length at 1080p.</span>
+                        }
                     </MudAlert>
                     @if (KlingVideoSlots.Count > 0)
                     {
@@ -252,7 +256,18 @@
                                             }
                                             <li>Your profile headshot (closing)</li>
                                         </ol>
-                                        @if (video.Prompt is not null)
+                                        @if (video.Request is { } request)
+                                        {
+                                            <MudText Typo="Typo.subtitle2">Request sent to Kling 4</MudText>
+                                            <KlingRequestDetails BodyJson="@request.BodyJson"
+                                                                 Method="@request.Method"
+                                                                 Url="@request.Url"
+                                                                 AgentPortraitId="video.AgentPortraitId"
+                                                                 Frames="video.Frames"
+                                                                 IsPreview="true"
+                                                                 TestId="@($"kling-preview-request-{video.Format}")" />
+                                        }
+                                        else if (video.Prompt is not null)
                                         {
                                             <MudText Typo="Typo.subtitle2">Prompt</MudText>
                                             <pre style="white-space:pre-wrap;font-size:0.8rem;">@video.Prompt</pre>
@@ -274,6 +289,17 @@
                                     {
                                         <MudText Typo="Typo.subtitle2">Prompt</MudText>
                                         <pre style="white-space:pre-wrap;font-size:0.8rem;" data-testid="kling-preview-prompt">@klingPreview.Prompt</pre>
+                                    }
+                                    @if (klingPreview.Videos is { Count: > 0 } singleVideo && singleVideo[0].Request is { } singleRequest)
+                                    {
+                                        <MudText Typo="Typo.subtitle2">Request sent to Kling 4</MudText>
+                                        <KlingRequestDetails BodyJson="@singleRequest.BodyJson"
+                                                             Method="@singleRequest.Method"
+                                                             Url="@singleRequest.Url"
+                                                             AgentPortraitId="singleVideo[0].AgentPortraitId"
+                                                             Frames="singleVideo[0].Frames"
+                                                             IsPreview="true"
+                                                             TestId="kling-preview-request" />
                                     }
                                 }
                             </div>
@@ -758,6 +784,13 @@
                                 @audit.SubmittedPrompt
                             </MudText>
                         </MudExpansionPanel>
+                        @if (!string.IsNullOrWhiteSpace(audit.SubmittedRequestJson))
+                        {
+                            <MudExpansionPanel Text="Submitted Kling 4 request (every parameter)">
+                                <KlingRequestDetails BodyJson="@audit.SubmittedRequestJson"
+                                                     TestId="campaign-submitted-request" />
+                            </MudExpansionPanel>
+                        }
                     </MudExpansionPanels>
                 }
             }
@@ -822,7 +855,8 @@
                                          IsReadOnly="IsReadOnly"
                                          ShowGuideLink="libraryEnabled"
                                          VideoStrategy="job.VideoStrategy"
-                                         ProviderAudit="job.ProviderAudit" />
+                                         ProviderAudit="job.ProviderAudit"
+                                         ShowProviderRequests="isPlatformAdmin" />
             <CampaignPerformancePanel JobId="job.Id" Stamp="job.UpdatedAtUtc" IsReadOnly="IsReadOnly" />
         }
 
@@ -980,6 +1014,7 @@
     private bool busy;
     private bool previewingKling;
     private KlingNativePresenterPreview? klingPreview;
+    private bool klingNativePresenterPilot;
     private string? presenterOpening;
     private string? presenterTour;
     private string? presenterClosing;
@@ -1169,6 +1204,8 @@
             klingNativePresenterEnabled = await Service.IsKlingNativePresenterEnabledAsync(
                 userId,
                 pollingCancellation.Token);
+            klingNativePresenterPilot = klingNativePresenterEnabled
+                && await Service.IsKlingNativePresenterPilotAsync(userId, pollingCancellation.Token);
             if ((!klingFullTourEnabled && selectedVideoStrategy == CampaignVideoStrategy.Kling4FullTour)
                 || (!klingNativePresenterEnabled
                     && selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter))

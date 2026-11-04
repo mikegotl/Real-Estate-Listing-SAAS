@@ -162,6 +162,43 @@ public sealed record VerticalCreativeRecipe(
         }
     }
 
+    /// <summary>
+    /// The same recipe stretched or squeezed to another allowed length: every beat keeps its share of the video, in
+    /// order, and the last beat absorbs the rounding so the beats still end exactly on the new length.
+    /// </summary>
+    public VerticalCreativeRecipe RetimedTo(int durationSeconds)
+    {
+        if (!CampaignVideoVariant.AllowedDurations.Contains(durationSeconds))
+        {
+            throw new ArgumentOutOfRangeException(nameof(durationSeconds), $"Duration {durationSeconds} s is not allowed.");
+        }
+
+        if (durationSeconds == DurationSeconds)
+        {
+            return this;
+        }
+
+        var ordered = Beats.OrderBy(beat => beat.Order).ToArray();
+        var targetMs = durationSeconds * 1_000;
+        var sourceMs = Math.Max(DurationSeconds * 1_000, 1);
+        var retimed = new List<VerticalRecipeBeat>(ordered.Length);
+        var cursor = 0;
+        for (var index = 0; index < ordered.Length; index++)
+        {
+            var remainingBeats = ordered.Length - index - 1;
+            var length = index == ordered.Length - 1
+                ? targetMs - cursor
+                : Math.Clamp(
+                    (int)Math.Round(ordered[index].DurationMs * (double)targetMs / sourceMs, MidpointRounding.AwayFromZero),
+                    1,
+                    targetMs - cursor - remainingBeats);
+            retimed.Add(ordered[index] with { StartMs = cursor, DurationMs = length });
+            cursor += length;
+        }
+
+        return this with { DurationSeconds = durationSeconds, Beats = retimed };
+    }
+
     public CampaignVideoVariantPlan ToVariantPlan(int sequence, string hookVariant = CampaignVideoVariant.DefaultHookVariant) => new(
         Format,
         Purpose,

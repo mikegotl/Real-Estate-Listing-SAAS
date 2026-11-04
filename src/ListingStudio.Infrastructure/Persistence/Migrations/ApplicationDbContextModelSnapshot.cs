@@ -678,6 +678,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20000)
                         .HasColumnType("character varying(20000)");
 
+                    b.Property<string>("FullTourSubmittedRequestJson")
+                        .HasMaxLength(40000)
+                        .HasColumnType("character varying(40000)");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
@@ -1418,6 +1422,10 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.Property<string>("KlingSubmittedPrompt")
                         .HasMaxLength(20000)
                         .HasColumnType("character varying(20000)");
+
+                    b.Property<string>("KlingSubmittedRequestJson")
+                        .HasMaxLength(40000)
+                        .HasColumnType("character varying(40000)");
 
                     b.Property<string>("NarrationLocalizationJson")
                         .HasColumnType("text");

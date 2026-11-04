@@ -13,10 +13,11 @@ namespace ListingStudio.IntegrationTests;
 public sealed partial class FfmpegRenderingTests
 {
     [Theory]
-    [InlineData(VerticalCreativeFormat.WowFeature)]
-    [InlineData(VerticalCreativeFormat.PriceFirst)]
-    [InlineData(VerticalCreativeFormat.HostedPov)]
-    public async Task KlingNativePresenterLibraryVariantRendersWithKlingSound(VerticalCreativeFormat format)
+    [InlineData(VerticalCreativeFormat.WowFeature, null)]
+    [InlineData(VerticalCreativeFormat.WowFeature, NativePresenterVideoPolicy.PilotWowFeatureSeconds)]
+    [InlineData(VerticalCreativeFormat.PriceFirst, null)]
+    [InlineData(VerticalCreativeFormat.HostedPov, null)]
+    public async Task KlingNativePresenterLibraryVariantRendersWithKlingSound(VerticalCreativeFormat format, int? pilotSeconds)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"kling-native-variant-{format}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -28,6 +29,11 @@ public sealed partial class FfmpegRenderingTests
         });
         var input = RecipeFixture.Rich();
         var recipe = VerticalCreativePlan.Create(input).Recipes.Single(candidate => candidate.Format == format);
+        if (pilotSeconds is { } shorter)
+        {
+            // Pilot mode plans the Wow feature at the shorter Kling length.
+            recipe = recipe.RetimedTo(shorter);
+        }
         var (master, _, _, _) = await CreateRoomTourAsync(directory);
         var assets = new List<VideoRenderMediaAsset>();
         foreach (var (photo, index) in input.Photos.Select((photo, index) => (photo, index)))

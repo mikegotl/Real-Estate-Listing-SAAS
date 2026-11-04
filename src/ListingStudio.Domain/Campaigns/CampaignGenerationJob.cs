@@ -175,6 +175,9 @@ public sealed class CampaignGenerationJob
 
     public string? FullTourSubmittedPrompt { get; private set; }
 
+    /// <summary>The exact JSON body sent to Kling 4, including the uploaded image URLs; no credentials.</summary>
+    public string? FullTourSubmittedRequestJson { get; private set; }
+
     public DateTimeOffset? FullTourSubmittedAtUtc { get; private set; }
 
     public string? FullTourAssetPath { get; private set; }
@@ -377,6 +380,7 @@ public sealed class CampaignGenerationJob
         FullTourProviderRequestId = null;
         FullTourGenerationVersion = null;
         FullTourSubmittedPrompt = null;
+        FullTourSubmittedRequestJson = null;
         FullTourSubmittedAtUtc = null;
         FullTourAssetPath = null;
         FullTourContentType = null;
@@ -388,7 +392,8 @@ public sealed class CampaignGenerationJob
         string requestId,
         string generationVersion,
         string submittedPrompt,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? submittedRequestJson = null)
     {
         if (VideoStrategy is not (CampaignVideoStrategy.Kling4FullTour or CampaignVideoStrategy.Kling4NativePresenter))
         {
@@ -398,6 +403,9 @@ public sealed class CampaignGenerationJob
         FullTourProviderRequestId = Required(requestId, 200, nameof(requestId));
         FullTourGenerationVersion = Required(generationVersion, 200, nameof(generationVersion));
         FullTourSubmittedPrompt = Required(submittedPrompt, 20_000, nameof(submittedPrompt));
+        FullTourSubmittedRequestJson = string.IsNullOrWhiteSpace(submittedRequestJson)
+            ? null
+            : Required(submittedRequestJson, 40_000, nameof(submittedRequestJson));
         FullTourSubmittedAtUtc = now;
         FullTourAssetPath = null;
         FullTourContentType = null;

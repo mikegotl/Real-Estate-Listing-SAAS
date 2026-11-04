@@ -33,6 +33,7 @@ public sealed class PreFeatureMigrationTests(PostgreSqlWebApplicationFixture fix
         "20261103200359_StoreCampaignProviderPrompt",
         "20261103210321_AddNativePresenterScript",
         "20261104025012_AddPerVideoKlingPresenter",
+        "20261104133320_AddKlingSubmittedRequestJson",
     ];
 
     [Fact]

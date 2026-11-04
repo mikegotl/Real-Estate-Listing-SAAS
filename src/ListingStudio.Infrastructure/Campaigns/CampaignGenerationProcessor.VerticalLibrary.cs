@@ -64,11 +64,17 @@ public sealed partial class CampaignGenerationProcessor
             job.PropertyId,
             VerticalRecommendationContext.From(job.CreativeOptions),
             cancellationToken);
+        // While the Kling native presenter is in pilot, a Kling video can be shorter than its recipe (the Wow feature
+        // is 10 seconds), so the whole library video is planned at the Kling length.
+        var klingPilot = job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+            && await IsKlingNativePresenterPilotAsync(job.OrganizationId, cancellationToken);
         var recipes = plan is null
             ? []
             : plan.Recommendation.Select(job.VerticalSelection!.Value, job.VerticalFormats)
                 .Select(recommendation => plan.Recipes.FirstOrDefault(recipe => recipe.Format == recommendation.Format))
                 .OfType<VerticalCreativeRecipe>()
+                .Select(recipe => recipe.RetimedTo(
+                    NativePresenterVideoPolicy.DurationFor(recipe.Format, recipe.DurationSeconds, klingPilot)))
                 .ToArray();
         if (plan is null || recipes.Length == 0)
         {

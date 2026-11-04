@@ -169,6 +169,16 @@ public sealed class CampaignGenerationService(
             cancellationToken);
     }
 
+    public async Task<bool> IsKlingNativePresenterPilotAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var organizationId = await GetOrganizationIdAsync(userId, cancellationToken);
+        return KlingNativePresenterRelease.IsPilot(
+            await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
+            organizationId);
+    }
+
     public async Task<KlingNativePresenterPreview?> PreviewKlingNativePresenterAsync(
         string userId,
         Guid propertyId,
@@ -241,10 +251,14 @@ public sealed class CampaignGenerationService(
         {
             var verticalPlan = await verticalPlanningService.PlanForOrganizationAsync(
                 organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
+            var pilot = KlingNativePresenterRelease.IsPilot(
+                await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
+                organizationId);
             foreach (var format in libraryFormats.Distinct())
             {
                 var recipe = verticalPlan?.Recipes.FirstOrDefault(candidate => candidate.Format == format);
-                var seconds = recipe?.DurationSeconds ?? NativePresenterVideoPolicy.DefaultDurationSeconds;
+                var seconds = NativePresenterVideoPolicy.DurationFor(
+                    format, recipe?.DurationSeconds ?? NativePresenterVideoPolicy.DefaultDurationSeconds, pilot);
                 if (seconds > NativePresenterVideoPolicy.MaximumDurationSeconds)
                 {
                     continue;
@@ -297,11 +311,12 @@ public sealed class CampaignGenerationService(
             }
 
             string? prompt = null;
+            ProviderRequestPreview? providerRequest = null;
             if (plan.Frames.Count > 0)
             {
                 try
                 {
-                    prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(new NativePresenterVideoSubmission(
+                    var submission = new NativePresenterVideoSubmission(
                         new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
                         plan.Frames.Select(frame => new NativePresenterTourFrame(
                                 new WalkthroughVideoFrame(Stream.Null, frame.MimeType),
@@ -315,7 +330,19 @@ public sealed class CampaignGenerationService(
                         plan.MusicDirection,
                         "preview",
                         plan.Script.Tour,
-                        request.Seconds));
+                        request.Seconds,
+                        request.Format is { } libraryFormat
+                            ? NativePresenterVideoPolicy.ResolutionFor(libraryFormat, request.Seconds)
+                            : null);
+                    prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
+
+                    // Photos get their Higgsfield URLs only when they are uploaded at send time, so the preview
+                    // names each one in its place; everything else is the exact body Generate would send.
+                    providerRequest = walkthroughVideoProvider.BuildNativePresenterRequest(
+                        submission,
+                        PreviewImageUrlPlaceholder("your profile headshot"),
+                        plan.Frames.Select((frame, index) => PreviewImageUrlPlaceholder($"photo {index + 1}, {frame.StopName}"))
+                            .ToArray());
                 }
                 catch (ArgumentException exception)
                 {
@@ -335,7 +362,9 @@ public sealed class CampaignGenerationService(
                     .ToArray(),
                 prompt,
                 plan.Script,
-                videoProblems));
+                videoProblems,
+                providerRequest,
+                ownsPortrait ? creativeOptions.AgentPortraitId : null));
         }
 
         // Each video's own problems are listed under its name when there is more than one video.
@@ -355,6 +384,9 @@ public sealed class CampaignGenerationService(
             first?.Script ?? new NativePresenterScript(string.Empty, string.Empty, string.Empty),
             videos);
     }
+
+    /// <summary>Stands in for a photo's Higgsfield upload URL, which only exists once Generate uploads it.</summary>
+    public static string PreviewImageUrlPlaceholder(string photo) => $"<upload of {photo}: URL assigned when sent>";
 
     public async Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
         string userId,
@@ -1057,7 +1089,8 @@ public sealed class CampaignGenerationService(
                     "Higgsfield",
                     job.FullTourProviderRequestId,
                     job.FullTourGenerationVersion,
-                    job.FullTourSubmittedPrompt)
+                    job.FullTourSubmittedPrompt,
+                    job.FullTourSubmittedRequestJson)
                 : null);
     }
 

@@ -1,4 +1,6 @@
+using ListingStudio.Application.Administration;
 using ListingStudio.Application.Videos;
+using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -20,6 +22,15 @@ public sealed partial class CampaignGenerationProcessor
         return variant.IsEligible
             && variant.DurationSeconds is >= NativePresenterVideoPolicy.MinimumDurationSeconds
                 and <= NativePresenterVideoPolicy.MaximumDurationSeconds;
+    }
+
+    /// <summary>
+    /// Pilot: the native-presenter switch is on for this workspace through the pilot list, not for every workspace.
+    /// </summary>
+    private async Task<bool> IsKlingNativePresenterPilotAsync(Guid organizationId, CancellationToken cancellationToken)
+    {
+        var state = await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken);
+        return KlingNativePresenterRelease.IsPilot(state, organizationId);
     }
 
     /// <summary>Where a library video's finished Kling 4 video is kept.</summary>
@@ -187,18 +198,20 @@ public sealed partial class CampaignGenerationProcessor
                 plan.MusicDirection,
                 $"campaign-native-presenter-{job.Id:N}-{variant.Id:N}",
                 plan.Script.Tour,
-                variant.DurationSeconds);
+                variant.DurationSeconds,
+                NativePresenterVideoPolicy.ResolutionFor(variant.Format, variant.DurationSeconds));
             var prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
-            var requestId = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
+            var submitted = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
             dbContext.ChangeTracker.Clear();
             var tracked = await dbContext.CampaignVideoVariants.SingleAsync(
                 candidate => candidate.Id == variant.Id && candidate.OrganizationId == job.OrganizationId,
                 cancellationToken);
             tracked.MarkKlingSubmitted(
-                requestId,
+                submitted.RequestId,
                 $"{walkthroughVideoProvider.NativePresenterGenerationVersion}/{variant.DurationSeconds}s",
                 prompt,
-                timeProvider.GetUtcNow());
+                timeProvider.GetUtcNow(),
+                submitted.Request.BodyJson);
             await dbContext.SaveChangesAsync(cancellationToken);
             dbContext.ChangeTracker.Clear();
             LogLibraryKlingSubmitted(job.Id, library.Id, variant.Id, variant.Format, variant.DurationSeconds);

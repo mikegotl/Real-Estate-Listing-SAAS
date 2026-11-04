@@ -296,9 +296,14 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
             "Generate buyer interest.",
             "Upbeat instrumental with no lyrics.",
             "campaign-native-1");
-        var requestId = await provider.SubmitNativePresenterAsync(submission);
+        var result = await provider.SubmitNativePresenterAsync(submission);
 
-        Assert.Equal("req_native_presenter", requestId);
+        Assert.Equal("req_native_presenter", result.RequestId);
+        // The recorded request is byte for byte the body that was sent, with the real uploaded image URLs.
+        Assert.Equal(handler.Requests[^1].Body, result.Request.BodyJson);
+        Assert.Equal("POST", result.Request.Method);
+        Assert.Equal("https://api.higgsfield.test/kling-video/v4.0/image-to-video", result.Request.Url);
+        Assert.DoesNotContain("secret", result.Request.BodyJson, StringComparison.OrdinalIgnoreCase);
         using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
         var root = generation.RootElement;
         Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("image_url").GetString());
@@ -320,6 +325,42 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Contains("native-presenter", provider.NativePresenterGenerationVersion, StringComparison.Ordinal);
         Assert.Equal(30_000, provider.NativePresenterDurationMs);
         Assert.Contains("Length: 30 seconds.", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NativePresenterRequestUsesTheVideosOwnResolutionOrTheConfiguredOne()
+    {
+        using var client = new HttpClient(new RoutingHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+        var provider = CreateProvider(client);
+        NativePresenterVideoSubmission Submission(string? resolution) => new(
+            new WalkthroughVideoFrame(Stream.Null, "image/jpeg"),
+            [new(new WalkthroughVideoFrame(Stream.Null, "image/jpeg"), "Kitchen", null)],
+            "Look at this kitchen.",
+            "Save this for later.",
+            "Reach.",
+            "Music.",
+            "campaign-native-pilot",
+            "Bright and open.",
+            10,
+            resolution);
+
+        var pilot = provider.BuildNativePresenterRequest(Submission("720p"), "agent", ["kitchen"]);
+        var live = provider.BuildNativePresenterRequest(Submission(null), "agent", ["kitchen"]);
+
+        using (var body = JsonDocument.Parse(pilot.BodyJson))
+        {
+            Assert.Equal("720p", body.RootElement.GetProperty("resolution").GetString());
+            Assert.Equal(10, body.RootElement.GetProperty("duration").GetInt32());
+            Assert.Equal("agent", body.RootElement.GetProperty("image_url").GetString());
+            Assert.Equal("kitchen", body.RootElement.GetProperty("image_urls")[0].GetString());
+        }
+
+        using (var body = JsonDocument.Parse(live.BodyJson))
+        {
+            Assert.Equal("1080p", body.RootElement.GetProperty("resolution").GetString());
+        }
+
+        Assert.Throws<ArgumentException>(() => provider.BuildNativePresenterRequest(Submission(null), "agent", []));
     }
 
     [Fact]
