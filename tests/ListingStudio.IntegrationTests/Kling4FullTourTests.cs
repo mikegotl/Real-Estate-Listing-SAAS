@@ -579,7 +579,7 @@ public sealed partial class CampaignGenerationTests
                 var root = body.RootElement;
                 // Until Generate uploads them, each image slot links this site's copy of the same photo.
                 Assert.Equal($"https://creativelistingstudio.test/agent-portraits/{portraitId}", root.GetProperty("image_url").GetString());
-                Assert.Equal(root.GetProperty("image_url").GetString(), root.GetProperty("end_image_url").GetString());
+                Assert.False(root.TryGetProperty("end_image_url", out _));
                 Assert.Equal(
                     preview.Frames.Select(frame => $"https://creativelistingstudio.test/property-media/{frame.PropertyMediaId}"),
                     root.GetProperty("image_urls").EnumerateArray().Select(item => item.GetString()));

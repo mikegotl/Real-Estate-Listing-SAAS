@@ -707,7 +707,6 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
             {
                 ["image_url"] = agentImageUrl,
                 ["image_urls"] = tourImageUrls,
-                ["end_image_url"] = agentImageUrl,
                 ["prompt"] = BuildNativePresenterPrompt(submission),
                 ["duration"] = submission.DurationSeconds,
             }));

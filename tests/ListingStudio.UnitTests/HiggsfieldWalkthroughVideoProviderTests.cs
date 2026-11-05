@@ -310,7 +310,8 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal(2, root.GetProperty("image_urls").GetArrayLength());
         Assert.Equal("https://cdn.storage.test/frame-2.jpg", root.GetProperty("image_urls")[0].GetString());
         Assert.Equal("https://cdn.storage.test/frame-3.jpg", root.GetProperty("image_urls")[1].GetString());
-        Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("end_image_url").GetString());
+        // The agent is only in the opening shot, so the video must not be pinned to end on the portrait.
+        Assert.False(root.TryGetProperty("end_image_url", out _));
         Assert.Equal(30, root.GetProperty("duration").GetInt32());
         Assert.Equal("1080p", root.GetProperty("resolution").GetString());
         // The renderer uses Kling's own sound as the whole soundtrack, so it must be asked for explicitly.
@@ -318,7 +319,10 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal("9:16", root.GetProperty("aspect_ratio").GetString());
         var prompt = root.GetProperty("prompt").GetString()!;
         Assert.Equal(provider.BuildNativePresenterPrompt(submission), prompt);
-        Assert.Contains("same real-estate agent shown in the first and last keyframe", prompt, StringComparison.Ordinal);
+        Assert.Contains("standing in front of the house", prompt.ReplaceLineEndings(" "), StringComparison.Ordinal);
+        Assert.Contains("The agent appears on camera only in the opening shot", prompt.ReplaceLineEndings(" "), StringComparison.Ordinal);
+        Assert.DoesNotContain("return to the agent", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("first and last keyframe", prompt, StringComparison.Ordinal);
         Assert.Contains("says exactly: \"Welcome to your next home.\"", prompt, StringComparison.Ordinal);
         Assert.Contains("A large center island.", prompt, StringComparison.Ordinal);
         Assert.Contains("Upbeat instrumental with no lyrics.", prompt, StringComparison.Ordinal);
