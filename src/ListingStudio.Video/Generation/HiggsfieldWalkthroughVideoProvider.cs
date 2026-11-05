@@ -130,13 +130,17 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
 
     public const string NativePresenterPromptPreamble = """
         Create one polished real-estate campaign video of the requested length with native synchronized speech and tasteful
-        instrumental background music. The same real-estate agent shown in the first and last keyframe is the on-camera
-        presenter. Preserve the agent's identity, face, skin tone, hair and clothing. Begin with the agent speaking the
-        exact opening line, move into a brisk stabilized property tour through every supplied middle keyframe in its
-        exact order, then return to the same agent for the exact closing line. Lower the music clearly under speech.
+        instrumental background music. The real-estate agent in the image_url photo is the on-camera presenter; that
+        photo is only a reference for the agent's appearance, not a shot of its own. Preserve the agent's identity, face,
+        skin tone, hair and clothing. The opening shot is the first tour keyframe with the agent placed into it, standing
+        in front of the house and facing the camera while speaking the exact opening line. As the line ends, the agent
+        gestures toward the home and the camera moves past the agent into the walk-through, continuing to the next tour
+        keyframe. Then continue a brisk stabilized property tour through every remaining tour keyframe in its exact order.
+        The agent appears on camera only in the opening shot; after it, the agent is heard but not seen, and the video
+        ends inside the tour, not on the agent. Lower the music clearly under speech.
         Preserve the real property's architecture, layout, doors, windows, fixtures, finishes, furniture and landscaping.
         Do not invent rooms, amenities, views, people, claims, text, logos or contact information. Only mention the
-        verified details supplied below. Do not show the agent inside a room unless a supplied keyframe does so.
+        verified details supplied below. Do not show the agent inside a room.
         When an exact tour voiceover is supplied, the agent's voice speaks it word for word over the tour, and the agent
         says nothing beyond the supplied opening, voiceover and closing.
         """;
@@ -189,7 +193,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                     ? "Identify the space only; make no additional claim."
                     : $"Approved detail to mention briefly: {Clean(frame.ApprovedHighlight, 240, nameof(frame.ApprovedHighlight))}";
             var direction = index + 1 >= submission.TourFrames.Count
-                ? "Then return to the agent for the closing."
+                ? "Hold on this space for the closing voiceover; do not cut back to the agent."
                 : frame.DirectionToNext switch
                 {
                     WalkthroughDirection.Ahead => "Continue straight ahead to the next keyframe.",
@@ -205,13 +209,13 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         return $"""
             {NativePresenterPromptPreamble}
             Length: {submission.DurationSeconds} seconds.
-            The agent says exactly: "{Clean(submission.OpeningLine, 300, nameof(submission.OpeningLine))}"
+            Opening shot (first tour keyframe), the agent on camera in front of the house says exactly: "{Clean(submission.OpeningLine, 300, nameof(submission.OpeningLine))}"
             Campaign goal: {Clean(submission.CampaignGoal, 160, nameof(submission.CampaignGoal))}
             Music: {Clean(submission.MusicDirection, 160, nameof(submission.MusicDirection))}
-            Pace: a confident introduction, followed by a faster approximately 1.5x walking pace through the home.
+            Pace: a confident introduction in front of the house, followed by a faster approximately 1.5x walking pace through the home.
             Required ordered tour:
             {string.Join('\n', route)}{(exactVoiceover is null ? string.Empty : $"\nOver the tour, the agent's voice says exactly: \"{exactVoiceover}\"")}
-            The agent closes by saying exactly: "{Clean(submission.ClosingLine, 300, nameof(submission.ClosingLine))}"
+            Over the final tour shot, without appearing on camera, the agent's voice closes by saying exactly: "{Clean(submission.ClosingLine, 300, nameof(submission.ClosingLine))}"
             """;
     }
 
@@ -408,7 +412,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         var body = new FullTourGenerationRequest(
             agentImageUrl,
             tourImageUrls.ToArray(),
-            agentImageUrl,
+            null,
             BuildNativePresenterPrompt(submission),
             submission.DurationSeconds,
             OptionalField(submission.Resolution) ?? configuration.FullTourResolution,
@@ -684,7 +688,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     private sealed record FullTourGenerationRequest(
         [property: JsonPropertyName("image_url")] string ImageUrl,
         [property: JsonPropertyName("image_urls"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? ImageUrls,
-        [property: JsonPropertyName("end_image_url")] string EndImageUrl,
+        [property: JsonPropertyName("end_image_url"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndImageUrl,
         [property: JsonPropertyName("prompt")] string Prompt,
         [property: JsonPropertyName("duration")] int Duration,
         [property: JsonPropertyName("resolution")] string Resolution,
