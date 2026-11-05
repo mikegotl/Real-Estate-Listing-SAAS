@@ -40,8 +40,8 @@ public sealed record FeatureFlagState(
 public static class KlingNativePresenterRelease
 {
     /// <summary>
-    /// On for this workspace through the pilot list rather than for every workspace. Pilot Wow feature videos are
-    /// 10-second 720p Kling videos; live ones keep the full length at 1080p.
+    /// On for this workspace through the pilot list rather than for every workspace. Pilot library videos are
+    /// 15-second 720p Kling videos; live ones keep their full length at 1080p.
     /// </summary>
     public static bool IsPilot(FeatureFlagState state, Guid organizationId)
     {

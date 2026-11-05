@@ -248,18 +248,18 @@ public sealed class CampaignGenerationService(
         // One request per library video of 30 seconds or less, exactly as the Worker would plan them; otherwise the
         // one shared 30-second vertical video.
         var requests = new List<(VerticalCreativeFormat? Format, int Seconds, Guid? Lead, NativePresenterScript? Script)>();
+        var pilot = KlingNativePresenterRelease.IsPilot(
+            await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
+            organizationId);
         if (usesVerticalLibrary && libraryFormats is { Count: > 0 })
         {
             var verticalPlan = await verticalPlanningService.PlanForOrganizationAsync(
                 organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
-            var pilot = KlingNativePresenterRelease.IsPilot(
-                await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
-                organizationId);
             foreach (var format in libraryFormats.Distinct())
             {
                 var recipe = verticalPlan?.Recipes.FirstOrDefault(candidate => candidate.Format == format);
                 var seconds = NativePresenterVideoPolicy.DurationFor(
-                    format, recipe?.DurationSeconds ?? NativePresenterVideoPolicy.DefaultDurationSeconds, pilot);
+                    recipe?.DurationSeconds ?? NativePresenterVideoPolicy.DefaultDurationSeconds, pilot);
                 if (seconds > NativePresenterVideoPolicy.MaximumDurationSeconds)
                 {
                     continue;
@@ -332,9 +332,7 @@ public sealed class CampaignGenerationService(
                         "preview",
                         plan.Script.Tour,
                         request.Seconds,
-                        request.Format is { } libraryFormat
-                            ? NativePresenterVideoPolicy.ResolutionFor(libraryFormat, request.Seconds)
-                            : null);
+                        request.Format is null ? null : NativePresenterVideoPolicy.ResolutionFor(pilot));
                     prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
 
                     // Photos get their Higgsfield URLs only when they are uploaded at send time, so the preview

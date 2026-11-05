@@ -83,8 +83,8 @@ public interface ICampaignGenerationService
     Task<bool> IsKlingNativePresenterEnabledAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Whether the Kling native presenter is on for this workspace only through the pilot list. In pilot the Wow
-    /// feature is a 10-second 720p Kling video.
+    /// Whether the Kling native presenter is on for this workspace only through the pilot list. In pilot every
+    /// library video is a 15-second 720p Kling video.
     /// </summary>
     Task<bool> IsKlingNativePresenterPilotAsync(string userId, CancellationToken cancellationToken = default);
 

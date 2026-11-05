@@ -132,7 +132,7 @@
                         Exact wording and room order are generative and the finished video is validated.
                         @if (klingNativePresenterPilot)
                         {
-                            <span data-testid="kling-pilot-note"> Pilot mode: the Wow feature is a 10-second 720p Kling video; live mode makes it full length at 1080p.</span>
+                            <span data-testid="kling-pilot-note"> Pilot mode: every video is a 15-second 720p Kling video; live mode makes each one its full length at 1080p.</span>
                         }
                     </MudAlert>
                     @if (KlingVideoSlots.Count > 0)
@@ -403,7 +403,15 @@
                     </MudText>
                 }
             }
-            @if (roomNarration.HasNarration)
+            @if (KlingOnlyCampaign)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3" data-testid="kling-hidden-options">
+                    Kling 4 makes the speech and music for every video in this campaign, so the voiceover, music, voice,
+                    style and walk-through motion settings are hidden. Your script for each video is under Tour video
+                    strategy above.
+                </MudAlert>
+            }
+            @if (roomNarration.HasNarration && !KlingOnlyCampaign)
             {
                 <MudText Typo="Typo.subtitle2" Class="mt-2">Voiceover script</MudText>
                 <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
@@ -438,6 +446,8 @@
                     </MudAlert>
                 }
             }
+            @if (!KlingOnlyCampaign)
+            {
             <MudText Typo="Typo.subtitle2" Class="mt-2">Sound</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
                 The music plays in every video you selected.
@@ -475,6 +485,7 @@
                     }
                 </MudItem>
             </MudGrid>
+            }
             <CaptionStylePicker Value="selectedCaptionStyle" ValueChanged="SetCaptionStyle" Disabled="@(busy || IsReadOnly)" />
             @if (LibraryMode)
             {
@@ -492,6 +503,8 @@
                                  Label="Show my name and phone on short videos" />
                 </MudItem>
                 </MudGrid>
+                @if (!KlingOnlyCampaign)
+                {
                 <MudExpansionPanels Elevation="0" Outlined="true" Class="mt-2">
                     <MudExpansionPanel Text="Customize" data-testid="vertical-customize">
                         <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
@@ -517,6 +530,7 @@
                         </MudGrid>
                     </MudExpansionPanel>
                 </MudExpansionPanels>
+                }
             }
             else
             {
@@ -547,21 +561,21 @@
                 </MudItem>
             </MudGrid>
             }
-            @if (SilentLibraryVideo)
+            @if (SilentLibraryVideo && !KlingOnlyCampaign)
             {
                 <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="silent-vertical">
                     The Wow feature video has no voiceover, so with No music it will be silent. Pick a music track, or
                     choose "None, I'll add a sound in TikTok or Instagram" if you'll add one there.
                 </MudAlert>
             }
-            @if (SilentVerticalVideo && !LibraryMode)
+            @if (SilentVerticalVideo && !LibraryMode && !KlingOnlyCampaign)
             {
                 <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="silent-vertical">
                     With no voiceover and no music, the vertical video will be silent. Pick a music track or a voiceover,
                     or choose "None, I'll add a sound in TikTok or Instagram" if you'll add one there.
                 </MudAlert>
             }
-            @if (aerialIntro is { IsUsedInVideos: true })
+            @if (aerialIntro is { IsUsedInVideos: true } && !KlingOnlyCampaign)
             {
                 <MudPaper Outlined="true" Class="pa-3 mt-3" data-testid="approved-aerial-campaign-option">
                     <MudCheckBox T="bool"
@@ -582,7 +596,8 @@
             <MudGrid Spacing="2">
                 @foreach (var option in CreativeElementOptions)
                 {
-                    if (option.Element == CampaignVideoElement.WalkthroughMotion && aerialIntro is { IsUsedInVideos: true })
+                    if (option.Element == CampaignVideoElement.WalkthroughMotion
+                        && (aerialIntro is { IsUsedInVideos: true } || KlingOnlyCampaign))
                     {
                         continue;
                     }
@@ -614,11 +629,15 @@
                 </MudText>
             }
             <MudDivider Class="my-4" />
-            <MudText Typo="Typo.subtitle2">Narration and captions</MudText>
+            <MudText Typo="Typo.subtitle2">@(KlingOnlyCampaign ? "Captions" : "Narration and captions")</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
-                Choose the presentation region, spoken language, caption language, and voice accent. Region guides wording and pronunciation; it does not infer anyone's nationality.
+                @(KlingOnlyCampaign
+                    ? "Choose the caption language. Kling speaks each video's script as written."
+                    : "Choose the presentation region, spoken language, caption language, and voice accent. Region guides wording and pronunciation; it does not infer anyone's nationality.")
             </MudText>
             <MudGrid Spacing="2">
+                @if (!KlingOnlyCampaign)
+                {
                 <MudItem xs="12" sm="6">
                     <MudSelect T="CampaignNarrationRegion" Label="Narration region" @bind-Value="selectedNarrationRegion" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
                         @foreach (var region in Enum.GetValues<CampaignNarrationRegion>())
@@ -635,6 +654,7 @@
                         }
                     </MudSelect>
                 </MudItem>
+                }
                 <MudItem xs="12" sm="6">
                     <MudSelect T="CampaignLanguage" Label="Caption language" @bind-Value="selectedCaptionLanguage" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
                         @foreach (var language in Enum.GetValues<CampaignLanguage>())
@@ -643,6 +663,8 @@
                         }
                     </MudSelect>
                 </MudItem>
+                @if (!KlingOnlyCampaign)
+                {
                 <MudItem xs="12" sm="6">
                     <MudSelect T="CampaignVoiceAccent" Label="Voice accent" @bind-Value="selectedVoiceAccent" Variant="Variant.Outlined" Disabled="@(busy || IsReadOnly)">
                         @foreach (var accent in Enum.GetValues<CampaignVoiceAccent>())
@@ -651,10 +673,14 @@
                         }
                     </MudSelect>
                 </MudItem>
+                }
             </MudGrid>
+            @if (!KlingOnlyCampaign)
+            {
             <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
                 Accent is an AI voice direction and may vary by voice. Creative Listing Studio always discloses that narration is AI-generated.
             </MudAlert>
+            }
             <MudDivider Class="my-4" />
             <MudText Typo="Typo.subtitle2">Agent presenter</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
@@ -698,10 +724,13 @@
                     }
                 </MudAlert>
             }
+            @if (!KlingOnlyCampaign)
+            {
             <MudCheckBox T="bool"
                          @bind-Value="selectedLocalizeAgentCard"
                          Disabled="@(busy || IsReadOnly || !(selectedCreativeElements.HasFlag(CampaignVideoElement.AgentPortrait) || selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)))"
                          Label="Use the selected language and accent during the agent closing card" />
+            }
         </MudPaper>
     }
     else if (job.RequestedOutputs != CampaignOutputSelection.LegacyStandard)
@@ -1641,6 +1670,16 @@
     /// <summary>The recommendation-led workflow: the library is on for the workspace and a vertical video is selected.</summary>
     private bool LibraryMode => libraryEnabled && !IsReadOnly && selectedOutputs.HasFlag(CampaignOutputSelection.TikTok);
 
+    /// <summary>
+    /// Every video in the campaign is a Kling 4 native-presenter video: Kling makes the speech and music, so voice,
+    /// music, style and walk-through motion settings do nothing and are hidden. Still-image posts use none of them.
+    /// </summary>
+    private bool KlingOnlyCampaign => selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+        && LibraryMode
+        && KlingVideoSlots.Count > 0
+        && LongLibraryVideos.Count == 0
+        && (selectedOutputs & ~(CampaignOutputSelection.TikTok | CampaignOutputSelection.FacebookStillPost)) == CampaignOutputSelection.None;
+
     /// <summary>Eligible videos exist but the agent unticked them all.</summary>
     private bool LibraryNeedsPick => LibraryMode && verticalPicker is { Chosen.Count: 0, Eligible.Count: > 0 };
 
@@ -2061,10 +2100,13 @@
         selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter && LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker
             ? picker.Chosen
                 .Select(format => (Format: format, Recipe: verticalPlan?.Recipes.FirstOrDefault(recipe => recipe.Format == format)))
-                .Where(item => (item.Recipe?.DurationSeconds ?? NativePresenterScript.DefaultSeconds) <= NativePresenterScript.DefaultSeconds)
+                .Select(item => (item.Format, item.Recipe, Seconds: NativePresenterVideoPolicy.DurationFor(
+                    item.Recipe?.DurationSeconds ?? NativePresenterScript.DefaultSeconds,
+                    klingNativePresenterPilot)))
+                .Where(item => item.Seconds <= NativePresenterScript.DefaultSeconds)
                 .Select(item => new KlingVideoSlot(
                     item.Format,
-                    item.Recipe?.DurationSeconds ?? NativePresenterScript.DefaultSeconds,
+                    item.Seconds,
                     item.Recipe?.PrimaryPropertyMediaId))
                 .ToArray()
             : [];
@@ -2073,7 +2115,8 @@
     private IReadOnlyList<VerticalCreativeFormat> LongLibraryVideos =>
         selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter && LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker
             ? picker.Chosen
-                .Where(format => verticalPlan?.Recipes.FirstOrDefault(recipe => recipe.Format == format) is { DurationSeconds: > NativePresenterScript.DefaultSeconds })
+                .Where(format => !klingNativePresenterPilot
+                    && verticalPlan?.Recipes.FirstOrDefault(recipe => recipe.Format == format) is { DurationSeconds: > NativePresenterScript.DefaultSeconds })
                 .ToArray()
             : [];
 

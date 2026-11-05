@@ -23,36 +23,39 @@ public sealed class KlingPilotModeTests
     }
 
     [Fact]
-    public void OnlyThePilotWowFeatureIsTenSecondsAt720p()
+    public void EveryPilotVideoIsFifteenSecondsAt720pAndLiveKeepsItsLengthAt1080p()
     {
-        Assert.Equal(10, NativePresenterVideoPolicy.DurationFor(VerticalCreativeFormat.WowFeature, 15, pilot: true));
-        Assert.Equal(15, NativePresenterVideoPolicy.DurationFor(VerticalCreativeFormat.WowFeature, 15, pilot: false));
-        Assert.Equal(30, NativePresenterVideoPolicy.DurationFor(VerticalCreativeFormat.PriceFirst, 30, pilot: true));
-        Assert.Equal("720p", NativePresenterVideoPolicy.ResolutionFor(VerticalCreativeFormat.WowFeature, 10));
-        Assert.Null(NativePresenterVideoPolicy.ResolutionFor(VerticalCreativeFormat.WowFeature, 15));
-        Assert.Null(NativePresenterVideoPolicy.ResolutionFor(VerticalCreativeFormat.PriceFirst, 30));
+        foreach (var recipeSeconds in new[] { 15, 30, 45, 60 })
+        {
+            Assert.Equal(15, NativePresenterVideoPolicy.DurationFor(recipeSeconds, pilot: true));
+            Assert.Equal(recipeSeconds, NativePresenterVideoPolicy.DurationFor(recipeSeconds, pilot: false));
+        }
+
+        Assert.Equal("720p", NativePresenterVideoPolicy.ResolutionFor(pilot: true));
+        Assert.Null(NativePresenterVideoPolicy.ResolutionFor(pilot: false));
     }
 
-    [Fact]
-    public void RetimingKeepsEveryBeatInOrderAndEndsExactlyOnTheNewLength()
+    [Theory]
+    [InlineData(VerticalCreativeFormat.PriceFirst)]
+    [InlineData(VerticalCreativeFormat.HostedPov)]
+    [InlineData(VerticalCreativeFormat.StoryReveal)]
+    public void RetimingKeepsEveryBeatInOrderAndEndsExactlyOnTheNewLength(VerticalCreativeFormat format)
     {
-        var wow = VerticalCreativePlan.Create(RecipeFixture.Rich()).Recipes
-            .Single(recipe => recipe.Format == VerticalCreativeFormat.WowFeature);
-        Assert.Equal(15, wow.DurationSeconds);
+        var recipe = VerticalCreativePlan.Create(RecipeFixture.Rich()).Recipes.Single(candidate => candidate.Format == format);
+        Assert.True(recipe.DurationSeconds > 15);
 
-        var shorter = wow.RetimedTo(NativePresenterVideoPolicy.PilotWowFeatureSeconds);
+        var shorter = recipe.RetimedTo(NativePresenterVideoPolicy.PilotDurationSeconds);
 
-        Assert.Equal(10, shorter.DurationSeconds);
+        Assert.Equal(15, shorter.DurationSeconds);
         Assert.Empty(shorter.Validate());
-        Assert.Equal(wow.Beats.Count, shorter.Beats.Count);
-        Assert.Equal(10_000, shorter.Beats.Sum(beat => beat.DurationMs));
+        Assert.Equal(recipe.Beats.Count, shorter.Beats.Count);
+        Assert.Equal(15_000, shorter.Beats.Sum(beat => beat.DurationMs));
+        Assert.All(shorter.Beats, beat => Assert.True(beat.DurationMs > 0));
         Assert.Equal(
-            wow.Beats.OrderBy(beat => beat.Order).Select(beat => (beat.Kind, beat.PropertyMediaId, beat.Overlay)),
+            recipe.Beats.OrderBy(beat => beat.Order).Select(beat => (beat.Kind, beat.PropertyMediaId, beat.Overlay)),
             shorter.Beats.OrderBy(beat => beat.Order).Select(beat => (beat.Kind, beat.PropertyMediaId, beat.Overlay)));
-        // The 3-second hook keeps its share: two seconds of ten.
-        Assert.Equal(2_000, shorter.Beats.OrderBy(beat => beat.Order).First().DurationMs);
-        Assert.Same(wow, wow.RetimedTo(15));
-        Assert.Throws<ArgumentOutOfRangeException>(() => wow.RetimedTo(12));
+        Assert.Same(recipe, recipe.RetimedTo(recipe.DurationSeconds));
+        Assert.Throws<ArgumentOutOfRangeException>(() => recipe.RetimedTo(12));
     }
 
     [Fact]

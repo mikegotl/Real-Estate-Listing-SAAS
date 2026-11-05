@@ -297,7 +297,7 @@ public sealed class CampaignVideoVariant
     public const int MaximumRecipeVersionLength = 40;
     public const int MaximumIdempotencyKeyLength = 160;
     public const string DefaultHookVariant = "a";
-    public static readonly IReadOnlySet<int> AllowedDurations = new HashSet<int> { 10, 15, 30, 45, 60 };
+    public static readonly IReadOnlySet<int> AllowedDurations = new HashSet<int> { 15, 30, 45, 60 };
 
     private CampaignVideoVariant() { }
 

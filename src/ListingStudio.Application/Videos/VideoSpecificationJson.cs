@@ -28,7 +28,7 @@ public static class VideoSpecificationJson
         public override RequestedDuration Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             var value = reader.GetInt32();
-            return value is >= 10 and <= 900
+            return value is >= 15 and <= 900
                 ? (RequestedDuration)value
                 : throw new JsonException("Requested duration is not supported.");
         }

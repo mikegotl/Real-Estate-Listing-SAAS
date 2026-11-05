@@ -199,7 +199,8 @@ public sealed partial class CampaignGenerationProcessor
                 $"campaign-native-presenter-{job.Id:N}-{variant.Id:N}",
                 plan.Script.Tour,
                 variant.DurationSeconds,
-                NativePresenterVideoPolicy.ResolutionFor(variant.Format, variant.DurationSeconds));
+                NativePresenterVideoPolicy.ResolutionFor(
+                    await IsKlingNativePresenterPilotAsync(job.OrganizationId, cancellationToken)));
             var prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
             var submitted = await walkthroughVideoProvider.SubmitNativePresenterAsync(submission, cancellationToken);
             dbContext.ChangeTracker.Clear();
@@ -326,6 +327,11 @@ public sealed partial class CampaignGenerationProcessor
         Level = LogLevel.Warning,
         Message = "Campaign {JobId} Kling 4 video {VariantId} was refused as busy (HTTP {StatusCode}); submitting again later")]
     private partial void LogLibraryKlingBusy(Guid jobId, Guid variantId, int? statusCode);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Campaign {JobId} Kling 4 video {VariantId}: the campaign voice is longer than the pilot video, so only Kling's own sound is used")]
+    private partial void LogKlingVariantWithoutCampaignVoice(Guid jobId, Guid variantId);
 
     [LoggerMessage(
         Level = LogLevel.Information,

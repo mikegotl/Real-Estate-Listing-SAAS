@@ -397,15 +397,11 @@ public sealed partial class CampaignGenerationTests
                     Assert.Equal("Here is the price and the kitchen.", submission.TourVoiceover);
                 }
 
-                // Pilot: the Wow feature is a 10-second 720p Kling video. Live: full length at the configured 1080p.
-                if (variant.Format == VerticalCreativeFormat.WowFeature)
+                // Pilot: every video is a 15-second 720p Kling video. Live: its full length at the configured 1080p.
+                Assert.Equal(live ? null : NativePresenterVideoPolicy.PilotResolution, submission.Resolution);
+                if (!live)
                 {
-                    Assert.Equal(live ? 15 : NativePresenterVideoPolicy.PilotWowFeatureSeconds, variant.DurationSeconds);
-                    Assert.Equal(live ? null : NativePresenterVideoPolicy.PilotResolution, submission.Resolution);
-                }
-                else
-                {
-                    Assert.Null(submission.Resolution);
+                    Assert.Equal(NativePresenterVideoPolicy.PilotDurationSeconds, variant.DurationSeconds);
                 }
 
                 // The exact request is kept with the real uploaded image URLs, for the admin audit.
@@ -415,6 +411,16 @@ public sealed partial class CampaignGenerationTests
             }
 
             Assert.Contains(variants, variant => variant.Format == VerticalCreativeFormat.WowFeature);
+            if (live)
+            {
+                // Live keeps each recipe's own length: the 15-second Wow feature and 30-second videos.
+                Assert.Contains(kling, variant => variant.DurationSeconds == 30);
+            }
+            else
+            {
+                // Pilot makes every library video, of any length, with its own 15-second Kling call.
+                Assert.All(variants, variant => Assert.Equal(NativePresenterVideoPolicy.PilotDurationSeconds, variant.DurationSeconds));
+            }
             Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
         }
         finally
