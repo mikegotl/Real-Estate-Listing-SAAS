@@ -64,8 +64,8 @@ public sealed partial class CampaignGenerationProcessor
             job.PropertyId,
             VerticalRecommendationContext.From(job.CreativeOptions),
             cancellationToken);
-        // While the Kling native presenter is in pilot, a Kling video can be shorter than its recipe (the Wow feature
-        // is 10 seconds), so the whole library video is planned at the Kling length.
+        // While the Kling native presenter is in pilot, every library video is a 15-second Kling video, so the whole
+        // video is planned at that length.
         var klingPilot = job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
             && await IsKlingNativePresenterPilotAsync(job.OrganizationId, cancellationToken);
         var recipes = plan is null
@@ -74,7 +74,7 @@ public sealed partial class CampaignGenerationProcessor
                 .Select(recommendation => plan.Recipes.FirstOrDefault(recipe => recipe.Format == recommendation.Format))
                 .OfType<VerticalCreativeRecipe>()
                 .Select(recipe => recipe.RetimedTo(
-                    NativePresenterVideoPolicy.DurationFor(recipe.Format, recipe.DurationSeconds, klingPilot)))
+                    NativePresenterVideoPolicy.DurationFor(recipe.DurationSeconds, klingPilot)))
                 .ToArray();
         if (plan is null || recipes.Length == 0)
         {
@@ -374,32 +374,51 @@ public sealed partial class CampaignGenerationProcessor
                 };
             }
 
-            VideoNarrationResult narration;
+            VideoNarrationResult? narration;
             try
             {
                 narration = await GenerateShortFormNarrationAsync(
                     job, specification, localized, cancellationToken, VerticalVariantSpecificationBuilder.BuilderVersion);
+            }
+            catch (InvalidDataException exception) when (NarrationRunsPastVideo(exception)
+                && job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+                && UsesOwnKlingVideo(variant))
+            {
+                // A pilot Kling video can be shorter than the edit its script was written for. Kling's own voice is
+                // the soundtrack there, so the campaign voice (only a fallback) is left out rather than failing it.
+                LogKlingVariantWithoutCampaignVoice(job.Id, variantId);
+                narration = null;
             }
             catch (InvalidDataException exception) when (NarrationRunsPastVideo(exception))
             {
                 throw new InvalidOperationException("The voiceover for this video runs longer than the video.", exception);
             }
 
-            var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
-            specification = specification with
+            if (narration is null)
             {
-                Audio = specification.Audio with
+                specification = specification with
                 {
-                    NarrationSegments = specification.Audio.NarrationSegments
-                        .Select(segment => segment with { Text = spoken[segment.Id] })
-                        .ToArray(),
-                },
-            };
-            VerticalVideoMetrics.RecordNarrationCharacters(recipe.Format, spoken.Values.Sum(text => text.Length));
-            narrationId = narration.Id;
-            timing = narration.Timing;
-            captionText = localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
-            await GenerateVariantPresenterAsync(job, options, narrationId, cancellationToken);
+                    Audio = specification.Audio with { NarrationSegments = [] },
+                };
+            }
+            else
+            {
+                var spoken = localized.SpokenSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+                specification = specification with
+                {
+                    Audio = specification.Audio with
+                    {
+                        NarrationSegments = specification.Audio.NarrationSegments
+                            .Select(segment => segment with { Text = spoken[segment.Id] })
+                            .ToArray(),
+                    },
+                };
+                VerticalVideoMetrics.RecordNarrationCharacters(recipe.Format, spoken.Values.Sum(text => text.Length));
+                narrationId = narration.Id;
+                timing = narration.Timing;
+                captionText = localized.CaptionSegments.ToDictionary(segment => segment.Id, segment => segment.Text);
+                await GenerateVariantPresenterAsync(job, options, narrationId, cancellationToken);
+            }
         }
 
         var final = Grounded(

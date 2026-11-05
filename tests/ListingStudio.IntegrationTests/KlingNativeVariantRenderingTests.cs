@@ -14,9 +14,10 @@ public sealed partial class FfmpegRenderingTests
 {
     [Theory]
     [InlineData(VerticalCreativeFormat.WowFeature, null)]
-    [InlineData(VerticalCreativeFormat.WowFeature, NativePresenterVideoPolicy.PilotWowFeatureSeconds)]
     [InlineData(VerticalCreativeFormat.PriceFirst, null)]
+    [InlineData(VerticalCreativeFormat.PriceFirst, NativePresenterVideoPolicy.PilotDurationSeconds)]
     [InlineData(VerticalCreativeFormat.HostedPov, null)]
+    [InlineData(VerticalCreativeFormat.HostedPov, NativePresenterVideoPolicy.PilotDurationSeconds)]
     public async Task KlingNativePresenterLibraryVariantRendersWithKlingSound(VerticalCreativeFormat format, int? pilotSeconds)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"kling-native-variant-{format}-{Guid.NewGuid():N}");
@@ -31,7 +32,7 @@ public sealed partial class FfmpegRenderingTests
         var recipe = VerticalCreativePlan.Create(input).Recipes.Single(candidate => candidate.Format == format);
         if (pilotSeconds is { } shorter)
         {
-            // Pilot mode plans the Wow feature at the shorter Kling length.
+            // Pilot mode plans every video at the 15-second Kling length.
             recipe = recipe.RetimedTo(shorter);
         }
         var (master, _, _, _) = await CreateRoomTourAsync(directory);

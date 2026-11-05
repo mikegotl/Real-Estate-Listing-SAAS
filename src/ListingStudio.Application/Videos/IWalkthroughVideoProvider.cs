@@ -1,4 +1,3 @@
-using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 
 namespace ListingStudio.Application.Videos;
@@ -25,20 +24,19 @@ public static class NativePresenterVideoPolicy
         Math.Clamp(durationSeconds * MaximumTourFrames / DefaultDurationSeconds, MinimumTourFrames, MaximumTourFrames);
 
     /// <summary>
-    /// While Kling4NativePresenterV1 is on for pilot workspaces only, the Wow feature is a shorter, cheaper 10-second
-    /// 720p Kling video. Once the switch is on for every workspace (live), it is the full-length 1080p video.
+    /// While Kling4NativePresenterV1 is on for pilot workspaces only, every library video is a shorter, cheaper
+    /// 15-second 720p Kling video. Once the switch is on for every workspace (live), each video keeps its recipe
+    /// length and Kling makes it at the configured 1080p.
     /// </summary>
-    public const int PilotWowFeatureSeconds = 10;
+    public const int PilotDurationSeconds = 15;
 
     public const string PilotResolution = "720p";
 
     /// <summary>The library video's length, given its recipe length and whether the presenter is still in pilot.</summary>
-    public static int DurationFor(VerticalCreativeFormat format, int recipeSeconds, bool pilot) =>
-        pilot && format == VerticalCreativeFormat.WowFeature ? PilotWowFeatureSeconds : recipeSeconds;
+    public static int DurationFor(int recipeSeconds, bool pilot) => pilot ? PilotDurationSeconds : recipeSeconds;
 
-    /// <summary>The Kling resolution for a library video; null keeps the configured resolution (1080p).</summary>
-    public static string? ResolutionFor(VerticalCreativeFormat format, int durationSeconds) =>
-        format == VerticalCreativeFormat.WowFeature && durationSeconds == PilotWowFeatureSeconds ? PilotResolution : null;
+    /// <summary>The Kling resolution; null keeps the configured resolution (1080p).</summary>
+    public static string? ResolutionFor(bool pilot) => pilot ? PilotResolution : null;
 }
 
 /// <summary>

@@ -397,15 +397,11 @@ public sealed partial class CampaignGenerationTests
                     Assert.Equal("Here is the price and the kitchen.", submission.TourVoiceover);
                 }
 
-                // Pilot: the Wow feature is a 10-second 720p Kling video. Live: full length at the configured 1080p.
-                if (variant.Format == VerticalCreativeFormat.WowFeature)
+                // Pilot: every video is a 15-second 720p Kling video. Live: its full length at the configured 1080p.
+                Assert.Equal(live ? null : NativePresenterVideoPolicy.PilotResolution, submission.Resolution);
+                if (!live)
                 {
-                    Assert.Equal(live ? 15 : NativePresenterVideoPolicy.PilotWowFeatureSeconds, variant.DurationSeconds);
-                    Assert.Equal(live ? null : NativePresenterVideoPolicy.PilotResolution, submission.Resolution);
-                }
-                else
-                {
-                    Assert.Null(submission.Resolution);
+                    Assert.Equal(NativePresenterVideoPolicy.PilotDurationSeconds, variant.DurationSeconds);
                 }
 
                 // The exact request is kept with the real uploaded image URLs, for the admin audit.
@@ -415,6 +411,16 @@ public sealed partial class CampaignGenerationTests
             }
 
             Assert.Contains(variants, variant => variant.Format == VerticalCreativeFormat.WowFeature);
+            if (live)
+            {
+                // Live keeps each recipe's own length: the 15-second Wow feature and 30-second videos.
+                Assert.Contains(kling, variant => variant.DurationSeconds == 30);
+            }
+            else
+            {
+                // Pilot makes every library video, of any length, with its own 15-second Kling call.
+                Assert.All(variants, variant => Assert.Equal(NativePresenterVideoPolicy.PilotDurationSeconds, variant.DurationSeconds));
+            }
             Assert.True(await campaigns.CancelAsync(owner.UserId, queued.Id));
         }
         finally
@@ -557,7 +563,8 @@ public sealed partial class CampaignGenerationTests
                 CampaignOutputSelection.TikTok,
                 options,
                 null,
-                usesVerticalLibrary: false);
+                usesVerticalLibrary: false,
+                siteBaseUri: new Uri("https://creativelistingstudio.test/"));
             Assert.NotNull(preview);
             Assert.True(preview.IsReady, string.Join("; ", preview.Problems));
             Assert.Equal(["Exterior front", "Kitchen"], preview.Frames.Select(frame => frame.StopName));
@@ -570,13 +577,11 @@ public sealed partial class CampaignGenerationTests
             using (var body = System.Text.Json.JsonDocument.Parse(request.BodyJson))
             {
                 var root = body.RootElement;
-                Assert.Equal(CampaignGenerationService.PreviewImageUrlPlaceholder("your profile headshot"), root.GetProperty("image_url").GetString());
+                // Until Generate uploads them, each image slot links this site's copy of the same photo.
+                Assert.Equal($"https://creativelistingstudio.test/agent-portraits/{portraitId}", root.GetProperty("image_url").GetString());
                 Assert.Equal(root.GetProperty("image_url").GetString(), root.GetProperty("end_image_url").GetString());
                 Assert.Equal(
-                    [
-                        CampaignGenerationService.PreviewImageUrlPlaceholder("photo 1, Exterior front"),
-                        CampaignGenerationService.PreviewImageUrlPlaceholder("photo 2, Kitchen"),
-                    ],
+                    preview.Frames.Select(frame => $"https://creativelistingstudio.test/property-media/{frame.PropertyMediaId}"),
                     root.GetProperty("image_urls").EnumerateArray().Select(item => item.GetString()));
                 Assert.Equal(preview.Prompt, root.GetProperty("prompt").GetString());
                 Assert.Equal(30, root.GetProperty("duration").GetInt32());

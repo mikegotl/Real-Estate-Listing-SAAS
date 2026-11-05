@@ -19,7 +19,7 @@
                     <tr>
                         <td><code>image_url</code></td>
                         <td>@Thumbnail(image, PortraitUrl, "Profile headshot")</td>
-                        <td class="kling-request-value">@image</td>
+                        <td class="kling-request-value">@Value(image)</td>
                     </tr>
                 }
                 @for (var index = 0; index < body.Images.Count; index++)
@@ -29,7 +29,7 @@
                     <tr>
                         <td><code>image_urls[@position]</code></td>
                         <td>@Thumbnail(body.Images[position], frame is null ? null : $"/property-media/{frame.PropertyMediaId}", frame?.StopName ?? $"Photo {position + 1}")</td>
-                        <td class="kling-request-value">@body.Images[position]</td>
+                        <td class="kling-request-value">@Value(body.Images[position])</td>
                     </tr>
                 }
                 @if (body.EndImage is { } endImage)
@@ -37,7 +37,7 @@
                     <tr>
                         <td><code>end_image_url</code></td>
                         <td>@Thumbnail(endImage, PortraitUrl, "Profile headshot")</td>
-                        <td class="kling-request-value">@endImage</td>
+                        <td class="kling-request-value">@Value(endImage)</td>
                     </tr>
                 }
             </tbody>
@@ -63,14 +63,15 @@
         }
     }
     <details class="mt-1">
-        <summary class="mud-typography-caption">Full request body (JSON)</summary>
-        <pre class="kling-request-pre" data-testid="@($"{TestId}-json")">@BodyJson</pre>
+        <summary class="mud-typography-caption">JSON request (formatted)</summary>
+        <pre class="kling-request-pre" data-testid="@($"{TestId}-json")">@formattedJson</pre>
     </details>
     @if (IsPreview)
     {
         <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
-            Photos get their Higgsfield URLs when Generate uploads them, so each URL above names the photo in its place.
-            Everything else is exactly what would be sent. The API key is sent as a header and is never shown.
+            Photos get their Higgsfield URLs when Generate uploads them, so each image URL above links this site's copy
+            of the same photo (open it while signed in). At send time those links are replaced by Higgsfield's upload
+            URLs; everything else is exactly what would be sent. The API key is sent as a header and is never shown.
         </MudText>
     }
 </div>
@@ -99,10 +100,52 @@
     public string TestId { get; set; } = "kling-request";
 
     private ParsedBody? parsed;
+    private string formattedJson = string.Empty;
+
+    private static readonly JsonSerializerOptions Indented = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     private string? PortraitUrl => AgentPortraitId is { } id ? $"/agent-portraits/{id}" : null;
 
-    protected override void OnParametersSet() => parsed = Parse(BodyJson);
+    protected override void OnParametersSet()
+    {
+        parsed = Parse(BodyJson);
+        formattedJson = Format(BodyJson);
+    }
+
+    /// <summary>One parameter per line, however the body was stored; the original text if it is not JSON.</summary>
+    private static string Format(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(document.RootElement, Indented);
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
+    }
+
+    /// <summary>An https URL opens in a new tab; anything else is shown as text.</summary>
+    private static RenderFragment Value(string value) => builder =>
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+        {
+            builder.OpenElement(0, "a");
+            builder.AddAttribute(1, "href", value);
+            builder.AddAttribute(2, "target", "_blank");
+            builder.AddAttribute(3, "rel", "noopener noreferrer");
+            builder.AddContent(4, value);
+            builder.CloseElement();
+            return;
+        }
+
+        builder.AddContent(5, value);
+    };
 
     private static RenderFragment Thumbnail(string value, string? localUrl, string label) => builder =>
     {

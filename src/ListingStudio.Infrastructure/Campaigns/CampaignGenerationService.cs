@@ -187,6 +187,7 @@ public sealed class CampaignGenerationService(
         VerticalCampaignGoal? goal,
         bool usesVerticalLibrary,
         IReadOnlyList<VerticalCreativeFormat>? libraryFormats = null,
+        Uri? siteBaseUri = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(creativeOptions);
@@ -247,18 +248,18 @@ public sealed class CampaignGenerationService(
         // One request per library video of 30 seconds or less, exactly as the Worker would plan them; otherwise the
         // one shared 30-second vertical video.
         var requests = new List<(VerticalCreativeFormat? Format, int Seconds, Guid? Lead, NativePresenterScript? Script)>();
+        var pilot = KlingNativePresenterRelease.IsPilot(
+            await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
+            organizationId);
         if (usesVerticalLibrary && libraryFormats is { Count: > 0 })
         {
             var verticalPlan = await verticalPlanningService.PlanForOrganizationAsync(
                 organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
-            var pilot = KlingNativePresenterRelease.IsPilot(
-                await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
-                organizationId);
             foreach (var format in libraryFormats.Distinct())
             {
                 var recipe = verticalPlan?.Recipes.FirstOrDefault(candidate => candidate.Format == format);
                 var seconds = NativePresenterVideoPolicy.DurationFor(
-                    format, recipe?.DurationSeconds ?? NativePresenterVideoPolicy.DefaultDurationSeconds, pilot);
+                    recipe?.DurationSeconds ?? NativePresenterVideoPolicy.DefaultDurationSeconds, pilot);
                 if (seconds > NativePresenterVideoPolicy.MaximumDurationSeconds)
                 {
                     continue;
@@ -331,17 +332,22 @@ public sealed class CampaignGenerationService(
                         "preview",
                         plan.Script.Tour,
                         request.Seconds,
-                        request.Format is { } libraryFormat
-                            ? NativePresenterVideoPolicy.ResolutionFor(libraryFormat, request.Seconds)
-                            : null);
+                        request.Format is null ? null : NativePresenterVideoPolicy.ResolutionFor(pilot));
                     prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
 
                     // Photos get their Higgsfield URLs only when they are uploaded at send time, so the preview
-                    // names each one in its place; everything else is the exact body Generate would send.
+                    // links this site's copy of each photo in its place; everything else is the exact body Generate
+                    // would send.
                     providerRequest = walkthroughVideoProvider.BuildNativePresenterRequest(
                         submission,
-                        PreviewImageUrlPlaceholder("your profile headshot"),
-                        plan.Frames.Select((frame, index) => PreviewImageUrlPlaceholder($"photo {index + 1}, {frame.StopName}"))
+                        PreviewImageUrl(
+                            siteBaseUri,
+                            ownsPortrait ? $"agent-portraits/{creativeOptions.AgentPortraitId}" : null,
+                            "your profile headshot"),
+                        plan.Frames.Select((frame, index) => PreviewImageUrl(
+                                siteBaseUri,
+                                $"property-media/{frame.PropertyMediaId}",
+                                $"photo {index + 1}, {frame.StopName}"))
                             .ToArray());
                 }
                 catch (ArgumentException exception)
@@ -387,6 +393,15 @@ public sealed class CampaignGenerationService(
 
     /// <summary>Stands in for a photo's Higgsfield upload URL, which only exists once Generate uploads it.</summary>
     public static string PreviewImageUrlPlaceholder(string photo) => $"<upload of {photo}: URL assigned when sent>";
+
+    /// <summary>
+    /// The preview's stand-in for a photo's upload URL: this site's link to the same photo when the site address is
+    /// known, otherwise a placeholder naming the photo.
+    /// </summary>
+    public static string PreviewImageUrl(Uri? siteBaseUri, string? relativePath, string photo) =>
+        siteBaseUri is { IsAbsoluteUri: true } && relativePath is not null
+            ? new Uri(siteBaseUri, relativePath).AbsoluteUri
+            : PreviewImageUrlPlaceholder(photo);
 
     public async Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
         string userId,

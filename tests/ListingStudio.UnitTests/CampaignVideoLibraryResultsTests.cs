@@ -127,9 +127,14 @@ public sealed class CampaignVideoLibraryResultsTests : IAsyncDisposable
         Assert.Contains("https://cdn.test/kitchen.jpg", request, StringComparison.Ordinal);
         Assert.Contains("end_image_url", request, StringComparison.Ordinal);
         Assert.Contains("720p", request, StringComparison.Ordinal);
+        // Shown formatted, one parameter per line, whatever the stored spacing.
+        var json = cut.Find("[data-testid=kling-submitted-request-WowFeature-json]").TextContent;
+        Assert.Contains("\"image_urls\": [", json, StringComparison.Ordinal);
+        Assert.True(json.Split('\n').Length > 6, json);
         Assert.Equal(
-            FakeLibraryService.WowRequestJson,
-            cut.Find("[data-testid=kling-submitted-request-WowFeature-json]").TextContent);
+            System.Text.Json.JsonDocument.Parse(FakeLibraryService.WowRequestJson).RootElement.GetProperty("prompt").GetString(),
+            System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("prompt").GetString());
+        Assert.Equal("https://cdn.test/kitchen.jpg", cut.Find("[data-testid=kling-request-WowFeature] a[href='https://cdn.test/kitchen.jpg']").GetAttribute("href"));
         // A video without a recorded request shows none.
         Assert.Empty(cut.FindAll("[data-testid=kling-request-PriceFirst]"));
     }
