@@ -11,6 +11,7 @@
 @inject IDialogService DialogService
 @inject ILogger<CampaignGenerationManager> Logger
 @inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
 
 <MudPaper Class="pa-6 mt-6">
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
@@ -2179,6 +2180,7 @@
                 selectedGoal,
                 LibraryMode && verticalPicker is { Chosen.Count: > 0 },
                 LibraryMode && verticalPicker is { Chosen.Count: > 0 } picker ? picker.Chosen : null,
+                new Uri(Navigation.BaseUri),
                 pollingCancellation.Token);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or UnauthorizedAccessException)

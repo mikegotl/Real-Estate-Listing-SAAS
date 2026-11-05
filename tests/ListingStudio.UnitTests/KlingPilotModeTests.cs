@@ -55,6 +55,22 @@ public sealed class KlingPilotModeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => wow.RetimedTo(12));
     }
 
+    [Fact]
+    public void PreviewImageSlotsLinkThisSitesCopyOfEachPhoto()
+    {
+        var site = new Uri("https://creativelistingstudio.com/");
+        var media = Guid.NewGuid();
+        Assert.Equal(
+            $"https://creativelistingstudio.com/property-media/{media}",
+            ListingStudio.Infrastructure.Campaigns.CampaignGenerationService.PreviewImageUrl(site, $"property-media/{media}", "photo 1, Kitchen"));
+        Assert.Equal(
+            ListingStudio.Infrastructure.Campaigns.CampaignGenerationService.PreviewImageUrlPlaceholder("photo 1, Kitchen"),
+            ListingStudio.Infrastructure.Campaigns.CampaignGenerationService.PreviewImageUrl(null, $"property-media/{media}", "photo 1, Kitchen"));
+        Assert.Equal(
+            ListingStudio.Infrastructure.Campaigns.CampaignGenerationService.PreviewImageUrlPlaceholder("your profile headshot"),
+            ListingStudio.Infrastructure.Campaigns.CampaignGenerationService.PreviewImageUrl(site, null, "your profile headshot"));
+    }
+
     private static class FeatureFlagKeysForTest
     {
         public const string NativePresenter = ListingStudio.Domain.Administration.FeatureFlagKeys.Kling4NativePresenterV1;

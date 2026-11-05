@@ -360,6 +360,9 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
             Assert.Equal("1080p", body.RootElement.GetProperty("resolution").GetString());
         }
 
+        // Indented, one parameter per line, so the admin preview reads easily.
+        Assert.Contains("\n  \"image_urls\": [", live.BodyJson.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+
         Assert.Throws<ArgumentException>(() => provider.BuildNativePresenterRequest(Submission(null), "agent", []));
     }
 

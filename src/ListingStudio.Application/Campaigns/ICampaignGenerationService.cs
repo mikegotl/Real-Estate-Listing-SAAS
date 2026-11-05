@@ -116,6 +116,7 @@ public interface ICampaignGenerationService
         VerticalCampaignGoal? goal,
         bool usesVerticalLibrary,
         IReadOnlyList<VerticalCreativeFormat>? libraryFormats = null,
+        Uri? siteBaseUri = null,
         CancellationToken cancellationToken = default);
 
     Task<CampaignGenerationResult?> GetLatestAsync(

@@ -187,6 +187,7 @@ public sealed class CampaignGenerationService(
         VerticalCampaignGoal? goal,
         bool usesVerticalLibrary,
         IReadOnlyList<VerticalCreativeFormat>? libraryFormats = null,
+        Uri? siteBaseUri = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(creativeOptions);
@@ -337,11 +338,18 @@ public sealed class CampaignGenerationService(
                     prompt = walkthroughVideoProvider.BuildNativePresenterPrompt(submission);
 
                     // Photos get their Higgsfield URLs only when they are uploaded at send time, so the preview
-                    // names each one in its place; everything else is the exact body Generate would send.
+                    // links this site's copy of each photo in its place; everything else is the exact body Generate
+                    // would send.
                     providerRequest = walkthroughVideoProvider.BuildNativePresenterRequest(
                         submission,
-                        PreviewImageUrlPlaceholder("your profile headshot"),
-                        plan.Frames.Select((frame, index) => PreviewImageUrlPlaceholder($"photo {index + 1}, {frame.StopName}"))
+                        PreviewImageUrl(
+                            siteBaseUri,
+                            ownsPortrait ? $"agent-portraits/{creativeOptions.AgentPortraitId}" : null,
+                            "your profile headshot"),
+                        plan.Frames.Select((frame, index) => PreviewImageUrl(
+                                siteBaseUri,
+                                $"property-media/{frame.PropertyMediaId}",
+                                $"photo {index + 1}, {frame.StopName}"))
                             .ToArray());
                 }
                 catch (ArgumentException exception)
@@ -387,6 +395,15 @@ public sealed class CampaignGenerationService(
 
     /// <summary>Stands in for a photo's Higgsfield upload URL, which only exists once Generate uploads it.</summary>
     public static string PreviewImageUrlPlaceholder(string photo) => $"<upload of {photo}: URL assigned when sent>";
+
+    /// <summary>
+    /// The preview's stand-in for a photo's upload URL: this site's link to the same photo when the site address is
+    /// known, otherwise a placeholder naming the photo.
+    /// </summary>
+    public static string PreviewImageUrl(Uri? siteBaseUri, string? relativePath, string photo) =>
+        siteBaseUri is { IsAbsoluteUri: true } && relativePath is not null
+            ? new Uri(siteBaseUri, relativePath).AbsoluteUri
+            : PreviewImageUrlPlaceholder(photo);
 
     public async Task<NativePresenterScript?> SuggestNativePresenterScriptAsync(
         string userId,

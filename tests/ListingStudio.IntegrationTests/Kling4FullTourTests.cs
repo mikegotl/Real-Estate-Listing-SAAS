@@ -557,7 +557,8 @@ public sealed partial class CampaignGenerationTests
                 CampaignOutputSelection.TikTok,
                 options,
                 null,
-                usesVerticalLibrary: false);
+                usesVerticalLibrary: false,
+                siteBaseUri: new Uri("https://creativelistingstudio.test/"));
             Assert.NotNull(preview);
             Assert.True(preview.IsReady, string.Join("; ", preview.Problems));
             Assert.Equal(["Exterior front", "Kitchen"], preview.Frames.Select(frame => frame.StopName));
@@ -570,13 +571,11 @@ public sealed partial class CampaignGenerationTests
             using (var body = System.Text.Json.JsonDocument.Parse(request.BodyJson))
             {
                 var root = body.RootElement;
-                Assert.Equal(CampaignGenerationService.PreviewImageUrlPlaceholder("your profile headshot"), root.GetProperty("image_url").GetString());
+                // Until Generate uploads them, each image slot links this site's copy of the same photo.
+                Assert.Equal($"https://creativelistingstudio.test/agent-portraits/{portraitId}", root.GetProperty("image_url").GetString());
                 Assert.Equal(root.GetProperty("image_url").GetString(), root.GetProperty("end_image_url").GetString());
                 Assert.Equal(
-                    [
-                        CampaignGenerationService.PreviewImageUrlPlaceholder("photo 1, Exterior front"),
-                        CampaignGenerationService.PreviewImageUrlPlaceholder("photo 2, Kitchen"),
-                    ],
+                    preview.Frames.Select(frame => $"https://creativelistingstudio.test/property-media/{frame.PropertyMediaId}"),
                     root.GetProperty("image_urls").EnumerateArray().Select(item => item.GetString()));
                 Assert.Equal(preview.Prompt, root.GetProperty("prompt").GetString());
                 Assert.Equal(30, root.GetProperty("duration").GetInt32());
