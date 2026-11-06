@@ -32,6 +32,15 @@ public static class NativePresenterVideoPolicy
 
     public const string PilotResolution = "720p";
 
+    /// <summary>
+    /// Pilot Kling videos (15 s at 720p) are made per vertical library video. The single shared vertical video is a
+    /// 30-second edit, so a pilot workspace without the library would send a 30-second 1080p call instead.
+    /// </summary>
+    public const string PilotNeedsLibraryMessage =
+        "The Kling 4 pilot makes 15-second 720p videos only through the vertical video library. Turn on the "
+        + "VerticalVideoLibraryV1 release switch for this workspace (Admin, Release switches), select the TikTok "
+        + "vertical videos and choose which ones to make.";
+
     /// <summary>The library video's length, given its recipe length and whether the presenter is still in pilot.</summary>
     public static int DurationFor(int recipeSeconds, bool pilot) => pilot ? PilotDurationSeconds : recipeSeconds;
 

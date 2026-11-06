@@ -232,7 +232,7 @@ public sealed class CampaignGenerationService(
                 cancellationToken);
         if (!ownsPortrait)
         {
-            problems.Add("Add your own profile headshot; Kling opens and closes on it.");
+            problems.Add("Add your own profile headshot; Kling uses it to place you in front of the house for the opening.");
         }
 
         if (!creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) || !creativeOptions.AgentAvatarConsentConfirmed)
@@ -251,6 +251,10 @@ public sealed class CampaignGenerationService(
         var pilot = KlingNativePresenterRelease.IsPilot(
             await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
             organizationId);
+        if (pilot && !usesVerticalLibrary)
+        {
+            problems.Add(NativePresenterVideoPolicy.PilotNeedsLibraryMessage);
+        }
         if (usesVerticalLibrary && libraryFormats is { Count: > 0 })
         {
             var verticalPlan = await verticalPlanningService.PlanForOrganizationAsync(
@@ -534,6 +538,16 @@ public sealed class CampaignGenerationService(
                 ? scripts.Select(item => item with { Script = item.Script.Normalized() }).ToArray()
                 : null,
         };
+
+        if (usesKlingNativePresenter
+            && !usesLibrary
+            && KlingNativePresenterRelease.IsPilot(
+                await featureStateService.GetAsync(FeatureFlagKeys.Kling4NativePresenterV1, cancellationToken),
+                organizationId))
+        {
+            // Never send a 30-second 1080p Kling call from a pilot workspace: pilot videos are 15 s at 720p.
+            throw new InvalidOperationException(NativePresenterVideoPolicy.PilotNeedsLibraryMessage);
+        }
 
         if (usesKlingNativePresenter && !usesLibrary && !HasThirtySecondVertical(requestedOutputs, creativeOptions))
         {
