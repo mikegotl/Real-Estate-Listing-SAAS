@@ -131,14 +131,15 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
 
     public const string NativePresenterPromptPreamble = """
         Create one polished real-estate campaign video of the requested length with native synchronized speech and tasteful
-        instrumental background music. The real-estate agent in the image_url photo is the on-camera presenter. Use that
-        photo ONLY for the agent's face, hair, skin tone and clothing; ignore its background completely and never show it.
-        The opening shot is tour keyframe 1, exactly as photographed, with the agent placed into that space, standing and
-        facing the camera while speaking the exact opening line. As the line ends, the agent gestures toward the space and
-        the camera moves past the agent into the tour, continuing to the next tour keyframe. Then continue a brisk
-        stabilized property tour through every remaining tour keyframe in its exact order. The agent appears on camera
-        only in the opening shot; after it, the agent is heard but not seen, and the video ends inside the tour, not on
-        the agent. Lower the music clearly under speech.
+        instrumental background music. The real-estate agent in the first image_urls photo is the on-camera presenter; that
+        photo is a reference only, not a shot of its own. Use that photo ONLY for the agent's face, hair, skin tone and
+        clothing; ignore its background completely and never show it.
+        The opening shot is tour keyframe 1, the image_url photo, exactly as photographed, with the agent placed into that
+        space, standing and facing the camera while speaking the exact opening line. As the line ends, the agent gestures
+        toward the space and the camera moves past the agent into the tour, continuing to the next tour keyframe. Then
+        continue a brisk stabilized property tour through every remaining tour keyframe in its exact order. The agent
+        appears on camera only in the opening shot; after it, the agent is heard but not seen, and the video ends inside
+        the tour, not on the agent. Lower the music clearly under speech.
         Every shot must come from a tour keyframe: never create an exterior, room or view that is not one of the keyframes.
         Preserve the real property's architecture, layout, doors, windows, fixtures, finishes, furniture and landscaping.
         Do not invent rooms, amenities, views, people, claims, text, logos or contact information. Only mention the
@@ -216,11 +217,17 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             Campaign goal: {Clean(submission.CampaignGoal, 160, nameof(submission.CampaignGoal))}
             Music: {Clean(submission.MusicDirection, 160, nameof(submission.MusicDirection))}
             Pace: a confident introduction in the {openingSpace}, followed by a faster approximately 1.5x walking pace through the home.
+            {KeyframeSlots(submission.TourFrames.Count)}
             Required ordered tour:
             {string.Join('\n', route)}{(exactVoiceover is null ? string.Empty : $"\nOver the tour, the agent's voice says exactly: \"{exactVoiceover}\"")}
             Over the final tour shot, without appearing on camera, the agent's voice closes by saying exactly: "{Clean(submission.ClosingLine, 300, nameof(submission.ClosingLine))}"
             """;
     }
+
+    /// <summary>Where each tour keyframe is in the request: the first is image_url, the rest follow the headshot.</summary>
+    private static string KeyframeSlots(int count) => count == 1
+        ? $"{NativePresenterVideoPolicy.FirstTourPhotoOpensMarker}."
+        : $"{NativePresenterVideoPolicy.FirstTourPhotoOpensMarker}; tour keyframes 2 to {count} are the remaining image_urls photos, in order.";
 
     private static string DirectionLine(string movement) =>
         $"\nDirection: the next space is {movement}";
@@ -424,10 +431,13 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
             throw new ArgumentException("There must be one image URL for each Tour Map photo.", nameof(tourImageUrls));
         }
 
+        // Kling uses image_url as the literal first frame, so it is the first tour photo: the video opens in that room
+        // instead of in the headshot's own background. The headshot goes first in image_urls as the presenter
+        // reference, followed by the rest of the tour in order.
         var configuration = options.Value;
         var body = new FullTourGenerationRequest(
-            agentImageUrl,
-            tourImageUrls.ToArray(),
+            tourImageUrls[0],
+            [agentImageUrl, .. tourImageUrls.Skip(1)],
             null,
             BuildNativePresenterPrompt(submission),
             submission.DurationSeconds,

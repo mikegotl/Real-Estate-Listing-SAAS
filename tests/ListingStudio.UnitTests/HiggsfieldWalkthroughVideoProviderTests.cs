@@ -307,9 +307,11 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.DoesNotContain("secret", result.Request.BodyJson, StringComparison.OrdinalIgnoreCase);
         using var generation = JsonDocument.Parse(handler.Requests[^1].Body);
         var root = generation.RootElement;
-        Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("image_url").GetString());
+        // Uploads: headshot = frame-1, Exterior front = frame-2, Kitchen = frame-3. Kling uses image_url as the literal
+        // first frame, so the first tour photo is image_url and the headshot leads image_urls as the presenter reference.
+        Assert.Equal("https://cdn.storage.test/frame-2.jpg", root.GetProperty("image_url").GetString());
         Assert.Equal(2, root.GetProperty("image_urls").GetArrayLength());
-        Assert.Equal("https://cdn.storage.test/frame-2.jpg", root.GetProperty("image_urls")[0].GetString());
+        Assert.Equal("https://cdn.storage.test/frame-1.jpg", root.GetProperty("image_urls")[0].GetString());
         Assert.Equal("https://cdn.storage.test/frame-3.jpg", root.GetProperty("image_urls")[1].GetString());
         // The agent is only in the opening shot, so the video must not be pinned to end on the portrait.
         Assert.False(root.TryGetProperty("end_image_url", out _));
@@ -326,6 +328,10 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Contains("Opening shot (tour keyframe 1, the Exterior front), the agent on camera in that space", flat, StringComparison.Ordinal);
         Assert.Contains("a confident introduction in the Exterior front", flat, StringComparison.Ordinal);
         Assert.Contains("ignore its background completely and never show it", flat, StringComparison.Ordinal);
+        Assert.Contains("The real-estate agent in the first image_urls photo is the on-camera presenter", flat, StringComparison.Ordinal);
+        Assert.Contains("that photo is a reference only, not a shot of its own", flat, StringComparison.Ordinal);
+        Assert.Contains("Tour keyframe 1 is the image_url photo; tour keyframes 2 to 2 are the remaining image_urls photos, in order.", flat, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent in the image_url photo", flat, StringComparison.Ordinal);
         Assert.Contains("never create an exterior, room or view that is not one of the keyframes", flat, StringComparison.Ordinal);
         Assert.DoesNotContain("Do not show the agent inside a room", flat, StringComparison.Ordinal);
         Assert.Contains("The agent appears on camera only in the opening shot", prompt.ReplaceLineEndings(" "), StringComparison.Ordinal);
@@ -363,8 +369,10 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         {
             Assert.Equal("720p", body.RootElement.GetProperty("resolution").GetString());
             Assert.Equal(10, body.RootElement.GetProperty("duration").GetInt32());
-            Assert.Equal("agent", body.RootElement.GetProperty("image_url").GetString());
-            Assert.Equal("kitchen", body.RootElement.GetProperty("image_urls")[0].GetString());
+            Assert.Equal("kitchen", body.RootElement.GetProperty("image_url").GetString());
+            Assert.Equal(1, body.RootElement.GetProperty("image_urls").GetArrayLength());
+            Assert.Equal("agent", body.RootElement.GetProperty("image_urls")[0].GetString());
+            Assert.Contains("Tour keyframe 1 is the image_url photo.", body.RootElement.GetProperty("prompt").GetString(), StringComparison.Ordinal);
         }
 
         using (var body = JsonDocument.Parse(live.BodyJson))

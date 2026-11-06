@@ -1665,13 +1665,13 @@ public sealed partial class CampaignGenerationProcessor(
                     cancellationToken);
                 streams.Add(agentPortrait);
                 var nativeFrames = new List<NativePresenterTourFrame>(plan.Frames.Count);
-                foreach (var frame in plan.Frames)
+                foreach (var (frame, index) in plan.Frames.Select((frame, index) => (frame, index)))
                 {
-                    var stream = await propertyMediaStorage.OpenReadAsync(frame.BlobPath, cancellationToken)
-                        ?? throw new FileNotFoundException("A Tour Map photo could not be opened.");
+                    var (stream, frameMimeType) = await OpenKlingTourPhotoAsync(
+                        frame.BlobPath, frame.MimeType, index == 0, cancellationToken);
                     streams.Add(stream);
                     nativeFrames.Add(new NativePresenterTourFrame(
-                        new WalkthroughVideoFrame(stream, frame.MimeType),
+                        new WalkthroughVideoFrame(stream, frameMimeType),
                         frame.StopName,
                         frame.ApprovedHighlight,
                         frame.DirectionToNext));
