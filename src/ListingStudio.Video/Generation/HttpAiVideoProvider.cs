@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -110,10 +111,7 @@ public sealed class HttpAiVideoProvider(
         using var responseDisposable = response;
         if (!response.IsSuccessStatusCode)
         {
-            throw new HttpRequestException(
-                $"AI video generation failed with HTTP {(int)response.StatusCode}.",
-                null,
-                response.StatusCode);
+            throw await ProviderRequestException.FromResponseAsync(response, "The AI video provider", "generate the video", cancellationToken: cancellationToken);
         }
 
         var contentType = response.Content.Headers.ContentType?.MediaType;

@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -143,15 +144,7 @@ public sealed class OpenAIPropertyMediaAnalyzer(
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var requestId = response.Headers.TryGetValues("x-request-id", out var values)
-                ? values.FirstOrDefault()
-                : null;
-            throw new HttpRequestException(
-                requestId is null
-                    ? $"OpenAI media analysis failed with HTTP {(int)response.StatusCode}."
-                    : $"OpenAI media analysis failed with HTTP {(int)response.StatusCode} (request {requestId}).",
-                null,
-                response.StatusCode);
+            throw await ProviderRequestException.FromResponseAsync(response, "OpenAI", "analyze the photo", cancellationToken: cancellationToken);
         }
 
         await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);

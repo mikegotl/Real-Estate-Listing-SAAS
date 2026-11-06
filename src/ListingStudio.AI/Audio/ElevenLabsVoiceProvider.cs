@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -139,7 +140,7 @@ public sealed class ElevenLabsVoiceProvider(
 
                 if (!IsTransient(response.StatusCode) || attempt == configuration.MaxRetryAttempts)
                 {
-                    throw CreateProviderException(response);
+                    throw await ProviderRequestException.FromResponseAsync(response, "ElevenLabs", "generate the narration", cancellationToken: cancellationToken);
                 }
 
                 response.Dispose();
@@ -465,18 +466,6 @@ public sealed class ElevenLabsVoiceProvider(
         or HttpStatusCode.ServiceUnavailable
         or HttpStatusCode.GatewayTimeout;
 
-    private static HttpRequestException CreateProviderException(HttpResponseMessage response)
-    {
-        var requestId = response.Headers.TryGetValues("request-id", out var values)
-            ? values.FirstOrDefault()
-            : null;
-        return new HttpRequestException(
-            requestId is null
-                ? $"ElevenLabs narration generation failed with HTTP {(int)response.StatusCode}."
-                : $"ElevenLabs narration generation failed with HTTP {(int)response.StatusCode} (request {requestId}).",
-            null,
-            response.StatusCode);
-    }
 
     private static int ToMilliseconds(decimal seconds) => checked((int)Math.Ceiling(seconds * 1_000m));
 

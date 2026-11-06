@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -141,15 +142,7 @@ public sealed class OpenAIVideoDirector(
             cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var requestId = response.Headers.TryGetValues("x-request-id", out var values)
-                ? values.FirstOrDefault()
-                : null;
-            throw new HttpRequestException(
-                requestId is null
-                    ? $"OpenAI video direction failed with HTTP {(int)response.StatusCode}."
-                    : $"OpenAI video direction failed with HTTP {(int)response.StatusCode} (request {requestId}).",
-                null,
-                response.StatusCode);
+            throw await ProviderRequestException.FromResponseAsync(response, "OpenAI", "plan the video", cancellationToken: cancellationToken);
         }
 
         await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);

@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -114,7 +115,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
         using var message = Request(HttpMethod.Post, configuration, "/v3/assets", idempotencyKey);
         message.Content = form;
         using var response = await httpClient.SendAsync(message, cancellationToken);
-        await EnsureSuccessAsync(response, "HeyGen asset upload", cancellationToken);
+        await EnsureSuccessAsync(response, "upload your headshot", cancellationToken);
         var envelope = await response.Content.ReadFromJsonAsync<Envelope<UploadAssetResponse>>(
             JsonOptions,
             cancellationToken);
@@ -143,7 +144,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
             expressiveness = "low",
         });
         using var response = await httpClient.SendAsync(message, cancellationToken);
-        await EnsureSuccessAsync(response, "HeyGen presenter creation", cancellationToken);
+        await EnsureSuccessAsync(response, "create the agent presenter", cancellationToken);
         var envelope = await response.Content.ReadFromJsonAsync<Envelope<CreateVideoResponse>>(
             JsonOptions,
             cancellationToken);
@@ -164,7 +165,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
                 configuration,
                 $"/v3/videos/{Uri.EscapeDataString(videoId)}");
             using var response = await httpClient.SendAsync(message, cancellationToken);
-            await EnsureSuccessAsync(response, "HeyGen presenter status", cancellationToken);
+            await EnsureSuccessAsync(response, "check the agent presenter's progress", cancellationToken);
             var envelope = await response.Content.ReadFromJsonAsync<Envelope<VideoStatusResponse>>(
                 JsonOptions,
                 cancellationToken);
@@ -207,7 +208,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
         }
 
         using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        await EnsureSuccessAsync(response, "HeyGen presenter download", cancellationToken);
+        await EnsureSuccessAsync(response, "download the agent presenter video", cancellationToken);
         var mediaType = response.Content.Headers.ContentType?.MediaType;
         if (!string.Equals(mediaType, "video/mp4", StringComparison.OrdinalIgnoreCase))
         {
@@ -267,20 +268,7 @@ public sealed class HeyGenAgentAvatarVideoProvider(
             return;
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        string? code = null;
-        try
-        {
-            code = JsonSerializer.Deserialize<ErrorEnvelope>(body, JsonOptions)?.Error?.Code;
-        }
-        catch (JsonException)
-        {
-        }
-
-        throw new HttpRequestException(
-            $"{operation} failed with HTTP {(int)response.StatusCode} ({Sanitize(code)}).",
-            null,
-            response.StatusCode);
+        throw await ProviderRequestException.FromResponseAsync(response, "HeyGen", operation, cancellationToken: cancellationToken);
     }
 
     private static void Validate(HeyGenOptions configuration)

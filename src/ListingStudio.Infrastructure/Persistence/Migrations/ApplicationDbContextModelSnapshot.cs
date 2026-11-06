@@ -271,6 +271,71 @@ namespace ListingStudio.Infrastructure.Persistence.Migrations
                     b.ToTable("PlatformMetricsResets", (string)null);
                 });
 
+            modelBuilder.Entity("ListingStudio.Domain.Administration.ProviderErrorEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int?>("Attempt")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("CampaignGenerationJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CampaignVideoVariantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PropertyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ProviderRequestId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RequestBody")
+                        .HasMaxLength(40000)
+                        .HasColumnType("character varying(40000)");
+
+                    b.Property<string>("ResponseText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("StatusCode")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("WillRetry")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampaignGenerationJobId");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.ToTable("ProviderErrorEvents", (string)null);
+                });
+
             modelBuilder.Entity("ListingStudio.Domain.Billing.BillingWebhookReceipt", b =>
                 {
                     b.Property<string>("EventId")

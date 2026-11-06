@@ -10,7 +10,7 @@
     <div>
         <span class="eyebrow">PLATFORM SECURITY</span>
         <MudText Typo="Typo.h3" HtmlTag="h1">Administrator audit log</MudText>
-        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes and user impersonation, plus every change users asked for in campaign video chats and every question asked in the Ask AI help chat.</MudText>
+        <MudText Typo="Typo.body1">Append-only records of sensitive platform-role changes and user impersonation, plus every error answer from an external provider (Higgsfield, HeyGen, OpenAI, ElevenLabs), every change users asked for in campaign video chats and every question asked in the Ask AI help chat.</MudText>
     </div>
     <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Overview</MudButton>
 </div>
@@ -35,6 +35,71 @@ else
         </div>
     </MudPaper>
 }
+
+<section class="admin-video-chat" aria-labelledby="provider-errors-heading">
+    <MudText Typo="Typo.h5" HtmlTag="h2" id="provider-errors-heading" Class="mt-8 mb-1">Provider errors</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Each time an external provider refused a request or reported that a generation failed: what was being done, the
+        HTTP status, the provider's own reply (API keys and tokens removed) and, where known, the exact request that was
+        sent. Last 90 days, newest first.
+    </MudText>
+    @if (providerErrors is null)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (providerErrors.Count == 0)
+    {
+        <MudText Typo="Typo.body2" data-testid="provider-errors-empty">No provider errors.</MudText>
+    }
+    else
+    {
+        <MudPaper Elevation="0" Class="admin-panel">
+            <div class="admin-table-wrap">
+                <table class="admin-table admin-video-chat-table" data-testid="provider-errors">
+                    <thead><tr><th>Time</th><th>Provider</th><th>What failed</th><th>HTTP</th><th>Provider reply</th><th>Where</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in providerErrors)
+                        {
+                            <tr>
+                                <td>@item.OccurredAtUtc.ToLocalTime().ToString("g")</td>
+                                <td>@item.Provider</td>
+                                <td>
+                                    @item.Action
+                                    @if (item.Stage is { } stage)
+                                    {
+                                        <br /><span class="mud-text-secondary">@stage@(item.Attempt is { } attempt ? $" · attempt {attempt}" : null)@(item.WillRetry ? " · will retry" : null)</span>
+                                    }
+                                </td>
+                                <td>@(item.StatusCode?.ToString() ?? "—")</td>
+                                <td class="admin-chat-text">
+                                    @(item.ResponseText ?? "No reply text")
+                                    @if (item.ProviderRequestId is { } requestId)
+                                    {
+                                        <br /><span class="mud-text-secondary">Request <code>@requestId</code></span>
+                                    }
+                                    @if (item.RequestBody is { } body)
+                                    {
+                                        <details class="mt-1">
+                                            <summary class="mud-typography-caption">Request that was sent</summary>
+                                            <pre style="white-space:pre-wrap;font-size:0.75rem;max-height:320px;overflow:auto;">@FormatJson(body)</pre>
+                                        </details>
+                                    }
+                                </td>
+                                <td>
+                                    @(item.WorkspaceName ?? "")
+                                    @if (item.PropertyAddress is { } address)
+                                    {
+                                        <br /><a href="@($"/properties/{item.PropertyId}")">@address</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </MudPaper>
+    }
+</section>
 
 <section class="admin-video-chat" aria-labelledby="video-chat-heading">
     <MudText Typo="Typo.h5" HtmlTag="h2" id="video-chat-heading" Class="mt-8 mb-1">Video chat change requests</MudText>
@@ -158,12 +223,33 @@ else
     private IReadOnlyList<AdminAuditRow>? events;
     private IReadOnlyList<AdminVideoChatRequestRow>? chatRequests;
     private IReadOnlyList<AdminHelpChatQuestionRow>? helpQuestions;
+    private IReadOnlyList<AdminProviderErrorRow>? providerErrors;
 
     protected override async Task OnInitializedAsync()
     {
         var range = AdminDateRange.LastDays(90, TimeProvider);
         events = await DashboardService.GetAuditEventsAsync(range);
+        providerErrors = await DashboardService.GetProviderErrorsAsync(range, 300);
         chatRequests = await DashboardService.GetVideoChatRequestsAsync(range, 300);
         helpQuestions = await DashboardService.GetHelpChatQuestionsAsync(range, 300);
+    }
+
+    private static string FormatJson(string json)
+    {
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(
+                document.RootElement,
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                });
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return json;
+        }
     }
 }

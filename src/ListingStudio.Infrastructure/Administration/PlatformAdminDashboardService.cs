@@ -272,6 +272,52 @@ public sealed class PlatformAdminDashboardService(ApplicationDbContext dbContext
             answers.GetValueOrDefault(question.Id))).ToArray();
     }
 
+    public async Task<IReadOnlyList<AdminProviderErrorRow>> GetProviderErrorsAsync(
+        AdminDateRange range,
+        int maximumResults = 200,
+        CancellationToken cancellationToken = default)
+    {
+        range.Validate();
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumResults, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maximumResults, 500);
+        var errors = await dbContext.ProviderErrorEvents.AsNoTracking()
+            .Where(item => item.OccurredAtUtc >= range.FromUtc && item.OccurredAtUtc < range.ToUtc)
+            .OrderByDescending(item => item.OccurredAtUtc)
+            .Take(maximumResults)
+            .ToListAsync(cancellationToken);
+        if (errors.Count == 0)
+        {
+            return [];
+        }
+
+        var organizationIds = errors.Select(item => item.OrganizationId).OfType<Guid>().Distinct().ToArray();
+        var workspaces = await dbContext.Organizations.AsNoTracking()
+            .Where(organization => organizationIds.Contains(organization.Id))
+            .ToDictionaryAsync(organization => organization.Id, organization => organization.Name, cancellationToken);
+        var propertyIds = errors.Select(item => item.PropertyId).OfType<Guid>().Distinct().ToArray();
+        var properties = await dbContext.Properties.AsNoTracking()
+            .Where(property => propertyIds.Contains(property.Id))
+            .ToDictionaryAsync(
+                property => property.Id,
+                property => $"{property.Address1}, {property.City}",
+                cancellationToken);
+        return errors.Select(item => new AdminProviderErrorRow(
+            item.OccurredAtUtc,
+            item.Provider,
+            item.Action,
+            item.StatusCode,
+            item.ResponseText,
+            item.ProviderRequestId,
+            item.RequestBody,
+            item.OrganizationId is { } organizationId ? workspaces.GetValueOrDefault(organizationId) : null,
+            item.PropertyId,
+            item.PropertyId is { } propertyId ? properties.GetValueOrDefault(propertyId) : null,
+            item.CampaignGenerationJobId,
+            item.Stage,
+            item.Attempt,
+            item.WillRetry)).ToArray();
+    }
+
     public async Task<IReadOnlyList<AdminAuditRow>> GetAuditEventsAsync(
         AdminDateRange range,
         int maximumResults = 200,

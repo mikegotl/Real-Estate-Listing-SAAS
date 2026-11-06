@@ -1089,6 +1089,52 @@ public sealed partial class CampaignGenerationTests(PostgreSqlWebApplicationFixt
     }
 
     [Fact]
+    public async Task AProviderRefusalIsShownWithItsReplyRecordedForAdminsAndNotRetried()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-provider-refusal");
+        await UploadAsync(owner);
+        var voiceCallsBefore = fixture.Factory.VoiceProvider.CallCount;
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory);
+        fixture.Factory.VideoDirector.Enqueue(CreateEditorialPlan);
+        fixture.Factory.VoiceProvider.Enqueue(_ => throw new Application.Providers.ProviderRequestException(
+            "ElevenLabs",
+            "generate the narration",
+            System.Net.HttpStatusCode.UnprocessableEntity,
+            "voice_id 'retired-voice' was not found",
+            "el-request-42")
+        {
+            RequestBody = """{"text":"Welcome home.","voice_id":"retired-voice"}""",
+        });
+
+        var queued = await EnqueueAsync(owner);
+        var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+        Assert.Equal(CampaignGenerationStage.GenerateNarration, failed.CurrentStage);
+        // The agent sees who refused, the status and the provider's own reason.
+        Assert.Contains("ElevenLabs returned HTTP 422", failed.LastError, StringComparison.Ordinal);
+        Assert.Contains("voice_id 'retired-voice' was not found", failed.LastError, StringComparison.Ordinal);
+        // A refused request fails the same way every time, so it is not sent again.
+        Assert.Equal(voiceCallsBefore + 1, fixture.Factory.VoiceProvider.CallCount);
+
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var admin = scope.ServiceProvider.GetRequiredService<Application.Administration.IPlatformAdminDashboardService>();
+        var rows = await admin.GetProviderErrorsAsync(
+            Application.Administration.AdminDateRange.LastDays(90, fixture.Factory.TimeProvider));
+        var row = Assert.Single(rows, item => item.CampaignGenerationJobId == queued.Id);
+        Assert.Equal("ElevenLabs", row.Provider);
+        Assert.Equal("generate the narration", row.Action);
+        Assert.Equal(422, row.StatusCode);
+        Assert.Equal("voice_id 'retired-voice' was not found", row.ResponseText);
+        Assert.Equal("el-request-42", row.ProviderRequestId);
+        Assert.Contains("retired-voice", row.RequestBody, StringComparison.Ordinal);
+        Assert.Equal(nameof(CampaignGenerationStage.GenerateNarration), row.Stage);
+        Assert.Equal(1, row.Attempt);
+        Assert.False(row.WillRetry);
+        Assert.NotNull(row.PropertyAddress);
+    }
+
+    [Fact]
     public async Task VoiceFailureIsRetriedAndStopsAtNarrationCheckpoint()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-voice-failure");

@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Buffers.Binary;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -108,15 +109,7 @@ public sealed class OpenAIVoiceProvider(
             cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var requestId = response.Headers.TryGetValues("x-request-id", out var values)
-                ? values.FirstOrDefault()
-                : null;
-            throw new HttpRequestException(
-                requestId is null
-                    ? $"OpenAI narration generation failed with HTTP {(int)response.StatusCode}."
-                    : $"OpenAI narration generation failed with HTTP {(int)response.StatusCode} (request {requestId}).",
-                null,
-                response.StatusCode);
+            throw await ProviderRequestException.FromResponseAsync(response, "OpenAI", "generate the narration", cancellationToken: cancellationToken);
         }
 
         return await ReadLimitedAsync(response, MaximumAudioBytes - bytesSoFar, cancellationToken);

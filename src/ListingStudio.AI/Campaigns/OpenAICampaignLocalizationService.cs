@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -132,10 +133,7 @@ public sealed partial class OpenAICampaignLocalizationService(
         using var response = await httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new HttpRequestException(
-                $"OpenAI campaign translation failed with HTTP {(int)response.StatusCode}.",
-                null,
-                response.StatusCode);
+            throw await ProviderRequestException.FromResponseAsync(response, "OpenAI", "translate the campaign", cancellationToken: cancellationToken);
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

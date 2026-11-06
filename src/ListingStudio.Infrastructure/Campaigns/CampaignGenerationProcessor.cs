@@ -5,6 +5,7 @@ using ListingStudio.Application.Audio;
 using ListingStudio.Application.Billing;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Properties;
+using ListingStudio.Application.Providers;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
@@ -139,6 +140,7 @@ public sealed partial class CampaignGenerationProcessor(
                     CancellationToken.None);
             }
 
+            RecordProviderError(exception, job, null, stage.ToString(), attemptNumber, willRetry, now);
             await dbContext.SaveChangesAsync(CancellationToken.None);
             return new CampaignStageRunResult(jobId, stage, false, false, willRetry, attemptNumber, error);
         }
@@ -1794,9 +1796,12 @@ public sealed partial class CampaignGenerationProcessor(
             var tracked = await dbContext.CampaignGenerationJobs.SingleAsync(
                 candidate => candidate.Id == job.Id && candidate.OrganizationId == job.OrganizationId,
                 cancellationToken);
+            var failedRequest = tracked.FullTourSubmittedRequestJson;
             tracked.ResetFullTourSubmission(timeProvider.GetUtcNow());
+            var reason = result.FailureReason ?? "Higgsfield could not generate the full tour.";
+            RecordProviderResult(job, null, "make the Kling 4 video", reason, job.FullTourProviderRequestId, failedRequest);
             await dbContext.SaveChangesAsync(cancellationToken);
-            throw new InvalidOperationException(result.FailureReason ?? "Higgsfield could not generate the full tour.");
+            throw new InvalidOperationException(reason);
         }
 
         await using var content = result.Content;
@@ -2647,11 +2652,66 @@ public sealed partial class CampaignGenerationProcessor(
         _ => throw new InvalidDataException("A campaign asset has an unsupported content type."),
     };
 
+    /// <summary>Keeps a provider's error answer for the audit log; the caller saves it with the job's new state.</summary>
+    private void RecordProviderError(
+        Exception exception,
+        CampaignGenerationJob job,
+        Guid? variantId,
+        string? stage,
+        int? attempt,
+        bool willRetry,
+        DateTimeOffset now)
+    {
+        if (ProviderRequestException.Find(exception) is not { } provider)
+        {
+            return;
+        }
+
+        dbContext.ProviderErrorEvents.Add(ProviderErrorEvent.Create(
+            provider.Provider,
+            provider.Action,
+            (int?)provider.StatusCode,
+            provider.ResponseText,
+            provider.ProviderRequestId,
+            provider.RequestBody,
+            now,
+            job.OrganizationId,
+            job.PropertyId,
+            job.Id,
+            variantId,
+            stage,
+            attempt,
+            willRetry));
+    }
+
+    /// <summary>A provider that accepted the request but then reported the generation failed.</summary>
+    private void RecordProviderResult(
+        CampaignGenerationJob job,
+        Guid? variantId,
+        string action,
+        string reason,
+        string? providerRequestId,
+        string? requestBody) =>
+        dbContext.ProviderErrorEvents.Add(ProviderErrorEvent.Create(
+            "Higgsfield",
+            action,
+            null,
+            reason,
+            providerRequestId,
+            requestBody,
+            timeProvider.GetUtcNow(),
+            job.OrganizationId,
+            job.PropertyId,
+            job.Id,
+            variantId,
+            job.CurrentStage.ToString()));
+
     private static string SanitizeError(Exception exception, bool timedOut) => timedOut
         ? "The campaign stage exceeded its configured timeout."
         : exception switch
         {
             VideoPlanValidationException => exception.Message,
+            ProviderRequestException provider => provider.Describe(),
             HttpRequestException => "An external provider request failed.",
             TimeoutException => "An external provider request timed out.",
             VideoRenderException => "A campaign video could not be rendered.",
@@ -2664,7 +2724,8 @@ public sealed partial class CampaignGenerationProcessor(
         };
 
     private static bool IsRetryable(Exception exception, bool timedOut) => timedOut
-        || exception is HttpRequestException
+        || exception is ProviderRequestException { IsPermanent: false }
+        || exception is HttpRequestException and not ProviderRequestException
             or TimeoutException
             or VideoRenderException
             or RenderedVideoValidationException

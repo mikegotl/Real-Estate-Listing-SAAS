@@ -1,4 +1,6 @@
 using ListingStudio.Application.Administration;
+using ListingStudio.Application.Campaigns;
+using ListingStudio.Application.Providers;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
@@ -246,7 +248,17 @@ public sealed partial class CampaignGenerationProcessor
 
         if (result.State == WalkthroughVideoState.Failed || result.Content is null)
         {
-            throw new KlingVideoFailedException(result.FailureReason ?? "Higgsfield could not generate the Kling 4 video.");
+            var reason = result.FailureReason ?? "Higgsfield could not generate the Kling 4 video.";
+            dbContext.ChangeTracker.Clear();
+            RecordProviderResult(
+                job,
+                variant.Id,
+                $"make the {VerticalFormatNames.Name(variant.Format)} Kling 4 video",
+                reason,
+                variant.KlingProviderRequestId,
+                variant.KlingSubmittedRequestJson);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            throw new KlingVideoFailedException(reason);
         }
 
         await using var content = result.Content;
@@ -303,11 +315,14 @@ public sealed partial class CampaignGenerationProcessor
         or System.Net.HttpStatusCode.ServiceUnavailable;
 
     /// <summary>Keeps the provider's HTTP status in the video's error, so a refused request says why.</summary>
-    private static Exception KlingFailure(Exception exception) => exception is HttpRequestException { StatusCode: { } status }
-        ? new KlingVideoFailedException(
+    private static Exception KlingFailure(Exception exception) => exception switch
+    {
+        ProviderRequestException provider => new KlingVideoFailedException(provider.Describe(500), exception),
+        HttpRequestException { StatusCode: { } status } => new KlingVideoFailedException(
             $"Higgsfield refused the Kling 4 request (HTTP {(int)status}).",
-            exception)
-        : exception;
+            exception),
+        _ => exception,
+    };
 
     /// <summary>A Kling request that cannot succeed by trying the same request again.</summary>
     private sealed class KlingVideoFailedException : InvalidOperationException

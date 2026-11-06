@@ -70,6 +70,23 @@ public sealed record AdminHelpChatQuestionRow(
     string Question,
     string? AssistantReply);
 
+/// <summary>One error answer from an external provider, as kept for the audit log.</summary>
+public sealed record AdminProviderErrorRow(
+    DateTimeOffset OccurredAtUtc,
+    string Provider,
+    string Action,
+    int? StatusCode,
+    string? ResponseText,
+    string? ProviderRequestId,
+    string? RequestBody,
+    string? WorkspaceName,
+    Guid? PropertyId,
+    string? PropertyAddress,
+    Guid? CampaignGenerationJobId,
+    string? Stage,
+    int? Attempt,
+    bool WillRetry);
+
 public sealed record PlatformAdminDashboard(
     AdminDateRange Range,
     DateTimeOffset? MetricsResetAtUtc,
@@ -107,6 +124,11 @@ public interface IPlatformAdminDashboardService
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AdminHelpChatQuestionRow>> GetHelpChatQuestionsAsync(
+        AdminDateRange range,
+        int maximumResults = 200,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AdminProviderErrorRow>> GetProviderErrorsAsync(
         AdminDateRange range,
         int maximumResults = 200,
         CancellationToken cancellationToken = default);

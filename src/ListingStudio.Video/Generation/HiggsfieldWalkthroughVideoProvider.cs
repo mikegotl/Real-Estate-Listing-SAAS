@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -357,7 +358,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                     configuration.FullTourResolution),
                 options: SerializerOptions),
         };
-        var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
+        var queued = await SendForJsonAsync<QueuedResponse>(
+            configuration, message, "submit the Kling 4 tour video", cancellationToken);
         return IsRequestId(queued?.RequestId)
             ? queued!.RequestId!
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
@@ -376,11 +378,11 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         ArgumentNullException.ThrowIfNull(submission);
         BuildNativePresenterPrompt(submission);
         var configuration = EnsureEnabled();
-        var agentUrl = await UploadAsync(configuration, submission.AgentPortrait, cancellationToken);
+        var agentUrl = await UploadAsync(configuration, submission.AgentPortrait, cancellationToken, "your profile headshot");
         var tourUrls = new List<string>(submission.TourFrames.Count);
         foreach (var frame in submission.TourFrames)
         {
-            tourUrls.Add(await UploadAsync(configuration, frame.Frame, cancellationToken));
+            tourUrls.Add(await UploadAsync(configuration, frame.Frame, cancellationToken, $"the {frame.StopName} photo"));
         }
 
         // The body that is sent is the body that is recorded, so the audit shows exactly what Kling received.
@@ -389,7 +391,19 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         {
             Content = new StringContent(request.BodyJson, System.Text.Encoding.UTF8, "application/json"),
         };
-        var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
+        QueuedResponse? queued;
+        try
+        {
+            queued = await SendForJsonAsync<QueuedResponse>(
+                configuration, message, "submit the Kling 4 presenter video", cancellationToken);
+        }
+        catch (ProviderRequestException exception)
+        {
+            // Keep the exact body Kling refused, so the audit log shows what was sent with the reason.
+            exception.RequestBody = request.BodyJson;
+            throw;
+        }
+
         return IsRequestId(queued?.RequestId)
             ? new NativePresenterSubmissionResult(queued!.RequestId!, request)
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
@@ -447,7 +461,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         {
             Content = JsonContent.Create(request, options: SerializerOptions),
         };
-        var queued = await SendForJsonAsync<QueuedResponse>(configuration, message, cancellationToken);
+        var queued = await SendForJsonAsync<QueuedResponse>(
+            configuration, message, "submit the walk-through clip", cancellationToken);
         return IsRequestId(queued?.RequestId)
             ? queued!.RequestId!
             : throw new InvalidDataException("Higgsfield did not return a valid request ID.");
@@ -466,7 +481,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         using var message = new HttpRequestMessage(
             HttpMethod.Get,
             ApiUri(configuration, $"requests/{providerRequestId}/status"));
-        var status = await SendForJsonAsync<StatusResponse>(configuration, message, cancellationToken)
+        var statusText = await SendForTextAsync(configuration, message, "check the video's progress", cancellationToken);
+        var status = JsonSerializer.Deserialize<StatusResponse>(statusText, SerializerOptions)
             ?? throw new InvalidDataException("Higgsfield returned an empty status.");
         switch (status.Status?.ToLowerInvariant())
         {
@@ -484,9 +500,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
                 return new WalkthroughVideoPollResult(
                     WalkthroughVideoState.Completed, content, ProviderName, configuration.Model, null);
             case "failed":
-                return Failed(configuration, "Higgsfield could not generate this walk-through.");
+                return Failed(configuration, WithProviderReply("Higgsfield could not generate this video.", statusText, configuration));
             case "nsfw":
-                return Failed(configuration, "Higgsfield's content filter rejected these photos.");
+                return Failed(configuration, WithProviderReply("Higgsfield's content filter rejected these photos.", statusText, configuration));
             case "canceled" or "cancelled":
                 return Failed(configuration, "The Higgsfield request was canceled.");
             default:
@@ -497,10 +513,24 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     private static WalkthroughVideoPollResult Failed(HiggsfieldOptions configuration, string reason) =>
         new(WalkthroughVideoState.Failed, null, ProviderName, configuration.Model, reason);
 
+    /// <summary>A failed status keeps Higgsfield's own words, so the agent and the audit log see the reason.</summary>
+    private static string WithProviderReply(string reason, string statusText, HiggsfieldOptions configuration)
+    {
+        var reply = ProviderRequestException.CleanResponse(statusText, [configuration.ApiKey, configuration.ApiSecret]);
+        if (reply is null)
+        {
+            return reason;
+        }
+
+        var text = $"{reason} Higgsfield said: {reply}";
+        return text.Length <= 480 ? text : text[..479].TrimEnd() + "…";
+    }
+
     private async Task<string> UploadAsync(
         HiggsfieldOptions configuration,
         WalkthroughVideoFrame frame,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string description = "a photo")
     {
         if (!frame.Content.CanRead || frame.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))
         {
@@ -511,7 +541,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         {
             Content = JsonContent.Create(new UploadUrlRequest(frame.ContentType), options: SerializerOptions),
         };
-        var upload = await SendForJsonAsync<UploadUrlResponse>(configuration, request, cancellationToken);
+        var upload = await SendForJsonAsync<UploadUrlResponse>(
+            configuration, request, $"prepare the upload of {description}", cancellationToken);
         if (!Uri.TryCreate(upload?.UploadUrl, UriKind.Absolute, out var uploadUri)
             || uploadUri.Scheme != Uri.UriSchemeHttps
             || !Uri.TryCreate(upload.PublicUrl, UriKind.Absolute, out var publicUri)
@@ -532,7 +563,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         }
 
         using var response = await SendAsync(configuration, put, cancellationToken);
-        EnsureSuccess(response, "upload a walk-through frame");
+        await EnsureSuccessAsync(response, $"upload {description}", configuration, cancellationToken);
         return publicUri.AbsoluteUri;
     }
 
@@ -543,7 +574,7 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     {
         using var message = new HttpRequestMessage(HttpMethod.Get, videoUri);
         using var response = await SendAsync(configuration, message, cancellationToken, bufferContent: false);
-        EnsureSuccess(response, "download the walk-through clip");
+        await EnsureSuccessAsync(response, "download the finished video", configuration, cancellationToken);
         var maximumBytes = checked(configuration.MaxOutputMegabytes * 1024L * 1024L);
         if (response.Content.Headers.ContentLength > maximumBytes)
         {
@@ -576,14 +607,25 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
     private async Task<T?> SendForJsonAsync<T>(
         HiggsfieldOptions configuration,
         HttpRequestMessage message,
+        string action,
+        CancellationToken cancellationToken)
+    {
+        var text = await SendForTextAsync(configuration, message, action, cancellationToken);
+        return JsonSerializer.Deserialize<T>(text, SerializerOptions);
+    }
+
+    private async Task<string> SendForTextAsync(
+        HiggsfieldOptions configuration,
+        HttpRequestMessage message,
+        string action,
         CancellationToken cancellationToken)
     {
         message.Headers.Authorization = new AuthenticationHeaderValue(
             "Key",
             $"{configuration.ApiKey}:{configuration.ApiSecret}");
         using var response = await SendAsync(configuration, message, cancellationToken);
-        EnsureSuccess(response, "reach the Higgsfield API");
-        return await response.Content.ReadFromJsonAsync<T>(SerializerOptions, cancellationToken);
+        await EnsureSuccessAsync(response, action, configuration, cancellationToken);
+        return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
     private async Task<HttpResponseMessage> SendAsync(
@@ -611,14 +653,20 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         }
     }
 
-    private static void EnsureSuccess(HttpResponseMessage response, string action)
+    private static async Task EnsureSuccessAsync(
+        HttpResponseMessage response,
+        string action,
+        HiggsfieldOptions configuration,
+        CancellationToken cancellationToken)
     {
         if (!response.IsSuccessStatusCode)
         {
-            throw new HttpRequestException(
-                $"Could not {action}: Higgsfield returned HTTP {(int)response.StatusCode}.",
-                null,
-                response.StatusCode);
+            throw await ProviderRequestException.FromResponseAsync(
+                response,
+                "Higgsfield",
+                action,
+                [configuration.ApiKey, configuration.ApiSecret],
+                cancellationToken);
         }
     }
 
