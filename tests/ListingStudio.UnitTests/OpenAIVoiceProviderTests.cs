@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -114,12 +115,14 @@ public sealed class OpenAIVoiceProviderTests
         using var httpClient = new HttpClient(handler);
         var provider = CreateProvider(httpClient);
 
-        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => provider.GenerateAsync(
+        var exception = await Assert.ThrowsAsync<ProviderRequestException>(() => provider.GenerateAsync(
             new VoiceGenerationRequest([new VoiceNarrationSegment("one", "Hello.", 0, 2_000)])));
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, exception.StatusCode);
         Assert.Contains("openai-request-123", exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("customer text", exception.Message, StringComparison.Ordinal);
+        // The reply is kept apart from the logged message, for the campaign page and the audit log.
+        Assert.Contains("customer text", exception.ResponseText, StringComparison.Ordinal);
         Assert.Single(handler.Requests);
     }
 

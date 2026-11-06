@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -502,6 +503,70 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
 
         Assert.StartsWith("higgsfield/walkthrough-v1/", standard, StringComparison.Ordinal);
         Assert.NotEqual(standard, other);
+    }
+
+    [Fact]
+    public async Task ARefusedKlingRequestKeepsHiggsfieldsReplyAndTheRequestThatWasSent()
+    {
+        var uploaded = 0;
+        var handler = new RoutingHandler(request => request.RequestUri!.AbsoluteUri switch
+        {
+            "https://api.higgsfield.test/files/generate-upload-url" => Json(new
+            {
+                upload_url = $"https://uploads.storage.test/{++uploaded}",
+                public_url = $"https://cdn.storage.test/frame-{uploaded}.jpg",
+            }),
+            "https://api.higgsfield.test/kling-video/v4.0/image-to-video" => new HttpResponseMessage(HttpStatusCode.UnprocessableEntity)
+            {
+                Content = new StringContent(
+                    """{"detail":[{"loc":["body","end_image_url"],"msg":"field required"}],"echo":"key-id:key-secret"}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            },
+            _ when request.RequestUri!.Host == "uploads.storage.test" => new HttpResponseMessage(HttpStatusCode.OK),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var client = new HttpClient(handler);
+        await using var agent = new MemoryStream([1]);
+        await using var exterior = new MemoryStream([2]);
+        var provider = CreateProvider(client);
+        var submission = new NativePresenterVideoSubmission(
+            new WalkthroughVideoFrame(agent, "image/jpeg"),
+            [new(new WalkthroughVideoFrame(exterior, "image/jpeg"), "Exterior front", null)],
+            "Welcome to your next home.",
+            "Contact me today to schedule your private showing.",
+            "Generate buyer interest.",
+            "Upbeat instrumental with no lyrics.",
+            "campaign-native-refused");
+
+        var exception = await Assert.ThrowsAsync<ProviderRequestException>(() => provider.SubmitNativePresenterAsync(submission));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, exception.StatusCode);
+        Assert.Equal("Higgsfield", exception.Provider);
+        Assert.True(exception.IsPermanent);
+        Assert.Contains("end_image_url", exception.ResponseText, StringComparison.Ordinal);
+        Assert.Contains("field required", exception.Describe(), StringComparison.Ordinal);
+        Assert.Contains("HTTP 422", exception.Describe(), StringComparison.Ordinal);
+        // Credentials never survive into what is shown or stored.
+        Assert.DoesNotContain("key-secret", exception.ResponseText, StringComparison.Ordinal);
+        Assert.DoesNotContain("key-id", exception.ResponseText, StringComparison.Ordinal);
+        Assert.Equal(handler.Requests[^1].Body, exception.RequestBody);
+    }
+
+    [Fact]
+    public async Task AFailedGenerationStatusKeepsHiggsfieldsOwnWords()
+    {
+        var handler = new RoutingHandler(request => Json(new
+        {
+            status = "failed",
+            error = "Image aspect ratio is not supported",
+        }));
+        using var client = new HttpClient(handler);
+
+        var result = await CreateProvider(client).PollAsync("req_failed_1");
+
+        Assert.Equal(WalkthroughVideoState.Failed, result.State);
+        Assert.Contains("Image aspect ratio is not supported", result.FailureReason, StringComparison.Ordinal);
     }
 
     private static HiggsfieldWalkthroughVideoProvider CreateProvider(

@@ -710,6 +710,7 @@ public sealed partial class CampaignGenerationProcessor
             or CampaignVideoVariantStatus.Failed)
         {
             variant.MarkFailed(error, timeProvider.GetUtcNow());
+            RecordProviderError(exception, job, variantId, job.CurrentStage.ToString(), job.StageAttemptCount, false, timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 

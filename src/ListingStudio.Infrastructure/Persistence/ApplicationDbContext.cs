@@ -95,6 +95,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<OperationalEvent> OperationalEvents => Set<OperationalEvent>();
 
+    public DbSet<ProviderErrorEvent> ProviderErrorEvents => Set<ProviderErrorEvent>();
+
     public DbSet<AiUsageEvent> AiUsageEvents => Set<AiUsageEvent>();
 
     public DbSet<PlatformMetricsReset> PlatformMetricsResets => Set<PlatformMetricsReset>();

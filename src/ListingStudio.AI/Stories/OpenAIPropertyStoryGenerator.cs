@@ -1,3 +1,4 @@
+using ListingStudio.Application.Providers;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -175,15 +176,7 @@ public sealed class OpenAIPropertyStoryGenerator(
             cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var requestId = response.Headers.TryGetValues("x-request-id", out var values)
-                ? values.FirstOrDefault()
-                : null;
-            throw new HttpRequestException(
-                requestId is null
-                    ? $"OpenAI property story generation failed with HTTP {(int)response.StatusCode}."
-                    : $"OpenAI property story generation failed with HTTP {(int)response.StatusCode} (request {requestId}).",
-                null,
-                response.StatusCode);
+            throw await ProviderRequestException.FromResponseAsync(response, "OpenAI", "write the property story", cancellationToken: cancellationToken);
         }
 
         await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
