@@ -322,6 +322,91 @@ public sealed partial class CampaignGenerationTests
         }
     }
 
+    [Fact]
+    public async Task AKlingPilotLibraryCampaignFailsInsteadOfFallingBackWhenTheLibraryIsSwitchedOffAfterQueuing()
+    {
+        var (admin, owner) = await CreateLibraryListingAsync("kling4-pilot-library-off-after-queue");
+        await BillingPlanTestData.SubscribeAsync(
+            fixture.Factory.Services,
+            owner.UserId,
+            Domain.Billing.SubscriptionPlan.Professional,
+            fixture.Factory.TimeProvider.GetUtcNow());
+        Guid portraitId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = uploadScope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using var portrait = new MemoryStream(OnePixelPng);
+            portraitId = (await portraits.UploadAsync(
+                owner.UserId,
+                new AgentPortraitUpload("agent.png", "image/png", portrait.Length, portrait))).Id;
+        }
+
+        try
+        {
+            await SetLibrarySwitchAsync(admin, true, false, owner.OrganizationId);
+            await using (var featureScope = fixture.Factory.Services.CreateAsyncScope())
+            {
+                await featureScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+                    admin,
+                    FeatureFlagKeys.Kling4NativePresenterV1,
+                    globallyEnabled: true,
+                    enabledForAllOrganizations: false,
+                    [owner.OrganizationId]);
+            }
+
+            QueueLibraryProviders(narratedVideos: 0);
+            var options = CampaignCreativeOptions.SocialDefault with
+            {
+                Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+                AgentPortraitId = portraitId,
+                AgentAvatarConsentConfirmed = true,
+            };
+            CampaignGenerationResult queued;
+            await using (var enqueueScope = fixture.Factory.Services.CreateAsyncScope())
+            {
+                queued = (await enqueueScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
+                    owner.UserId,
+                    owner.PropertyId,
+                    CampaignOutputSelection.TikTok,
+                    options,
+                    CampaignNarrationPreferences.Default,
+                    CampaignVideoStrategy.Kling4NativePresenter,
+                    new VerticalLibraryRequest(
+                        VerticalVideoSelection.RecommendedThree,
+                        VerticalCampaignGoal.MaximizeReach)))!;
+            }
+
+            // The library is switched off while the campaign waits in the queue; the Kling pilot stays on.
+            await SetLibrarySwitchAsync(admin, false, false);
+            var submissionsBefore = fixture.Factory.WalkthroughVideoProvider.NativePresenterSubmissions
+                .Count(submission => submission.IdempotencyKey.Contains(queued.Id.ToString("N"), StringComparison.Ordinal));
+
+            var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+            Assert.True(failed.LastError?.Contains(NativePresenterVideoPolicy.PilotNeedsLibraryMessage, StringComparison.Ordinal) == true, $"{failed.CurrentStage}: {failed.LastError}");
+            Assert.Contains("No Kling video was made.", failed.LastError, StringComparison.Ordinal);
+            Assert.Equal(
+                submissionsBefore,
+                fixture.Factory.WalkthroughVideoProvider.NativePresenterSubmissions
+                    .Count(submission => submission.IdempotencyKey.Contains(queued.Id.ToString("N"), StringComparison.Ordinal)));
+            await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
+            var job = await verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .CampaignGenerationJobs.AsNoTracking().SingleAsync(candidate => candidate.Id == queued.Id);
+            Assert.Null(job.FullTourProviderRequestId);
+        }
+        finally
+        {
+            await SetLibrarySwitchAsync(admin, false, false);
+            await using var featureScope = fixture.Factory.Services.CreateAsyncScope();
+            await featureScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(
+                admin,
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                globallyEnabled: false,
+                enabledForAllOrganizations: false,
+                []);
+        }
+    }
+
     [Theory]
     [InlineData("none")]
     [InlineData("refused")]
