@@ -53,6 +53,17 @@ public sealed partial class CampaignGenerationProcessor
 
         if (!await IsLibraryEnabledAsync(job, cancellationToken))
         {
+            // A Kling pilot never falls back to the shared 30-second vertical video: that would send a paid
+            // 30-second 1080p Kling call with a generic script instead of the 15-second 720p video the agent approved.
+            if (job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter
+                && await IsKlingNativePresenterPilotAsync(job.OrganizationId, cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "The vertical video library was switched off after this campaign was queued. "
+                    + NativePresenterVideoPolicy.PilotNeedsLibraryMessage
+                    + " No Kling video was made.");
+            }
+
             await UseLegacyVerticalAsync(jobId, cancellationToken);
             LogVerticalLibraryFallback(jobId, "switched-off");
             return true;

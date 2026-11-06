@@ -708,10 +708,12 @@
                     Add profile headshot
                 </MudButton>
             }
-            @if (selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar))
+            @if (selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
+                 || selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
             {
                 <MudCheckBox T="bool"
                              @bind-Value="selectedAgentAvatarConsent"
+                             data-testid="presenter-consent"
                              Disabled="@(busy || IsReadOnly)"
                              Label="I confirm this is my photo and I consent to its use as an AI presenter in this campaign" />
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
@@ -1237,6 +1239,14 @@
 
                         selectedCreativeElements &= ~CampaignVideoElement.AgentAvatar;
                         selectedAgentAvatarConsent = false;
+                    }
+
+                    if (selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter && portrait is not null)
+                    {
+                        // The Kling native presenter is the agent: keep the presenter element so the consent box
+                        // shows again for the next campaign instead of a warning with nothing to tick.
+                        selectedCreativeElements &= ~CampaignVideoElement.AgentPortrait;
+                        selectedCreativeElements |= CampaignVideoElement.AgentAvatar;
                     }
                 }
 

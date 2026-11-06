@@ -1619,6 +1619,14 @@ public sealed partial class CampaignGenerationProcessor(
 
         if (job.FullTourProviderRequestId is null && usesNativePresenter)
         {
+            // The pilot makes 15-second 720p videos only through the vertical library; the shared vertical video is
+            // a 30-second 1080p call. Checked again here because the switches can change after the campaign is queued.
+            if (await IsKlingNativePresenterPilotAsync(job.OrganizationId, cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    NativePresenterVideoPolicy.PilotNeedsLibraryMessage + " No Kling video was made.");
+            }
+
             if (!job.AgentAvatarConsentConfirmed || job.AgentPortraitId is not { } portraitId)
             {
                 throw new InvalidOperationException(
