@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ListingStudio.Application.Properties;
+using ListingStudio.Application.Providers;
 using ListingStudio.Application.Stories;
 using ListingStudio.Application.Videos;
 using ListingStudio.Application.Audio;
@@ -591,6 +592,13 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
 
     public void EnqueueSubmissionFailure(Exception exception) => submissionFailures.Enqueue(exception);
 
+    private readonly ConcurrentQueue<Exception> klingPollFailures = new();
+
+    /// <summary>The next Kling 4 status check throws this, e.g. a finished video that could not be downloaded.</summary>
+    public void EnqueueKlingPollFailure(Exception exception) => klingPollFailures.Enqueue(exception);
+
+    public bool HasPendingKlingPollFailures => !klingPollFailures.IsEmpty;
+
     /// <summary>Sets the next poll outcome for a transition; polls without one report the clip as still generating.</summary>
     public void EnqueuePoll(Guid transitionId, WalkthroughVideoState state) =>
         polls.GetOrAdd(transitionId.ToString("N"), _ => new()).Enqueue(state);
@@ -718,6 +726,17 @@ public sealed class FakeWalkthroughVideoProvider : IWalkthroughVideoProvider
         if (fullTourRequests.ContainsKey(providerRequestId)
             || nativePresenterRequests.ContainsKey(providerRequestId))
         {
+            if (klingPollFailures.TryDequeue(out var failure))
+            {
+                if (failure is FinishedVideoDownloadException)
+                {
+                    // Kling did finish this one; only the download failed, so it no longer blocks the next submit.
+                    finishedNativePresenterRequests[providerRequestId] = true;
+                }
+
+                throw failure;
+            }
+
             finishedNativePresenterRequests[providerRequestId] = true;
             return Task.FromResult(new WalkthroughVideoPollResult(
                 WalkthroughVideoState.Completed,

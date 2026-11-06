@@ -232,7 +232,7 @@ public sealed class CampaignGenerationService(
                 cancellationToken);
         if (!ownsPortrait)
         {
-            problems.Add("Add your own profile headshot; Kling uses it to place you in front of the house for the opening.");
+            problems.Add("Add your own profile headshot; Kling uses it to place you in the first shot for the opening.");
         }
 
         if (!creativeOptions.Elements.HasFlag(CampaignVideoElement.AgentAvatar) || !creativeOptions.AgentAvatarConsentConfirmed)

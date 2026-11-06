@@ -16,7 +16,7 @@ public static class FeatureFlagKeys
     public const string Kling4FullTourV1 = "Kling4FullTourV1";
 
     /// <summary>
-    /// Experimental single-call Kling 4 campaign with the approved agent portrait placed in front of the house for the opening
+    /// Experimental single-call Kling 4 campaign with the approved agent portrait placed in the first Tour Map shot for the opening
     /// shot only, approved Tour Map photos after it, and Kling's native speech and music preserved in the render.
     /// </summary>
     public const string Kling4NativePresenterV1 = "Kling4NativePresenterV1";
