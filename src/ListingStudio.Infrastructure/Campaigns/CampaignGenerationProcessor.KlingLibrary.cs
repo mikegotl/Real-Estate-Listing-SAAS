@@ -188,13 +188,13 @@ public sealed partial class CampaignGenerationProcessor
                 cancellationToken);
             streams.Add(agentPortrait);
             var frames = new List<NativePresenterTourFrame>(plan.Frames.Count);
-            foreach (var frame in plan.Frames)
+            foreach (var (frame, index) in plan.Frames.Select((frame, index) => (frame, index)))
             {
-                var stream = await propertyMediaStorage.OpenReadAsync(frame.BlobPath, cancellationToken)
-                    ?? throw new FileNotFoundException("A Tour Map photo could not be opened.");
+                var (stream, frameMimeType) = await OpenKlingTourPhotoAsync(
+                    frame.BlobPath, frame.MimeType, index == 0, cancellationToken);
                 streams.Add(stream);
                 frames.Add(new NativePresenterTourFrame(
-                    new WalkthroughVideoFrame(stream, frame.MimeType),
+                    new WalkthroughVideoFrame(stream, frameMimeType),
                     frame.StopName,
                     frame.ApprovedHighlight,
                     frame.DirectionToNext));
@@ -350,17 +350,19 @@ public sealed partial class CampaignGenerationProcessor
     }
 
     /// <summary>
-    /// Opens the approved headshot for a vertical Kling 4 presenter video, cropped to 9:16 so Kling returns a vertical
-    /// video (it follows the image_url photo's shape, not the requested aspect ratio). If the photo can't be decoded,
-    /// the original is sent unchanged rather than failing a paid campaign.
+    /// Opens a photo for a vertical Kling 4 presenter video, cropped to 9:16. Kling returns a video in the shape of its
+    /// image_url photo (the first tour photo) and ignores the requested aspect ratio, so that photo must be vertical;
+    /// the headshot is cropped too so the presenter reference matches the video's shape. If the photo can't be
+    /// decoded, the original is sent unchanged rather than failing a paid campaign.
     /// </summary>
-    private async Task<(Stream Content, string MimeType)> OpenVerticalPresenterPortraitAsync(
+    private async Task<(Stream Content, string MimeType)> OpenVerticalKlingPhotoAsync(
         string blobPath,
         string mimeType,
+        string missingMessage,
         CancellationToken cancellationToken)
     {
         await using var original = await propertyMediaStorage.OpenReadAsync(blobPath, cancellationToken)
-            ?? throw new FileNotFoundException("The campaign's approved agent photo could not be opened.");
+            ?? throw new FileNotFoundException(missingMessage);
         using var buffer = new MemoryStream();
         await original.CopyToAsync(buffer, cancellationToken);
         var bytes = buffer.ToArray();
@@ -373,15 +375,38 @@ public sealed partial class CampaignGenerationProcessor
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            LogPresenterPortraitNotFramed(exception, blobPath);
+            LogPresenterPhotoNotFramed(exception, blobPath);
             return (new MemoryStream(bytes, writable: false), mimeType);
         }
     }
 
+    private Task<(Stream Content, string MimeType)> OpenVerticalPresenterPortraitAsync(
+        string blobPath,
+        string mimeType,
+        CancellationToken cancellationToken) =>
+        OpenVerticalKlingPhotoAsync(blobPath, mimeType, "The campaign's approved agent photo could not be opened.", cancellationToken);
+
+    /// <summary>The first tour photo is Kling's opening frame, so it is cropped to 9:16; the others are sent as they are.</summary>
+    private async Task<(Stream Content, string MimeType)> OpenKlingTourPhotoAsync(
+        string blobPath,
+        string mimeType,
+        bool isOpeningFrame,
+        CancellationToken cancellationToken)
+    {
+        if (isOpeningFrame)
+        {
+            return await OpenVerticalKlingPhotoAsync(blobPath, mimeType, "A Tour Map photo could not be opened.", cancellationToken);
+        }
+
+        var stream = await propertyMediaStorage.OpenReadAsync(blobPath, cancellationToken)
+            ?? throw new FileNotFoundException("A Tour Map photo could not be opened.");
+        return (stream, mimeType);
+    }
+
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "The agent headshot {BlobPath} could not be cropped to 9:16; the original photo is sent to Kling")]
-    private partial void LogPresenterPortraitNotFramed(Exception exception, string blobPath);
+        Message = "The Kling photo {BlobPath} could not be cropped to 9:16; the original photo is sent to Kling")]
+    private partial void LogPresenterPhotoNotFramed(Exception exception, string blobPath);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

@@ -806,6 +806,11 @@ public sealed partial class CampaignGenerationTests
         Assert.Equal("Hi, I'm Dana. Come see this home with me.", sent.OpeningLine);
         Assert.Equal("Step inside to the bright entry, then the kitchen with its center island.", sent.TourVoiceover);
         Assert.Equal("Call me today to book a private showing.", sent.ClosingLine);
+        // Kling opens on the first tour photo and returns a video in its shape, so only that photo is reframed to
+        // 9:16 (re-encoded as JPEG); the other tour photos are sent as uploaded.
+        Assert.True(sent.TourFrames.Count >= 2);
+        Assert.Equal("image/jpeg", sent.TourFrames[0].Frame.ContentType);
+        Assert.All(sent.TourFrames.Skip(1), frame => Assert.Equal("image/png", frame.Frame.ContentType));
         Assert.Equal("Higgsfield", completed.ProviderAudit?.Provider);
         Assert.False(string.IsNullOrWhiteSpace(completed.ProviderAudit?.RequestId));
         Assert.Equal("fake-kling4-native-presenter-v1", completed.ProviderAudit?.GenerationVersion);

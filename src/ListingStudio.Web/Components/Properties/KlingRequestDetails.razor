@@ -16,19 +16,24 @@
             <tbody>
                 @if (body.Image is { } image)
                 {
+                    var (imageUrl, imageLabel) = body.FirstTourPhotoOpens ? TourPhoto(1) : (PortraitUrl, "Profile headshot");
                     <tr>
                         <td><code>image_url</code></td>
-                        <td>@Thumbnail(image, PortraitUrl, "Profile headshot")</td>
+                        <td>@Thumbnail(image, imageUrl, imageLabel)</td>
                         <td class="kling-request-value">@Value(image)</td>
                     </tr>
                 }
                 @for (var index = 0; index < body.Images.Count; index++)
                 {
                     var position = index;
-                    var frame = Frames?.FirstOrDefault(candidate => candidate.Position == position + 1);
+                    // Newer requests: image_urls[0] is the headshot and image_urls[n] is tour photo n + 1.
+                    // Older requests: image_urls[n] is tour photo n + 1 and the headshot was image_url.
+                    var (slotUrl, slotLabel) = body.FirstTourPhotoOpens
+                        ? position == 0 ? (PortraitUrl, "Profile headshot") : TourPhoto(position + 1)
+                        : TourPhoto(position + 1);
                     <tr>
                         <td><code>image_urls[@position]</code></td>
-                        <td>@Thumbnail(body.Images[position], frame is null ? null : $"/property-media/{frame.PropertyMediaId}", frame?.StopName ?? $"Photo {position + 1}")</td>
+                        <td>@Thumbnail(body.Images[position], slotUrl, slotLabel)</td>
                         <td class="kling-request-value">@Value(body.Images[position])</td>
                     </tr>
                 }
@@ -109,6 +114,13 @@
     };
 
     private string? PortraitUrl => AgentPortraitId is { } id ? $"/agent-portraits/{id}" : null;
+
+    /// <summary>This site's copy of tour photo <paramref name="position"/> (1-based) and its name.</summary>
+    private (string? Url, string Label) TourPhoto(int position)
+    {
+        var frame = Frames?.FirstOrDefault(candidate => candidate.Position == position);
+        return (frame is null ? null : $"/property-media/{frame.PropertyMediaId}", frame?.StopName ?? $"Photo {position}");
+    }
 
     protected override void OnParametersSet()
     {
@@ -216,5 +228,10 @@
         IReadOnlyList<string> Images,
         string? EndImage,
         string? Prompt,
-        IReadOnlyList<KeyValuePair<string, string>> Settings);
+        IReadOnlyList<KeyValuePair<string, string>> Settings)
+    {
+        /// <summary>True when the first tour photo is image_url and the headshot is image_urls[0].</summary>
+        public bool FirstTourPhotoOpens =>
+            Prompt?.Contains(NativePresenterVideoPolicy.FirstTourPhotoOpensMarker, StringComparison.Ordinal) == true;
+    }
 }

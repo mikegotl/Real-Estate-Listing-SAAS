@@ -10,9 +10,15 @@ public static class FullTourVideoPolicy
 
 public static class NativePresenterVideoPolicy
 {
-    // The same portrait is the first and last frame, leaving eight of Kling 4's ten slots for the property.
+    // The first tour photo is image_url (the opening frame); the headshot and the other tour photos are image_urls.
     public const int MinimumTourFrames = 1;
     public const int MaximumTourFrames = 8;
+
+    /// <summary>
+    /// In every prompt sent since the opening moved into the first room. A request whose prompt has it puts the first
+    /// tour photo in image_url and the headshot first in image_urls; older requests put the headshot in image_url.
+    /// </summary>
+    public const string FirstTourPhotoOpensMarker = "Tour keyframe 1 is the image_url photo";
 
     /// <summary>Kling 4 makes 3 to 30 seconds per call; a library video longer than that keeps the established edit.</summary>
     public const int MinimumDurationSeconds = 3;

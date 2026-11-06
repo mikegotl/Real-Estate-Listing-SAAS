@@ -3,9 +3,10 @@ using ListingStudio.Application.Properties;
 namespace ListingStudio.Application.Campaigns;
 
 /// <summary>
-/// Frames the agent headshot for a vertical Kling 4 presenter video. Kling returns a video in the shape of its
-/// image_url photo and ignores the requested aspect ratio, so a 3:4 headshot gives a 3:4 video that the renderer then
-/// has to crop. Cropping the headshot to 9:16 first makes Kling return a true vertical video.
+/// Frames photos for a vertical Kling 4 presenter video. Kling returns a video in the shape of its image_url photo
+/// (the first tour photo) and ignores the requested aspect ratio, so a landscape room photo gives a landscape video
+/// that the renderer then has to crop. Cropping that photo (and the headshot reference) to 9:16 first makes Kling
+/// return a true vertical video.
 /// </summary>
 public static class PresenterPortraitFraming
 {
