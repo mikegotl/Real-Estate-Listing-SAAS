@@ -227,7 +227,7 @@ public sealed partial class CampaignGenerationTests
                 owner.UserId,
                 FeatureFlagKeys.Kling4NativePresenterV1,
                 globallyEnabled: true,
-                enabledForAllOrganizations: false,
+                enabledForAllOrganizations: true, // live: the single shared vertical video is live-only
                 [owner.OrganizationId]);
             queued = (await scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>().EnqueueAsync(
                 owner.UserId,
@@ -251,6 +251,75 @@ public sealed partial class CampaignGenerationTests
         Assert.DoesNotContain(
             failed.Deliverables,
             candidate => candidate.Status == CampaignDeliverableStatus.Rendered);
+    }
+
+    [Fact]
+    public async Task APilotWorkspaceWithoutTheLibraryNeverSendsAThirtySecond1080pKlingCall()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("kling4-pilot-no-library");
+        await GrantReviewAdminAsync(owner.UserId);
+        Guid portraitId;
+        await using (var uploadScope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var portraits = uploadScope.ServiceProvider.GetRequiredService<IAgentPortraitService>();
+            await using (var portrait = new MemoryStream(OnePixelPng))
+            {
+                portraitId = (await portraits.UploadAsync(
+                    owner.UserId,
+                    new AgentPortraitUpload("agent.png", "image/png", portrait.Length, portrait))).Id;
+            }
+
+            var media = uploadScope.ServiceProvider.GetRequiredService<IPropertyMediaService>();
+            await using var exterior = new MemoryStream(OnePixelPng);
+            await media.UploadAsync(owner.UserId, owner.PropertyId, new PropertyMediaUpload(
+                "exterior.png", "image/png", exterior.Length, exterior, WalkthroughStoryboard.ExteriorFront));
+        }
+
+        var options = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements | CampaignVideoElement.AgentAvatar,
+            AgentPortraitId = portraitId,
+            AgentAvatarConsentConfirmed = true,
+        };
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var features = scope.ServiceProvider.GetRequiredService<IFeatureStateService>();
+        await features.ConfigureAsync(
+            owner.UserId,
+            FeatureFlagKeys.Kling4NativePresenterV1,
+            globallyEnabled: true,
+            enabledForAllOrganizations: false,
+            [owner.OrganizationId]);
+        try
+        {
+            var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
+            var preview = await campaigns.PreviewKlingNativePresenterAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.TikTok,
+                options,
+                null,
+                usesVerticalLibrary: false);
+            Assert.NotNull(preview);
+            Assert.Contains(NativePresenterVideoPolicy.PilotNeedsLibraryMessage, preview.Problems);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => campaigns.EnqueueAsync(
+                owner.UserId,
+                owner.PropertyId,
+                CampaignOutputSelection.TikTok,
+                options,
+                CampaignNarrationPreferences.Default,
+                CampaignVideoStrategy.Kling4NativePresenter));
+            Assert.Equal(NativePresenterVideoPolicy.PilotNeedsLibraryMessage, exception.Message);
+        }
+        finally
+        {
+            await features.ConfigureAsync(
+                owner.UserId,
+                FeatureFlagKeys.Kling4NativePresenterV1,
+                globallyEnabled: false,
+                enabledForAllOrganizations: false,
+                []);
+        }
     }
 
     [Theory]
@@ -554,7 +623,7 @@ public sealed partial class CampaignGenerationTests
                 owner.UserId,
                 FeatureFlagKeys.Kling4NativePresenterV1,
                 globallyEnabled: true,
-                enabledForAllOrganizations: false,
+                enabledForAllOrganizations: true, // live: the single shared vertical video is live-only
                 [owner.OrganizationId]);
             var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
             var preview = await campaigns.PreviewKlingNativePresenterAsync(
@@ -693,7 +762,7 @@ public sealed partial class CampaignGenerationTests
                 owner.UserId,
                 FeatureFlagKeys.Kling4NativePresenterV1,
                 globallyEnabled: true,
-                enabledForAllOrganizations: false,
+                enabledForAllOrganizations: true, // live: the single shared vertical video is live-only
                 [owner.OrganizationId]);
             var campaigns = scope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
             queued = (await campaigns.EnqueueAsync(

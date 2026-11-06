@@ -136,6 +136,12 @@
                             <span data-testid="kling-pilot-note"> Pilot mode: every video is a 15-second 720p Kling video; live mode makes each one its full length at 1080p.</span>
                         }
                     </MudAlert>
+                    @if (klingNativePresenterPilot && !LibraryMode)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="kling-pilot-needs-library">
+                            @NativePresenterVideoPolicy.PilotNeedsLibraryMessage
+                        </MudAlert>
+                    }
                     @if (KlingVideoSlots.Count > 0)
                     {
                         @foreach (var slot in KlingVideoSlots)
@@ -924,9 +930,18 @@
                                                             VersionChanged="LoadAsync" />
                                 }
                             }
-                            else
+                            else if (job.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
                             {
                                 <MudProgressLinear Indeterminate="true" Class="mt-3" />
+                            }
+                            else
+                            {
+                                @* A stopped campaign is not working on this output, so it must not look busy. *@
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3" data-testid="output-not-made">
+                                    @(job.Status == CampaignGenerationStatus.Cancelled
+                                        ? "Not made: the campaign was cancelled."
+                                        : "Not made: the campaign stopped before this was finished.")
+                                </MudText>
                             }
                         </MudPaper>
                     </MudItem>
@@ -975,9 +990,18 @@
                                     </MudButton>
                                 </MudStack>
                             }
-                            else
+                            else if (job.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running)
                             {
                                 <MudProgressLinear Indeterminate="true" Class="mt-3" />
+                            }
+                            else
+                            {
+                                @* A stopped campaign is not working on this output, so it must not look busy. *@
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3" data-testid="output-not-made">
+                                    @(job.Status == CampaignGenerationStatus.Cancelled
+                                        ? "Not made: the campaign was cancelled."
+                                        : "Not made: the campaign stopped before this was finished.")
+                                </MudText>
                             }
                         </MudPaper>
                     </MudItem>
