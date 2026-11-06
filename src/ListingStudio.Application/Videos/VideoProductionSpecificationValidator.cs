@@ -350,6 +350,9 @@ public sealed class VideoProductionSpecificationValidator : IVideoProductionSpec
         var programDuration = (int)specification.RequestedDuration * 1_000;
         var narrationIds = new HashSet<string>(StringComparer.Ordinal);
         var ordered = specification.Audio.NarrationSegments.OrderBy(segment => segment.StartMs).ToArray();
+        // Every campaign voices the master plan (and its localized captions), so a plan without narration can never
+        // finish; rejecting it here lets the guided repair add narration instead of failing a later stage for good.
+        AddIf(ordered.Length == 0, "The plan must include at least one narration segment.", errors);
         long previousEnd = 0;
         foreach (var segment in ordered)
         {

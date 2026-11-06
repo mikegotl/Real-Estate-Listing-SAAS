@@ -1,6 +1,7 @@
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Application.Properties;
+using ListingStudio.Application.Providers;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
 using ListingStudio.Domain.Campaigns;
@@ -411,6 +412,7 @@ public sealed partial class CampaignGenerationTests
     [InlineData("none")]
     [InlineData("refused")]
     [InlineData("busy")]
+    [InlineData("download")]
     [InlineData("live")]
     public async Task KlingNativePresenterMakesOneKlingVideoPerLibraryVideoWithItsOwnLengthAndScript(string providerProblem)
     {
@@ -485,7 +487,21 @@ public sealed partial class CampaignGenerationTests
                     : new HttpRequestException("Busy.", null, System.Net.HttpStatusCode.TooManyRequests));
             }
 
+            if (providerProblem == "download")
+            {
+                // Kling finished the video but the download failed: the retry downloads the same video again and
+                // never submits (or pays for) a second one.
+                await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.GenerateRequiredAiVideo);
+                for (var attempt = 0; attempt < ICampaignGenerationProcessor.MaximumStageAttempts; attempt++)
+                {
+                    fixture.Factory.WalkthroughVideoProvider.EnqueueKlingPollFailure(new FinishedVideoDownloadException(
+                        "Higgsfield",
+                        new HttpRequestException("Forbidden.", null, System.Net.HttpStatusCode.Forbidden)));
+                }
+            }
+
             await ProcessUntilStageAsync(owner, queued.Id, CampaignGenerationStage.RenderHero);
+            Assert.False(fixture.Factory.WalkthroughVideoProvider.HasPendingKlingPollFailures);
 
             await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
             var campaigns = verifyScope.ServiceProvider.GetRequiredService<ICampaignGenerationService>();
@@ -508,6 +524,18 @@ public sealed partial class CampaignGenerationTests
                 .ToArrayAsync();
             var kling = variants.Where(candidate => candidate.DurationSeconds <= 30).ToArray();
             Assert.True(kling.Length >= 2, $"Expected several Kling videos, got {kling.Length}.");
+            if (providerProblem == "download")
+            {
+                // Out of retries, the video is marked failed but keeps its paid Kling request, so a later retry
+                // downloads it instead of submitting a new one.
+                var undownloaded = kling[0];
+                Assert.Equal(CampaignVideoVariantStatus.Failed, undownloaded.Status);
+                Assert.Contains("finished the video, but it could not be downloaded (HTTP 403)", undownloaded.Error, StringComparison.Ordinal);
+                Assert.False(string.IsNullOrWhiteSpace(undownloaded.KlingProviderRequestId));
+                Assert.Null(undownloaded.KlingAssetPath);
+                kling = kling[1..];
+            }
+
             if (failOneKlingVideo)
             {
                 var refused = kling[0];
@@ -531,7 +559,7 @@ public sealed partial class CampaignGenerationTests
             var sent = fixture.Factory.WalkthroughVideoProvider.NativePresenterSubmissions
                 .Where(submission => submission.IdempotencyKey.Contains(queued.Id.ToString("N"), StringComparison.Ordinal))
                 .ToArray();
-            Assert.Equal(kling.Length, sent.Length);
+            Assert.Equal(kling.Length + (providerProblem == "download" ? 1 : 0), sent.Length);
             // Higgsfield takes one generation at a time, so each video waits for the one before it.
             Assert.DoesNotContain(
                 fixture.Factory.WalkthroughVideoProvider.OverlappingNativePresenterSubmissions,

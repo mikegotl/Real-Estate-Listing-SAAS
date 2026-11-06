@@ -124,7 +124,7 @@
                 else if (selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
                 {
                     <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
-                        Kling places you, from your consented profile headshot, in front of the house for the opening shot only,
+                        Kling places you, from your consented profile headshot, in the video's first Tour Map shot for the opening only,
                         then walks through up to eight approved Tour Map photos while your voice continues, and generates the
                         speech and instrumental music.
                         @(KlingVideoSlots.Count > 0
@@ -153,7 +153,7 @@
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
                                     This video's own Kling call. Kling is told to say these words exactly. @slot.Seconds seconds holds about @maximumWords words.
                                 </MudText>
-                                <MudTextField T="string" @bind-Value="draft.Opening" Label="Opening (agent on camera in front of the house)"
+                                <MudTextField T="string" @bind-Value="draft.Opening" Label="Opening (agent on camera in the first shot)"
                                               Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)"
                                               MaxLength="NativePresenterScript.MaximumOpeningLength" />
                                 <MudTextField T="string" @bind-Value="draft.Tour" Label="Tour voiceover (over the AI tour)"
@@ -187,7 +187,7 @@
                             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
                                 Kling is told to say these words exactly. 30 seconds holds about @NativePresenterScript.MaximumWords words.
                             </MudText>
-                            <MudTextField T="string" @bind-Value="presenterOpening" Label="Opening (agent on camera in front of the house)"
+                            <MudTextField T="string" @bind-Value="presenterOpening" Label="Opening (agent on camera in the first shot)"
                                           Variant="Variant.Outlined" Lines="2" Immediate="true" Disabled="@(busy || IsReadOnly)"
                                           MaxLength="NativePresenterScript.MaximumOpeningLength" data-testid="presenter-opening" />
                             <MudTextField T="string" @bind-Value="presenterTour" Label="Tour voiceover (over the AI tour)"
@@ -257,7 +257,7 @@
                                         <MudText Typo="Typo.subtitle1" Class="mt-3" data-testid="@($"kling-preview-{video.Format}")">@VerticalFormatNames.Name(video.Format) · @video.DurationSeconds seconds</MudText>
                                         <MudText Typo="Typo.subtitle2" Class="mt-1">Keyframes</MudText>
                                         <ol class="mb-2">
-                                            <li>Your profile headshot (you, in front of the house for the opening shot)</li>
+                                            <li>Your profile headshot (you, on camera in the first shot; only your face, hair and clothing are used)</li>
                                             @foreach (var frame in video.Frames)
                                             {
                                                 <li>@frame.StopName@(frame.DirectionToNext is null ? null : $", then {frame.DirectionToNext.ToLowerInvariant()}")</li>
@@ -285,7 +285,7 @@
                                 {
                                     <MudText Typo="Typo.subtitle2" Class="mt-2">Keyframes</MudText>
                                     <ol class="mb-2">
-                                        <li>Your profile headshot (you, in front of the house for the opening shot)</li>
+                                        <li>Your profile headshot (you, on camera in the first shot; only your face, hair and clothing are used)</li>
                                         @foreach (var frame in klingPreview.Frames)
                                         {
                                             <li>@frame.StopName@(frame.DirectionToNext is null ? null : $", then {frame.DirectionToNext.ToLowerInvariant()}")@(frame.ApprovedHighlight is null ? " (no approved detail)" : null)</li>
@@ -719,7 +719,7 @@
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
                     @if (selectedVideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
                     {
-                        <span>Kling 4 will place you, from this portrait, in front of the house for the opening shot and generate native speech and music. HeyGen is not used for the native-presenter video.</span>
+                        <span>Kling 4 will place you, from this portrait, in the first Tour Map shot of each video for the opening and generate native speech and music. HeyGen is not used for the native-presenter video.</span>
                     }
                     else if (AgentAvatarVideoService.IsEnabled)
                     {

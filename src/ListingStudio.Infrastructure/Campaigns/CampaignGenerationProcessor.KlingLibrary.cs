@@ -1,5 +1,6 @@
 using ListingStudio.Application.Administration;
 using ListingStudio.Application.Campaigns;
+using ListingStudio.Application.Properties;
 using ListingStudio.Application.Providers;
 using ListingStudio.Application.Videos;
 using ListingStudio.Domain.Administration;
@@ -95,7 +96,13 @@ public sealed partial class CampaignGenerationProcessor
                 LogLibraryKlingBusy(job.Id, variant.Id, (int?)exception.StatusCode);
                 inFlight = true;
             }
+            catch (FinishedVideoDownloadException exception) when (IsVariantFailure(exception, job))
+            {
+                // Kling made the video; only the download failed. Keep the request so a retry downloads it again.
+                await FailVariantAsync(job, variant.Id, exception, cancellationToken);
+            }
             catch (Exception exception) when (exception is not OperationCanceledException
+                && exception is not FinishedVideoDownloadException
                 && (exception is KlingVideoFailedException || IsVariantFailure(exception, job)))
             {
                 await ResetVariantKlingAsync(job, variant.Id, cancellationToken);
@@ -175,8 +182,10 @@ public sealed partial class CampaignGenerationProcessor
         var streams = new List<Stream>(plan.Frames.Count + 1);
         try
         {
-            var agentPortrait = await propertyMediaStorage.OpenReadAsync(portrait.BlobPath, cancellationToken)
-                ?? throw new FileNotFoundException("The campaign's approved agent photo could not be opened.");
+            var (agentPortrait, agentPortraitMimeType) = await OpenVerticalPresenterPortraitAsync(
+                portrait.BlobPath,
+                portrait.MimeType,
+                cancellationToken);
             streams.Add(agentPortrait);
             var frames = new List<NativePresenterTourFrame>(plan.Frames.Count);
             foreach (var frame in plan.Frames)
@@ -192,7 +201,7 @@ public sealed partial class CampaignGenerationProcessor
             }
 
             var submission = new NativePresenterVideoSubmission(
-                new WalkthroughVideoFrame(agentPortrait, portrait.MimeType),
+                new WalkthroughVideoFrame(agentPortrait, agentPortraitMimeType),
                 frames,
                 plan.Script.Opening,
                 plan.Script.Closing,
@@ -234,15 +243,17 @@ public sealed partial class CampaignGenerationProcessor
         CampaignVideoVariant variant,
         CancellationToken cancellationToken)
     {
-        if (variant.KlingSubmittedAtUtc is null
-            || timeProvider.GetUtcNow() - variant.KlingSubmittedAtUtc > TimeSpan.FromMinutes(30))
-        {
-            throw new KlingVideoFailedException("The Kling 4 video exceeded its processing time limit.");
-        }
-
+        // The time limit applies only while Kling is still working: a finished video whose download failed earlier is
+        // downloaded again on retry, however long ago it was submitted, so it is never paid for twice.
         var result = await walkthroughVideoProvider.PollAsync(variant.KlingProviderRequestId!, cancellationToken);
         if (result.State == WalkthroughVideoState.InProgress)
         {
+            if (variant.KlingSubmittedAtUtc is null
+                || timeProvider.GetUtcNow() - variant.KlingSubmittedAtUtc > TimeSpan.FromMinutes(30))
+            {
+                throw new KlingVideoFailedException("The Kling 4 video exceeded its processing time limit.");
+            }
+
             return;
         }
 
@@ -337,6 +348,40 @@ public sealed partial class CampaignGenerationProcessor
         {
         }
     }
+
+    /// <summary>
+    /// Opens the approved headshot for a vertical Kling 4 presenter video, cropped to 9:16 so Kling returns a vertical
+    /// video (it follows the image_url photo's shape, not the requested aspect ratio). If the photo can't be decoded,
+    /// the original is sent unchanged rather than failing a paid campaign.
+    /// </summary>
+    private async Task<(Stream Content, string MimeType)> OpenVerticalPresenterPortraitAsync(
+        string blobPath,
+        string mimeType,
+        CancellationToken cancellationToken)
+    {
+        await using var original = await propertyMediaStorage.OpenReadAsync(blobPath, cancellationToken)
+            ?? throw new FileNotFoundException("The campaign's approved agent photo could not be opened.");
+        using var buffer = new MemoryStream();
+        await original.CopyToAsync(buffer, cancellationToken);
+        var bytes = buffer.ToArray();
+        try
+        {
+            var decoded = await photoImageCodec.DecodeAsync(bytes, mimeType, 2_048, 2_048, PhotoScaling.ShrinkToFit, cancellationToken);
+            var framed = PresenterPortraitFraming.CropToVertical(decoded);
+            var encoded = await photoImageCodec.EncodeJpegAsync(framed, cancellationToken);
+            return (new MemoryStream(encoded, writable: false), "image/jpeg");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogPresenterPortraitNotFramed(exception, blobPath);
+            return (new MemoryStream(bytes, writable: false), mimeType);
+        }
+    }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "The agent headshot {BlobPath} could not be cropped to 9:16; the original photo is sent to Kling")]
+    private partial void LogPresenterPortraitNotFramed(Exception exception, string blobPath);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

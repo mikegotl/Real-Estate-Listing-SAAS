@@ -320,7 +320,14 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal("9:16", root.GetProperty("aspect_ratio").GetString());
         var prompt = root.GetProperty("prompt").GetString()!;
         Assert.Equal(provider.BuildNativePresenterPrompt(submission), prompt);
-        Assert.Contains("standing in front of the house", prompt.ReplaceLineEndings(" "), StringComparison.Ordinal);
+        var flat = prompt.ReplaceLineEndings(" ");
+        // The opening is whatever the first keyframe is, and the headshot's own background is never shown.
+        Assert.DoesNotContain("in front of the house", flat, StringComparison.Ordinal);
+        Assert.Contains("Opening shot (tour keyframe 1, the Exterior front), the agent on camera in that space", flat, StringComparison.Ordinal);
+        Assert.Contains("a confident introduction in the Exterior front", flat, StringComparison.Ordinal);
+        Assert.Contains("ignore its background completely and never show it", flat, StringComparison.Ordinal);
+        Assert.Contains("never create an exterior, room or view that is not one of the keyframes", flat, StringComparison.Ordinal);
+        Assert.DoesNotContain("Do not show the agent inside a room", flat, StringComparison.Ordinal);
         Assert.Contains("The agent appears on camera only in the opening shot", prompt.ReplaceLineEndings(" "), StringComparison.Ordinal);
         Assert.DoesNotContain("return to the agent", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("first and last keyframe", prompt, StringComparison.Ordinal);
@@ -438,6 +445,30 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Equal("higgsfield", result.Provider);
         Assert.Equal("https://api.higgsfield.test/requests/req_123/status", handler.Requests[0].Uri.AbsoluteUri);
         Assert.Null(handler.Requests[1].Authorization);
+    }
+
+    [Fact]
+    public async Task AFinishedVideoThatCannotBeDownloadedIsReportedAsADownloadFailureNotARefusal()
+    {
+        var handler = new RoutingHandler(request => request.RequestUri!.Host switch
+        {
+            "api.higgsfield.test" => Json(new
+            {
+                status = "completed",
+                request_id = "req_123",
+                video = new { url = "https://cdn.storage.test/out/req_123.mp4" },
+            }),
+            _ => new HttpResponseMessage(HttpStatusCode.Forbidden),
+        });
+        using var client = new HttpClient(handler);
+
+        var exception = await Assert.ThrowsAsync<FinishedVideoDownloadException>(
+            () => CreateProvider(client).PollAsync("req_123"));
+
+        // Kling has already made and charged for this video, so the message says a retry only downloads it again.
+        Assert.Contains("finished the video, but it could not be downloaded (HTTP 403)", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("no new video is made or charged", exception.Message, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<IOException>(exception);
     }
 
     [Theory]

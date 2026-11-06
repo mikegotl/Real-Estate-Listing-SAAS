@@ -1659,8 +1659,10 @@ public sealed partial class CampaignGenerationProcessor(
             var streams = new List<Stream>(plan.Frames.Count + 1);
             try
             {
-                var agentPortrait = await propertyMediaStorage.OpenReadAsync(portrait.BlobPath, cancellationToken)
-                    ?? throw new FileNotFoundException("The campaign's approved agent photo could not be opened.");
+                var (agentPortrait, agentPortraitMimeType) = await OpenVerticalPresenterPortraitAsync(
+                    portrait.BlobPath,
+                    portrait.MimeType,
+                    cancellationToken);
                 streams.Add(agentPortrait);
                 var nativeFrames = new List<NativePresenterTourFrame>(plan.Frames.Count);
                 foreach (var frame in plan.Frames)
@@ -1676,7 +1678,7 @@ public sealed partial class CampaignGenerationProcessor(
                 }
 
                 var submission = new NativePresenterVideoSubmission(
-                    new WalkthroughVideoFrame(agentPortrait, portrait.MimeType),
+                    new WalkthroughVideoFrame(agentPortrait, agentPortraitMimeType),
                     nativeFrames,
                     plan.Script.Opening,
                     plan.Script.Closing,
@@ -1786,15 +1788,17 @@ public sealed partial class CampaignGenerationProcessor(
             }
         }
 
-        if (job.FullTourSubmittedAtUtc is null
-            || timeProvider.GetUtcNow() - job.FullTourSubmittedAtUtc > TimeSpan.FromMinutes(30))
-        {
-            throw new TimeoutException("The Kling 4 full tour exceeded its processing time limit.");
-        }
-
+        // The time limit applies only while Kling is still working, so a finished video whose download failed is
+        // downloaded again on retry instead of timing out.
         var result = await walkthroughVideoProvider.PollAsync(job.FullTourProviderRequestId, cancellationToken);
         if (result.State == WalkthroughVideoState.InProgress)
         {
+            if (job.FullTourSubmittedAtUtc is null
+                || timeProvider.GetUtcNow() - job.FullTourSubmittedAtUtc > TimeSpan.FromMinutes(30))
+            {
+                throw new TimeoutException("The Kling 4 full tour exceeded its processing time limit.");
+            }
+
             return false;
         }
 
@@ -2720,6 +2724,7 @@ public sealed partial class CampaignGenerationProcessor(
         {
             VideoPlanValidationException => exception.Message,
             ProviderRequestException provider => provider.Describe(),
+            FinishedVideoDownloadException => exception.Message,
             HttpRequestException => "An external provider request failed.",
             TimeoutException => "An external provider request timed out.",
             VideoRenderException => "A campaign video could not be rendered.",

@@ -30,6 +30,24 @@ public sealed class VideoProductionSpecificationValidatorTests
     }
 
     [Fact]
+    public void RejectsAPlanWithoutNarration()
+    {
+        // Every campaign voices the master plan, so a silent plan would fail the narration stage on every retry.
+        var input = CreateInput();
+        var specification = CreateSpecification(input);
+        specification = specification with
+        {
+            Audio = specification.Audio with { NarrationSegments = [] },
+            Scenes = specification.Scenes.Select(scene => scene with { NarrationSegmentIds = [] }).ToArray(),
+        };
+
+        var result = validator.Validate(input, specification);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("The plan must include at least one narration segment.", result.Errors);
+    }
+
+    [Fact]
     public void RejectsNonContiguousTimelineAndIncorrectTotalDuration()
     {
         var input = CreateInput();
