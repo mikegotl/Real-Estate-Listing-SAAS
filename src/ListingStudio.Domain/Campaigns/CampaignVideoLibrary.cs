@@ -23,6 +23,12 @@ public enum VerticalCreativeFormat
 
     /// <summary>Verified private or timely access; only with confirmed access language.</summary>
     ExclusiveAccess,
+
+    /// <summary>A rapid hard-cut run through every room in walking order, built for reach.</summary>
+    SpeedTour,
+
+    /// <summary>The agent's approved nearby places around the home, then the home itself.</summary>
+    NeighborhoodTour,
 }
 
 /// <summary>What a vertical video is meant to achieve. Values are stored by name; append new ones.</summary>
@@ -59,11 +65,35 @@ public enum VerticalVideoSelection
 /// </summary>
 public enum VerticalCampaignGoal
 {
+    // The first five are the original goals. They are no longer offered, but past campaigns keep them.
     MaximizeReach,
     BuyerInterest,
     OpenHouse,
     NewListing,
     PriceChange,
+
+    // Campaign types from the November 2026 TikTok research: each leads with one video format.
+
+    /// <summary>"What $X buys in [town]": Price first with a price-surprise hook.</summary>
+    WhatPriceBuys,
+
+    /// <summary>Price first with the price held back until the end.</summary>
+    GuessThePrice,
+
+    /// <summary>"Wait till you see the [room]": Wow feature with a curiosity hook.</summary>
+    StandoutRoom,
+
+    /// <summary>Speed tour.</summary>
+    SpeedTour,
+
+    /// <summary>Hosted walk-through, with the agent or a consented presenter.</summary>
+    AgentHosted,
+
+    /// <summary>Wow feature with the luxury showcase message.</summary>
+    LuxuryShowcase,
+
+    /// <summary>"Living in [town]": the approved nearby places, then the home.</summary>
+    LivingInTown,
 }
 
 public enum CampaignVideoLibraryStatus

@@ -353,9 +353,10 @@ public sealed partial class VerticalPerformanceService(
             .Select(video => video.PropertyId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
         var requesters = await dbContext.CampaignGenerationJobs.AsNoTracking()
             .Where(job => job.OrganizationId == organizationId && jobIds.Contains(job.Id))
-            .ToDictionaryAsync(job => job.Id, job => job.RequestedByUserId, cancellationToken);
+            .Select(job => new { job.Id, job.RequestedByUserId, job.VerticalGoal })
+            .ToDictionaryAsync(job => job.Id, cancellationToken);
         // Agents are labelled Agent 1, Agent 2… in a stable order; the report never stores a name, email or user id.
-        var agentLabels = requesters.Values.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+        var agentLabels = requesters.Values.Select(job => job.RequestedByUserId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .Select((user, index) => (user, label: $"Agent {index + 1}")).ToDictionary(item => item.user, item => item.label, StringComparer.Ordinal);
         var posts = await LoadPostsAsync(organizationId, variants.Select(variant => variant.Id).ToArray(), cancellationToken);
         return variants.Where(variant => properties.ContainsKey(variant.PropertyId)).Select(variant =>
@@ -366,8 +367,8 @@ public sealed partial class VerticalPerformanceService(
             var totals = VerticalMetricTotals.Sum((posts.GetValueOrDefault(variant.Id) ?? []).Select(post => post.Latest).OfType<CampaignMetricValues>().ToArray());
             return new VerticalRuleEvaluationInput(variant.Format, property.PropertyType, property.ListingPrice,
                 photoCounts.GetValueOrDefault(variant.PropertyId), withVideo.Contains(variant.PropertyId),
-                agentLabels.GetValueOrDefault(requesters.GetValueOrDefault(variant.CampaignGenerationJobId) ?? string.Empty) ?? "Agent ?",
-                score, totals);
+                agentLabels.GetValueOrDefault(requesters.GetValueOrDefault(variant.CampaignGenerationJobId)?.RequestedByUserId ?? string.Empty) ?? "Agent ?",
+                score, totals, requesters.GetValueOrDefault(variant.CampaignGenerationJobId)?.VerticalGoal);
         }).ToArray();
     }
 

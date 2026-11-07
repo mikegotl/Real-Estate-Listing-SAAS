@@ -65,7 +65,7 @@ public static class VerticalVariantSpecificationBuilder
                 beat.StartMs,
                 beat.DurationMs,
                 visual,
-                index == 0 || recipe.Format == VerticalCreativeFormat.WowFeature
+                index == 0 || recipe.Format is VerticalCreativeFormat.WowFeature or VerticalCreativeFormat.SpeedTour
                     ? new TransitionPlan(TransitionKind.Cut, 0)
                     : new TransitionPlan(TransitionKind.Crossfade, Math.Min(300, Math.Min(beat.DurationMs, beats[index - 1].DurationMs) / 3)),
                 motion,
@@ -121,6 +121,7 @@ public static class VerticalVariantSpecificationBuilder
         VerticalCopySource.MediaAnalysis => FactSource.PropertyStory,
         VerticalCopySource.ApprovedTemplate => FactSource.BrandKit,
         VerticalCopySource.PropertyStory => FactSource.PropertyStory,
+        VerticalCopySource.ApprovedNeighborhood => FactSource.ApprovedNeighborhood,
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 

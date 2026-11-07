@@ -181,11 +181,13 @@ public sealed record VerticalRuleEvaluationInput(
     bool HasPropertyVideo,
     string AgentKey,
     int RuleScore,
-    VerticalMetricTotals Totals);
+    VerticalMetricTotals Totals,
+    VerticalCampaignGoal? Goal = null);
 
 public static class VerticalPerformanceCalculator
 {
-    public const string CalculationVersion = "performance-calc-v1";
+    // v2 adds the "Campaign type" segments (like rate by the TikTok campaign type the agent picked).
+    public const string CalculationVersion = "performance-calc-v2";
 
     /// <summary>
     /// The documented minimum sample before a rule version can be promoted: at least <see cref="MinimumVideosPerSegment"/>
@@ -288,6 +290,7 @@ public static class VerticalPerformanceCalculator
         Add("Price band", input => PriceBand(input.ListingPrice));
         Add("Media availability", input => MediaAvailability(input.PhotoCount, input.HasPropertyVideo));
         Add("Agent account", input => input.AgentKey);
+        Add("Campaign type", input => input.Goal is { } goal ? VerticalFormatNames.Goal(goal) : "Not chosen");
         var formatSegments = segments.Where(segment => segment.Dimension == "Format").ToArray();
         var meets = inputs.Count >= MinimumReportVideos && formatSegments.Length > 0 && formatSegments.All(segment => segment.MeetsMinimumSample);
         return (segments, meets);

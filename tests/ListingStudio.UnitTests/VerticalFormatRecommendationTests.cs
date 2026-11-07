@@ -347,7 +347,7 @@ public sealed class VerticalFormatRecommendationTests
     {
         var result = VerticalFormatRules.Evaluate(PhotoListing());
 
-        Assert.Equal("vertical-rules-v1", VerticalFormatRules.Version);
+        Assert.Equal("vertical-rules-v2", VerticalFormatRules.Version);
         Assert.Equal(VerticalFormatRules.Version, result.RuleVersion);
         Assert.All(result.Formats, item => Assert.Equal(VerticalFormatRules.Version, item.RuleVersion));
         Assert.Equal(VerticalFormatRules.Formats.Count, result.Formats.Count);
@@ -372,7 +372,8 @@ public sealed class VerticalFormatRecommendationTests
 
         Assert.Empty(result.Select(VerticalVideoSelection.LegacySingle));
         Assert.Equal(2, result.Select(VerticalVideoSelection.RecommendedThree).Count);
-        Assert.Equal(3, result.Select(VerticalVideoSelection.AllEligible).Count);
+        // Wow feature, Price first and the photo-only Speed tour, plus the narrated walk-through.
+        Assert.Equal(4, result.Select(VerticalVideoSelection.AllEligible).Count);
     }
 
     [Fact]

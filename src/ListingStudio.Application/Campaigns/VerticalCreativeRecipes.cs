@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ListingStudio.Application.Neighborhoods;
 using ListingStudio.Domain.Campaigns;
 using ListingStudio.Domain.Properties;
 
@@ -28,6 +29,8 @@ public enum VerticalBeatKind
     InsideLook,
     AccessDetails,
     CallToAction,
+    SpeedShot,
+    NearbyPlace,
 }
 
 public enum VerticalVisualTreatment
@@ -92,6 +95,9 @@ public enum VerticalCopySource
 
     /// <summary>A sentence of the generated property story, which already passed the story's grounding rules.</summary>
     PropertyStory,
+
+    /// <summary>A nearby place the agent approved, with its distance rounded to whole miles.</summary>
+    ApprovedNeighborhood,
 }
 
 public sealed record VerticalRecipeFact(string Key, string Value, VerticalCopySource Source, string Reference);
@@ -303,6 +309,8 @@ public static class VerticalRecipePlanner
         new HostedPovPlanner(),
         new StoryRevealPlanner(),
         new ExclusiveAccessPlanner(),
+        new SpeedTourPlanner(),
+        new NeighborhoodTourPlanner(),
     ];
 
     public static IVerticalFormatPlanner For(VerticalCreativeFormat format) =>
@@ -377,6 +385,18 @@ internal sealed class RecipeBuilder(VerticalCreativeFormat format, string versio
     public VerticalRecipeLine? PriceAndPlace(VerticalListingFacts listing) =>
         listing.PriceText is { } price && listing.CityStateText is { } city
             ? Line("property.priceCityState", $"{price} in {city}", VerticalCopySource.VerifiedProperty, "ListingPrice+City+State")
+            : null;
+
+    /// <summary>"What $400,000 buys in Wildwood, FL": the price-surprise hook from the campaign type research.</summary>
+    public VerticalRecipeLine? WhatPriceBuys(VerticalListingFacts listing) =>
+        listing.PriceText is { } price && listing.CityStateText is { } city
+            ? Line("property.whatPriceBuys", $"What {price} buys in {city}", VerticalCopySource.VerifiedProperty, "ListingPrice+City+State")
+            : null;
+
+    /// <summary>"Guess the price of this Wildwood, FL home": names the place only; the price comes at the end.</summary>
+    public VerticalRecipeLine? GuessThePrice(VerticalListingFacts listing) =>
+        listing.PriceText is not null && listing.CityStateText is { } city
+            ? Line("property.guessThePrice", $"Guess the price of this {city} home", VerticalCopySource.VerifiedProperty, "City+State")
             : null;
 
     public VerticalRecipeLine? CityState(VerticalListingFacts listing) => listing.CityStateText is { } city
@@ -605,9 +625,11 @@ public sealed class WowFeaturePlanner : IVerticalFormatPlanner
         }
 
         var room = RecipeBuilder.RoomName(primary.Category) ?? primary.Stop?.Trim().ToLowerInvariant();
+        // The "Wait till you see" campaign type names the room as a promise; otherwise the hook points at it.
+        var curiosity = input.Goal == VerticalCampaignGoal.StandoutRoom;
         var hook = room is null
-            ? builder.Template("hook.wow", "Look at this.")
-            : builder.Line($"media.{primary.MediaId:N}.feature", $"Look at this {room}.",
+            ? curiosity ? builder.Template("hook.wowWait", "Wait till you see this.") : builder.Template("hook.wow", "Look at this.")
+            : builder.Line($"media.{primary.MediaId:N}.feature", curiosity ? $"Wait till you see the {room}." : $"Look at this {room}.",
                 primary.Category is null ? VerticalCopySource.AgentStoryboard : VerticalCopySource.MediaAnalysis,
                 "Hero feature room");
         // The hook promised a room, so the details stay indoors when that room is indoors: cutting from "Look at this
@@ -677,7 +699,14 @@ public sealed class PriceFirstPlanner : IVerticalFormatPlanner
     public VerticalCreativeRecipe? Plan(VerticalPlanningInput input)
     {
         var builder = new RecipeBuilder(Format, RecipeVersion);
-        var hook = builder.PriceAndPlace(input.Facts);
+        // The campaign type picks the hook: the price surprise, the price held back, or the plain price and place.
+        var guess = input.Goal == VerticalCampaignGoal.GuessThePrice;
+        var hook = input.Goal switch
+        {
+            VerticalCampaignGoal.WhatPriceBuys => builder.WhatPriceBuys(input.Facts),
+            VerticalCampaignGoal.GuessThePrice => builder.GuessThePrice(input.Facts),
+            _ => builder.PriceAndPlace(input.Facts),
+        };
         var essentials = builder.EssentialFacts(input.Facts);
         var usable = input.CurrentPhotos;
         if (hook is null || essentials is null || usable.Count < 3)
@@ -703,7 +732,9 @@ public sealed class PriceFirstPlanner : IVerticalFormatPlanner
         var factsPhoto = tour[0];
         tour.RemoveAt(0);
         var priceChange = builder.PriceChange(input.VerifiedPriceChange);
-        var callToAction = builder.Template("cta.details", "Ask for the full listing details");
+        var callToAction = guess
+            ? builder.Template("cta.guessed", "Did you guess right? Ask for the details")
+            : builder.Template("cta.details", "Ask for the full listing details");
         var recap = builder.Price(input.Facts)!;
 
         // End inside, on the home's best room, rather than back on the house the video opened on; the agent's own
@@ -737,9 +768,16 @@ public sealed class PriceFirstPlanner : IVerticalFormatPlanner
         }
 
         // The voice keeps going through the room tour, one line per room, instead of leaving it to the music.
-        builder.NarratedWalk(VerticalBeatKind.RoomTour, tourMs, tour, input.SpokenLines, 30_000 - RecapMs - 200,
+        // Guess the price keeps the price out of the voice until the reveal, so story lines that name a price are skipped.
+        var spoken = guess
+            ? input.SpokenLines.Where(line => !line.Text.Contains('$', StringComparison.Ordinal)).ToArray()
+            : input.SpokenLines;
+        builder.NarratedWalk(VerticalBeatKind.RoomTour, tourMs, tour, spoken, 30_000 - RecapMs - 200,
             builder.Room);
-        builder.Beat(VerticalBeatKind.PriceRecap, RecapMs, closing, overlay: recap, narration: callToAction);
+        var closingLine = guess
+            ? builder.Line("property.priceReveal", $"It's listed at {recap.Text}", VerticalCopySource.VerifiedProperty, "ListingPrice")
+            : callToAction;
+        builder.Beat(VerticalBeatKind.PriceRecap, RecapMs, closing, overlay: recap, narration: closingLine);
         // With a consented presenter, the agent talks the viewer through the price and the rooms.
         return builder.Build(30, false, hook, VerticalNarrationStructure.FactsReadout, VerticalCaptionDensity.FactCards, 8,
             callToAction, primary.MediaId, null, input.Presenter.IsConsented);
@@ -1016,5 +1054,148 @@ public sealed class ExclusiveAccessPlanner : IVerticalFormatPlanner
         }
         return builder.Build(30, false, access, VerticalNarrationStructure.AccessAnnouncement, VerticalCaptionDensity.Minimal, 5,
             callToAction, photo?.MediaId, footage[0].VideoId, false);
+    }
+}
+
+/// <summary>
+/// Speed tour: a 15-second hard-cut run through every room in walking order, with the price and place on the first
+/// shot and music only. The research's speed tours are filmed by a running agent; this is the photo version.
+/// </summary>
+public sealed class SpeedTourPlanner : IVerticalFormatPlanner
+{
+    private const int HookMs = 1_500;
+    private const int ClosingMs = 2_000;
+    private const int ShortestShotMs = 500;
+    private const int LongestShotMs = 1_200;
+
+    public VerticalCreativeFormat Format => VerticalCreativeFormat.SpeedTour;
+
+    public string RecipeVersion => "speed-tour-v1";
+
+    public VerticalCreativeRecipe? Plan(VerticalPlanningInput input)
+    {
+        var usable = input.CurrentPhotos;
+        if (usable.Count < 6)
+        {
+            return null;
+        }
+
+        var builder = new RecipeBuilder(Format, RecipeVersion);
+        var opening = usable.FirstOrDefault(photo => photo.Has(VerticalMediaRole.Exterior)) ?? usable[0];
+        var hook = input.Facts.PriceText is { } price && input.Facts.CityStateText is { } city
+            ? builder.Line("property.speedTourHook", $"15-second tour: {price} in {city}", VerticalCopySource.VerifiedProperty, "ListingPrice+City+State")
+            : builder.Template("hook.speedTour", "15-second tour. Keep up.");
+        var callToAction = builder.Template("cta.slowVersion", "Want the slow version? Message me");
+        var closing = RecipeBuilder.WithRole(usable, VerticalMediaRole.ClosingView).FirstOrDefault(photo => photo != opening)
+            ?? RecipeBuilder.ByStrength(usable.Where(photo => photo != opening && !RecipeBuilder.IsOutside(photo))).FirstOrDefault()
+            ?? usable[^1];
+
+        // Every other photo once, in walking order, as many as fit at half a second each.
+        const int RunMs = (15_000 - HookMs - ClosingMs);
+        var run = usable.Where(photo => photo != opening && photo != closing).Take(RunMs / ShortestShotMs).ToList();
+        if (run.Count == 0)
+        {
+            run.Add(closing);
+        }
+
+        var count = run.Count;
+        if (RunMs / count > LongestShotMs)
+        {
+            builder.Fallback($"Only {count} other photos, so each one holds a little longer than a true speed cut.");
+        }
+
+        builder.Beat(VerticalBeatKind.Hook, HookMs, opening, overlay: hook);
+        var spans = RecipeBuilder.Split(RunMs, count);
+        for (var index = 0; index < count; index++)
+        {
+            builder.Beat(VerticalBeatKind.SpeedShot, spans[index], run[index]);
+        }
+
+        builder.Beat(VerticalBeatKind.CallToAction, ClosingMs, closing, overlay: callToAction);
+        return builder.Build(15, false, hook, VerticalNarrationStructure.MusicOnly, VerticalCaptionDensity.Minimal, 8,
+            callToAction, opening.MediaId, null, false);
+    }
+}
+
+/// <summary>
+/// Living in your town: opens on the place, names up to four of the agent's approved nearby places with whole-mile
+/// distances, then the essential facts and a room tour. Place names are shown over the home's own outdoor photos, never
+/// over imagery of the place itself, and no place is named that the agent did not approve.
+/// </summary>
+public sealed class NeighborhoodTourPlanner : IVerticalFormatPlanner
+{
+    private const int MaximumPlaces = 4;
+    private const int MaximumPlaceLineLength = 60;
+
+    public VerticalCreativeFormat Format => VerticalCreativeFormat.NeighborhoodTour;
+
+    public string RecipeVersion => "neighborhood-tour-v1";
+
+    public VerticalCreativeRecipe? Plan(VerticalPlanningInput input)
+    {
+        var usable = input.CurrentPhotos;
+        if (input.Facts.CityStateText is not { } city || usable.Count < 3)
+        {
+            return null;
+        }
+
+        var builder = new RecipeBuilder(Format, RecipeVersion);
+        var places = input.ApprovedPlaces
+            .Select(place => (Place: place, Text: $"{place.Name.Trim()}, {NeighborhoodDistancePhrasing.Describe(place.DistanceMiles)}"))
+            .Where(item => item.Text.Length <= MaximumPlaceLineLength)
+            .Take(MaximumPlaces)
+            .ToArray();
+        if (places.Length < 2)
+        {
+            return null;
+        }
+
+        var hook = builder.Line("property.livingIn", $"Living in {city}", VerticalCopySource.VerifiedProperty, "City+State");
+        var essentials = builder.EssentialFacts(input.Facts);
+        var callToAction = builder.Template("cta.livingHere", "Ask me what living here is like");
+        var outside = usable.Where(RecipeBuilder.IsOutside)
+            .OrderByDescending(photo => photo.Has(VerticalMediaRole.Lifestyle))
+            .ThenBy(photo => photo.DisplayOrder)
+            .ToArray();
+        var opening = outside.FirstOrDefault() ?? usable[0];
+        if (outside.Length == 0)
+        {
+            builder.Fallback("No outdoor photo is tagged, so the first storyboard photo carries the nearby places.");
+        }
+
+        builder.Beat(VerticalBeatKind.Hook, 3_000, opening, overlay: hook, narration: hook);
+        var placeBackdrops = outside.Length > 0 ? outside : [opening];
+        for (var index = 0; index < places.Length; index++)
+        {
+            var (place, text) = places[index];
+            var line = builder.Line($"neighborhood.{place.PlaceId:N}", text, VerticalCopySource.ApprovedNeighborhood,
+                $"NeighborhoodInsight:{place.PlaceId:D}");
+            builder.Beat(VerticalBeatKind.NearbyPlace, 3_000, placeBackdrops[index % placeBackdrops.Length], overlay: line, narration: line);
+        }
+
+        var inside = usable.Where(photo => !RecipeBuilder.IsOutside(photo)).ToList();
+        if (inside.Count == 0)
+        {
+            inside = usable.Where(photo => photo != opening).DefaultIfEmpty(opening).ToList();
+        }
+
+        if (essentials is not null)
+        {
+            builder.Beat(VerticalBeatKind.EssentialFacts, 3_000, inside[0], overlay: essentials, narration: essentials);
+        }
+
+        const int ClosingMs = 3_000;
+        var tourMs = 30_000 - builder.Elapsed - ClosingMs;
+        var tour = inside.Skip(essentials is null ? 0 : 1).ToList();
+        if (tour.Count == 0)
+        {
+            tour.Add(inside[0]);
+        }
+
+        builder.NarratedWalk(VerticalBeatKind.RoomTour, tourMs, tour, input.SpokenLines, 30_000 - ClosingMs - 200, builder.Room);
+        var closing = RecipeBuilder.WithRole(usable, VerticalMediaRole.ClosingView).FirstOrDefault() ?? opening;
+        builder.Beat(VerticalBeatKind.CallToAction, ClosingMs, closing, overlay: callToAction, narration: callToAction);
+        return builder.Build(30, false, hook, VerticalNarrationStructure.FactsReadout, VerticalCaptionDensity.FactCards, 8,
+            callToAction, opening.MediaId, null, false);
     }
 }

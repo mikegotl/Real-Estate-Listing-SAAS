@@ -31,7 +31,8 @@ public interface IVerticalFormatRecommendationService
 public sealed record VerticalRecommendationContext(
     Guid? AgentPortraitId = null,
     bool PresenterConsentConfirmed = false,
-    decimal? VerifiedPriceChangeAmount = null)
+    decimal? VerifiedPriceChangeAmount = null,
+    VerticalCampaignGoal? Goal = null)
 {
     public static VerticalRecommendationContext None { get; } = new();
 
@@ -277,7 +278,7 @@ public sealed record VerticalRecommendationInputSummary(
 /// </summary>
 public static class VerticalFormatRules
 {
-    public const string Version = "vertical-rules-v1";
+    public const string Version = "vertical-rules-v2";
 
     /// <summary>A format needs at least this score to be recommended by default; weaker ones only via All eligible.</summary>
     public const int RecommendThreshold = 55;
@@ -294,6 +295,8 @@ public static class VerticalFormatRules
         VerticalCreativeFormat.HostedPov,
         VerticalCreativeFormat.StoryReveal,
         VerticalCreativeFormat.ExclusiveAccess,
+        VerticalCreativeFormat.SpeedTour,
+        VerticalCreativeFormat.NeighborhoodTour,
     ];
 
     public static VerticalCampaignPurpose PurposeOf(VerticalCreativeFormat format) => format switch
@@ -303,6 +306,8 @@ public static class VerticalFormatRules
         VerticalCreativeFormat.HostedPov => VerticalCampaignPurpose.LeadGeneration,
         VerticalCreativeFormat.StoryReveal => VerticalCampaignPurpose.Engagement,
         VerticalCreativeFormat.ExclusiveAccess => VerticalCampaignPurpose.LeadGeneration,
+        VerticalCreativeFormat.SpeedTour => VerticalCampaignPurpose.Reach,
+        VerticalCreativeFormat.NeighborhoodTour => VerticalCampaignPurpose.Consideration,
         _ => throw new ArgumentOutOfRangeException(nameof(format)),
     };
 
@@ -310,6 +315,8 @@ public static class VerticalFormatRules
     private const int MinimumUsablePhotos = 3;
     private const int MinimumHostedFootageSeconds = 15;
     private const int MinimumAccessFootageSeconds = 10;
+    private const int MinimumSpeedTourPhotos = 6;
+    private const int MinimumNeighborhoodPlaces = 2;
 
     private static readonly HashSet<PropertyMediaCategory> FeatureCategories =
     [
@@ -340,6 +347,8 @@ public static class VerticalFormatRules
             ScoreHostedPov(facts),
             ScoreStoryReveal(facts),
             ScoreExclusiveAccess(facts),
+            ScoreSpeedTour(facts),
+            ScoreNeighborhoodTour(facts),
         };
 
         var ranked = scored
@@ -711,6 +720,106 @@ public static class VerticalFormatRules
 
         score += Math.Min(facts.UsablePhotos, 8) * 20 / 8;
         return new Scored(VerticalCreativeFormat.ExclusiveAccess, Clamp(score), confirmed && hasFootage, reasons, missing);
+    }
+
+    private static Scored ScoreSpeedTour(Facts facts)
+    {
+        var reasons = new List<string>();
+        var missing = new List<string>();
+        if (facts.UsablePhotos >= MinimumSpeedTourPhotos)
+        {
+            reasons.Add($"{facts.UsablePhotos} usable storyboard photos for a quick cut through every room.");
+        }
+        else
+        {
+            missing.Add($"At least {MinimumSpeedTourPhotos} usable storyboard photos ({facts.UsablePhotos} now), so the tour covers the whole home.");
+        }
+
+        if (facts.AnalyzedPhotos == 0 && facts.StoryboardPhotos > 0)
+        {
+            missing.Add("Photo analysis has not finished, so the room order is not confirmed yet.");
+        }
+
+        // Speed tours are capped below the strongest formats: they win on views, but the research has no like counts
+        // for them, so they join the default set only when the agent picks the Speed tour goal or few others qualify.
+        var coverage = Math.Min(facts.UsablePhotos, 12) * 40 / 12;
+        var rooms = Math.Min(facts.FeatureRooms.Length, 4) * 15 / 4;
+        var quality = facts.TopQualityAverage * 15 / 100;
+        return new Scored(
+            VerticalCreativeFormat.SpeedTour,
+            Clamp(coverage + rooms + quality),
+            facts.UsablePhotos >= MinimumSpeedTourPhotos,
+            reasons,
+            missing);
+    }
+
+    private static Scored ScoreNeighborhoodTour(Facts facts)
+    {
+        var reasons = new List<string>();
+        var missing = new List<string>();
+        var places = facts.Inputs.ApprovedNeighborhoodPlaces;
+        if (places >= MinimumNeighborhoodPlaces)
+        {
+            reasons.Add($"{places} approved nearby place{Plural(places)} to show what living here is like.");
+        }
+        else
+        {
+            missing.Add($"At least {MinimumNeighborhoodPlaces} approved nearby places on the Overview tab ({places} now).");
+        }
+
+        if (facts.Inputs.HasCityAndState)
+        {
+            reasons.Add("City and state are entered for the \"Living in\" hook.");
+        }
+        else
+        {
+            missing.Add("City and state.");
+        }
+
+        if (facts.UsablePhotos < MinimumUsablePhotos)
+        {
+            missing.Add($"At least {MinimumUsablePhotos} usable storyboard photos ({facts.UsablePhotos} now).");
+        }
+
+        // The weakest evidence of the campaign types (no single-video counts were found), so it scores modestly.
+        var score = (Math.Min(places, 4) * 12) + (Math.Min(facts.UsablePhotos, 6) * 2) + (facts.Inputs.HasCityAndState ? 10 : 0);
+        var eligible = places >= MinimumNeighborhoodPlaces && facts.Inputs.HasCityAndState
+            && facts.UsablePhotos >= MinimumUsablePhotos;
+        return new Scored(VerticalCreativeFormat.NeighborhoodTour, Clamp(score), eligible, reasons, missing);
+    }
+
+    /// <summary>
+    /// The set with the goal's own format first: when that format is eligible it becomes rank 1 and is recommended,
+    /// taking the place of the lowest recommended format if three were already picked. Scores, reasons and
+    /// eligibility never change, so a goal can never make an ineligible format.
+    /// </summary>
+    public static VerticalFormatRecommendationSet LeadWith(VerticalFormatRecommendationSet set, VerticalCreativeFormat? lead)
+    {
+        ArgumentNullException.ThrowIfNull(set);
+        if (lead is not { } format || set.Formats.FirstOrDefault(item => item.Format == format) is not { IsEligible: true } leader)
+        {
+            return set;
+        }
+
+        var recommended = set.Recommended.Where(item => item.Format != format).ToList();
+        recommended.Insert(0, leader);
+        var keep = recommended.Take(MaximumRecommended).Select(item => item.Format).ToHashSet();
+        var ordered = set.Formats.OrderBy(item => item.Format == format ? 0 : 1).ThenBy(item => item.Rank).ToArray();
+        var formats = ordered.Select((item, index) =>
+        {
+            var reasons = item.Reasons.ToList();
+            if (item.Format == format)
+            {
+                reasons.Add("Made first because it is the campaign type you picked.");
+            }
+            else if (item.IsRecommended && !keep.Contains(item.Format))
+            {
+                reasons.Add("Left out of the default set to make room for the campaign type you picked; choose it below to make it too.");
+            }
+
+            return item with { IsRecommended = keep.Contains(item.Format), Rank = index + 1, Reasons = reasons };
+        }).ToArray();
+        return set with { Formats = formats };
     }
 
     private static int Clamp(int score) => Math.Clamp(score, 0, 100);

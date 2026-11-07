@@ -1,4 +1,6 @@
 using System.Globalization;
+using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Neighborhoods;
 using ListingStudio.Domain.Properties;
 
 namespace ListingStudio.Application.Campaigns;
@@ -109,6 +111,9 @@ public sealed record VerticalPlanningFootage(
 /// </summary>
 public sealed record VerticalNarrationLine(string GroundingKey, string Text, string? Stop, bool FromAgent = true);
 
+/// <summary>A nearby place the agent approved on the Overview tab (from Google Places), with its straight-line distance.</summary>
+public sealed record VerticalNeighborhoodPlace(Guid PlaceId, string Name, NeighborhoodPlaceCategory Category, decimal DistanceMiles);
+
 /// <summary>An agent-confirmed story claim, in the agent's words.</summary>
 public sealed record VerticalStoryClaimInput(Guid ClaimId, string Problem, string Payoff);
 
@@ -127,8 +132,14 @@ public sealed record VerticalPlanningInput(
     VerticalStoryClaimInput? StoryClaim,
     VerticalAccessClaimInput? AccessClaim,
     VerticalUnconfirmedMentions Mentions,
-    IReadOnlyList<VerticalNarrationLine>? StoryNarration = null)
+    IReadOnlyList<VerticalNarrationLine>? StoryNarration = null,
+    VerticalCampaignGoal? Goal = null,
+    IReadOnlyList<VerticalNeighborhoodPlace>? NeighborhoodPlaces = null)
 {
+    /// <summary>The agent's approved nearby places, closest first.</summary>
+    public IReadOnlyList<VerticalNeighborhoodPlace> ApprovedPlaces =>
+        (NeighborhoodPlaces ?? []).OrderBy(place => place.DistanceMiles).ThenBy(place => place.Name, StringComparer.Ordinal).ToArray();
+
     /// <summary>
     /// What a narrated format says between its hook and call to action: the agent's own narration when it is approved,
     /// else the sentences of the generated story's voiceover, so a spoken format never goes quiet for lack of a script.

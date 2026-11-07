@@ -73,7 +73,7 @@ public sealed partial class CampaignGenerationProcessor
         var plan = await verticalPlanningService.PlanForOrganizationAsync(
             job.OrganizationId,
             job.PropertyId,
-            VerticalRecommendationContext.From(job.CreativeOptions),
+            VerticalRecommendationContext.From(job.CreativeOptions) with { Goal = job.VerticalGoal },
             cancellationToken);
         // While the Kling native presenter is in pilot, every library video is a 15-second Kling video, so the whole
         // video is planned at that length.

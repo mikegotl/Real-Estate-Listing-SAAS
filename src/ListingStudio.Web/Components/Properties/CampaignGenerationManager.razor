@@ -320,6 +320,8 @@
                                      Picker="verticalPicker"
                                      Goal="selectedGoal"
                                      GoalChanged="ChooseGoal"
+                                     Announcement="SelectedAnnouncement"
+                                     AnnouncementChanged="ChooseAnnouncement"
                                      SelectionChanged="VerticalSelectionChangedAsync"
                                      Disabled="@(busy || IsReadOnly)"
                                      OtherOutputCount="OtherOutputCount">
@@ -1132,6 +1134,7 @@
     private VerticalCreativePlan? verticalPlan;
     private VerticalVideoPicker? verticalPicker;
     private VerticalCampaignGoal? selectedGoal;
+    private bool useRecommendedOnReload;
     private CampaignVerticalRequestResult? restoreVerticalRequest;
     private string? appliedFocus;
     private bool resetSelectionsWhenCancelled;
@@ -1217,7 +1220,8 @@
                     selectedCaptionLanguage = job.NarrationPreferences.CaptionLanguage;
                     selectedVoiceAccent = job.NarrationPreferences.VoiceAccent;
                     selectedLocalizeAgentCard = job.NarrationPreferences.LocalizeAgentCard;
-                    selectedGoal = job.VerticalRequest?.Goal;
+                    // A goal saved before the campaign types existed shows as the closest type.
+                    selectedGoal = job.VerticalRequest?.Goal is { } savedGoal ? VerticalCampaignGoals.FromLegacy(savedGoal) : null;
                     restoreVerticalRequest = job.VerticalRequest;
                     selectedVideoStrategy = job.VideoStrategy;
                     if (job.CreativeOptions.PresenterScript is { } savedScript)
@@ -1416,12 +1420,15 @@
             || selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
                 ? portrait?.Id
                 : null;
+        // Library campaigns always have a type; until the agent picks one it is the type with the most likes.
+        selectedGoal ??= VerticalCampaignGoals.Default;
         var context = new VerticalRecommendationContext(
             portraitId,
             selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar) && selectedAgentAvatarConsent,
             selectedMarketingTemplate == CampaignMarketingTemplate.PriceDrop && selectedPriceReductionVerified
                 ? selectedPriceReductionAmount
-                : null);
+                : null,
+            selectedGoal);
         await using var scope = ScopeFactory.CreateAsyncScope();
         var plan = await scope.ServiceProvider.GetRequiredService<IVerticalCreativePlanningService>()
             .PlanAsync(userId, PropertyId, context, cancellationToken);
@@ -1433,7 +1440,12 @@
             return;
         }
 
-        if (previous is not null)
+        if (previous is not null && useRecommendedOnReload)
+        {
+            // A new campaign type leads with a different video, so the pick starts again from its recommendation.
+            useRecommendedOnReload = false;
+        }
+        else if (previous is not null)
         {
             // Keep the agent's pick across a refresh; anything no longer eligible drops out.
             verticalPicker.Restore(VerticalVideoSelection.AgentChosen, previous.Chosen);
@@ -1453,8 +1465,19 @@
     private async Task ChooseGoal(VerticalCampaignGoal goal)
     {
         selectedGoal = goal;
-        ApplyTemplate(VerticalFormatNames.TemplateFor(goal));
-        // A confirmed price change can lift Price first, so the scores are worked out again.
+        ApplyTemplate(VerticalFormatNames.TemplateFor(goal, SelectedAnnouncement));
+        // The type leads the recommendation, and a confirmed price change can lift Price first, so the scores are
+        // worked out again.
+        useRecommendedOnReload = true;
+        await ReloadVerticalPlanAsync();
+    }
+
+    /// <summary>The announcement is the campaign message itself, so it always matches the template shown below.</summary>
+    private VerticalAnnouncement SelectedAnnouncement => VerticalCampaignGoals.AnnouncementOf(selectedMarketingTemplate);
+
+    private async Task ChooseAnnouncement(VerticalAnnouncement announcement)
+    {
+        ApplyTemplate(VerticalFormatNames.TemplateFor(selectedGoal ?? VerticalCampaignGoals.Default, announcement));
         await ReloadVerticalPlanAsync();
     }
 

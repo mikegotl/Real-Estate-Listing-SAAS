@@ -1,5 +1,6 @@
 using ListingStudio.Application.Campaigns;
 using ListingStudio.Domain.Campaigns;
+using ListingStudio.Domain.Neighborhoods;
 using ListingStudio.Domain.Properties;
 
 namespace ListingStudio.TestSupport;
@@ -40,6 +41,13 @@ internal static class RecipeFixture
     ];
 
     public static VerticalListingFacts Facts() => new(PropertyType.SingleFamily, 450_000m, 3, 2.5m, 2_100, 0.25m, "Raleigh", "NC", 2);
+
+    /// <summary>The two approved nearby places that <see cref="Facts"/> counts.</summary>
+    public static IReadOnlyList<VerticalNeighborhoodPlace> Places() =>
+    [
+        new(Id(60), "Pullen Park", NeighborhoodPlaceCategory.Park, 0.8m),
+        new(Id(61), "Five Points Farmers Market", NeighborhoodPlaceCategory.Grocery, 1.6m),
+    ];
 
     public static IReadOnlyList<VerticalRolePhoto> RolePhotos() => Stops
         .Select((stop, index) => new VerticalRolePhoto(stop.Id, stop.Category, true, stop.Quality, stop.Hero, stop.Exterior, index))
@@ -121,7 +129,8 @@ internal static class RecipeFixture
             null,
             null,
             null,
-            VerticalUnconfirmedMentions.None);
+            VerticalUnconfirmedMentions.None,
+            NeighborhoodPlaces: Places());
     }
 
     /// <summary>Every first-release input confirmed: hero, before/after, intro and walk-through clips, narration, story.</summary>

@@ -172,7 +172,8 @@ public static class VerticalCreativeTestPlanner
     /// <summary>How many campaigns a mode will actually generate (skipped cases cost nothing).</summary>
     public static int GeneratedCount(IReadOnlyList<VerticalCreativeTestCasePlan> cases) => cases.Count(item => item.SkipReason is null);
 
-    public static int DefaultDurationSeconds(VerticalCreativeFormat format) => format == VerticalCreativeFormat.WowFeature ? 15 : 30;
+    public static int DefaultDurationSeconds(VerticalCreativeFormat format) =>
+        format is VerticalCreativeFormat.WowFeature or VerticalCreativeFormat.SpeedTour ? 15 : 30;
 
     public static IReadOnlyList<string> ReadReasons(string? json)
     {

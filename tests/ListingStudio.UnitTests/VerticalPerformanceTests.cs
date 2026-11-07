@@ -127,6 +127,7 @@ public sealed class VerticalPerformanceTests
         Assert.Contains(segments, segment => segment.Dimension == "Price band" && segment.Value == "$300k–$600k");
         Assert.Contains(segments, segment => segment.Dimension == "Media availability" && segment.Value == "12+ photos without video");
         Assert.Contains(segments, segment => segment.Dimension == "Agent account" && segment.Value == "Agent 2");
+        Assert.Contains(segments, segment => segment.Dimension == "Campaign type" && segment.Value == "Not chosen");
 
         var lopsided = thin.Concat(Enumerable.Range(0, 20).Select(_ => Input(VerticalCreativeFormat.WowFeature, 1_000, "Agent 1")))
             .Append(Input(VerticalCreativeFormat.StoryReveal, 90_000, "Agent 1")).ToArray();
@@ -154,7 +155,29 @@ public sealed class VerticalPerformanceTests
         Assert.Equal((VerticalRuleReportStatus.Promoted, VerticalFormatRules.Version), (enough.Status, enough.PromotedRuleVersion));
         Assert.Throws<InvalidOperationException>(() => enough.Promote(VerticalFormatRules.Version, "admin", Now));
         Assert.Contains(VerticalFormatRules.Version, VerticalPerformanceCalculator.ImplementedRuleVersions);
-        Assert.DoesNotContain("vertical-rules-v2", VerticalPerformanceCalculator.ImplementedRuleVersions);
+        Assert.DoesNotContain("vertical-rules-v3", VerticalPerformanceCalculator.ImplementedRuleVersions);
+    }
+
+    [Fact]
+    public void LikeRateIsReportedForEachCampaignType()
+    {
+        var inputs = Enumerable.Range(0, 10).Select(_ => Input(VerticalCreativeFormat.PriceFirst, 1_000, "Agent 1") with
+            {
+                Goal = VerticalCampaignGoal.WhatPriceBuys,
+                Totals = new VerticalMetricTotals(1_000, 200, 0, 0, 0, null, null, 0, 0, 0),
+            })
+            .Concat(Enumerable.Range(0, 10).Select(_ => Input(VerticalCreativeFormat.PriceFirst, 1_000, "Agent 1") with
+            {
+                Goal = VerticalCampaignGoal.GuessThePrice,
+                Totals = new VerticalMetricTotals(1_000, 50, 0, 0, 0, null, null, 0, 0, 0),
+            }))
+            .ToArray();
+
+        var segments = VerticalPerformanceCalculator.Evaluate(inputs).Segments.Where(segment => segment.Dimension == "Campaign type").ToArray();
+
+        Assert.Equal(0.2m, segments.Single(segment => segment.Value == "What $X buys in your town").LikeRate);
+        Assert.Equal(0.05m, segments.Single(segment => segment.Value == "Guess the price").LikeRate);
+        Assert.All(segments, segment => Assert.True(segment.MeetsMinimumSample));
     }
 
     private static CampaignDistributionRecord Record(DateTimeOffset published) => CampaignDistributionRecord.Create(Guid.NewGuid(), Guid.NewGuid(),
