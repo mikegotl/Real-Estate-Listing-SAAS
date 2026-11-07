@@ -219,7 +219,7 @@ public sealed class VerticalCreativeRecipeTests
         var library = CampaignVideoLibrary.Create(Guid.NewGuid(), input.PropertyId, Guid.NewGuid(),
             VerticalVideoSelection.AllEligible, VerticalFormatRules.Version, null, DateTimeOffset.UnixEpoch);
 
-        Assert.Equal(5, recipes.Count);
+        Assert.Equal(VerticalFormatRules.Formats.Count, recipes.Count);
         for (var index = 0; index < recipes.Count; index++)
         {
             var recipe = recipes[index];

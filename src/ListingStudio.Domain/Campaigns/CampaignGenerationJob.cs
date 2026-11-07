@@ -263,7 +263,7 @@ public sealed class CampaignGenerationJob
     public IReadOnlyList<VerticalCreativeFormat> VerticalFormats => ParseVerticalFormats(VerticalFormatsValue);
 
     /// <summary>The most formats one campaign can ask for: every library format once.</summary>
-    public const int MaximumVerticalFormats = 5;
+    public const int MaximumVerticalFormats = 7;
 
     /// <summary>
     /// "b" asks for the alternate hook wording of the one chosen format (admin creative A/B tests only); null means the

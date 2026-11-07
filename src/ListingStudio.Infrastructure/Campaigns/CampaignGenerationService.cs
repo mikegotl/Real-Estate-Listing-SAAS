@@ -258,7 +258,7 @@ public sealed class CampaignGenerationService(
         if (usesVerticalLibrary && libraryFormats is { Count: > 0 })
         {
             var verticalPlan = await verticalPlanningService.PlanForOrganizationAsync(
-                organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
+                organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions) with { Goal = goal }, cancellationToken);
             foreach (var format in libraryFormats.Distinct())
             {
                 var recipe = verticalPlan?.Recipes.FirstOrDefault(candidate => candidate.Format == format);
@@ -562,7 +562,8 @@ public sealed class CampaignGenerationService(
 
         if (usesLibrary && verticalSelection == VerticalVideoSelection.AgentChosen)
         {
-            await EnsureChosenFormatsEligibleAsync(organizationId, propertyId, creativeOptions, verticalRequest!.Formats!, cancellationToken);
+            await EnsureChosenFormatsEligibleAsync(
+                organizationId, propertyId, creativeOptions, verticalRequest!.Goal, verticalRequest.Formats!, cancellationToken);
         }
 
         var planAccess = await planFeatureGate.GetAccessAsync(organizationId, userId, cancellationToken);
@@ -1145,11 +1146,12 @@ public sealed class CampaignGenerationService(
         Guid organizationId,
         Guid propertyId,
         CampaignCreativeOptions creativeOptions,
+        VerticalCampaignGoal? goal,
         IReadOnlyList<VerticalCreativeFormat> formats,
         CancellationToken cancellationToken)
     {
         var plan = await verticalPlanningService.PlanForOrganizationAsync(
-            organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions), cancellationToken);
+            organizationId, propertyId, VerticalRecommendationContext.From(creativeOptions) with { Goal = goal }, cancellationToken);
         if (plan is null)
         {
             return;
@@ -1161,7 +1163,8 @@ public sealed class CampaignGenerationService(
         var analysisPending = plan.Input.Photos.Any(photo => !photo.AnalysisCompleted);
         var ineligible = formats
             .Where(format => !plan.Recommendation.Formats.Any(item => item.Format == format && item.IsEligible))
-            .Where(format => !(analysisPending && format is VerticalCreativeFormat.WowFeature or VerticalCreativeFormat.PriceFirst))
+            .Where(format => !(analysisPending && format is VerticalCreativeFormat.WowFeature or VerticalCreativeFormat.PriceFirst
+                or VerticalCreativeFormat.SpeedTour))
             .ToArray();
         if (ineligible.Length > 0)
         {

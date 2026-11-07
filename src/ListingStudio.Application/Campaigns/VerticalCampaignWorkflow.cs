@@ -12,6 +12,8 @@ public static class VerticalFormatNames
         VerticalCreativeFormat.HostedPov => "Hosted walk-through",
         VerticalCreativeFormat.StoryReveal => "Story reveal",
         VerticalCreativeFormat.ExclusiveAccess => "Exclusive access",
+        VerticalCreativeFormat.SpeedTour => "Speed tour",
+        VerticalCreativeFormat.NeighborhoodTour => "Living in your town",
         VerticalCreativeFormat.LegacySingle => "Shared vertical video",
         _ => format.ToString(),
     };
@@ -24,6 +26,8 @@ public static class VerticalFormatNames
         VerticalCreativeFormat.HostedPov => "A walk-through in your own footage or approved narration, with word-by-word captions.",
         VerticalCreativeFormat.StoryReveal => "The problem you confirmed, the work, then the result.",
         VerticalCreativeFormat.ExclusiveAccess => "Your confirmed access or timing line over the property footage.",
+        VerticalCreativeFormat.SpeedTour => "A 15-second hard-cut run through every room in walking order. Music only.",
+        VerticalCreativeFormat.NeighborhoodTour => "Your approved nearby places and how far they are, then the home.",
         VerticalCreativeFormat.LegacySingle => "One edit shared by TikTok, Reels and Shorts.",
         _ => string.Empty,
     };
@@ -48,6 +52,13 @@ public static class VerticalFormatNames
 
     public static string Goal(VerticalCampaignGoal goal) => goal switch
     {
+        VerticalCampaignGoal.WhatPriceBuys => "What $X buys in your town",
+        VerticalCampaignGoal.GuessThePrice => "Guess the price",
+        VerticalCampaignGoal.StandoutRoom => "Wait till you see the room",
+        VerticalCampaignGoal.SpeedTour => "Speed tour",
+        VerticalCampaignGoal.AgentHosted => "Agent-hosted tour",
+        VerticalCampaignGoal.LuxuryShowcase => "Luxury showcase",
+        VerticalCampaignGoal.LivingInTown => "Living in your town",
         VerticalCampaignGoal.MaximizeReach => "Maximize reach",
         VerticalCampaignGoal.BuyerInterest => "Generate buyer interest",
         VerticalCampaignGoal.OpenHouse => "Promote an open house",
@@ -56,8 +67,21 @@ public static class VerticalFormatNames
         _ => goal.ToString(),
     };
 
+    /// <summary>The description with this listing's own price and town where the type quotes them.</summary>
+    public static string GoalDescription(VerticalCampaignGoal goal, VerticalListingFacts? facts) =>
+        goal == VerticalCampaignGoal.WhatPriceBuys && facts?.PriceText is { } price && facts.CityStateText is { } city
+            ? $"Opens with \"What {price} buys in {city}\", then the best rooms."
+            : GoalDescription(goal);
+
     public static string GoalDescription(VerticalCampaignGoal goal) => goal switch
     {
+        VerticalCampaignGoal.WhatPriceBuys => "Opens with \"What [your price] buys in [your town]\", then the best rooms.",
+        VerticalCampaignGoal.GuessThePrice => "Asks viewers to guess, and shows the price only at the end.",
+        VerticalCampaignGoal.StandoutRoom => "Opens on the home's standout room with \"Wait till you see the [room]\".",
+        VerticalCampaignGoal.SpeedTour => "A fast cut through every room in 15 seconds.",
+        VerticalCampaignGoal.AgentHosted => "You walk viewers through, in your footage, your narration or a consented presenter.",
+        VerticalCampaignGoal.LuxuryShowcase => "Leads with the most striking space, for higher-end homes.",
+        VerticalCampaignGoal.LivingInTown => "Shows your approved nearby places, then the home.",
         VerticalCampaignGoal.MaximizeReach => "Get the listing in front of as many local viewers as possible.",
         VerticalCampaignGoal.BuyerInterest => "Give serious buyers the details they compare.",
         VerticalCampaignGoal.OpenHouse => "Add the day and time you confirm to every video.",
@@ -77,8 +101,19 @@ public static class VerticalFormatNames
         VerticalCampaignGoal.OpenHouse => CampaignMarketingTemplate.OpenHouse,
         VerticalCampaignGoal.NewListing => CampaignMarketingTemplate.JustListed,
         VerticalCampaignGoal.PriceChange => CampaignMarketingTemplate.PriceDrop,
+        VerticalCampaignGoal.WhatPriceBuys or VerticalCampaignGoal.GuessThePrice or VerticalCampaignGoal.SpeedTour
+            => CampaignMarketingTemplate.QuickTour,
+        VerticalCampaignGoal.StandoutRoom or VerticalCampaignGoal.LuxuryShowcase => CampaignMarketingTemplate.FeatureSpotlight,
+        VerticalCampaignGoal.AgentHosted => CampaignMarketingTemplate.AgentShowcase,
         _ => CampaignMarketingTemplate.BalancedShowcase,
     };
+
+    /// <summary>
+    /// The campaign message for a campaign type plus an announcement: the announcement's message when there is one
+    /// (Just listed, Open house or Price drop), otherwise the campaign type's own.
+    /// </summary>
+    public static CampaignMarketingTemplate TemplateFor(VerticalCampaignGoal goal, VerticalAnnouncement announcement) =>
+        VerticalCampaignGoals.TemplateOf(announcement) ?? TemplateFor(goal);
 }
 
 /// <summary>

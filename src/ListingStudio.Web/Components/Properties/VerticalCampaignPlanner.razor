@@ -3,25 +3,54 @@
 
 <section class="vertical-planner" aria-labelledby="vertical-goal-heading" data-testid="vertical-planner">
     <MudPaper Outlined="true" Class="pa-4 mb-4" id="vertical-goal">
-        <MudText Typo="Typo.subtitle1" HtmlTag="h3" id="vertical-goal-heading">1. What is this campaign for?</MudText>
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3" id="vertical-goal-heading">1. What kind of TikTok campaign?</MudText>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-            Your goal sets the campaign message. It doesn't decide which videos are made; the listing's photos, footage
-            and confirmed facts do.
+            Each type is a home tour style that does well on TikTok. Your choice decides which video is made first and
+            how it opens; the listing's photos, footage and confirmed facts still decide what can be made.
+            <MudLink Href="/articles/tiktok-home-tour-types-that-get-views-and-likes" Typo="Typo.body2">See the research</MudLink>
         </MudText>
         <MudRadioGroup T="VerticalCampaignGoal?" Value="Goal" ValueChanged="ChooseGoalAsync" Disabled="Disabled"
-                       aria-label="Campaign goal" data-testid="vertical-goal-options">
+                       aria-label="Campaign type" data-testid="vertical-goal-options">
             <div class="vertical-goal-grid">
-                @foreach (var goal in Enum.GetValues<VerticalCampaignGoal>())
+                @foreach (var goal in VerticalCampaignGoals.Offered)
                 {
+                    var evidence = VerticalCampaignGoals.Evidence(goal);
                     <MudPaper Outlined="true" Class="@($"pa-3 vertical-goal {(Goal == goal ? "is-selected" : string.Empty)}")">
                         <MudRadio T="VerticalCampaignGoal?" Value="@((VerticalCampaignGoal?)goal)" Color="Color.Primary"
                                   data-testid="@($"goal-{goal}")">
                             @VerticalFormatNames.Goal(goal)
+                            @if (goal == VerticalCampaignGoals.Default)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined" Class="ml-2">Most likes</MudChip>
+                            }
                         </MudRadio>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@VerticalFormatNames.GoalDescription(goal)</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block" data-testid="@($"type-description-{goal}")">@VerticalFormatNames.GoalDescription(goal, Plan?.Input.Facts)</MudText>
+                        @if (evidence is not null)
+                        {
+                            <MudText Typo="Typo.caption" Class="d-block mt-1" data-testid="@($"evidence-{goal}")">
+                                @evidence.Summary
+                                <MudLink Href="@evidence.ExampleUrl" Target="_blank" rel="noopener noreferrer" Typo="Typo.caption">Example</MudLink>
+                            </MudText>
+                        }
                     </MudPaper>
                 }
             </div>
+        </MudRadioGroup>
+
+        <MudText Typo="Typo.subtitle2" HtmlTag="h4" Class="mt-4" id="vertical-announcement-heading">Add an announcement (optional)</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+            An announcement goes on top of any campaign type. You enter and confirm the open house time or price drop
+            under Creative direction.
+        </MudText>
+        <MudRadioGroup T="VerticalAnnouncement" Value="Announcement" ValueChanged="ChooseAnnouncementAsync" Disabled="Disabled"
+                       aria-labelledby="vertical-announcement-heading" data-testid="vertical-announcement-options">
+            @foreach (var announcement in VerticalCampaignGoals.Announcements)
+            {
+                <MudRadio T="VerticalAnnouncement" Value="announcement" Color="Color.Primary"
+                          data-testid="@($"announcement-{announcement}")">
+                    @VerticalCampaignGoals.AnnouncementName(announcement)
+                </MudRadio>
+            }
         </MudRadioGroup>
     </MudPaper>
 
@@ -206,6 +235,12 @@
     [Parameter]
     public EventCallback<VerticalCampaignGoal> GoalChanged { get; set; }
 
+    [Parameter]
+    public VerticalAnnouncement Announcement { get; set; }
+
+    [Parameter]
+    public EventCallback<VerticalAnnouncement> AnnouncementChanged { get; set; }
+
     /// <summary>Raised after the agent changes which videos are picked.</summary>
     [Parameter]
     public EventCallback SelectionChanged { get; set; }
@@ -249,6 +284,8 @@
             await GoalChanged.InvokeAsync(chosen);
         }
     }
+
+    private Task ChooseAnnouncementAsync(VerticalAnnouncement announcement) => AnnouncementChanged.InvokeAsync(announcement);
 
     private async Task UseRecommendedAsync()
     {

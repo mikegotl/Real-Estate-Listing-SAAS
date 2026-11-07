@@ -46,6 +46,8 @@ public static class VerticalReadinessEvaluator
                     VerticalCreativeFormat.PriceFirst => PriceFirst(input),
                     VerticalCreativeFormat.HostedPov => HostedPov(input),
                     VerticalCreativeFormat.StoryReveal => StoryReveal(input),
+                    VerticalCreativeFormat.SpeedTour => SpeedTour(input),
+                    VerticalCreativeFormat.NeighborhoodTour => NeighborhoodTour(input),
                     _ => ExclusiveAccess(input),
                 }))
             .ToArray();
@@ -212,6 +214,25 @@ public static class VerticalReadinessEvaluator
             ? new("Property footage", VerticalReadinessState.Ready, true, $"{seconds} seconds of property video is ready.")
             : new("Property footage", VerticalReadinessState.Missing, true, "At least 10 seconds of processed property video."));
         return items;
+    }
+
+    private static List<VerticalReadinessItem> SpeedTour(VerticalPlanningInput input) =>
+        [UsablePhotos(input.UsablePhotos.Count, 6)];
+
+    private static List<VerticalReadinessItem> NeighborhoodTour(VerticalPlanningInput input)
+    {
+        var places = input.ApprovedPlaces.Count;
+        return
+        [
+            places >= 2
+                ? new("Approved nearby places", VerticalReadinessState.Ready, true, $"{places} nearby place{Plural(places)} approved on the Overview tab.")
+                : new("Approved nearby places", VerticalReadinessState.Missing, true,
+                    $"Approve at least 2 nearby places on the Overview tab ({places} now)."),
+            input.Facts.HasCityAndState
+                ? new("City and state", VerticalReadinessState.Ready, true, "City and state are entered.")
+                : new("City and state", VerticalReadinessState.Missing, true, "Enter the city and state."),
+            UsablePhotos(input.UsablePhotos.Count, 3),
+        ];
     }
 
     private static VerticalReadinessItem UsablePhotos(int count, int minimum) => count >= minimum

@@ -125,19 +125,43 @@ public sealed class VerticalCampaignWorkflowTests
     }
 
     [Fact]
-    public void GoalsStartFromACampaignMessageButNeverPickAFormat()
+    public void CampaignTypesSetAMessageAndAnnouncementsGoOnTop()
     {
-        var templates = Enum.GetValues<VerticalCampaignGoal>().Select(VerticalFormatNames.TemplateFor).ToArray();
+        VerticalCampaignGoal[] legacy =
+        [
+            VerticalCampaignGoal.MaximizeReach, VerticalCampaignGoal.BuyerInterest, VerticalCampaignGoal.OpenHouse,
+            VerticalCampaignGoal.NewListing, VerticalCampaignGoal.PriceChange,
+        ];
+        var templates = legacy.Select(VerticalFormatNames.TemplateFor).ToArray();
 
+        // The original five goals keep their messages for campaigns saved before the types existed.
         Assert.Equal(templates.Length, templates.Distinct().Count());
         Assert.Equal(CampaignMarketingTemplate.OpenHouse, VerticalFormatNames.TemplateFor(VerticalCampaignGoal.OpenHouse));
         Assert.Equal(CampaignMarketingTemplate.PriceDrop, VerticalFormatNames.TemplateFor(VerticalCampaignGoal.PriceChange));
         Assert.Equal(CampaignMarketingTemplate.JustListed, VerticalFormatNames.TemplateFor(VerticalCampaignGoal.NewListing));
+
+        // No campaign type is itself an announcement; an announcement replaces the type's message.
+        Assert.All(VerticalCampaignGoals.Offered, goal =>
+        {
+            Assert.Equal(VerticalAnnouncement.None, VerticalCampaignGoals.AnnouncementOf(VerticalFormatNames.TemplateFor(goal)));
+            Assert.Equal(CampaignMarketingTemplate.OpenHouse, VerticalFormatNames.TemplateFor(goal, VerticalAnnouncement.OpenHouse));
+            Assert.Equal(VerticalFormatNames.TemplateFor(goal), VerticalFormatNames.TemplateFor(goal, VerticalAnnouncement.None));
+            Assert.NotNull(VerticalCampaignGoals.LeadFormat(goal));
+            Assert.NotNull(VerticalCampaignGoals.Evidence(goal));
+        });
+        Assert.All(VerticalCampaignGoals.Announcements, announcement =>
+            Assert.Equal(announcement, VerticalCampaignGoals.AnnouncementOf(
+                VerticalCampaignGoals.TemplateOf(announcement) ?? CampaignMarketingTemplate.BalancedShowcase)));
+        Assert.All(legacy, goal => Assert.Null(VerticalCampaignGoals.LeadFormat(goal)));
+
         Assert.All(Enum.GetValues<VerticalCampaignGoal>(), goal =>
         {
             Assert.False(string.IsNullOrWhiteSpace(VerticalFormatNames.Goal(goal)));
             Assert.False(string.IsNullOrWhiteSpace(VerticalFormatNames.GoalDescription(goal)));
+            Assert.True(VerticalCampaignGoals.IsOffered(VerticalCampaignGoals.FromLegacy(goal)));
         });
+        Assert.Equal(VerticalCampaignGoals.Default, VerticalCampaignGoals.FromLegacy(null));
+        Assert.Equal(VerticalCampaignGoal.WhatPriceBuys, VerticalCampaignGoals.Default);
         Assert.All(VerticalFormatRules.Formats, format =>
             Assert.False(string.IsNullOrWhiteSpace(VerticalFormatNames.Description(format))));
     }

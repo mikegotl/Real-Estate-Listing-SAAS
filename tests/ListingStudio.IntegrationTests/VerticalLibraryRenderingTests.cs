@@ -23,6 +23,8 @@ public sealed partial class FfmpegRenderingTests
     [InlineData(VerticalCreativeFormat.HostedPov)]
     [InlineData(VerticalCreativeFormat.StoryReveal)]
     [InlineData(VerticalCreativeFormat.ExclusiveAccess)]
+    [InlineData(VerticalCreativeFormat.SpeedTour)]
+    [InlineData(VerticalCreativeFormat.NeighborhoodTour)]
     public async Task EveryLibraryFormatRendersAndPassesTheTechnicalCheck(VerticalCreativeFormat format)
     {
         if (Environment.GetEnvironmentVariable("RUN_FFMPEG_E2E") != "1")

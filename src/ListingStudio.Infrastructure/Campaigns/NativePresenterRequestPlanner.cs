@@ -185,6 +185,8 @@ public static class NativePresenterRequestPlanner
             VerticalCreativeFormat.WowFeature when frames.Count > 0 =>
                 $"You have to see this {frames[0].StopName.Trim().ToLowerInvariant()} in {place}.",
             VerticalCreativeFormat.ExclusiveAccess => $"Here is a private look at a home in {place}.",
+            VerticalCreativeFormat.SpeedTour => $"Here is a fast tour of a home in {place}. Keep up.",
+            VerticalCreativeFormat.NeighborhoodTour => $"This is what living in {place} looks like.",
             _ => $"Welcome to your next home in {place}. Let me show you around.",
         };
         if (input.Format == VerticalCreativeFormat.PriceFirst && Facts(listing) is { } facts)
@@ -193,7 +195,7 @@ public static class NativePresenterRequestPlanner
         }
 
         var closing = input.Goal == VerticalCampaignGoal.OpenHouse
-            || (input.Goal is null && input.MarketingTemplate == CampaignMarketingTemplate.OpenHouse)
+            || input.MarketingTemplate == CampaignMarketingTemplate.OpenHouse
                 ? $"Join me at the open house, {input.OpenHouseText}. Contact me to save your spot."
                 : ClosingLine;
         opening = SpeechText.ForSpeech(opening);
@@ -263,6 +265,13 @@ public static class NativePresenterRequestPlanner
         VerticalCampaignGoal.OpenHouse => $"Promote the verified open house: {input.OpenHouseText}.",
         VerticalCampaignGoal.NewListing => "Announce a newly listed home with an inviting first look.",
         VerticalCampaignGoal.PriceChange => "Announce the verified price change without making a value claim.",
+        VerticalCampaignGoal.WhatPriceBuys => "Show what this verified price buys in this town, leading with the price and then the best spaces.",
+        VerticalCampaignGoal.GuessThePrice => "Invite viewers to guess the price while touring the home, then reveal the verified price at the end.",
+        VerticalCampaignGoal.StandoutRoom => "Build anticipation for the home's standout space, then reveal it.",
+        VerticalCampaignGoal.SpeedTour => "Give a fast, energetic tour that keeps moving from space to space.",
+        VerticalCampaignGoal.AgentHosted => "Have the agent host a warm, personal tour of the home.",
+        VerticalCampaignGoal.LuxuryShowcase => "Present the home's finest approved details with a calm, premium tone.",
+        VerticalCampaignGoal.LivingInTown => "Show what living in this town is like, using only approved nearby places, then the home.",
         _ => input.MarketingTemplate switch
         {
             CampaignMarketingTemplate.OpenHouse => $"Promote the verified open house: {input.OpenHouseText}.",

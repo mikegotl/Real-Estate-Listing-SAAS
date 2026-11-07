@@ -12,7 +12,9 @@ public sealed record VerticalCreativePlan(
     public static VerticalCreativePlan Create(VerticalPlanningInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var recommendation = VerticalFormatRules.Evaluate(input.ToRecommendationInputs());
+        var recommendation = VerticalFormatRules.LeadWith(
+            VerticalFormatRules.Evaluate(input.ToRecommendationInputs()),
+            VerticalCampaignGoals.LeadFormat(input.Goal));
         return new VerticalCreativePlan(
             input,
             recommendation,

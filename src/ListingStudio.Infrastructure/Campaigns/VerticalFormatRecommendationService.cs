@@ -195,12 +195,14 @@ internal static class VerticalPlanningInputLoader
         }
 
         var (photos, footage) = await LoadMediaAsync(dbContext, organizationId, propertyId, cancellationToken);
-        var approvedPlaces = await dbContext.NeighborhoodInsights
+        var places = await dbContext.NeighborhoodInsights
             .AsNoTracking()
-            .CountAsync(insight => insight.OrganizationId == organizationId
+            .Where(insight => insight.OrganizationId == organizationId
                 && insight.PropertyId == propertyId
-                && insight.IsApproved,
-                cancellationToken);
+                && insight.IsApproved)
+            .Select(insight => new VerticalNeighborhoodPlace(insight.Id, insight.Name, insight.Category, insight.DistanceMiles))
+            .ToArrayAsync(cancellationToken);
+        var approvedPlaces = places.Length;
         var narration = await UserNarrationSource.LoadAsync(dbContext, organizationId, propertyId, cancellationToken);
         var hasPortrait = context.AgentPortraitId is { } portraitId
             && await dbContext.AgentPortraits.AsNoTracking().AnyAsync(
@@ -244,6 +246,8 @@ internal static class VerticalPlanningInputLoader
             accessClaim is { PrimaryText: { } access } ? new VerticalAccessClaimInput(accessClaim.Id, access) : null,
             VerticalUnconfirmedMentions.Find(
                 [property.Description, story?.OpeningHook, story?.PropertyNarrative, story?.VoiceoverScript]),
-            VerticalStoryLines.From(story?.VoiceoverScript));
+            VerticalStoryLines.From(story?.VoiceoverScript),
+            context.Goal,
+            places);
     }
 }

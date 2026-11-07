@@ -63,7 +63,10 @@ public sealed class VerticalCampaignPlannerTests : IAsyncDisposable
             Assert.Contains("Opens on:", card.TextContent, StringComparison.Ordinal);
         }
 
-        Assert.Equal(5, cut.FindAll("[data-testid^=goal-]").Count);
+        Assert.Equal(VerticalCampaignGoals.Offered.Count, cut.FindAll("[data-testid^=goal-]").Count);
+        Assert.All(VerticalCampaignGoals.Offered, goal =>
+            Assert.Contains("tiktok.com", cut.Find($"[data-testid=evidence-{goal}] a").GetAttribute("href"), StringComparison.Ordinal));
+        Assert.Equal(VerticalCampaignGoals.Announcements.Count, cut.FindAll("[data-testid^=announcement-]").Count);
         Assert.Contains("You'll get 3 vertical videos and 2 other files.", cut.Find("[data-testid=vertical-estimate]").TextContent,
             StringComparison.Ordinal);
         Assert.Contains("one campaign against your monthly allowance", cut.Markup, StringComparison.Ordinal);
@@ -128,8 +131,8 @@ public sealed class VerticalCampaignPlannerTests : IAsyncDisposable
         Assert.True(cut.Instance.NothingPicked);
         Assert.Contains("Pick at least one video", cut.Find("[data-testid=vertical-estimate]").TextContent, StringComparison.Ordinal);
 
-        cut.Find("input[data-testid=goal-PriceChange]").Click();
-        Assert.Equal(VerticalCampaignGoal.PriceChange, chosenGoal);
+        cut.Find("input[data-testid=goal-GuessThePrice]").Click();
+        Assert.Equal(VerticalCampaignGoal.GuessThePrice, chosenGoal);
     }
 
     [Fact]

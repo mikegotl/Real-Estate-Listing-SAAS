@@ -132,8 +132,8 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
             library.EnsureSuccessStatusCode();
             var libraryContent = await library.Content.ReadAsStringAsync();
             Assert.Contains("vertical-planner", libraryContent, StringComparison.Ordinal);
-            Assert.Contains("1. What is this campaign for?", libraryContent, StringComparison.Ordinal);
-            Assert.Contains("Announce a price change", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("1. What kind of TikTok campaign?", libraryContent, StringComparison.Ordinal);
+            Assert.Contains("What $X buys in your town", libraryContent, StringComparison.Ordinal);
             Assert.Contains("2. Videos this listing can support", libraryContent, StringComparison.Ordinal);
             Assert.Contains("Generate high-potential vertical videos", libraryContent, StringComparison.Ordinal);
             Assert.Contains("support a recommended video yet", libraryContent, StringComparison.Ordinal);
