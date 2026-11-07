@@ -133,7 +133,8 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
         Create one polished real-estate campaign video of the requested length with native synchronized speech and tasteful
         instrumental background music. The real-estate agent in the first image_urls photo is the on-camera presenter; that
         photo is a reference only, not a shot of its own. Use that photo ONLY for the agent's face, hair, skin tone and
-        clothing; ignore its background completely and never show it.
+        clothing; ignore its background completely and never show it. That photo is never a tour keyframe, shot, cutaway,
+        insert or transition: no frame of the video shows that photo or its background.
         The opening shot is tour keyframe 1, the image_url photo, exactly as photographed, with the agent placed into that
         space, standing and facing the camera while speaking the exact opening line. As the line ends, the agent gestures
         toward the space and the camera moves past the agent into the tour, continuing to the next tour keyframe. Then
@@ -226,8 +227,9 @@ public sealed partial class HiggsfieldWalkthroughVideoProvider(
 
     /// <summary>Where each tour keyframe is in the request: the first is image_url, the rest follow the headshot.</summary>
     private static string KeyframeSlots(int count) => count == 1
-        ? $"{NativePresenterVideoPolicy.FirstTourPhotoOpensMarker}."
-        : $"{NativePresenterVideoPolicy.FirstTourPhotoOpensMarker}; tour keyframes 2 to {count} are the remaining image_urls photos, in order.";
+        ? $"{NativePresenterVideoPolicy.FirstTourPhotoOpensMarker}. The tour has exactly 1 shot; image_urls[0] is only the presenter reference and is never a shot."
+        : $"{NativePresenterVideoPolicy.FirstTourPhotoOpensMarker}; tour keyframes 2 to {count} are image_urls[1] to image_urls[{count - 1}], in order. "
+            + $"The tour has exactly {count} shots; image_urls[0] is only the presenter reference and is never one of them.";
 
     private static string DirectionLine(string movement) =>
         $"\nDirection: the next space is {movement}";

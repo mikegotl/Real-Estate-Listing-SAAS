@@ -330,7 +330,10 @@ public sealed class HiggsfieldWalkthroughVideoProviderTests
         Assert.Contains("ignore its background completely and never show it", flat, StringComparison.Ordinal);
         Assert.Contains("The real-estate agent in the first image_urls photo is the on-camera presenter", flat, StringComparison.Ordinal);
         Assert.Contains("that photo is a reference only, not a shot of its own", flat, StringComparison.Ordinal);
-        Assert.Contains("Tour keyframe 1 is the image_url photo; tour keyframes 2 to 2 are the remaining image_urls photos, in order.", flat, StringComparison.Ordinal);
+        Assert.Contains("Tour keyframe 1 is the image_url photo; tour keyframes 2 to 2 are image_urls[1] to image_urls[1], in order.", flat, StringComparison.Ordinal);
+        // Kling once showed the headshot reference as a shot of its own, so the prompt rules that out twice.
+        Assert.Contains("The tour has exactly 2 shots; image_urls[0] is only the presenter reference and is never one of them.", flat, StringComparison.Ordinal);
+        Assert.Contains("never a tour keyframe, shot, cutaway, insert or transition", flat, StringComparison.Ordinal);
         Assert.DoesNotContain("agent in the image_url photo", flat, StringComparison.Ordinal);
         Assert.Contains("never create an exterior, room or view that is not one of the keyframes", flat, StringComparison.Ordinal);
         Assert.DoesNotContain("Do not show the agent inside a room", flat, StringComparison.Ordinal);

@@ -40,10 +40,16 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(FfmpegOptions.SectionName))
             .Validate(options => options.EnhancementTimeoutSeconds is >= 60 and <= 7_200,
                 "FFmpeg:EnhancementTimeoutSeconds must be between 60 and 7200 seconds.");
+        services.AddOptions<PresenterReferenceShotOptions>()
+            .Bind(configuration.GetSection(PresenterReferenceShotOptions.SectionName))
+            .Validate(options => options.SampleFramesPerSecond is >= 2 and <= 30
+                    && options.MatchThreshold is > 0 and < 1,
+                "PresenterReferenceShots needs 2-30 samples per second and a match threshold between 0 and 1.");
         services.AddOptions<VideoBrandingTemplateOptions>()
             .Bind(configuration.GetSection(VideoBrandingTemplateOptions.SectionName));
         services.AddSingleton<IVideoRenderer, FfmpegVideoRenderer>();
         services.AddSingleton<IRenderedVideoValidator, FfmpegMp4TechnicalValidator>();
+        services.AddSingleton<IPresenterReferenceShotRemover, FfmpegPresenterReferenceShotRemover>();
         services.AddSingleton<ICampaignSoundtrackService, OriginalCampaignSoundtrackService>();
         services.AddSingleton<IPropertyVideoTranscoder, FfmpegPropertyVideoTranscoder>();
         services.AddSingleton<IPropertyVideoFrameExtractor, FfmpegPropertyVideoFrameExtractor>();
