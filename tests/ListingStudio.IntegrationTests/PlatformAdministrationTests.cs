@@ -60,6 +60,46 @@ public sealed class PlatformAdministrationTests(PostgreSqlWebApplicationFixture 
     }
 
     [Fact]
+    public async Task FlowMapIsServedOnlyToPlatformAdmins()
+    {
+        await using var factory = fixture.CreateFactory(services =>
+        {
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = PlatformAdminHeaderAuthenticationHandler.SchemeName;
+                    options.DefaultChallengeScheme = PlatformAdminHeaderAuthenticationHandler.SchemeName;
+                    options.DefaultForbidScheme = PlatformAdminHeaderAuthenticationHandler.SchemeName;
+                })
+                .AddScheme<AuthenticationSchemeOptions, PlatformAdminHeaderAuthenticationHandler>(
+                    PlatformAdminHeaderAuthenticationHandler.SchemeName,
+                    _ => { });
+        });
+        using var client = factory.CreateClient();
+
+        using var anonymous = await client.GetAsync("/admin/flow-map/page");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            PlatformAdminHeaderAuthenticationHandler.SchemeName,
+            "organization-owner");
+        using var organizationOwner = await client.GetAsync("/admin/flow-map/test-cases.csv");
+        client.DefaultRequestHeaders.Add(
+            PlatformAdminHeaderAuthenticationHandler.RoleHeader,
+            PlatformAdministration.Role);
+        using var page = await client.GetAsync("/admin/flow-map/page");
+        using var csv = await client.GetAsync("/admin/flow-map/test-cases.csv");
+        using var adminPage = await client.GetAsync("/admin/flow-map");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, organizationOwner.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Equal("text/html", page.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("Creative Listing Studio flow map", await page.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, csv.StatusCode);
+        Assert.StartsWith("ID,", await csv.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, adminPage.StatusCode);
+        Assert.Contains("/admin/flow-map/page", await adminPage.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PlatformRoleDoesNotCreateMembershipOrBypassTenantIsolation()
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();

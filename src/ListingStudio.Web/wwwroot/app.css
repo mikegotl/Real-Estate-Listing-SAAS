@@ -506,6 +506,7 @@ h1:focus { outline: none; }
 .admin-health li { align-items: center; border-bottom: 1px solid var(--ls-line); display: flex; justify-content: space-between; padding: 10px 0; }
 .admin-health strong.healthy { color: var(--ls-success); }.admin-health strong.degraded { color: var(--ls-accent-strong); }.admin-health strong.unhealthy { color: var(--ls-error); }
 .admin-page-heading { margin: 12px 0 24px; }
+.admin-flow-map { background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: 12px; display: block; height: calc(100vh - 220px); min-height: 560px; width: 100%; }
 .visually-hidden { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
 .admin-user-search { display: flex; gap: 10px; margin-bottom: 18px; max-width: 640px; }
 .admin-user-search input { background: var(--ls-surface); border: 1px solid var(--ls-line-strong); border-radius: 10px; color: var(--ls-ink); flex: 1; font: inherit; min-width: 0; padding: 10px 14px; }

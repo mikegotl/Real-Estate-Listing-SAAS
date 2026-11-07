@@ -32,6 +32,8 @@
         <MudButton Href="/admin/email" Variant="Variant.Outlined" Color="Color.Inherit"
                    StartIcon="@Icons.Material.Filled.Outbox">Sent emails</MudButton>
         <MudButton Href="/admin/audit" Variant="Variant.Outlined" Color="Color.Inherit">Audit log</MudButton>
+        <MudButton Href="/admin/flow-map" Variant="Variant.Outlined" Color="Color.Inherit"
+                   StartIcon="@Icons.Material.Filled.AccountTree">Flow map</MudButton>
         <MudButton Variant="Variant.Outlined" Color="Color.Warning" Disabled="resetting"
                    StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetMetricsAsync">
             @(resetting ? "Resetting…" : "Reset metrics")

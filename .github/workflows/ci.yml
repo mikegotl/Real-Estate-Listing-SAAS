@@ -24,6 +24,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          # The flow map reminder compares the pull request with its base branch.
+          fetch-depth: 0
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v6
@@ -42,6 +45,12 @@ jobs:
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
           test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+
+      - name: Flow map reminder
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        # Warns, never fails: changes to Overview, Media or Campaign logic should update tools/flow-map/cases.py.
+        run: python3 tools/flow-map/check_changes.py "origin/${{ github.base_ref }}"
 
       - name: Restore
         run: dotnet restore ListingStudio.slnx

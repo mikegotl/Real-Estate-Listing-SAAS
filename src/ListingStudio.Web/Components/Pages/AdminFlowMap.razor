@@ -1,0 +1,24 @@
+@page "/admin/flow-map"
+@attribute [Authorize(Policy = PlatformAdministration.Policy)]
+
+<PageTitle>Flow map</PageTitle>
+
+<div class="section-row admin-page-heading">
+    <div>
+        <span class="eyebrow">TEST PLANNING</span>
+        <MudText Typo="Typo.h3" HtmlTag="h1">Flow map</MudText>
+        <MudText Typo="Typo.body1">
+            Every path from a property's Overview tab through Media to a finished campaign, with a test case ID on each
+            branch. It is rebuilt from tools/flow-map/cases.py in the same pull request as any change to these flows.
+        </MudText>
+    </div>
+    <div class="admin-heading-actions">
+        <MudButton Href="@AdminFlowMapEndpoints.CsvPath" Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Download" data-testid="flow-map-csv">Test cases (CSV)</MudButton>
+        <MudButton Href="@AdminFlowMapEndpoints.PagePath" Target="_blank" Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.OpenInNew">Open full page</MudButton>
+        <MudButton Href="/admin" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">System overview</MudButton>
+    </div>
+</div>
+
+<iframe class="admin-flow-map" src="@AdminFlowMapEndpoints.PagePath" title="Flow map with test cases" data-testid="flow-map-frame"></iframe>
