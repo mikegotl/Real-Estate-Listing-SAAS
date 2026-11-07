@@ -3,7 +3,20 @@
         <MudText Typo="Typo.body2" Class="mb-4">
             Name the room or area where this photo belongs. The photo will become approved campaign media only after it is placed there.
         </MudText>
-        <MudTextField T="string" @bind-Value="stopName" Label="Room or area" Placeholder="Sunroom, guest suite, pool…"
+        @if (SuggestedNames.Count > 0)
+        {
+            <div class="d-flex flex-wrap align-center gap-2 mb-3">
+                <MudText Typo="Typo.caption">This photo is tagged:</MudText>
+                @foreach (var name in SuggestedNames)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary"
+                             Variant="@(string.Equals(stopName, name, StringComparison.Ordinal) ? Variant.Filled : Variant.Outlined)"
+                             Icon="@Icons.Material.Filled.Sell" OnClick="@(() => UseSuggestion(name))"
+                             aria-label="@($"Use {name} as the stop name")">@name</MudChip>
+                }
+            </div>
+        }
+        <MudTextField T="string" @bind-Value="stopName" Label="Room or area" Placeholder="@(SuggestedNames.Count > 0 ? $"Tap {SuggestedNames[0]} above, or type a name" : "Sunroom, guest suite, pool…")"
                       Variant="Variant.Outlined" Immediate="true" Autofocus="true"
                       MaxLength="PropertyMedia.MaximumWalkthroughStopLength" OnKeyDown="KeyDownAsync" />
         @if (validationError is not null)
@@ -22,7 +35,17 @@
     [CascadingParameter]
     private IMudDialogInstance Dialog { get; set; } = null!;
 
+    /// <summary>Room names already known for the photo; tapping one fills in the name, which can still be edited.</summary>
+    [Parameter]
+    public IReadOnlyList<string> SuggestedNames { get; set; } = [];
+
     private string? stopName;
+
+    private void UseSuggestion(string name)
+    {
+        stopName = name;
+        validationError = null;
+    }
     private string? validationError;
 
     private void Create()

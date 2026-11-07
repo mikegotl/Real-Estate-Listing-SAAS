@@ -552,7 +552,7 @@
                         }
                         @if (context.Stop is null)
                         {
-                            <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="@(() => AddPhotoToNewStopAsync(item.Id))">Create new stop…</MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="@(() => AddPhotoToNewStopAsync(item))">Create new stop…</MudMenuItem>
                         }
                         <MudDivider />
                         <MudMenuItem Icon="@Icons.Material.Filled.PhotoLibrary" OnClick="@(() => MoveToGalleryAsync(item.Id))">Move to extra photos</MudMenuItem>
@@ -615,7 +615,7 @@
                         {
                             <MudMenuItem OnClick="@(() => AssignStopAsync(item.Id, target.Name))">@target.Name</MudMenuItem>
                         }
-                        <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="@(() => AddPhotoToNewStopAsync(item.Id))">Create new stop…</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="@(() => AddPhotoToNewStopAsync(item))">Create new stop…</MudMenuItem>
                     </MudMenu>
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
                                    aria-label="Delete photo" OnClick="@(() => DeleteAsync(item.Id))" />
@@ -1712,16 +1712,54 @@
         }
     }
 
-    private async Task AddPhotoToNewStopAsync(Guid mediaId)
+    private async Task AddPhotoToNewStopAsync(PropertyMediaItem item)
     {
+        var parameters = new DialogParameters<NewTourStopDialog>
+        {
+            { dialog => dialog.SuggestedNames, NewStopSuggestions(item) },
+        };
         var dialog = await DialogService.ShowAsync<NewTourStopDialog>(
             "Create a Tour Map stop",
+            parameters,
             new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
         var result = await dialog.Result;
         if (result is { Canceled: false, Data: string stop })
         {
-            await AssignStopAsync(mediaId, stop);
+            await AssignStopAsync(item.Id, stop);
         }
+    }
+
+    /// <summary>
+    /// The room names already known for a photo (its recognized room tag and the stop that tag suggests), offered as
+    /// one-click names when the agent creates a new stop for it.
+    /// </summary>
+    public static IReadOnlyList<string> NewStopSuggestions(PropertyMediaItem item)
+    {
+        if (item.Analysis is not { } analysis)
+        {
+            return [];
+        }
+
+        var names = new List<string>();
+        foreach (var candidate in new[] { analysis.RoomType, WalkthroughStoryboard.SuggestStop(analysis.Category) })
+        {
+            string? name;
+            try
+            {
+                name = WalkthroughStoryboard.Normalize(candidate);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                name = null;
+            }
+
+            if (name is not null && !names.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                names.Add(name);
+            }
+        }
+
+        return names;
     }
 
     private async Task MoveToGalleryAsync(Guid mediaId)
