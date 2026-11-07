@@ -945,6 +945,28 @@ public sealed partial class CampaignGenerationTests(PostgreSqlWebApplicationFixt
     }
 
     [Fact]
+    public async Task StoryThatMentionsAnUnconfirmedGarageStopsWithADescriptionFix()
+    {
+        var owner = await CreateOwnerAndPropertyAsync("campaign-story-grounding");
+        await UploadAsync(owner);
+        fixture.Factory.MediaAnalyzer.Enqueue(SuccessfulAnalysis);
+        fixture.Factory.StoryGenerator.Enqueue(SafeStory with
+        {
+            OpeningHook = "Pull into the garage and step inside.",
+        });
+
+        var queued = await EnqueueAsync(owner);
+        var failed = await ProcessUntilAsync(owner, queued.Id, CampaignGenerationStatus.Failed);
+
+        Assert.Equal(CampaignGenerationStage.GenerateStory, failed.CurrentStage);
+        Assert.True(PropertyStoryGroundingException.AsksForDescriptionFix(failed.LastError), failed.LastError);
+        Assert.Contains("mentions \"garage\"", failed.LastError, StringComparison.Ordinal);
+        Assert.Contains("Description on the Overview tab", failed.LastError, StringComparison.Ordinal);
+        Assert.Contains(failed.Stages, stage =>
+            stage.Stage == CampaignGenerationStage.GenerateStory && stage.Status == CampaignStageStatus.Failed);
+    }
+
+    [Fact]
     public async Task RenderThatFailsItsTechnicalCheckIsNotStoredAndIsRenderedAgain()
     {
         var owner = await CreateOwnerAndPropertyAsync("campaign-technical-check");

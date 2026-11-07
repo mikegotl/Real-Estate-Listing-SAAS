@@ -64,14 +64,15 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
             }.Concat(content.Highlights ?? []));
 
         var errors = new List<string>();
+        var unverifiedClaims = new List<PropertyStoryUnverifiedClaim>();
         ValidateRequiredContent(content, errors);
         ValidateNumbers(request, text, errors);
-        ValidateProtectedClaims(request, text, errors);
+        ValidateProtectedClaims(request, text, errors, unverifiedClaims);
         ValidateFairHousingLanguage(text, errors);
 
         return errors.Count == 0
             ? PropertyStoryGroundingResult.Success
-            : new PropertyStoryGroundingResult(false, errors);
+            : new PropertyStoryGroundingResult(false, errors, unverifiedClaims);
     }
 
     private static void ValidateRequiredContent(PropertyStoryContent content, List<string> errors)
@@ -166,7 +167,8 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
     private static void ValidateProtectedClaims(
         PropertyStoryGenerationRequest request,
         string generatedText,
-        List<string> errors)
+        List<string> errors,
+        List<PropertyStoryUnverifiedClaim> unverifiedClaims)
     {
         foreach (var claim in ProtectedClaims)
         {
@@ -176,7 +178,9 @@ public sealed partial class PropertyStoryGroundingValidator : IPropertyStoryGrou
                 && !IsWalkthroughStopName(request.Walkthrough, claim))
             {
                 var displayClaim = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(claim);
-                var source = IsPresentInMediaAnalysis(request.MediaObservations, claim)
+                var seenInPhotos = IsPresentInMediaAnalysis(request.MediaObservations, claim);
+                unverifiedClaims.Add(new PropertyStoryUnverifiedClaim(claim, seenInPhotos));
+                var source = seenInPhotos
                     ? " was detected in photo analysis, but it is not verified in the property description."
                     : " is not verified in the property description.";
                 errors.Add(

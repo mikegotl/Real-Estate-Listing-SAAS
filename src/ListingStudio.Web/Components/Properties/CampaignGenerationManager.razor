@@ -881,6 +881,13 @@
                     {
                         <span> · attempt @stage.AttemptCount</span>
                     }
+                    @if (ShowsStoryDescriptionFix(job, stage))
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" data-testid="story-grounding-error">
+                            @job.LastError
+                            <a href="@($"/properties/{PropertyId}?tab=overview")">Open the Overview tab</a>
+                        </MudAlert>
+                    }
                 </MudListItem>
             }
         </MudList>
@@ -1043,10 +1050,16 @@
     }
 </MudPaper>
 
-<FeatureSuggestionBox PropertyId="PropertyId"
-                      ActiveCampaignId="@(job?.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running ? job.Id : null)" />
+@* Hidden for now; the header Comments button still takes suggestions. *@
+@if (ShowFeatureSuggestionBox)
+{
+    <FeatureSuggestionBox PropertyId="PropertyId"
+                          ActiveCampaignId="@(job?.Status is CampaignGenerationStatus.Queued or CampaignGenerationStatus.Running ? job.Id : null)" />
+}
 
 @code {
+    private static readonly bool ShowFeatureSuggestionBox = false;
+
     [Parameter]
     public Guid PropertyId { get; set; }
 
@@ -2323,8 +2336,19 @@
         _ => string.Empty,
     };
 
+    // The story check names the feature to confirm, so that note sits next to the Generate story step.
+    private static bool ShowsStoryDescriptionFix(CampaignGenerationResult campaign, CampaignStageResult stage) =>
+        stage.Stage == CampaignGenerationStage.GenerateStory
+        && stage.Status == CampaignStageStatus.Failed
+        && campaign.CurrentStage == CampaignGenerationStage.GenerateStory
+        && PropertyStoryGroundingException.AsksForDescriptionFix(campaign.LastError);
+
     private static string DisplayError(CampaignGenerationResult campaign) =>
-        campaign.CurrentStage == CampaignGenerationStage.GenerateMasterVideoPlan
+        campaign.CurrentStage == CampaignGenerationStage.GenerateStory
+        && PropertyStoryGroundingException.AsksForDescriptionFix(campaign.LastError)
+        && campaign.Stages.Any(stage => stage.Stage == CampaignGenerationStage.GenerateStory && stage.Status == CampaignStageStatus.Failed)
+            ? "Generate story stopped because the story mentioned a feature the property Description doesn't confirm. See the note under Generate story below."
+            : campaign.CurrentStage == CampaignGenerationStage.GenerateMasterVideoPlan
         && campaign.LastError == "A campaign provider returned invalid data."
             ? "Creative Listing Studio could not validate the generated master video plan. Retry the failed stage to use guided repair and the single-photo fallback, or add more analyzed interior and exterior photos for a more varied result."
             : campaign.CurrentStage == CampaignGenerationStage.GenerateNarration

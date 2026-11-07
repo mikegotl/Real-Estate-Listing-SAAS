@@ -24,7 +24,13 @@
 
     @if (!string.IsNullOrWhiteSpace(error))
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert>
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            @error
+            @if (PropertyStoryGroundingException.AsksForDescriptionFix(error))
+            {
+                <a href="@($"/properties/{PropertyId}?tab=overview")">Open the Overview tab</a>
+            }
+        </MudAlert>
     }
 
     @if (reused)

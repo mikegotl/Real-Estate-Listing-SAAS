@@ -60,7 +60,14 @@ public sealed record PropertyStoryResult(
     DateTimeOffset CreatedAtUtc,
     bool Reused);
 
-public sealed record PropertyStoryGroundingResult(bool IsValid, IReadOnlyList<string> Errors)
+public sealed record PropertyStoryGroundingResult(
+    bool IsValid,
+    IReadOnlyList<string> Errors,
+    IReadOnlyList<PropertyStoryUnverifiedClaim>? UnverifiedClaims = null)
 {
     public static PropertyStoryGroundingResult Success { get; } = new(true, []);
 }
+
+// A feature word such as "garage" that the story used but the Description, approved neighborhood facts and Tour Map
+// stop names do not confirm. SeenInPhotos says whether photo analysis noticed it, which hints but does not verify.
+public sealed record PropertyStoryUnverifiedClaim(string Claim, bool SeenInPhotos);

@@ -35,6 +35,7 @@ public sealed partial class CampaignGenerationProcessor(
     IAgentAvatarVideoService agentAvatarVideoService,
     IVideoRenderer videoRenderer,
     IRenderedVideoValidator renderedVideoValidator,
+    IPresenterReferenceShotRemover presenterReferenceShotRemover,
     ICampaignSoundtrackService campaignSoundtrackService,
     IWalkthroughVideoProvider walkthroughVideoProvider,
     IPhotoImageCodec photoImageCodec,
@@ -2325,6 +2326,11 @@ public sealed partial class CampaignGenerationProcessor(
             await source.CopyToAsync(target, cancellationToken);
         }
 
+        if (usesNativePresenter)
+        {
+            path = await WithoutPresenterReferenceShotsAsync(job, path, directory, cancellationToken);
+        }
+
         var nativeAudio = usesNativePresenter;
         if (nativeAudio && await renderedVideoValidator.HasAudioStreamAsync(path, cancellationToken) == false)
         {
@@ -2336,6 +2342,71 @@ public sealed partial class CampaignGenerationProcessor(
 
         return new VideoRenderFullTourAsset(path, durationMs, nativeAudio);
     }
+
+    /// <summary>
+    /// Kling sometimes shows the agent's reference headshot, background and all, as a shot of its own despite the
+    /// prompt. Those shots are covered by holding the next real shot (audio and length unchanged). The stored Kling
+    /// video is left as it is; if the check can't run, the video is used unchanged rather than failing the render.
+    /// </summary>
+    private async Task<string> WithoutPresenterReferenceShotsAsync(
+        CampaignGenerationJob job,
+        string videoPath,
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        if (job.AgentPortraitId is not { } portraitId)
+        {
+            return videoPath;
+        }
+
+        try
+        {
+            var portrait = await dbContext.AgentPortraits.AsNoTracking()
+                .Where(candidate => candidate.Id == portraitId && candidate.OrganizationId == job.OrganizationId)
+                .Select(candidate => new { candidate.BlobPath, candidate.MimeType })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (portrait is null)
+            {
+                return videoPath;
+            }
+
+            // The same 9:16 crop that was sent to Kling, so the comparison sees what Kling saw.
+            var (reference, _) = await OpenVerticalPresenterPortraitAsync(portrait.BlobPath, portrait.MimeType, cancellationToken);
+            var referencePath = Path.Combine(directory, "presenter-reference.jpg");
+            await using (reference)
+            await using (var target = new FileStream(referencePath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await reference.CopyToAsync(target, cancellationToken);
+            }
+
+            var cleanedPath = Path.Combine(directory, "kling4-native-presenter-cleaned.mp4");
+            var removal = await presenterReferenceShotRemover.RemoveAsync(videoPath, referencePath, cleanedPath, cancellationToken);
+            if (!removal.Removed)
+            {
+                return videoPath;
+            }
+
+            var coveredShots = string.Join(", ", removal.Shots.Select(shot => $"{shot.StartSeconds:0.##}-{shot.EndSeconds:0.##} s"));
+            LogPresenterReferenceShotsCovered(job.Id, coveredShots);
+
+            return cleanedPath;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogPresenterReferenceShotCheckFailed(exception, job.Id);
+            return videoPath;
+        }
+    }
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Covered Kling shots of the presenter's reference headshot in campaign {JobId} at {Shots}")]
+    private partial void LogPresenterReferenceShotsCovered(Guid jobId, string shots);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Could not check campaign {JobId}'s Kling video for presenter headshot shots; using it unchanged")]
+    private partial void LogPresenterReferenceShotCheckFailed(Exception exception, Guid jobId);
 
     private async Task<VideoRenderPropertyVideoAsset[]> MaterializePropertyVideosAsync(
         CampaignGenerationJob job,
@@ -2759,6 +2830,8 @@ public sealed partial class CampaignGenerationProcessor(
             HttpRequestException => "An external provider request failed.",
             TimeoutException => "An external provider request timed out.",
             VideoRenderException => "A campaign video could not be rendered.",
+            // Written for the agent: names the unconfirmed feature and how to fix the Description.
+            PropertyStoryGroundingException => exception.Message,
             InvalidDataException => "A campaign provider returned invalid data.",
             FileNotFoundException or IOException => "A required campaign asset could not be read or written.",
             InvalidOperationException => exception.Message.Length <= 1_000
