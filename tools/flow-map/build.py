@@ -118,6 +118,7 @@ for sec in SECTIONS:
     <thead><tr><th>ID</th><th>Starting state</th><th>Steps</th><th>Expected result</th><th>Needs · matrix</th></tr></thead>
     <tbody>{"".join(body)}</tbody>
   </table></div>
+  <p class="to-top"><a href="#top">↑ Back to top</a></p>
 </section>''')
 
 findings_html = "".join(
@@ -196,6 +197,9 @@ button:focus-visible, input:focus-visible {{ outline: 2px solid var(--brass); ou
 .area {{ margin-top: 40px; scroll-margin-top: 80px; }}
 .area-head {{ display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 14px; align-items: start; margin-bottom: 14px; }}
 .area-head h2 {{ font-size: 23px; }}
+.to-top {{ margin: 10px 0 0; text-align: right; font-size: 14px; }}
+.to-top a {{ color: var(--navy); font-weight: 600; text-decoration: none; }}
+.to-top a:hover, .to-top a:focus-visible {{ text-decoration: underline; }}
 .area-head p {{ margin: 4px 0 0; color: var(--muted); max-width: 75ch; }}
 .prefix {{ font-family: var(--mono); font-size: 15px; background: var(--navy); color: var(--bg); border-radius: 6px; padding: 5px 8px; }}
 .area-count {{ font-size: 12px; color: var(--muted); white-space: nowrap; padding-top: 6px; }}
@@ -220,7 +224,7 @@ footer {{ margin-top: 48px; color: var(--muted); font-size: 13px; }}
 @media (prefers-reduced-motion: no-preference) {{ html {{ scroll-behavior: smooth; }} }}
 </style>
 
-<div class="wrap">
+<div class="wrap" id="top">
   <span class="stamp">{esc(STAMP)}</span>
   <h1>Creative Listing Studio flow map</h1>
   <p class="lede">Every path a person can take on a property, from the Overview tab through Media to a finished campaign and its video chat. Each branch has an ID you can use as a test case name. Diagrams show the decisions; the table under each one lists the cases with starting state, steps and expected result.</p>
