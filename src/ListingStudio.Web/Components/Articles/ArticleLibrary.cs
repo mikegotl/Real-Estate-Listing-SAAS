@@ -40,6 +40,17 @@ public static class ArticleLibrary
                 Topics: ["Vertical video", "TikTok", "Listing video"],
                 FeatureKey: ListingStudio.Domain.Administration.FeatureFlagKeys.VerticalVideoLibraryV1),
             typeof(OneListingFourTikToks)),
+        new(
+            new ArticleSummary(
+                Slug: TikTokHomeTourTypes.Slug,
+                Title: "Which TikTok home tours get the most views and likes",
+                Description: "Real estate TikTok campaign types compared: shock homes, creator series, speed tours, price surprise, luxury, comedy and neighborhood tours, with example posts and how their like rates compare.",
+                PublishedOn: new DateOnly(2026, 11, 7),
+                UpdatedOn: null,
+                Author: "Creative Listing Studio team",
+                ReadMinutes: 9,
+                Topics: ["TikTok", "Research", "Listing video"]),
+            typeof(TikTokHomeTourTypes)),
     ];
 
     /// <summary>The vertical video library guide: shown only while VerticalVideoLibraryV1 is on (see <see cref="ArticleVisibility"/>).</summary>

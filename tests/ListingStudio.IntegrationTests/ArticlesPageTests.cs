@@ -49,6 +49,28 @@ public sealed class ArticlesPageTests(PostgreSqlWebApplicationFixture fixture)
     }
 
     [Fact]
+    public async Task TikTokTourTypesArticleIsPublicWithExamplesAndSources()
+    {
+        using var client = AnonymousClient();
+
+        using var list = await client.GetAsync("/articles");
+        Assert.Contains("href=\"/articles/tiktok-home-tour-types-that-get-views-and-likes\"", await list.Content.ReadAsStringAsync());
+
+        using var response = await client.GetAsync("/articles/tiktok-home-tour-types-that-get-views-and-likes");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Which TikTok home tours get the most views and likes | Creative Listing Studio</title>", html);
+        Assert.Contains("data-testid=\"tour-type-ranking\"", html);
+        Assert.Contains("data-testid=\"directional-note\"", html);
+        // TikTok handles render with a single @ (Razor escapes @@).
+        Assert.Contains("https://www.tiktok.com/@hortons.co/video/7280574057404239136", html);
+        Assert.Contains("@trent_miller__", html);
+        Assert.DoesNotContain("@@", html);
+        Assert.Contains("https://pages.dashsocial.com/", html);
+    }
+
+    [Fact]
     public async Task UnknownArticleReturnsNotFound()
     {
         using var client = AnonymousClient();
