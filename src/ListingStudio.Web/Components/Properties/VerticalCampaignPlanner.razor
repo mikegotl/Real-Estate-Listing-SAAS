@@ -24,7 +24,7 @@
                                 <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined" Class="ml-2">Most likes</MudChip>
                             }
                         </MudRadio>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@VerticalFormatNames.GoalDescription(goal)</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block" data-testid="@($"type-description-{goal}")">@VerticalFormatNames.GoalDescription(goal, Plan?.Input.Facts)</MudText>
                         @if (evidence is not null)
                         {
                             <MudText Typo="Typo.caption" Class="d-block mt-1" data-testid="@($"evidence-{goal}")">

@@ -67,11 +67,17 @@ public static class VerticalFormatNames
         _ => goal.ToString(),
     };
 
+    /// <summary>The description with this listing's own price and town where the type quotes them.</summary>
+    public static string GoalDescription(VerticalCampaignGoal goal, VerticalListingFacts? facts) =>
+        goal == VerticalCampaignGoal.WhatPriceBuys && facts?.PriceText is { } price && facts.CityStateText is { } city
+            ? $"Opens with \"What {price} buys in {city}\", then the best rooms."
+            : GoalDescription(goal);
+
     public static string GoalDescription(VerticalCampaignGoal goal) => goal switch
     {
-        VerticalCampaignGoal.WhatPriceBuys => "Opens with \"What $400,000 buys in Wildwood, FL\", then the best rooms.",
+        VerticalCampaignGoal.WhatPriceBuys => "Opens with \"What [your price] buys in [your town]\", then the best rooms.",
         VerticalCampaignGoal.GuessThePrice => "Asks viewers to guess, and shows the price only at the end.",
-        VerticalCampaignGoal.StandoutRoom => "Opens on the home's standout room with \"Wait till you see the kitchen\".",
+        VerticalCampaignGoal.StandoutRoom => "Opens on the home's standout room with \"Wait till you see the [room]\".",
         VerticalCampaignGoal.SpeedTour => "A fast cut through every room in 15 seconds.",
         VerticalCampaignGoal.AgentHosted => "You walk viewers through, in your footage, your narration or a consented presenter.",
         VerticalCampaignGoal.LuxuryShowcase => "Leads with the most striking space, for higher-end homes.",

@@ -67,6 +67,16 @@ public sealed class VerticalCampaignTypeTests
     }
 
     [Fact]
+    public void WhatPriceBuysDescriptionQuotesThisListingNotAnExample()
+    {
+        Assert.Equal("Opens with \"What $450,000 buys in Raleigh, NC\", then the best rooms.",
+            VerticalFormatNames.GoalDescription(VerticalCampaignGoal.WhatPriceBuys, RecipeFixture.Facts()));
+        Assert.DoesNotContain("Wildwood", VerticalFormatNames.GoalDescription(VerticalCampaignGoal.WhatPriceBuys), StringComparison.Ordinal);
+        Assert.Contains("[your price]", VerticalFormatNames.GoalDescription(VerticalCampaignGoal.WhatPriceBuys,
+            RecipeFixture.Facts() with { ListingPrice = 0 }), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SpeedTourIsFifteenSecondsOfQuickCuts()
     {
         var recipe = new SpeedTourPlanner().Plan(RecipeFixture.Input())!;

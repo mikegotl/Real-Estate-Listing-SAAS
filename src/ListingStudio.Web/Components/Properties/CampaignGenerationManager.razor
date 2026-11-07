@@ -1420,8 +1420,17 @@
             || selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar)
                 ? portrait?.Id
                 : null;
-        // Library campaigns always have a type; until the agent picks one it is the type with the most likes.
-        selectedGoal ??= VerticalCampaignGoals.Default;
+        // Library campaigns always have a type; until the agent picks one it is the type with the most likes, and a new
+        // campaign starts with that type's message unless an announcement or saved message is already set.
+        if (selectedGoal is null)
+        {
+            selectedGoal = VerticalCampaignGoals.Default;
+            if (job is null && selectedMarketingTemplate == CampaignCreativeOptions.SocialDefault.MarketingTemplate)
+            {
+                ApplyCampaignMessage(VerticalFormatNames.TemplateFor(VerticalCampaignGoals.Default));
+                templateNote = null;
+            }
+        }
         var context = new VerticalRecommendationContext(
             portraitId,
             selectedCreativeElements.HasFlag(CampaignVideoElement.AgentAvatar) && selectedAgentAvatarConsent,
@@ -1465,11 +1474,23 @@
     private async Task ChooseGoal(VerticalCampaignGoal goal)
     {
         selectedGoal = goal;
-        ApplyTemplate(VerticalFormatNames.TemplateFor(goal, SelectedAnnouncement));
+        ApplyCampaignMessage(VerticalFormatNames.TemplateFor(goal, SelectedAnnouncement));
         // The type leads the recommendation, and a confirmed price change can lift Price first, so the scores are
         // worked out again.
         useRecommendedOnReload = true;
         await ReloadVerticalPlanAsync();
+    }
+
+    /// <summary>
+    /// A campaign type or announcement sets the campaign message, but never takes away the agent presenter the agent
+    /// chose: a template's preset would otherwise drop the presenter and lower the Hosted walk-through score.
+    /// </summary>
+    private void ApplyCampaignMessage(CampaignMarketingTemplate template)
+    {
+        const CampaignVideoElement Presenter = CampaignVideoElement.AgentAvatar | CampaignVideoElement.AgentPortrait;
+        var presenter = selectedCreativeElements & Presenter;
+        ApplyTemplate(template);
+        selectedCreativeElements = (selectedCreativeElements & ~Presenter) | presenter;
     }
 
     /// <summary>The announcement is the campaign message itself, so it always matches the template shown below.</summary>
@@ -1477,7 +1498,7 @@
 
     private async Task ChooseAnnouncement(VerticalAnnouncement announcement)
     {
-        ApplyTemplate(VerticalFormatNames.TemplateFor(selectedGoal ?? VerticalCampaignGoals.Default, announcement));
+        ApplyCampaignMessage(VerticalFormatNames.TemplateFor(selectedGoal ?? VerticalCampaignGoals.Default, announcement));
         await ReloadVerticalPlanAsync();
     }
 
