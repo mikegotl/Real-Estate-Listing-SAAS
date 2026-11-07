@@ -77,6 +77,47 @@ public sealed class PropertyStoryGroundingValidatorTests
     }
 
     [Fact]
+    public void GroundingFailureNamesTheWordToAddOnTheOverviewTab()
+    {
+        var request = Request with
+        {
+            MediaObservations =
+            [
+                Request.MediaObservations[0] with { Description = "A two-car garage door faces the street." },
+            ],
+        };
+        var unsupported = SafeStory with { OpeningHook = "Pull into the garage and relax by the fireplace." };
+
+        var result = validator.Validate(request, unsupported);
+        var exception = new PropertyStoryGroundingException(result);
+
+        Assert.Equal(
+            [new PropertyStoryUnverifiedClaim("garage", true), new PropertyStoryUnverifiedClaim("fireplace", false)],
+            exception.UnverifiedClaims.OrderByDescending(claim => claim.SeenInPhotos).ToArray());
+        Assert.True(PropertyStoryGroundingException.AsksForDescriptionFix(exception.Message));
+        Assert.Contains("the story mentions \"", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("\"garage\"", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("\"fireplace\"", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Photo analysis saw \"garage\"", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("If the home really has them, edit the Description on the Overview tab", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("If not, leave the Description as is", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= PropertyStoryGroundingException.MaximumMessageLength);
+    }
+
+    [Fact]
+    public void GroundingFailureWithoutAFeatureWordDoesNotPointAtTheDescription()
+    {
+        var unsupported = SafeStory with { PropertyNarrative = "A home with 47 windows." };
+
+        var exception = new PropertyStoryGroundingException(validator.Validate(Request, unsupported));
+
+        Assert.Empty(exception.UnverifiedClaims);
+        Assert.False(PropertyStoryGroundingException.AsksForDescriptionFix(exception.Message));
+        Assert.Contains("Unsupported numeric claim: 47.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Generate the story again", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AcceptsAProtectedClaimWhenVerifiedInThePropertyDescription()
     {
         var request = Request with

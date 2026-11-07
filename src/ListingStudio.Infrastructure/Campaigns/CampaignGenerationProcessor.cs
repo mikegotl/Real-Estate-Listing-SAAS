@@ -2759,6 +2759,8 @@ public sealed partial class CampaignGenerationProcessor(
             HttpRequestException => "An external provider request failed.",
             TimeoutException => "An external provider request timed out.",
             VideoRenderException => "A campaign video could not be rendered.",
+            // Written for the agent: names the unconfirmed feature and how to fix the Description.
+            PropertyStoryGroundingException => exception.Message,
             InvalidDataException => "A campaign provider returned invalid data.",
             FileNotFoundException or IOException => "A required campaign asset could not be read or written.",
             InvalidOperationException => exception.Message.Length <= 1_000

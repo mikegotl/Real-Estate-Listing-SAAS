@@ -80,8 +80,9 @@ public sealed class PropertyDetailsRenderingTests(PostgreSqlWebApplicationFixtur
         Assert.Contains("Neighborhood", content, StringComparison.Ordinal);
         Assert.Contains("External listing research", content, StringComparison.Ordinal);
         Assert.Contains("Zillow home link", content, StringComparison.Ordinal);
-        Assert.Contains("Suggest a future feature", content, StringComparison.Ordinal);
-        Assert.Contains("This feature is required in order to continue my campaign", content, StringComparison.Ordinal);
+        // The Campaign tab suggestion box is hidden for now; the header Comments button still takes suggestions.
+        Assert.DoesNotContain("Suggest a future feature", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("This feature is required in order to continue my campaign", content, StringComparison.Ordinal);
     }
 
     [Fact]

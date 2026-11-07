@@ -82,9 +82,7 @@ public sealed class PropertyStoryService(
         var grounding = groundingValidator.Validate(request, content);
         if (!grounding.IsValid)
         {
-            throw new InvalidDataException(
-                $"The story could not be saved because it contains unverified property information. "
-                + string.Join(' ', grounding.Errors));
+            throw new PropertyStoryGroundingException(grounding);
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
