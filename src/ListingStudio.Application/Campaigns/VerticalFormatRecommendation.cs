@@ -810,6 +810,8 @@ public static class VerticalFormatRules
             var reasons = item.Reasons.ToList();
             if (item.Format == format)
             {
+                // It is in the default set now, so a reason saying why it was left out no longer applies.
+                reasons.RemoveAll(reason => reason.StartsWith("Not in the default set", StringComparison.Ordinal));
                 reasons.Add("Made first because it is the campaign type you picked.");
             }
             else if (item.IsRecommended && !keep.Contains(item.Format))

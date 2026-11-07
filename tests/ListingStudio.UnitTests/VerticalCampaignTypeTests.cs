@@ -26,6 +26,7 @@ public sealed class VerticalCampaignTypeTests
         Assert.True(first.IsRecommended);
         Assert.Equal(1, first.Rank);
         Assert.Contains("Made first because it is the campaign type you picked.", first.Reasons);
+        Assert.DoesNotContain(first.Reasons, reason => reason.StartsWith("Not in the default set", StringComparison.Ordinal));
         Assert.InRange(plan.Recommendation.Recommended.Count, 1, 3);
         Assert.Equal(Enumerable.Range(1, plan.Recommendation.Formats.Count), plan.Recommendation.Formats.Select(item => item.Rank));
     }
