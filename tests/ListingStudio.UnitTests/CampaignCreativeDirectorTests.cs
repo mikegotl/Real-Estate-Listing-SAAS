@@ -109,6 +109,33 @@ public sealed class CampaignCreativeDirectorTests
     }
 
     [Fact]
+    public void KlingNativePresenterRenderDropsStaticHeadshotCards()
+    {
+        var portraitId = Guid.NewGuid();
+        var options = CampaignCreativeOptions.SocialDefault with
+        {
+            Elements = CampaignCreativeOptions.SocialDefault.Elements
+                | CampaignVideoElement.AgentAvatar
+                | CampaignVideoElement.AgentPortrait,
+            AgentPortraitId = portraitId,
+            AgentAvatarConsentConfirmed = true,
+        };
+        var planned = CampaignCreativeDirector.Apply(CreateSpecification(), options, 2020);
+        Assert.Contains(planned.Scenes.SelectMany(scene => scene.LogoOverlays),
+            overlay => overlay.AssetId.StartsWith("agent-portrait:", StringComparison.Ordinal));
+
+        var rendered = ListingStudio.Infrastructure.Campaigns.CampaignGenerationProcessor
+            .WithoutAgentPortraitOverlays(planned);
+
+        Assert.DoesNotContain(rendered.Scenes.SelectMany(scene => scene.LogoOverlays),
+            overlay => overlay.AssetId.StartsWith("agent-portrait:", StringComparison.Ordinal));
+        Assert.Equal(planned.Scenes.Count, rendered.Scenes.Count);
+        Assert.Equal(
+            planned.Scenes.Select(scene => scene.TextOverlays.Count),
+            rendered.Scenes.Select(scene => scene.TextOverlays.Count));
+    }
+
+    [Fact]
     public void PriceDropTemplateRequiresAgentVerificationAndAddsGroundedHook()
     {
         var unverified = CampaignCreativeOptions.SocialDefault with

@@ -1257,16 +1257,22 @@ public sealed partial class CampaignGenerationProcessor(
             var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, isRevision, cancellationToken);
             var fullTour = await MaterializeFullTourAsync(job, specification, directory, isRevision, variantId, cancellationToken);
             var usesNativeKlingAudio = fullTour?.UseNativeAudio == true;
+            var usesNativePresenterVideo = fullTour is not null
+                && job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter;
             var renderSpecification = usesNativeKlingAudio
                 ? UseNativeKlingAudio(specification)
                 : specification;
+            if (usesNativePresenterVideo)
+            {
+                // Kling already shows the agent speaking at both ends, so the static headshot cards are left out.
+                renderSpecification = WithoutAgentPortraitOverlays(renderSpecification);
+            }
             var narrationAsset = usesNativeKlingAudio
                 ? null
                 : await MaterializeNarrationAsync(job, narrationId, directory, cancellationToken);
             var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
             // The native-presenter video already shows the agent at both ends, with or without its own sound.
-            var agentPresenter = usesNativeKlingAudio
-                || (fullTour is not null && job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
+            var agentPresenter = usesNativeKlingAudio || usesNativePresenterVideo
                 ? null
                 : await MaterializeAgentPresenterAsync(
                     job,
@@ -1363,6 +1369,23 @@ public sealed partial class CampaignGenerationProcessor(
             }
         }
     }
+
+    /// <summary>
+    /// Removes the static agent headshot cards (the opening presenter card and the closing portrait) from a plan whose
+    /// picture is a Kling 4 native-presenter video: the agent already appears and speaks in that video.
+    /// </summary>
+    public static VideoProductionSpecification WithoutAgentPortraitOverlays(VideoProductionSpecification specification) =>
+        specification with
+        {
+            Scenes = specification.Scenes.Select(scene => scene with
+            {
+                LogoOverlays = scene.LogoOverlays
+                    .Where(overlay => !overlay.AssetId.StartsWith(AgentPortraitAssetPrefix, StringComparison.Ordinal))
+                    .ToArray(),
+            }).ToArray(),
+        };
+
+    private const string AgentPortraitAssetPrefix = "agent-portrait:";
 
     public static VideoProductionSpecification UseNativeKlingAudio(VideoProductionSpecification specification) =>
         specification with
