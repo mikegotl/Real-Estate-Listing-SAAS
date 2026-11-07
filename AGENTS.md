@@ -15,6 +15,10 @@ Listing Studio is a commercial real estate marketing SaaS. Follow the owner-prov
 - Scope every business entity and query to its Organization; test cross-organization access.
 - Never manufacture real estate facts. Ground generated marketing claims in verified property data.
 
+## Flow map
+
+- The admin Flow map (`/admin/flow-map`) is generated from `tools/flow-map/cases.py`. Any change to behavior on the Overview, Media or Campaign tabs, or to the services, plan gates and release switches behind them, updates the matching cases in the same pull request and reruns `python3 tools/flow-map/build.py`. See `tools/flow-map/README.md`. CI warns when this is missed.
+
 ## Reliability, cost and quality
 
 - Make background operations idempotent where appropriate; cache expensive AI results when reusable.

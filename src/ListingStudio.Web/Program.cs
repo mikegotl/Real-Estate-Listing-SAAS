@@ -17,6 +17,7 @@ using ListingStudio.Web.Components.Properties;
 using ListingStudio.Web.Components.Account;
 using ListingStudio.Web.Authentication;
 using ListingStudio.Web.Seo;
+using ListingStudio.Web.Components.Administration;
 using ListingStudio.Web.Components.Articles;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Authentication;
@@ -112,6 +113,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapSeoEndpoints();
 app.MapArticleEndpoints();
+app.MapAdminFlowMapEndpoints();
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = registration => registration.Tags.Contains("live"),
