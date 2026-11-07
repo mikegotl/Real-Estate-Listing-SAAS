@@ -23,7 +23,7 @@ public static class ArticleLibrary
                 Title: "Creative social media campaigns for every listing, from one studio",
                 Description: "Why real estate agents are turning listing photos into short videos, voiceovers and posts from one place, what the latest research says about buyers and social media, and how an all-in-one studio compares with separate subscriptions.",
                 PublishedOn: new DateOnly(2026, 10, 30),
-                UpdatedOn: null,
+                UpdatedOn: new DateOnly(2026, 11, 7),
                 Author: "Creative Listing Studio team",
                 ReadMinutes: 8,
                 Topics: ["Social media", "Listing video", "Marketing costs"]),
