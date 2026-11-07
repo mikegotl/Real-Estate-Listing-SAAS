@@ -819,6 +819,12 @@ public sealed partial class CampaignGenerationTests
         Assert.Null(render.Narration);
         Assert.Null(render.Music);
         Assert.Null(render.AgentPresenter);
+        // Kling already shows the agent on camera, so the static headshot card is not laid over the opening or ending.
+        Assert.Empty(render.BrandAssets);
+        Assert.Null(render.Specification.Brand.SecondaryLogo);
+        Assert.DoesNotContain(
+            render.Specification.Scenes.SelectMany(scene => scene.LogoOverlays),
+            overlay => overlay.AssetId.StartsWith("agent-portrait:", StringComparison.Ordinal));
         Assert.Empty(render.Specification.Audio.NarrationSegments);
 
         await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
@@ -912,6 +918,12 @@ public sealed partial class CampaignGenerationTests
         Assert.False(render.FullTour.UseNativeAudio);
         Assert.NotNull(render.Narration);
         Assert.Null(render.AgentPresenter);
+        // Kling already shows the agent on camera, so the static headshot card is not laid over the opening or ending.
+        Assert.Empty(render.BrandAssets);
+        Assert.Null(render.Specification.Brand.SecondaryLogo);
+        Assert.DoesNotContain(
+            render.Specification.Scenes.SelectMany(scene => scene.LogoOverlays),
+            overlay => overlay.AssetId.StartsWith("agent-portrait:", StringComparison.Ordinal));
 
         await using var verifyScope = fixture.Factory.Services.CreateAsyncScope();
         await verifyScope.ServiceProvider.GetRequiredService<IFeatureStateService>().ConfigureAsync(

@@ -1257,16 +1257,23 @@ public sealed partial class CampaignGenerationProcessor(
             var aerialIntro = await MaterializeAerialIntroAsync(job, specification, directory, isRevision, cancellationToken);
             var fullTour = await MaterializeFullTourAsync(job, specification, directory, isRevision, variantId, cancellationToken);
             var usesNativeKlingAudio = fullTour?.UseNativeAudio == true;
+            // The native-presenter video already has the agent on camera, with or without its own sound, so the
+            // static headshot card and the still presenter overlay would only float over the real presenter.
+            var showsKlingPresenter = usesNativeKlingAudio
+                || (fullTour is not null && job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter);
             var renderSpecification = usesNativeKlingAudio
                 ? UseNativeKlingAudio(specification)
                 : specification;
+            if (showsKlingPresenter)
+            {
+                renderSpecification = WithoutAgentPortraitCard(renderSpecification);
+            }
+
             var narrationAsset = usesNativeKlingAudio
                 ? null
                 : await MaterializeNarrationAsync(job, narrationId, directory, cancellationToken);
-            var brandAssets = await MaterializeBrandAssetsAsync(job, specification, directory, cancellationToken);
-            // The native-presenter video already shows the agent at both ends, with or without its own sound.
-            var agentPresenter = usesNativeKlingAudio
-                || (fullTour is not null && job.VideoStrategy == CampaignVideoStrategy.Kling4NativePresenter)
+            var brandAssets = await MaterializeBrandAssetsAsync(job, renderSpecification, directory, cancellationToken);
+            var agentPresenter = showsKlingPresenter
                 ? null
                 : await MaterializeAgentPresenterAsync(
                     job,
@@ -1362,6 +1369,30 @@ public sealed partial class CampaignGenerationProcessor(
                 Directory.Delete(directory, recursive: true);
             }
         }
+    }
+
+    /// <summary>
+    /// Removes the agent headshot card (the portrait overlays at the opening and closing) from a plan whose video
+    /// already shows the agent as Kling's on-camera presenter. Other logos and overlays are kept.
+    /// </summary>
+    public static VideoProductionSpecification WithoutAgentPortraitCard(VideoProductionSpecification specification)
+    {
+        if (specification.Brand.SecondaryLogo is not { } portrait
+            || !portrait.StartsWith("agent-portrait:", StringComparison.Ordinal))
+        {
+            return specification;
+        }
+
+        return specification with
+        {
+            Brand = specification.Brand with { SecondaryLogo = null },
+            Scenes = specification.Scenes.Select(scene => scene with
+            {
+                LogoOverlays = scene.LogoOverlays
+                    .Where(overlay => !string.Equals(overlay.AssetId, portrait, StringComparison.Ordinal))
+                    .ToArray(),
+            }).ToArray(),
+        };
     }
 
     public static VideoProductionSpecification UseNativeKlingAudio(VideoProductionSpecification specification) =>
